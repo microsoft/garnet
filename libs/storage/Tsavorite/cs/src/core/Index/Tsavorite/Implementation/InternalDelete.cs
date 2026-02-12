@@ -19,6 +19,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="key">Key of the record to be deleted.</param>
         /// <param name="keyHash"></param>
+        /// <param name="namespaceBytes"></param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="sessionFunctions">Callback functions.</param>
@@ -43,7 +44,7 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TContext userContext,
+        internal OperationStatus InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ReadOnlySpan<byte> namespaceBytes, ref TContext userContext,
                             ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -66,7 +67,8 @@ namespace Tsavorite.core
             try
             {
                 // Search the entire in-memory region; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
-                if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.HeadAddress, out status))
+
+                if (!TryFindRecordForUpdate(key, namespaceBytes, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
 
                 // Note: Delete does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingDelete

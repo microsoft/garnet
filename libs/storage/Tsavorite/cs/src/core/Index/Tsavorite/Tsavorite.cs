@@ -483,7 +483,7 @@ namespace Tsavorite.core
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
-            var keyHash = storeFunctions.GetKeyHashCode64(key);
+            var keyHash = InputExtraOptions.GetKeyHashCode64(storeFunctions, key, ref input);
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
@@ -734,14 +734,23 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        [SkipLocalsInit]
+        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
+            // TODO: verify codegen erases this if TInput does not implement IInputExtraOptions
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
             do
-                internalStatus = InternalDelete(key, keyHash, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalDelete(key, keyHash, namespaceBytes, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);

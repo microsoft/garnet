@@ -418,7 +418,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
             return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, TransactionalSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                    key, keyHash, userContext, sessionFunctions);
+                    key, keyHash, ref input, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

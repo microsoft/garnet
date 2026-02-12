@@ -53,6 +53,7 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit]
         internal OperationStatus InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output,
                                     TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -79,7 +80,26 @@ namespace Tsavorite.core
                 LogRecord srcLogRecord;
                 if (stackCtx.hei.IsReadCache)
                 {
-                    if (FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false))
+                    // TODO: Verify this gets erased in code gen if TInput does not implement IInputExtraOptions
+                    bool found;
+                    if (InputExtraOptions<TInput>.Implements)
+                    {
+                        Span<byte> namespaceBytes = stackalloc byte[8];
+                        if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytes))
+                        {
+                            found = FindInReadCache(key, namespaceBytes, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false);
+                        }
+                        else
+                        {
+                            found = FindInReadCache(key, LogRecord.DefaultNamespace, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false);
+                        }
+                    }
+                    else
+                    {
+                        found = FindInReadCache(key, LogRecord.DefaultNamespace, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false);
+                    }
+
+                    if (found)
                     {
                         // Note: When session is in PREPARE phase, a read-cache record cannot be new-version. This is because a new-version record
                         // insertion would have invalidated the read-cache entry, and before the new-version record can go to disk become eligible
@@ -97,8 +117,27 @@ namespace Tsavorite.core
                     readInfo.Address = stackCtx.recSrc.LogicalAddress;
                 }
 
+                // TODO: Verify this gets erased in code gen if TInput does not implement IInputExtraOptions
+                bool traceBackRes;
+                if (InputExtraOptions<TInput>.Implements)
+                {
+                    Span<byte> namespaceBytes = stackalloc byte[8];
+                    if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytes))
+                    {
+                        traceBackRes = TraceBackForKeyMatch(key, namespaceBytes, ref stackCtx.recSrc, hlogBase.HeadAddress);
+                    }
+                    else
+                    {
+                        traceBackRes = TraceBackForKeyMatch(key, LogRecord.DefaultNamespace, ref stackCtx.recSrc, hlogBase.HeadAddress);
+                    }
+                }
+                else
+                {
+                    traceBackRes = TraceBackForKeyMatch(key, LogRecord.DefaultNamespace, ref stackCtx.recSrc, hlogBase.HeadAddress);
+                }
+
                 // recSrc.LogicalAddress is set and is not in the readcache. Try to traceback in main log for key match.
-                if (TraceBackForKeyMatch(key, ref stackCtx.recSrc, hlogBase.HeadAddress) && stackCtx.recSrc.GetInfo().IsClosed)
+                if (traceBackRes && stackCtx.recSrc.GetInfo().IsClosed)
                     return OperationStatus.RETRY_LATER;
                 status = OperationStatus.SUCCESS;
 
@@ -261,12 +300,14 @@ namespace Tsavorite.core
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
             else if (!pendingContext.IsNoKey)
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(key);
+                pendingContext.keyHash = InputExtraOptions.GetKeyHashCode64(storeFunctions, key, ref input);
             else
             {
                 // We have NoKey and an in-memory address so we must get the record to get the key to get the hashcode check for index growth,
                 // possibly lock the bucket, etc.
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord.Key);
+
+                // TODO: is pendingContext's input the right one here?
+                pendingContext.keyHash = InputExtraOptions.GetKeyHashCode64(storeFunctions, srcLogRecord.Key, ref pendingContext.input.Get());
             }
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);

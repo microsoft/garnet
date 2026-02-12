@@ -12,7 +12,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-            ReadOnlySpan<byte> key, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
+            ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
@@ -30,7 +30,7 @@ namespace Tsavorite.core
                 if (fromAddress < hlogBase.HeadAddress)
                     fromAddress = hlogBase.HeadAddress;
 
-                if (TraceBackForKeyMatch(key, ref stackCtx.recSrc, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
+                if (TraceBackForKeyMatch(key, namespaceBytes, ref stackCtx.recSrc, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
                 {
                     logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);

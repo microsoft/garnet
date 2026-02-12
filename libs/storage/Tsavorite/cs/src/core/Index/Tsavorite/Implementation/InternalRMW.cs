@@ -50,6 +50,7 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit]
         internal OperationStatus InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -72,8 +73,27 @@ namespace Tsavorite.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
+                // TODO: Verify codegen erases this if TInput does not implement IInputExtraOptions
+                bool foundRes;
+                if (InputExtraOptions<TInput>.Implements)
+                {
+                    Span<byte> namespaceBytes = stackalloc byte[8];
+                    if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytes))
+                    {
+                        foundRes = TryFindRecordForUpdate(key, namespaceBytes, ref stackCtx, hlogBase.HeadAddress, out status);
+                    }
+                    else
+                    {
+                        foundRes = TryFindRecordForUpdate(key, LogRecord.DefaultNamespace, ref stackCtx, hlogBase.HeadAddress, out status);
+                    }
+                }
+                else
+                {
+                    foundRes = TryFindRecordForUpdate(key, LogRecord.DefaultNamespace, ref stackCtx, hlogBase.HeadAddress, out status);
+                }
+
                 // Search the entire in-memory region.
-                if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.HeadAddress, out status))
+                if (!foundRes)
                     return status;
 
                 // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.

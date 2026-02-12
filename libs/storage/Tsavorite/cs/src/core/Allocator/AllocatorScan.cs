@@ -274,7 +274,7 @@ namespace Tsavorite.core
             do
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx,
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, srcLogRecord.Namespace, ref stackCtx,
                       currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }

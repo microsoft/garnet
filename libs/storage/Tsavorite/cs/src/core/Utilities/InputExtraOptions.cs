@@ -7,6 +7,18 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
+    /// "Constants" for code gen purposes of proprites of arbitrary TInputs.
+    /// </summary>
+    internal static class InputExtraOptions<TInput>
+    {
+        /// <summary>
+        /// Returns true if TInput implements <see cref="IInputExtraOptions"/>.
+        /// </summary>
+        internal static readonly bool Implements = typeof(TInput).IsValueType ? default(TInput) is IInputExtraOptions : typeof(TInput).IsAssignableTo(typeof(IInputExtraOptions));
+    }
+
+
+    /// <summary>
     /// Utility methods for dealing with TInputs that _may_ implement <see cref="IInputExtraOptions"/>.
     /// </summary>
     internal static class InputExtraOptions
@@ -41,6 +53,32 @@ namespace Tsavorite.core
             }
 
             return functions.GetKeyHashCode64(key);
+        }
+
+        /// <summary>
+        /// Get the namespace, if any, associated with the given TInput.
+        /// </summary>
+        /// <typeparam name="TInput">Input type for the current operation</typeparam>
+        /// <param name="input">Input which may specify a namespace</param>
+        /// <param name="namespaceBytes">Where to store namespace bytes if any.  Should be resized to exact namespace length if true is returned.</param>
+        /// <returns>True if there is a namespace</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool TryGetNamespace<TInput>(ref TInput input, ref Span<byte> namespaceBytes)
+        {
+            // TODO: Look at code gen and very expected optimizations happen
+
+            // If TInput is a struct and doesn't implement IInputExtraOptions, this should all get erased to false
+
+            if (input is IInputExtraOptions extra)
+            {
+                // Even if TInput implements IInputExtraOptions, if TryGetNamespace always returns false we should erase down to false
+                if (extra.TryGetNamespace(ref namespaceBytes))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

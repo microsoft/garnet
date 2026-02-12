@@ -65,7 +65,7 @@ namespace Tsavorite.core
                     //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
                     //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
                     //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
-                    success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
+                    success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, inputLogRecord.Namespace, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
                 }
             }
 

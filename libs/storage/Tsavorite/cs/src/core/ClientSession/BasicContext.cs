@@ -381,7 +381,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
+                return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, ref input, userContext, sessionFunctions);
             }
             finally
             {
@@ -459,7 +459,7 @@ namespace Tsavorite.core
             try
             {
                 return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                        key, sessionFunctions, out logicalAddress, fromAddress);
+                        key, namespaceBytes, sessionFunctions, out logicalAddress, fromAddress);
             }
             finally
             {

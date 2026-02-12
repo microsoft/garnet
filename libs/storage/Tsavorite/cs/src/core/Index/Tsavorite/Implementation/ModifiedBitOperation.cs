@@ -19,6 +19,7 @@ namespace Tsavorite.core
         /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit]
         internal OperationStatus InternalModifiedBitOperation<TInput>(ReadOnlySpan<byte> key, ref TInput input, out RecordInfo modifiedInfo, bool reset = true)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
@@ -35,7 +36,24 @@ namespace Tsavorite.core
                 if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, logRecord.Key))
                 {
                     logicalAddress = logRecord.Info.PreviousAddress;
-                    TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
+
+                    // TODO: Confirm most of this gets erased if appropriate
+                    if(InputExtraOptions<TInput>.Implements)
+                    {
+                        Span<byte> namespaceBytes = stackalloc byte[8];
+                        if(InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytes))
+                        {
+                            _ = TraceBackForKeyMatch(key, namespaceBytes, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
+                        }
+                        else
+                        {
+                            _ = TraceBackForKeyMatch(key, LogRecord.DefaultNamespace, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
+                        }
+                    }
+                    else
+                    {
+                        _ = TraceBackForKeyMatch(key, LogRecord.DefaultNamespace, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
+                    }
                 }
             }
             #endregion

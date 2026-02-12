@@ -16,7 +16,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal bool FindInReadCache(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress = kInvalidAddress, bool alwaysFindLatestLA = true)
+        internal bool FindInReadCache(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress = kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
@@ -50,6 +50,8 @@ namespace Tsavorite.core
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
+                    // TODO: How to get namespace off record for comparison
+
                     ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
                         ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)    // Most keys are inline and this is faster
                         : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
@@ -190,7 +192,7 @@ namespace Tsavorite.core
 
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool EnsureNoNewMainLogRecordWasSpliced(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestSearchedAddress, ref OperationStatus failStatus)
+        private bool EnsureNoNewMainLogRecordWasSpliced(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestSearchedAddress, ref OperationStatus failStatus)
         {
             Debug.Assert(!IsReadCache(highestSearchedAddress), "highestSearchedAddress should be a main-log address");
             var success = true;
@@ -201,7 +203,7 @@ namespace Tsavorite.core
             {
                 // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
                 var minAddress = highestSearchedAddress > hlogBase.HeadAddress ? highestSearchedAddress : hlogBase.HeadAddress;
-                if (TraceBackForKeyMatch(key, lowest_rcri.PreviousAddress, minAddress + 1, out var prevAddress, out _))
+                if (TraceBackForKeyMatch(key, namespaceBytes, lowest_rcri.PreviousAddress, minAddress + 1, out var prevAddress, out _))
                     success = false;
                 else if (prevAddress > highestSearchedAddress && prevAddress < hlogBase.HeadAddress)
                 {
