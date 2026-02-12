@@ -43,7 +43,7 @@ namespace Garnet.test.cluster
 
         public CancellationTokenSource cts;
 
-        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 3600)
+        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
@@ -125,7 +125,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            var timeoutSeconds = 100_000;
+            var timeoutSeconds = 60;
             if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
                 logger?.LogError("Timed out waiting for DisposeCluster");

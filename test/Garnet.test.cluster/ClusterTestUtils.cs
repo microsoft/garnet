@@ -560,7 +560,7 @@ namespace Garnet.test.cluster
 
     public unsafe partial class ClusterTestUtils
     {
-        static readonly TimeSpan backoff = TimeSpan.FromSeconds(1);
+        static readonly TimeSpan backoff = TimeSpan.FromSeconds(0.1);
         static readonly byte[] bresp_OK = Encoding.ASCII.GetBytes("+OK\r\n");
         static readonly byte[] ascii_chars = Encoding.ASCII.GetBytes("abcdefghijklmnopqrstvuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
         public Random r;
