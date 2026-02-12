@@ -404,6 +404,7 @@ namespace Resp.benchmark
                 cts.Cancel();
                 Thread.Yield();
             }
+            epoch.Dispose();
         }
 
         public unsafe void OpRunnerLightClient(int thread_id)

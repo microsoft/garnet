@@ -174,7 +174,7 @@ namespace Garnet.cluster
                     {
                         logger?.LogError("Invalid CLUSTER MEET endpoint!");
                     }
-                    gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, logger: logger);
+                    gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, clusterConnectionStore.Epoch, logger: logger);
                     created = true;
                 }
 
