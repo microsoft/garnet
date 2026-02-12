@@ -107,6 +107,7 @@ namespace Garnet.cluster
                 tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword,
+                clientName: nameof(ReplicaSyncSession.SendCheckpoint),
                 logger: logger);
             CheckpointEntry localEntry = default;
             AofSyncDriver aofSyncDriver = null;

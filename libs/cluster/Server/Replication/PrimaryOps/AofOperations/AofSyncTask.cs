@@ -67,6 +67,7 @@ namespace Garnet.cluster
                 CancellationTokenSource cts,
                 ILogger logger)
             {
+                var currentConfig = clusterProvider.clusterManager.CurrentConfig;
                 this.clusterProvider = clusterProvider;
                 this.physicalSublogIdx = physicalSublogIdx;
                 this.startAddress = startAddress;
@@ -81,6 +82,7 @@ namespace Garnet.cluster
                             tlsOptions: this.clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                             authUsername: this.clusterProvider.ClusterUsername,
                             authPassword: this.clusterProvider.ClusterPassword,
+                            clientName: $"AofSyncTask-{physicalSublogIdx}:({currentConfig.LocalNodeEndpoint})",
                             logger: logger);
                 this.logger = logger;
             }
@@ -175,9 +177,12 @@ namespace Garnet.cluster
                         garnetClient.Connect();
 
                     iter = clusterProvider.storeWrapper.appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                    // Send ping to initialize replication stream
-                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, physicalSublogIdx, -1, -1, -1, -1, 0);
-                    garnetClient.CompletePending(false);
+                    if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
+                    {
+                        // Send ping to initialize replication stream
+                        garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, physicalSublogIdx, -1, -1, -1, -1, 0);
+                        garnetClient.CompletePending(false);
+                    }
 
                     while (true)
                     {

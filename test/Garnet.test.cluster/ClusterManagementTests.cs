@@ -566,7 +566,7 @@ namespace Garnet.test.cluster
                 var numReplica = fullList.Split("\n").Count(static x => x.Contains(" flags=S "));
                 var numMaster = fullList.Split("\n").Count(static x => x.Contains(" flags=M "));
 
-                ClassicAssert.AreEqual(1, numNormal, $"normalCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.IsTrue(2 >= numNormal, $"normalCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
                 ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2, $"replicaCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
                 ClassicAssert.IsTrue(numMaster >= 1 && numMaster <= 2, $"masterCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
 

@@ -42,6 +42,8 @@ namespace Garnet.client
         static readonly Memory<byte> DECRBY = "$6\r\nDECRBY\r\n"u8.ToArray();
         static readonly Memory<byte> QUIT = "$4\r\nQUIT\r\n"u8.ToArray();
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
+        static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
+        static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetClient"u8.ToArray()];
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
         readonly int sendPageSize;
@@ -89,6 +91,11 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Client name to send to server for identification.
+        /// </summary>
+        readonly Memory<byte>[] SETNAME = null;
+
+        /// <summary>
         /// Exception to throw to ongoing tasks when disposed
         /// </summary>
         static readonly Exception disposeException = new GarnetClientDisposedException();
@@ -133,6 +140,7 @@ namespace Garnet.client
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
+            string clientName = null,
             int sendPageSize = 1 << 21,
             int bufferSize = 1 << 17,
             int maxOutstandingTasks = 1 << 19,
@@ -148,6 +156,7 @@ namespace Garnet.client
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.SETNAME = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
             if (maxOutstandingTasks > PageOffset.kTaskMask + 1)
             {
@@ -212,6 +221,18 @@ namespace Garnet.client
                 logger?.LogError(e, "AUTH returned error");
                 throw;
             }
+
+            try
+            {
+                _ = ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false).GetAwaiter().GetResult();
+                if (SETNAME != null)
+                    _ = ExecuteForStringResultAsync(CLIENT, SETNAME).ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
+                throw;
+            }
         }
 
         /// <summary>
@@ -241,7 +262,19 @@ namespace Garnet.client
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "AUTH returned error");
+                logger?.LogError(e, "AUTH returned error!");
+                throw;
+            }
+
+            try
+            {
+                _ = await ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false);
+                if (SETNAME != null)
+                    _ = await ExecuteForStringResultAsync(CLIENT, SETNAME).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error");
                 throw;
             }
         }

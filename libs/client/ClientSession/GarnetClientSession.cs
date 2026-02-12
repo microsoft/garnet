@@ -79,6 +79,11 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Set client name on the server for easier identification in monitoring and debugging.
+        /// </summary>
+        readonly string clientName = null;
+
+        /// <summary>
         /// Indicating whether this instance is using its own network pool or one that was provided
         /// </summary>
         readonly bool usingManagedNetworkPool = false;
@@ -111,6 +116,7 @@ namespace Garnet.client
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
+            string clientName = null,
             int networkSendThrottleMax = 8,
             bool rawResult = false,
             ILogger logger = null)
@@ -128,6 +134,7 @@ namespace Garnet.client
             this.disposed = 0;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.clientName = clientName;
             this.RawResult = rawResult;
         }
 
@@ -169,6 +176,18 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+                _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
+                if (clientName != null)
+                    _ = ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }

@@ -804,7 +804,7 @@ namespace Garnet.server
             {
                 var usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
                 if (storeWrapper.clusterProvider.IsPrimary())
-                {                    
+                {
                     var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
                     while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 4 : 3, ref dcurr, dend))
