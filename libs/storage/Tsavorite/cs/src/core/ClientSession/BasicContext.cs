@@ -270,7 +270,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(in TSourceLogRecord inputLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => throw new NotImplementedException();
+        {
+            TInput ignoredInput = default;
+            return Upsert(inputLogRecord.Key, ref ignoredInput, in inputLogRecord);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -345,21 +348,35 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default)
-            => Delete(key, InputExtraOptions.GetKeyHashCode64(in store.storeFunctions, key, ref input), userContext);
+            => Delete(key, InputExtraOptions.GetKeyHashCode64(in store.storeFunctions, key, ref input), ref input, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ReadOnlySpan<byte> key, ref TInput input, ref DeleteOptions deleteOptions, TContext userContext = default)
-            => Delete(key, deleteOptions.KeyHash ?? InputExtraOptions.GetKeyHashCode64(in store.storeFunctions, key, ref input), userContext);
+            => Delete(key, deleteOptions.KeyHash ?? InputExtraOptions.GetKeyHashCode64(in store.storeFunctions, key, ref input), ref input, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => throw new NotImplementedException();
+        {
+            TInput ignoredInput = default;
+
+            long hash;
+            if (logRecord.Namespace.IsEmpty)
+            {
+                hash = store.storeFunctions.GetKeyHashCode64(logRecord.Key);
+            }
+            else
+            {
+                hash = store.storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace);
+            }
+
+            return Delete(logRecord.Key, hash, ref ignoredInput);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Delete(ReadOnlySpan<byte> key, long keyHash, TContext userContext = default)
+        private Status Delete(ReadOnlySpan<byte> key, long keyHash, ref TInput input, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
