@@ -336,6 +336,8 @@ namespace Garnet.cluster
                     catch (Exception ex)
                     {
                         logger?.LogError(ex, "{method} faulted", nameof(WaitOrDie));
+                        for (var i = 0; i < NumSessions; i++)
+                            Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
                         cts.Cancel();
                     }
 
