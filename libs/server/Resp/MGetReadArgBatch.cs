@@ -4,7 +4,9 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+#if DEBUG
 using System.Runtime.CompilerServices;
+#endif
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
