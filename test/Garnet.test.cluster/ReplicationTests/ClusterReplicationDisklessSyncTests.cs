@@ -424,7 +424,7 @@ namespace Garnet.test.cluster
             {
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
                 var _resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-                ClassicAssert.AreEqual("Exception injection triggered Replication_Diskless_Sync_Reset_Cts", _resp);
+                ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", _resp);
             }
             finally
             {
