@@ -48,6 +48,11 @@ namespace Garnet.cluster
         int flushCount = 0;
 
         /// <summary>
+        /// Shared epoch instance for connection store
+        /// </summary>
+        readonly client.LightEpoch epoch;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
@@ -93,7 +98,8 @@ namespace Garnet.cluster
                 currentConfig = new();
             }
 
-            clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
+            this.epoch = new client.LightEpoch();
+            clusterConnectionStore = new GarnetClusterConnectionStore(epoch, logger: logger);
             InitLocal(clusterEndpoint.Address.ToString(), clusterEndpoint.Port, recoverConfig);
             logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(serverOptions.GossipDelay);
@@ -138,6 +144,7 @@ namespace Garnet.cluster
 
             clusterConfigDevice.Dispose();
             pool.Free();
+            epoch?.Dispose();
         }
 
         /// <summary>

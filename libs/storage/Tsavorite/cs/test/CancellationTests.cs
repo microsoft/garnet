@@ -161,7 +161,7 @@ namespace Tsavorite.test.Cancellation
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         private unsafe void Populate()

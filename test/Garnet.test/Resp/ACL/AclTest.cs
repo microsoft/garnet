@@ -68,7 +68,7 @@ namespace Garnet.test.Resp.ACL
                 server = null;
             }
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
     }
 }

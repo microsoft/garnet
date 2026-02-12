@@ -53,7 +53,7 @@ namespace Tsavorite.test
             log = null;
             objlog?.Dispose();
             objlog = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test]

@@ -77,7 +77,7 @@ namespace Tsavorite.test.recovery.sumstore
             log = null;
 
             checkpointManager?.Dispose();
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test]

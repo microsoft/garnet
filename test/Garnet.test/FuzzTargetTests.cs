@@ -18,6 +18,12 @@ namespace Garnet.test
     [TestFixture]
     public class FuzzTargetTests : AllureTestBase
     {
+        [TearDown]
+        public void TearDown()
+        {
+            TestUtils.OnTearDown();
+        }
+
         [Test]
         public void TestsForAllTargets()
         {

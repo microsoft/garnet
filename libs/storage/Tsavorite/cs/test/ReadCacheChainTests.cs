@@ -84,7 +84,7 @@ namespace Tsavorite.test.ReadCacheTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         public enum RecordRegion { Immutable, OnDisk, Mutable };
@@ -705,7 +705,7 @@ namespace Tsavorite.test.ReadCacheTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal class RmwLongFunctions : SimpleSessionFunctions<long, long, Empty>
@@ -952,7 +952,7 @@ namespace Tsavorite.test.ReadCacheTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
