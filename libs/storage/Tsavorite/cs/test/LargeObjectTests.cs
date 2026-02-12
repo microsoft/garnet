@@ -24,7 +24,7 @@ namespace Tsavorite.test.largeobjects
         public void Setup() => RecreateDirectory(MethodTestDir);
 
         [TearDown]
-        public void TearDown() => DeleteDirectory(MethodTestDir);
+        public void TearDown() => OnTearDown();
 
         [Test]
         [Category("TsavoriteKV")]

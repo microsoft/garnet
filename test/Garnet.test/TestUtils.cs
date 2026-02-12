@@ -1174,5 +1174,27 @@ using System.Threading.Tasks;
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             return RandomNumberGenerator.GetString(chars, len);
         }
+
+        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null)
+        {
+            DeleteDirectory(MethodTestDir, wait: waitForDelete);
+            var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+            if (count != 0)
+            {
+                // Reset all instances to avoid impacting other tests
+                Tsavorite.core.LightEpoch.ResetAllInstances();
+                logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
+                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
+            }
+
+            var count2 = client.LightEpoch.ActiveInstanceCount();
+            if (count2 != 0)
+            {
+                // Reset all instances to avoid impacting other tests
+                client.LightEpoch.ResetAllInstances();
+                logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
+                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
+            }
+        }
     }
 }

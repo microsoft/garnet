@@ -38,11 +38,11 @@ namespace Garnet.server
         /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="subscriberRefreshFrequencyMs">Subscriber log refresh frequency</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true, ILogger logger = null)
+        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs, Epoch = epoch });
             pageSizeBits = log.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);

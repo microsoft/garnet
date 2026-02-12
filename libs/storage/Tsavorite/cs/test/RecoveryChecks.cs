@@ -45,7 +45,7 @@ namespace Tsavorite.test.recovery
         {
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         public class MyFunctions : SimpleSimpleFunctions<long, long>

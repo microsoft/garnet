@@ -47,7 +47,7 @@ namespace Tsavorite.test.recovery
             cts = default;
             done?.Dispose();
             done = default;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

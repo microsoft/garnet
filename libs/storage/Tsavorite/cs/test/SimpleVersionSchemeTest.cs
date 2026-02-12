@@ -8,7 +8,6 @@ using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using Tsavorite.core;
 
 namespace Tsavorite.test
 {
@@ -20,7 +19,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void SimpleTest()
         {
-            var tested = new EpochProtectedVersionScheme(new LightEpoch());
+            using var tested = new EpochProtectedVersionScheme();
             var protectedVal = 0;
             var v = tested.Enter();
 
@@ -42,7 +41,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void SingleThreadTest()
         {
-            var tested = new EpochProtectedVersionScheme(new LightEpoch());
+            using var tested = new EpochProtectedVersionScheme();
             var protectedVal = 0;
 
             var v = tested.Enter();
@@ -64,7 +63,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void LargeConcurrentTest()
         {
-            var tested = new EpochProtectedVersionScheme(new LightEpoch());
+            using var tested = new EpochProtectedVersionScheme();
             var protectedVal = 1L;
             var termination = new ManualResetEventSlim();
 

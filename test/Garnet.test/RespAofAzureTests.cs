@@ -40,6 +40,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server?.Dispose();
+            TestUtils.OnTearDown();
         }
 
         [Test]

@@ -37,7 +37,7 @@ namespace Garnet.cluster
                 sendPageSize: sendPageSize,
                 maxOutstandingTasks: 8,
                 authUsername: clusterProvider.ClusterUsername,
-                authPassword: clusterProvider.ClusterPassword, logger: logger);
+                authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
 
             try
             {
