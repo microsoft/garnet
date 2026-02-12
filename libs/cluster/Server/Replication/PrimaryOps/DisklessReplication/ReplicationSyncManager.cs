@@ -253,7 +253,7 @@ namespace Garnet.cluster
                         // to avoid waiting for other replicas which may need to receive the latest checkpoint
                         if (!Sessions[i].NeedToFullSync())
                         {
-                            Sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
+                            Sessions[i]?.SetStatus(SyncStatus.SUCCESS);
                             Sessions[i] = null;
                         }
                         else
