@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -33,26 +34,45 @@ namespace Garnet.test.Resp.ACL
         [TestCase(128, 2048)]
         public async Task ParallelAuthTest(int degreeOfParallelism, int iterationsPerSession)
         {
-            using var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
+            using var c = TestUtils.GetGarnetClient();
+            await c.ConnectAsync();
 
             // Add the test user and password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}");
+            var response = await c.ExecuteForStringResultAsync("ACL", ["SETUSER", TestUserA, "on", $">{DummyPassword}"]);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Run multiple sessions that stress AUTH
-            Parallel.For(0, degreeOfParallelism, (t, state) =>
+            var timeout = TimeSpan.FromSeconds(120);
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
-                using var c = TestUtils.GetGarnetClientSession();
-                c.Connect();
+                using var c = TestUtils.GetGarnetClient();
+                await c.ConnectAsync(token);
 
+                var firstResponseTasks = new Task<string>[iterationsPerSession];
+                var secondResponseTasks = new Task<string>[iterationsPerSession];
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
                     // Execute two AUTH commands - one that succeeds and one that fails
-                    c.Execute("AUTH", TestUserA, DummyPassword);
-                    c.Execute("AUTH", DummyPasswordB);
+                    firstResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPassword]).WaitAsync(token);
+                    secondResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPasswordB]).WaitAsync(token);
                 }
-            });
+
+                try
+                {
+                    await Task.WhenAll(firstResponseTasks.Concat(secondResponseTasks)).WaitAsync(token);
+                }
+                catch { }
+                foreach (var task in firstResponseTasks)
+                {
+                    ClassicAssert.IsTrue(task.Result.StartsWith("OK"));
+                }
+                foreach (var task in secondResponseTasks)
+                {
+                    ClassicAssert.IsTrue(task.IsFaulted);
+                    ClassicAssert.IsTrue(task.Exception.InnerExceptions.Count == 1);
+                    ClassicAssert.IsTrue(task.Exception.InnerExceptions[0].Message.StartsWith("WRONGPASS"));
+                }
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>

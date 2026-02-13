@@ -15,6 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -101,6 +102,7 @@ namespace Garnet.test.cluster
         PRIMARY_FAILOVER_STATE,
         RECOVER_STATUS,
         LAST_FAILOVER_STATE,
+        SYNC_DRIVER_COUNT
     }
 
     public enum StoreInfoItem
@@ -112,13 +114,31 @@ namespace Garnet.test.cluster
 
     public struct PersistencInfo
     {
-        public long CommittedBeginAddress;
-        public long CommittedUntilAddress;
-        public long FlushedUntilAddress;
-        public long BeginAddress;
-        public long TailAddress;
-        public long SafeAofAddress;
+        public AofAddress CommittedBeginAddress;
+        public AofAddress CommittedUntilAddress;
+        public AofAddress FlushedUntilAddress;
+        public AofAddress BeginAddress;
+        public AofAddress TailAddress;
+        public AofAddress SafeAofAddress;
     };
+
+    enum RoleCommandPrimaryFormat : byte
+    {
+        RoleType = 0,
+        RoleReplicationOffset = 1,
+        RoleReplicaInfo = 2,
+        RoleReplicationOffsetString = 3,
+    }
+
+    enum RoleCommandReplicaFormat : byte
+    {
+        RoleType = 0,
+        RoleAddress = 1,
+        RolePort = 2,
+        RoleState = 3,
+        RoleReplicationOffset = 4,
+        RoleReplicationOffsetString = 5
+    }
 
     public static class EndpointExtensions
     {
@@ -2593,39 +2613,39 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
             => GetStoreCurrentAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var storeCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(storeCurrentSafeAofAddress);
+                return AofAddress.FromString(storeCurrentSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetStoreCurrentAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 
-        public long GetStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
             => GetStoreRecoveredAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var storeRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(storeRecoveredSafeAofAddress);
+                return AofAddress.FromString(storeRecoveredSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occured; GetStoreRecoveredAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 
@@ -2682,21 +2702,21 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetReplicationOffset(int nodeIndex, ILogger logger = null)
+        public AofAddress GetReplicationOffset(int nodeIndex, ILogger logger = null)
             => GetReplicationOffset((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetReplicationOffset(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetReplicationOffset(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var offset = GetReplicationInfo(endPoint, [ReplicationInfoItem.REPLICATION_OFFSET], logger)[0].Item2;
-                return long.Parse(offset);
+                return AofAddress.FromString(offset);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetReplicationOffset");
                 Assert.Fail(ex.Message);
-                return 0;
+                return AofAddress.Create(1, -1);
             }
         }
 
@@ -2781,27 +2801,27 @@ namespace Garnet.test.cluster
                 {
                     if (item.StartsWith("CommittedBeginAddress:"))
                     {
-                        pinfo.CommittedBeginAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.CommittedBeginAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("CommittedUntilAddress:"))
                     {
-                        pinfo.CommittedUntilAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.CommittedUntilAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("FlushedUntilAddress:"))
                     {
-                        pinfo.FlushedUntilAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.FlushedUntilAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("BeginAddress:"))
                     {
-                        pinfo.BeginAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.BeginAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("TailAddress:"))
                     {
-                        pinfo.TailAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.TailAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("SafeAofAddress:"))
                     {
-                        pinfo.SafeAofAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.SafeAofAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                 }
                 return pinfo;
@@ -2825,6 +2845,10 @@ namespace Garnet.test.cluster
                             continue;
                         case ReplicationInfoItem.CONNECTED_REPLICAS:
                             startsWith = "connected_slaves:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            continue;
+                        case ReplicationInfoItem.SYNC_DRIVER_COUNT:
+                            startsWith = "sync_driver_count:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             continue;
                         case ReplicationInfoItem.PRIMARY_REPLID:
@@ -2935,15 +2959,15 @@ namespace Garnet.test.cluster
 
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
-            long primaryReplicationOffset;
-            long secondaryReplicationOffset1;
+            AofAddress primaryReplicationOffset;
+            AofAddress secondaryReplicationOffset1;
             while (true)
             {
                 cancellation.ThrowIfCancellationRequested();
 
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
-                if (primaryReplicationOffset == secondaryReplicationOffset1)
+                if (primaryReplicationOffset.Equals(secondaryReplicationOffset1))
                     break;
 
                 var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger);

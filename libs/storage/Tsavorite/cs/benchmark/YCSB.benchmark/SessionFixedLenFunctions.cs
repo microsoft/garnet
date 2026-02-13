@@ -139,6 +139,8 @@ namespace Tsavorite.benchmark
         public readonly void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
 
         public readonly void ConvertOutputToHeap(ref Input input, ref Output output) { }
+
+        ConsistentReadContextCallbacks ISessionFunctions<Input, Output, Empty>.GetContextCallbacks() => null;
     }
 
     static class StaticUtilities

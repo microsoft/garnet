@@ -144,5 +144,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
+
+        public ConsistentReadContextCallbacks GetContextCallbacks() { return null; }
     }
 }

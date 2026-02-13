@@ -46,7 +46,7 @@ namespace Garnet.cluster
             }
             else
             {
-                clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                clusterProvider.storeWrapper.StoreCheckpointManager.SetRecoveredSafeAofAddress(ref tail.metadata.storeCheckpointCoveredAofAddress);
                 clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
             }
 
@@ -235,12 +235,9 @@ namespace Garnet.cluster
             var _tail = tail;
             if (_tail == null)
             {
-                cEntry = new CheckpointEntry()
+                cEntry = new CheckpointEntry
                 {
-                    metadata = new()
-                    {
-                        storeCheckpointCoveredAofAddress = 0,
-                    }
+                    metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 };
                 _ = cEntry.TryAddReader();
                 return true;
@@ -259,12 +256,13 @@ namespace Garnet.cluster
         /// <returns></returns>
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()
         {
+            var storeCheckpointCoveredAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
             storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken, out var storeVersion);
-            var (storeCheckpointCoveredAofAddress, storePrimaryReplId) = GetCheckpointCookieMetadata(storeHLogToken);
+            GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken, ref storeCheckpointCoveredAofAddress, out var storePrimaryReplId);
 
             CheckpointEntry entry = new()
             {
-                metadata = new()
+                metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 {
                     storeVersion = storeVersion,
                     storeHlogToken = storeHLogToken,
@@ -275,11 +273,13 @@ namespace Garnet.cluster
             };
             return entry;
 
-            (long RecoveredSafeAofAddress, string RecoveredReplicationId) GetCheckpointCookieMetadata(Guid fileToken)
+            void GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken, ref AofAddress recoveredSafeAofAddress, out string RecoveredReplicationId)
             {
-                if (fileToken == default) return (0, null);
+                RecoveredReplicationId = null;
+                if (fileToken == default) return;
                 var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
                 var pageSizeBits = clusterProvider.serverOptions.PageSizeBits();
+
                 using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
                 {
                     if (deltaFileDevice is not null)
@@ -289,11 +289,12 @@ namespace Garnet.cluster
                         {
                             var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
                             deltaLog.InitializeForReads();
-                            return ckptManager.GetCheckpointCookieMetadata(fileToken, deltaLog, true, -1);
+                            ckptManager.GetCheckpointCookieMetadata(fileToken, deltaLog, true, -1, ref recoveredSafeAofAddress, out RecoveredReplicationId);
+                            return;
                         }
                     }
                 }
-                return ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1);
+                ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1, ref recoveredSafeAofAddress, out RecoveredReplicationId);
             }
         }
 

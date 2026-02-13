@@ -173,9 +173,9 @@ namespace Tsavorite.core
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>
-        /// <param name="logger">Log settings</param>
+        /// <param name="logger">User provided logger instance</param>
         public TsavoriteLog(TsavoriteLogSettings logSettings, ILogger logger = null)
-            : this(logSettings, logSettings.TryRecoverLatest, logger)
+            : this(logSettings, logSettings.TryRecoverLatest, logger: logger)
         { }
 
         /// <summary>
@@ -1585,7 +1585,6 @@ namespace Tsavorite.core
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
         /// <param name="cookie"></param>
         /// <returns> whether there is anything to commit. </returns>
-
         public void Commit(bool spinWait = false, byte[] cookie = null)
         {
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
@@ -1635,6 +1634,8 @@ namespace Tsavorite.core
         /// complete the commit. Throws exception if this or any 
         /// ongoing commit fails.
         /// </summary>
+        /// <param name="cookie"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
         public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default)
         {
@@ -2514,7 +2515,7 @@ namespace Tsavorite.core
 
         private void SignalWaitingROIterators()
         {
-            // One RecoverReadOnly use case is to allow a TsavoriteLogIterator to continuously read a mirror TsavoriteLog (over the same log storage) of a primary TsavoriteLog.
+            // One RecoverReadOnly use case is to allow a TsavoriteLogScanIterator to continuously read a mirror TsavoriteLog (over the same log storage) of a primary TsavoriteLog.
             // In this scenario, when the iterator arrives at the tail after a previous call to RestoreReadOnly, it will wait asynchronously until more data
             // is committed and read by a subsequent call to RecoverReadOnly. Here, we signal iterators that we have completed recovery.
             var _commitTcs = commitTcs;
@@ -3037,7 +3038,6 @@ namespace Tsavorite.core
                 // At this point, we expect the commit record to be flushed out as a distinct recovery point
                 ongoingCommitRequests.Enqueue((commitTail, info));
             }
-
 
             // As an optimization, if a concurrent flush has already advanced FlushedUntilAddress
             // past this commit, we can manually trigger a commit callback for safety, and return.

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -42,7 +43,23 @@ namespace Garnet.server
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog appendOnlyFile => databaseManager.AppendOnlyFile;
+        public GarnetAppendOnlyFile appendOnlyFile => databaseManager.AppendOnlyFile;
+
+        /// <summary>
+        /// Get total AOF size (i.e. diff TailAddres - BeginAddress)
+        /// </summary>
+        /// <returns></returns>
+        public long AofSize() => appendOnlyFile.Log.TailAddress.AggregateDiff(appendOnlyFile.Log.BeginAddress);
+
+        /// <summary>
+        /// AOF BeginAddress
+        /// </summary>
+        public AofAddress BeginAddress => appendOnlyFile.Log.BeginAddress;
+
+        /// <summary>
+        /// AOF TailAddress
+        /// </summary>
+        public AofAddress TailAddress => appendOnlyFile.Log.TailAddress;
 
         /// <summary>
         /// Last save time (of DB 0)
@@ -156,6 +173,11 @@ namespace Garnet.server
         /// Garnet checkpoint manager
         /// </summary>
         public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
+
+        /// <summary>
+        /// Get task manager instance
+        /// </summary>
+        public TaskManager TaskManager => taskManager;
 
         /// <summary>
         /// Constructor
@@ -344,7 +366,7 @@ namespace Garnet.server
                 {
                     RecoverCheckpoint();
                     RecoverAOF();
-                    ReplayAOF();
+                    ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
                 }
             }
         }
@@ -433,7 +455,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF(untilAddress);
+        public AofAddress ReplayAOF(AofAddress untilAddress) => this.databaseManager.ReplayAOF(untilAddress);
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -517,6 +539,7 @@ namespace Garnet.server
         /// Create database functions state
         /// </summary>
         /// <param name="dbId">Database ID</param>
+        /// <param name="respProtocolVersion">Resp protocol version</param>
         /// <returns>Functions state</returns>
         /// <exception cref="GarnetException"></exception>
         internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
@@ -867,6 +890,14 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Check whether to perform consistent read
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnforceConsistentRead()
+            => serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.MultiLogEnabled && clusterProvider.IsReplica();
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -875,8 +906,8 @@ namespace Garnet.server
                 return;
             disposed = true;
 
-            itemBroker?.Dispose();
             clusterProvider?.Dispose();
+            itemBroker?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();

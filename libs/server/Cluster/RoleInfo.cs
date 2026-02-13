@@ -8,12 +8,17 @@ namespace Garnet.server
         /// <summary>
         /// Replication offset using string store.
         /// </summary>
-        public long replication_offset;
+        public AofAddress replication_offset;
+
+        /// <summary>
+        /// Max send timemstamp
+        /// </summary>
+        public AofAddress sequenceNumber;
 
         /// <summary>
         /// Replication offset lag. 
         /// </summary>
-        public long replication_lag;
+        public AofAddress replication_lag;
 
         /// <summary>
         /// Replication state.
@@ -38,7 +43,7 @@ namespace Garnet.server
         /// <returns>string</returns>
         public override readonly string ToString()
         {
-            return $"ip={address},port={port},state={replication_state},offset={replication_offset},lag={replication_lag}";
+            return $"ip={address},port={port},state={replication_state},offset={replication_offset},lag={replication_lag},sequenceNumber={sequenceNumber}";
         }
     }
 }

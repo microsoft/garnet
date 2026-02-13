@@ -89,7 +89,6 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_EXEC_WO_MULTI, ref dcurr, dend))
                 SendAndReset();
             return true;
-
         }
 
         /// <summary>

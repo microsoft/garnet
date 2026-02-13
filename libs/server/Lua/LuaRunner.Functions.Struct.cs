@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
-// The code is based on, not copied from, the Lua functions below.
+// Licensed under the MIT license.
+
 /******************************************************************************
 * Copyright (C) 2010-2018 Lua.org, PUC-Rio.  All rights reserved.
 *

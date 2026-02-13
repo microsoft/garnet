@@ -22,6 +22,8 @@ namespace Garnet.server
         /// </summary>
         public StringBasicContext stringBasicContext;
         public StringTransactionalContext stringTransactionalContext;
+        public ConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
+        public TransactionalConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -35,12 +37,16 @@ namespace Garnet.server
         /// </summary>
         public ObjectBasicContext objectBasicContext;
         public ObjectTransactionalContext objectTransactionalContext;
+        public ConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreConsistentReadContext;
+        public TransactionalConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
         public UnifiedBasicContext unifiedBasicContext;
         public UnifiedTransactionalContext unifiedTransactionalContext;
+        public ConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
+        public TransactionalConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalConsistentReadContext;
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
@@ -55,11 +61,17 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        /// <summary>
+        /// Flag indicating if this is storage session that uses consistent read context
+        /// </summary>
+        readonly bool IsConsistentReadSession;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            ConsistentReadContextCallbacks consistentReadContextCallbacks,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -68,9 +80,11 @@ namespace Garnet.server
             this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            this.IsConsistentReadSession = consistentReadContextCallbacks != null;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
+            functionsState.consistentReadContextCallbacks = consistentReadContextCallbacks;
 
             var functions = new MainSessionFunctions(functionsState);
 
@@ -78,25 +92,28 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var session = db.Store.NewSession<StringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var session = db.Store.NewSession<StringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions, IsConsistentReadSession);
+            stringBasicContext = session.BasicContext;
+            stringTransactionalContext = session.TransactionalContext;
+            consistentReadContext = session.ConsistentReadContext;
+            transactionalConsistentReadContext = session.TransactionalConsistentReadContext;
 
             if (!storeWrapper.serverOptions.DisableObjects)
             {
                 var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-                var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
-
+                var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions, IsConsistentReadSession);
                 objectBasicContext = objectStoreSession.BasicContext;
                 objectTransactionalContext = objectStoreSession.TransactionalContext;
+                objectStoreConsistentReadContext = objectStoreSession.ConsistentReadContext;
+                objectStoreTransactionalConsistentReadContext = objectStoreSession.TransactionalConsistentReadContext;
             }
 
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
-            var unifiedStoreSession = db.Store.NewSession<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
-
-            stringBasicContext = session.BasicContext;
-            stringTransactionalContext = session.TransactionalContext;
-
+            var unifiedStoreSession = db.Store.NewSession<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession);
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
+            unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
+            unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
