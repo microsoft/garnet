@@ -63,7 +63,7 @@ namespace Garnet.server
             }
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetObjectOutput(out var output);
             var status = storageApi.ObjectScan(key, ref input, ref output);
 
             switch (status)
@@ -72,7 +72,7 @@ namespace Garnet.server
                     // Process output
                     ProcessOutput(output.SpanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (output.Header.result1 == int.MinValue)
+                    if (output.result1 == int.MinValue)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:

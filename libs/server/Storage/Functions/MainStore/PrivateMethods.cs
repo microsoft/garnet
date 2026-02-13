@@ -300,15 +300,15 @@ namespace Garnet.server
 
         IPUResult EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref StringOutput output)
         {
-            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
-            o->result1 = 0;
+            var o = output.SpanByteAndMemory.SpanByte.ToPointer();
+            *(int*)o = 0;
 
             if (!EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.Info.HasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
                 return IPUResult.Failed;
 
             if (!expirationChanged)
                 return IPUResult.NotUpdated;
-            o->result1 = 1;
+            *(int*)o = 1;
             return IPUResult.Succeeded;
         }
 
@@ -316,8 +316,8 @@ namespace Garnet.server
         {
             var hasExpiration = logRecord.Info.HasExpiration;
 
-            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
-            o->result1 = 0;
+            var o = output.SpanByteAndMemory.SpanByte.ToPointer();
+            *(int*)o = 0;
 
             // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
@@ -329,7 +329,7 @@ namespace Garnet.server
             var isSuccessful = EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration, logErrorOnFail: true,
                 functionsState.logger, out var expirationChanged);
 
-            o->result1 = expirationChanged ? 1 : 0;
+            *(int*)o = expirationChanged ? 1 : 0;
             return isSuccessful;
         }
 

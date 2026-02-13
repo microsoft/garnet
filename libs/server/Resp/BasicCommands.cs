@@ -33,7 +33,7 @@ namespace Garnet.server
             StringInput input = default;
 
             var key = parseState.GetArgSliceByRef(0);
-            var output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetStringOutput(out var output);
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
@@ -101,16 +101,16 @@ namespace Garnet.server
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
             var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
-            var o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GETEX(key, ref input, ref o);
+            GetStringOutput(out var output);
+            var status = storageApi.GETEX(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(o.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
+                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
             }
@@ -126,13 +126,13 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0);
             // Optimistically ask storage to write output to network buffer
-            var o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetStringOutput(out var output);
 
             // Set up input to instruct storage to write output to IMemory rather than
             // network buffer, if the operation goes pending.
             var input = new StringInput(RespCommand.ASYNC);
 
-            var status = storageApi.GET_WithPending(key, ref input, ref o, asyncStarted, out var pending);
+            var status = storageApi.GET_WithPending(key, ref input, ref output, asyncStarted, out var pending);
 
             if (pending)
             {
@@ -143,10 +143,10 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        ProcessOutput(o.SpanByteAndMemory);
+                        ProcessOutput(output.SpanByteAndMemory);
                         break;
                     case GarnetStatus.NOTFOUND:
-                        Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
+                        Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                         WriteNull();
                         break;
                 }
@@ -164,7 +164,7 @@ namespace Garnet.server
             StringInput input = default;
             var firstPending = -1;
             (GarnetStatus, StringOutput)[] outputArr = null;
-            StringOutput o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetStringOutput(out var output);
             var c = 0;
 
             for (; ; c++)
@@ -175,13 +175,13 @@ namespace Garnet.server
                 // Store index in context, since completions are not in order
                 long ctx = firstPending == -1 ? 0 : c - firstPending;
 
-                var status = storageApi.GET_WithPending(key, ref input, ref o, ctx,
+                var status = storageApi.GET_WithPending(key, ref input, ref output, ctx,
                     out var isPending);
 
                 if (isPending)
                 {
                     SetResult(c, ref firstPending, ref outputArr, status, default);
-                    o = new StringOutput();
+                    output = new StringOutput();
                 }
                 else
                 {
@@ -190,13 +190,13 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Found in memory without IO, and no earlier pending, so we can add directly to the output
-                            ProcessOutput(o.SpanByteAndMemory);
-                            o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                            ProcessOutput(output.SpanByteAndMemory);
+                            GetStringOutput(out output);
                         }
                         else
                         {
-                            SetResult(c, ref firstPending, ref outputArr, status, o);
-                            o = new StringOutput();
+                            SetResult(c, ref firstPending, ref outputArr, status, output);
+                            output = new StringOutput();
                         }
                     }
                     else
@@ -205,12 +205,12 @@ namespace Garnet.server
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
                             WriteNull();
-                            o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                            GetStringOutput(out output);
                         }
                         else
                         {
-                            SetResult(c, ref firstPending, ref outputArr, status, o);
-                            o = new StringOutput();
+                            SetResult(c, ref firstPending, ref outputArr, status, output);
+                            output = new StringOutput();
                         }
                     }
                 }
@@ -225,7 +225,7 @@ namespace Garnet.server
                 for (var i = 0; i < c - firstPending; i++)
                 {
                     var status = outputArr[i].Item1;
-                    var output = outputArr[i].Item2;
+                    output = outputArr[i].Item2;
                     if (status == GarnetStatus.OK)
                     {
                         ProcessOutput(output.SpanByteAndMemory);
@@ -327,19 +327,19 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
 
-            var o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetStringOutput(out var output);
 
-            var status = storageApi.GETRANGE(key, ref input, ref o);
+            var status = storageApi.GETRANGE(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
                 sessionMetrics?.incr_total_found();
-                ProcessOutput(o.SpanByteAndMemory);
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
                 sessionMetrics?.incr_total_notfound();
-                Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
+                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
                     SendAndReset();
             }
@@ -648,7 +648,7 @@ namespace Garnet.server
                     input.header.SetSetGetFlag();
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
-                StringOutput output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                GetStringOutput(out var output);
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
@@ -1415,7 +1415,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.MEMORY_USAGE);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetUnifiedOutput(out var output);
 
             var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
 

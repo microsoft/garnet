@@ -312,16 +312,16 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
-            var o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL(sbKey, ref o);
+            GetStringOutput(out var output);
+            var status = garnetApi.GETDEL(sbKey, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                ProcessOutput(o.SpanByteAndMemory);
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
-                Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
+                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                 WriteNull();
             }
 
@@ -449,7 +449,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetUnifiedOutput(out var output);
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
 
@@ -486,7 +486,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.PERSIST);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetUnifiedOutput(out var output);
 
             var status = storageApi.PERSIST(key, ref input, ref output);
 
@@ -523,7 +523,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetUnifiedOutput(out var output);
 
             var status = storageApi.TTL(key, ref input, ref output);
 
@@ -560,7 +560,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetUnifiedOutput(out var output);
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
 

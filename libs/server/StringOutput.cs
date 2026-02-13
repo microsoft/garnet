@@ -23,7 +23,7 @@ namespace Garnet.server
         /// </summary>
         public StringOutputFlags OutputFlags;
 
-        public bool HasError => (OutputFlags & StringOutputFlags.Error) != 0;
+        public readonly bool HasError => (OutputFlags & StringOutputFlags.Error) != 0;
 
         public StringOutput() => SpanByteAndMemory = new(null);
 
@@ -32,7 +32,7 @@ namespace Garnet.server
         public static unsafe StringOutput FromPinnedPointer(byte* pointer, int length)
             => new(SpanByteAndMemory.FromPinnedPointer(pointer, length));
 
-        public static unsafe StringOutput FromPinnedSpan(ReadOnlySpan<byte> span)
+        public static StringOutput FromPinnedSpan(ReadOnlySpan<byte> span)
             => new(SpanByteAndMemory.FromPinnedSpan(span));
 
         public void ConvertToHeap()

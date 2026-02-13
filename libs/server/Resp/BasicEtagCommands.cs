@@ -23,7 +23,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETWITHETAG);
-            var output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetStringOutput(out var output);
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
@@ -51,7 +51,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
-            var output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            GetStringOutput(out var output);
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)

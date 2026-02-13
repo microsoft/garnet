@@ -1,10 +1,33 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Flags for store outputs.
+    /// </summary>
+    [Flags]
+    public enum ObjectOutputFlags : byte
+    {
+        /// <summary>
+        /// No flags set
+        /// </summary>
+        None = 0,
+
+        /// <summary>
+        /// Remove key
+        /// </summary>
+        RemoveKey = 1,
+
+        /// <summary>
+        /// Wrong type of value
+        /// </summary>
+        WrongType = 1 << 1,
+    }
+
     /// <summary>
     /// Output type used by Garnet object store.
     /// Any field / property added to this struct must be set in the back-end (IFunctions) and used in the front-end (GarnetApi caller).
@@ -23,9 +46,9 @@ namespace Garnet.server
         public IGarnetObject GarnetObject;
 
         /// <summary>
-        /// Output header
+        /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
-        public ObjectOutputHeader Header;
+        public int result1;
 
         /// <summary>
         /// Output flags
