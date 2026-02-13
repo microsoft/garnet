@@ -5,6 +5,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.IO.Hashing;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -261,6 +262,185 @@ namespace Tsavorite.core
                     }
 
                     return (long)Rotr64(magicno * hashState, 4);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Variant 1: Unrolled scalar hash — reads 8 bytes (4 ushorts) at a time via ulong loads.
+        /// Produces the SAME hash output as HashBytes. Faster due to fewer memory accesses and reduced loop overhead.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long HashBytes_Unrolled(ReadOnlySpan<byte> byteSpan)
+        {
+            unsafe
+            {
+                fixed (byte* pbString = byteSpan)
+                {
+                    const ulong magicno = 40343;
+                    int len = byteSpan.Length;
+                    ulong hashState = (ulong)len;
+
+                    // Process 8 bytes (4 ushorts) at a time using ulong reads
+                    ulong* pBlock = (ulong*)pbString;
+                    int cbBuf = len / 2;
+                    int blockCount = cbBuf / 4;
+                    for (int i = 0; i < blockCount; i++, pBlock++)
+                    {
+                        ulong block = *pBlock;
+                        hashState = magicno * hashState + (block & 0xFFFF);
+                        hashState = magicno * hashState + ((block >> 16) & 0xFFFF);
+                        hashState = magicno * hashState + ((block >> 32) & 0xFFFF);
+                        hashState = magicno * hashState + (block >> 48);
+                    }
+
+                    // Handle remaining 0-3 ushorts
+                    char* pwString = (char*)pBlock;
+                    int remaining = cbBuf - blockCount * 4;
+                    for (int i = 0; i < remaining; i++, pwString++)
+                        hashState = magicno * hashState + *pwString;
+
+                    if ((len & 1) > 0)
+                    {
+                        byte* pC = (byte*)pwString;
+                        hashState = magicno * hashState + *pC;
+                    }
+
+                    return (long)Rotr64(magicno * hashState, 4);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Variant 2: Multi-lane parallel hash — processes 4 independent hash lanes simultaneously
+        /// to break the serial dependency chain. Produces a DIFFERENT hash output than HashBytes.
+        /// Faster due to instruction-level parallelism across the 4 independent accumulators.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long HashBytes_MultiLane(ReadOnlySpan<byte> byteSpan)
+        {
+            unsafe
+            {
+                fixed (byte* pbString = byteSpan)
+                {
+                    const ulong magicno = 40343;
+                    const ulong M2 = magicno * magicno;
+                    const ulong M3 = M2 * magicno;
+                    const ulong M4 = M3 * magicno;
+
+                    char* pwString = (char*)pbString;
+                    int len = byteSpan.Length;
+                    int cbBuf = len / 2;
+
+                    ulong h0 = (ulong)len;
+                    ulong h1 = 0;
+                    ulong h2 = 0;
+                    ulong h3 = 0;
+
+                    // Process 4 ushorts per iteration across 4 independent lanes
+                    int i = 0;
+                    int limit = cbBuf - 3;
+                    for (; i < limit; i += 4, pwString += 4)
+                    {
+                        h0 = M4 * h0 + pwString[0];
+                        h1 = M4 * h1 + pwString[1];
+                        h2 = M4 * h2 + pwString[2];
+                        h3 = M4 * h3 + pwString[3];
+                    }
+
+                    // Merge lanes: h = h0*M^3 + h1*M^2 + h2*M + h3
+                    ulong hashState = M3 * h0 + M2 * h1 + magicno * h2 + h3;
+
+                    // Handle remaining 0-3 ushorts
+                    for (; i < cbBuf; i++, pwString++)
+                        hashState = magicno * hashState + *pwString;
+
+                    if ((len & 1) > 0)
+                    {
+                        byte* pC = (byte*)pwString;
+                        hashState = magicno * hashState + *pC;
+                    }
+
+                    return (long)Rotr64(magicno * hashState, 4);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Variant 3: XxHash64-based hash — uses the hardware-accelerated XxHash64 implementation
+        /// from System.IO.Hashing. Produces a DIFFERENT hash output than HashBytes.
+        /// Fastest for longer keys due to full SIMD vectorization internally.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long HashBytes_XxHash(ReadOnlySpan<byte> byteSpan)
+        {
+            return (long)XxHash64.HashToUInt64(byteSpan);
+        }
+
+        /// <summary>
+        /// Variant 4: Wide-read hash — reads 8 bytes at a time and mixes with minimal multiplies.
+        /// Optimized for short keys (≤16 bytes). Produces a DIFFERENT hash output than HashBytes.
+        /// Uses 1 multiply per 8 bytes instead of 4, plus a final avalanche mix.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long HashBytes_WideRead(ReadOnlySpan<byte> byteSpan)
+        {
+            const ulong prime1 = 0x9E3779B97F4A7C15; // golden ratio * 2^64
+            const ulong prime2 = 0xBF58476D1CE4E5B9; // mix constant
+            const ulong prime3 = 0x94D049BB133111EB; // mix constant
+
+            unsafe
+            {
+                fixed (byte* ptr = byteSpan)
+                {
+                    int len = byteSpan.Length;
+                    ulong hash = (ulong)len * prime1;
+
+                    // Process 16-byte chunks (two ulongs)
+                    byte* p = ptr;
+                    byte* end = ptr + len;
+                    while (p + 16 <= end)
+                    {
+                        ulong a = *(ulong*)p;
+                        ulong b = *(ulong*)(p + 8);
+                        hash = BitOperations.RotateLeft(hash ^ (a * prime2), 27) * prime1 + prime3;
+                        hash = BitOperations.RotateLeft(hash ^ (b * prime2), 27) * prime1 + prime3;
+                        p += 16;
+                    }
+
+                    // Process remaining 8-byte chunk
+                    if (p + 8 <= end)
+                    {
+                        ulong a = *(ulong*)p;
+                        hash = BitOperations.RotateLeft(hash ^ (a * prime2), 27) * prime1 + prime3;
+                        p += 8;
+                    }
+
+                    // Process remaining 4-byte chunk
+                    if (p + 4 <= end)
+                    {
+                        uint a = *(uint*)p;
+                        hash ^= a * prime1;
+                        hash = BitOperations.RotateLeft(hash, 23) * prime2 + prime3;
+                        p += 4;
+                    }
+
+                    // Process remaining bytes
+                    while (p < end)
+                    {
+                        hash ^= *p * prime1;
+                        hash = BitOperations.RotateLeft(hash, 11) * prime2;
+                        p++;
+                    }
+
+                    // Final avalanche
+                    hash ^= hash >> 33;
+                    hash *= prime2;
+                    hash ^= hash >> 29;
+                    hash *= prime3;
+                    hash ^= hash >> 32;
+
+                    return (long)hash;
                 }
             }
         }
