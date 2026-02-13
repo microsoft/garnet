@@ -93,7 +93,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGet(key, ref input, ref output);
 
@@ -135,7 +135,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, respProtocolVersion);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGetAll(key, ref input, ref output);
 
@@ -178,7 +178,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGetMultiple(key, ref input, ref output);
 
@@ -256,7 +256,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countWithMetadata, seed);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = GarnetStatus.NOTFOUND;
 
@@ -264,7 +264,7 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare output
-                GetObjectOutput(out output);
+                output = GetObjectOutput();
                 status = storageApi.HashRandomField(key, ref input, ref output);
             }
 
@@ -494,7 +494,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = command == RespCommand.HKEYS
                 ? storageApi.HashKeys(key, ref input, ref output)
@@ -551,7 +551,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashIncrement(key, ref input, ref output);
 
@@ -633,7 +633,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: currIdx, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashExpire(key, ref input, ref output);
 
@@ -720,7 +720,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
 
@@ -779,7 +779,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.HashPersist(key, ref input, ref output);
 

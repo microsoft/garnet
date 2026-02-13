@@ -97,7 +97,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(key, ref input, ref output)
@@ -142,7 +142,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListPosition(key, ref input, ref output);
 
@@ -518,7 +518,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListRange(key, ref input, ref output);
 
@@ -569,7 +569,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListIndex(key, ref input, ref output);
 
@@ -820,7 +820,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListSet(key, ref input, ref output);
 

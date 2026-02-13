@@ -312,7 +312,7 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
             var status = garnetApi.GETDEL(sbKey, ref output);
 
             if (status == GarnetStatus.OK)
@@ -449,7 +449,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
-            GetUnifiedOutput(out var output);
+            var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
 
@@ -486,7 +486,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.PERSIST);
 
             // Prepare UnifiedOutput output
-            GetUnifiedOutput(out var output);
+            var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
 
@@ -523,7 +523,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command);
 
             // Prepare UnifiedOutput output
-            GetUnifiedOutput(out var output);
+            var output = GetUnifiedOutput();
 
             var status = storageApi.TTL(key, ref input, ref output);
 
@@ -560,7 +560,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command);
 
             // Prepare UnifiedOutput output
-            GetUnifiedOutput(out var output);
+            var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
 

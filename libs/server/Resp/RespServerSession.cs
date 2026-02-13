@@ -1507,19 +1507,13 @@ namespace Garnet.server
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
 
-        private void GetStringOutput(out StringOutput output)
-        {
-            output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-        }
+        private StringOutput GetStringOutput()
+            => StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-        private void GetObjectOutput(out ObjectOutput output)
-        {
-            output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-        }
+        private ObjectOutput GetObjectOutput()
+            => ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-        private void GetUnifiedOutput(out UnifiedOutput output)
-        {
-            output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-        }
+        private UnifiedOutput GetUnifiedOutput()
+            => UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
     }
 }

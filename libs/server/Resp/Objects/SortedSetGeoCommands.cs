@@ -85,7 +85,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
             var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.GeoAdd(key, ref input, ref output);
 
@@ -165,7 +165,7 @@ namespace Garnet.server
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.GeoCommands(key, ref input, ref output);
 

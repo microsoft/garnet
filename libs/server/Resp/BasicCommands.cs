@@ -33,7 +33,7 @@ namespace Garnet.server
             StringInput input = default;
 
             var key = parseState.GetArgSliceByRef(0);
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
@@ -101,7 +101,7 @@ namespace Garnet.server
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
             var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
             var status = storageApi.GETEX(key, ref input, ref output);
 
             switch (status)
@@ -126,7 +126,7 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0);
             // Optimistically ask storage to write output to network buffer
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
 
             // Set up input to instruct storage to write output to IMemory rather than
             // network buffer, if the operation goes pending.
@@ -164,7 +164,7 @@ namespace Garnet.server
             StringInput input = default;
             var firstPending = -1;
             (GarnetStatus, StringOutput)[] outputArr = null;
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
             var c = 0;
 
             for (; ; c++)
@@ -191,7 +191,7 @@ namespace Garnet.server
                         {
                             // Found in memory without IO, and no earlier pending, so we can add directly to the output
                             ProcessOutput(output.SpanByteAndMemory);
-                            GetStringOutput(out output);
+                            output = GetStringOutput();
                         }
                         else
                         {
@@ -205,7 +205,7 @@ namespace Garnet.server
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
                             WriteNull();
-                            GetStringOutput(out output);
+                            output = GetStringOutput();
                         }
                         else
                         {
@@ -327,7 +327,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
 
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
 
             var status = storageApi.GETRANGE(key, ref input, ref output);
 
@@ -648,7 +648,7 @@ namespace Garnet.server
                     input.header.SetSetGetFlag();
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
-                GetStringOutput(out var output);
+                var output = GetStringOutput();
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
@@ -1415,7 +1415,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.MEMORY_USAGE);
 
             // Prepare UnifiedOutput output
-            GetUnifiedOutput(out var output);
+            var output = GetUnifiedOutput();
 
             var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
 

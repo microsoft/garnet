@@ -63,7 +63,7 @@ namespace Garnet.server
             }
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
             var status = storageApi.ObjectScan(key, ref input, ref output);
 
             switch (status)

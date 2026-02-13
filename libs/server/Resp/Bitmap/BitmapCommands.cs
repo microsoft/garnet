@@ -152,7 +152,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.SETBIT, ref parseState, startIdx: 1, arg1: offset);
 
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
             var status = storageApi.StringSetBit(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
@@ -182,7 +182,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.GETBIT, ref parseState, startIdx: 1, arg1: offset);
 
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
             var status = storageApi.StringGetBit(key, ref input, ref output);
 
             if (status == GarnetStatus.NOTFOUND)
@@ -219,7 +219,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1);
 
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
 
             var status = storageApi.StringBitCount(key, ref input, ref output);
 
@@ -279,7 +279,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.BITPOS, ref parseState, startIdx: 1);
 
-            GetStringOutput(out var output);
+            var output = GetStringOutput();
 
             var status = storageApi.StringBitPosition(key, ref input, ref output);
 
@@ -504,7 +504,7 @@ namespace Garnet.server
 
                 input.parseState = parseState;
 
-                GetStringOutput(out var output);
+                var output = GetStringOutput();
                 var status = storageApi.StringBitField(sbKey, ref input, opCode,
                     ref output);
 

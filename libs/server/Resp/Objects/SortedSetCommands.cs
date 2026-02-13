@@ -31,7 +31,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetAdd(key, ref input, ref output);
 
@@ -183,7 +183,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRange(key, ref input, ref output);
 
@@ -261,7 +261,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetScore(key, ref input, ref output);
 
@@ -306,7 +306,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetScores(key, ref input, ref output);
 
@@ -375,7 +375,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetPop(key, ref input, ref output);
 
@@ -542,7 +542,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetCount(key, ref input, ref output);
 
@@ -656,7 +656,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetIncrement(key, ref input, ref output);
 
@@ -721,7 +721,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRank(key, ref input, ref output);
 
@@ -775,7 +775,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRemoveRange(key, ref input, ref output);
 
@@ -858,7 +858,7 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare output
-                GetObjectOutput(out output);
+                output = GetObjectOutput();
                 status = storageApi.SortedSetRandomMember(key, ref input, ref output);
             }
 
@@ -1776,7 +1776,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: currIdx, expirationWithOption.WordHead, expirationWithOption.WordTail);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetExpire(key, ref input, ref output);
 
@@ -1866,7 +1866,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
             var input = new ObjectInput(header, ref membersParseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref output);
 
@@ -1932,7 +1932,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
             var input = new ObjectInput(header, ref membersParseState);
 
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SortedSetPersist(key, ref input, ref output);
 

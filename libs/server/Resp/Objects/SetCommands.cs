@@ -413,7 +413,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SetMembers(key, ref input, ref output);
 
@@ -464,7 +464,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SetIsMember(key, ref input, ref output);
 
@@ -542,7 +542,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SetPop(key, ref input, ref output);
 
@@ -655,7 +655,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare output
-            GetObjectOutput(out var output);
+            var output = GetObjectOutput();
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
 
