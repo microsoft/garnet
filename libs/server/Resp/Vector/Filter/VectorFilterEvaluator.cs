@@ -4,7 +4,7 @@
 using System;
 using System.Text.Json;
 
-namespace Garnet.server
+namespace Garnet.server.Vector.Filter
 {
     /// <summary>
     /// Evaluator for vector filter expressions.

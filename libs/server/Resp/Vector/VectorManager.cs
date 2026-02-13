@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using Garnet.server.Vector.Filter;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -982,7 +983,7 @@ namespace Garnet.server
         {
             try
             {
-                using var jsonDoc = JsonDocument.Parse(attributeJson);
+                using var jsonDoc = JsonDocument.Parse(attributeJson.ToArray());
                 var root = jsonDoc.RootElement;
 
                 var tokens = VectorFilterTokenizer.Tokenize(filter);

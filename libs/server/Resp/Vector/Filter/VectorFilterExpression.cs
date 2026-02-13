@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-namespace Garnet.server
+namespace Garnet.server.Vector.Filter
 {
     /// <summary>
     /// Base class for filter expression tree nodes.

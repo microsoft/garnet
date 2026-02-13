@@ -3,7 +3,7 @@
 
 using System.Collections.Generic;
 
-namespace Garnet.server
+namespace Garnet.server.Vector.Filter
 {
     /// <summary>
     /// Token types for vector filter expressions.

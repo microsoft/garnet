@@ -4,7 +4,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Garnet.server
+namespace Garnet.server.Vector.Filter
 {
     /// <summary>
     /// Recursive descent parser for vector filter expressions.
