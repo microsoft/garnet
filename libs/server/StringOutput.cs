@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -34,6 +35,14 @@ namespace Garnet.server
 
         public static StringOutput FromPinnedSpan(ReadOnlySpan<byte> span)
             => new(SpanByteAndMemory.FromPinnedSpan(span));
+
+        /// <summary>
+        /// Reinterprets the output's underlying <see cref="SpanByteAndMemory.SpanByte"/> as a reference to an unmanaged value of type <typeparamref name="T"/>.
+        /// The span length must exactly match the size of <typeparamref name="T"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref T AsRef<T>() where T : unmanaged 
+            => ref SpanByteAndMemory.SpanByte.AsRef<T>();
 
         public void ConvertToHeap()
         {
