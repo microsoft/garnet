@@ -1507,12 +1507,15 @@ namespace Garnet.server
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private StringOutput GetStringOutput()
             => StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ObjectOutput GetObjectOutput()
             => ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private UnifiedOutput GetUnifiedOutput()
             => UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
     }
