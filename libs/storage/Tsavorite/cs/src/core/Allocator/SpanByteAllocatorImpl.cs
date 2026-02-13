@@ -237,10 +237,10 @@ namespace Tsavorite.core
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
+                ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, long beginAddress, ref TScanFunctions scanFunctions)
         {
             using SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
-            return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
+            return IterateHashChain(store, key, namespaceBytes, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />

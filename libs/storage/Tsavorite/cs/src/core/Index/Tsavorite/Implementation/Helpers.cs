@@ -214,7 +214,7 @@ namespace Tsavorite.core
                 // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
                 // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
                 // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
-                ReadCacheCheckTailAfterSplice(srcLogRecord.Key, ref stackCtx.hei, highestReadCacheAddressChecked);
+                ReadCacheCheckTailAfterSplice(srcLogRecord.Key, srcLogRecord.Namespace, ref stackCtx.hei, highestReadCacheAddressChecked);
             }
         }
 

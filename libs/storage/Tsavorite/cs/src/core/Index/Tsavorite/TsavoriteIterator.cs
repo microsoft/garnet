@@ -218,16 +218,17 @@ namespace Tsavorite.core
 
         private void ProcessNonTailmostMainKvRecord(RecordInfo recordInfo, ReadOnlySpan<byte> key)
         {
+            var iterLogRecord = mainKvIter as ISourceLogRecord;     // Can't use 'ref' on a 'using' variable
+
             // Not the tailmost record in the tag chain so add it to or remove it from tempKV (we want to return only the latest version).
             if (recordInfo.Tombstone)
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                if (tempbContext.ContainsKeyInMemory(key, out _).Found)
-                    _ = tempbContext.Delete(key);
+                if (tempbContext.ContainsKeyInMemory(key, iterLogRecord.Namespace, out _).Found)
+                    _ = tempbContext.Delete(in iterLogRecord);
             }
             else
             {
-                var iterLogRecord = mainKvIter as ISourceLogRecord;     // Can't use 'ref' on a 'using' variable
                 _ = tempbContext.Upsert(in iterLogRecord);
             }
         }
@@ -235,7 +236,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool IsTailmostMainKvRecord(ReadOnlySpan<byte> key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
+            stackCtx = new(store.storeFunctions.GetKeyHashCode64(key, mainKvIter.Namespace));
             if (store.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -247,8 +248,11 @@ namespace Tsavorite.core
                     if (mainKvRecordInfo.PreviousAddress >= store.Log.BeginAddress)
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                        if (tempbContext.ContainsKeyInMemory(key, out _).Found)
-                            _ = tempbContext.Delete(key);
+                        if (tempbContext.ContainsKeyInMemory(key, mainKvIter.Namespace, out _).Found)
+                        {
+                            var iterLogRecord = mainKvIter as ISourceLogRecord;
+                            _ = tempbContext.Delete(in iterLogRecord);
+                        }
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.

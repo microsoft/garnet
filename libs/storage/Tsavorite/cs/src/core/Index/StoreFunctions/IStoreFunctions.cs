@@ -12,11 +12,11 @@ namespace Tsavorite.core
     public interface IStoreFunctions
     {
         #region Key Comparer
-        /// <summary>Get a 64-bit hash code for a key</summary>
-        long GetKeyHashCode64(ReadOnlySpan<byte> key);
+        /// <summary>Get a 64-bit hash code for a key and namespace</summary>
+        long GetKeyHashCode64(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes);
 
-        /// <summary>Compare two keys for equality</summary>
-        bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
+        /// <summary>Compare two keys in namespaces for equality</summary>
+        bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> ns1, ReadOnlySpan<byte> k2, ReadOnlySpan<byte> ns2);
         #endregion Key Comparer
 
         #region Value Serializer

@@ -92,11 +92,15 @@ namespace Tsavorite.core
                 {
                     while (iter1.GetNext())
                     {
+                        var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
+
                         if (iter1.Info.Tombstone || cf.IsDeleted(in iter1))
-                            _ = tempbContext.Delete(iter1.Key);
+                        {
+                            _ = tempbContext.Delete(in iterLogRecord);
+                        }
                         else
                         {
-                            var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
+
                             _ = tempbContext.Upsert(in iterLogRecord);
                         }
                     }
@@ -122,7 +126,7 @@ namespace Tsavorite.core
                         ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
                     // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
-                    if (!tempbContext.ContainsKeyInMemory(iter3.Key, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+                    if (!tempbContext.ContainsKeyInMemory(iter3.Key, iter3.Namespace, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
                         continue;
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
@@ -149,7 +153,9 @@ namespace Tsavorite.core
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext())
             {
-                _ = tempbContext.Delete(iter.Key, default);
+                var iterLogRecord = iter as ISourceLogRecord;
+
+                _ = tempbContext.Delete(in iterLogRecord);
                 untilAddress = iter.NextAddress;
             }
         }

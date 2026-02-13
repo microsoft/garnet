@@ -68,7 +68,7 @@ namespace Tsavorite.core
                 do
                 {
                     if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                            sessionFunctions, srcLogRecord.Key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
+                            sessionFunctions, srcLogRecord.Key, srcLogRecord.Namespace, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
                 while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
@@ -94,12 +94,12 @@ namespace Tsavorite.core
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
 
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key, srcLogRecord.Namespace));
             OperationStatus status;
             bool needIO;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, srcLogRecord.Namespace, ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));

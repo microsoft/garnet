@@ -19,11 +19,20 @@ namespace Tsavorite.core
         /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalModifiedBitOperation(ReadOnlySpan<byte> key, out RecordInfo modifiedInfo, bool reset = true)
+        [SkipLocalsInit]
+        internal OperationStatus InternalModifiedBitOperation<TInput>(ReadOnlySpan<byte> key, ref TInput input, out RecordInfo modifiedInfo, bool reset = true)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(key)); ;
+            // TODO: Confirm most of this gets erased if appropriate
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(key, namespaceBytes));
 
             #region Trace back for record in in-memory HybridLog
             _ = FindTag(ref hei);
@@ -32,10 +41,11 @@ namespace Tsavorite.core
             if (logicalAddress >= hlogBase.HeadAddress)
             {
                 var logRecord = hlog.CreateLogRecord(logicalAddress);
-                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, logRecord.Key))
+                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, namespaceBytes, logRecord.Key, logRecord.Namespace))
                 {
                     logicalAddress = logRecord.Info.PreviousAddress;
-                    TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
+
+                    _ = TraceBackForKeyMatch(key, namespaceBytes, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
                 }
             }
             #endregion

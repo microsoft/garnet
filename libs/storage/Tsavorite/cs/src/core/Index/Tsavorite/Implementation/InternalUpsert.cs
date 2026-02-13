@@ -46,6 +46,7 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit]
         internal OperationStatus InternalUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
                             ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output,
                             ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
@@ -77,8 +78,27 @@ namespace Tsavorite.core
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
+                // TODO: Verify code gen erases most of this if appropriate
+                bool found;
+                if (InputExtraOptions<TInput>.Implements)
+                {
+                    Span<byte> namespaceBytes = stackalloc byte[8];
+                    if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytes))
+                    {
+                        found = TryFindRecordForUpdate(key, namespaceBytes, ref stackCtx, hlogBase.ReadOnlyAddress, out status);
+                    }
+                    else
+                    {
+                        found = TryFindRecordForUpdate(key, LogRecord.DefaultNamespace, ref stackCtx, hlogBase.ReadOnlyAddress, out status);
+                    }
+                }
+                else
+                {
+                    found = TryFindRecordForUpdate(key, LogRecord.DefaultNamespace, ref stackCtx, hlogBase.ReadOnlyAddress, out status);
+                }
+
                 // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
-                if (!TryFindRecordForUpdate(key, ref stackCtx, hlogBase.ReadOnlyAddress, out status))
+                if (!found)
                     return status;
 
                 // Note: Upsert does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert

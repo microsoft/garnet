@@ -46,6 +46,11 @@ namespace Tsavorite.core
         /// <summary>Number of bytes required to store the FillerLen</summary>
         internal const int FillerLengthSize = sizeof(int);
 
+        /// <summary>
+        /// Default <see cref="Namespace"/> if none is specified.
+        /// </summary>
+        public static ReadOnlySpan<byte> DefaultNamespace => [0];
+
         /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

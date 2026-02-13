@@ -105,7 +105,9 @@ namespace Garnet.server
         public GarnetStatus DELETE<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = unifiedContext.Delete(key.ReadOnlySpan);
+            UnifiedInput input = default;
+
+            var status = unifiedContext.Delete(key.ReadOnlySpan, ref input);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

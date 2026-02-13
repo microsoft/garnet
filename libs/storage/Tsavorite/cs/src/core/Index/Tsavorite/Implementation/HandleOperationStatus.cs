@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -152,6 +153,31 @@ namespace Tsavorite.core
 
                 // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
                 request.requestKey = pendingContext.requestKey is null ? default : pendingContext.requestKey.Get();
+
+                // TODO: confirm this gets erased as expected
+                if (InputExtraOptions<TInput>.Implements && pendingContext.input != null)
+                {
+                    // TODO: Optimize this to avoid the allocation if no namespace is present
+
+                    // Copying the namespace is safe, as 
+                    var namespaceBytesMem = MemoryPool<byte>.Shared.Rent(8);
+                    var namespaceBytesMut = namespaceBytesMem.Memory.Span;
+
+                    if (InputExtraOptions.TryGetNamespace(ref pendingContext.input.Get(), ref namespaceBytesMut))
+                    {
+                        request.requestNamespace = new(namespaceBytesMem, namespaceBytesMut.Length);
+                    }
+                    else
+                    {
+                        namespaceBytesMem.Dispose();
+                        request.requestNamespace = SpanByteAndMemory.FromPinnedSpan(LogRecord.DefaultNamespace);
+                    }
+                }
+                else
+                {
+                    request.requestNamespace = SpanByteAndMemory.FromPinnedSpan(LogRecord.DefaultNamespace);
+                }
+
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;

@@ -136,7 +136,7 @@ namespace Tsavorite.core
                         if (logRecord.IsSet)
                         {
                             var physicalAddress = logRecord.physicalAddress;
-                            var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
+                            var hash = storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace);
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -258,7 +258,7 @@ namespace Tsavorite.core
                     logRecord = new LogRecord(hlogBase.GetPhysicalAddress(logicalAddress));
                 }
 
-                var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
+                var hash = storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace);
                 if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
                     return logicalAddress;
                 logicalAddress = logRecord.Info.PreviousAddress;

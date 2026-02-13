@@ -144,12 +144,6 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => store.GetKeyHash(key);
-
-        /// <inheritdoc/>
-        public long GetKeyHash(ref ReadOnlySpan<byte> key) => store.GetKeyHash(key);
-
-        /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -165,13 +159,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key, ref TInput input)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
             try
             {
-                UnsafeResetModified(sessionFunctions, key);
+                UnsafeResetModified(sessionFunctions, key, ref input);
             }
             finally
             {
@@ -315,23 +309,23 @@ namespace Tsavorite.core
 
         #region Other Operations
 
-        internal void UnsafeResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal void UnsafeResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key, ref TInput input)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus status;
             do
-                status = store.InternalModifiedBitOperation(key, out _);
+                status = store.InternalModifiedBitOperation(key, ref input, out _);
             while (store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
         }
 
         /// <inheritdoc/>
-        internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key, ref TInput input)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
             try
             {
-                return UnsafeIsModified(sessionFunctions, key);
+                return UnsafeIsModified(sessionFunctions, key, ref input);
             }
             finally
             {
@@ -339,13 +333,13 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool UnsafeIsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal bool UnsafeIsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key, ref TInput input)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             RecordInfo modifiedInfo;
             OperationStatus status;
             do
-                status = store.InternalModifiedBitOperation(key, out modifiedInfo, false);
+                status = store.InternalModifiedBitOperation(key, ref input, out modifiedInfo, false);
             while (store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
             return modifiedInfo.Modified;
         }

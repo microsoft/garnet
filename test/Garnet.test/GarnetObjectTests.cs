@@ -44,10 +44,12 @@ namespace Garnet.test
             var key = new ReadOnlySpan<byte>([0]);
             var obj = new SortedSetObject();
 
-            _ = bContext.Upsert(key, obj);
-
+            IGarnetObject input = null;
             IGarnetObject output = null;
-            var status = bContext.Read(key, ref output);
+
+            _ = bContext.Upsert(key, ref input, obj, ref output);
+
+            var status = bContext.Read(key, ref input, ref output);
 
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(obj, output);
@@ -75,7 +77,10 @@ namespace Garnet.test
                 var key = new ReadOnlySpan<byte>([keyNum]);
                 obj.Add([15], 10);
 
-                _ = bContext.Upsert(key, obj);
+                IGarnetObject input = null;
+                IGarnetObject output = null;
+
+                _ = bContext.Upsert(key, ref input, obj, ref output);
             }
 
             void LocalRead()
@@ -83,9 +88,10 @@ namespace Garnet.test
                 using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
                 var bContext = session.BasicContext;
 
+                IGarnetObject input = null;
                 IGarnetObject output = null;
                 var key = new ReadOnlySpan<byte>([keyNum]);
-                var status = bContext.Read(key, ref output);
+                var status = bContext.Read(key, ref input, ref output);
 
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
@@ -112,9 +118,12 @@ namespace Garnet.test
                 var key = new ReadOnlySpan<byte>([keyNum]);
                 ((SortedSetObject)obj).Add([15], 10);
 
-                _ = bContext.Upsert(key, obj);
+                IGarnetObject input = null;
+                IGarnetObject output = null;
+
+                _ = bContext.Upsert(key, ref input, obj, ref output);
                 store.Log.Flush(true);
-                _ = bContext.RMW(key, ref obj);
+                _ = bContext.RMW(key, ref input, ref obj);
             }
 
             void LocalRead()
@@ -122,9 +131,10 @@ namespace Garnet.test
                 using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
                 var bContext = session.BasicContext;
 
+                IGarnetObject input = null;
                 IGarnetObject output = null;
                 var key = new ReadOnlySpan<byte>([keyNum]);
-                var status = bContext.Read(key, ref output);
+                var status = bContext.Read(key, ref input, ref output);
 
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));

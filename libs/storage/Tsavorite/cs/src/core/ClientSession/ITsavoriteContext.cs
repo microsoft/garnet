@@ -15,9 +15,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Obtain a code by which groups of keys will be sorted for Transactional locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
+        /// <param name="namespaceBytes">The namespace the key is contained in</param>
         /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{byte})"/></returns>
-        long GetKeyHash(ReadOnlySpan<byte> key);
+        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/></returns>
+        long GetKeyHash(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes);
     }
 
     /// <summary>
@@ -95,29 +96,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Read operation
         /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="output">The location to place the retrieved value</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default);
-
-        /// <summary>
-        /// Read operation
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="output">The location to place the retrieved value</param>
-        /// <param name="readOptions">Contains options controlling the Read operation</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Read operation
-        /// </summary>
         /// <param name="key"></param>
+        /// <param name="input"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default);
+        (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default);
 
         /// <summary>
         /// Read operation
@@ -126,7 +109,7 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default);
+        (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref TInput input, ref ReadOptions readOptions, TContext userContext = default);
 
         /// <summary>
         /// Read operation that accepts a <paramref name="recordMetadata"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
@@ -187,25 +170,6 @@ namespace Tsavorite.core
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="desiredValue"></param>
         /// <param name="output"></param>
@@ -237,25 +201,6 @@ namespace Tsavorite.core
         /// <param name="userContext"></param>
         /// <returns></returns>
         Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -296,23 +241,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Upsert operation with a disk log record
         /// </summary>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// Upsert operation with a disk log record
-        /// </summary>
-        /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
-        /// <param name="diskLogRecord">Log record that was read from disk</param>
-        /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord)
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// Upsert operation with a disk log record
-        /// </summary>
         /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
         /// <param name="input"></param>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
@@ -335,9 +263,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Upsert operation with a disk log record and user-supplied key
         /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
+        /// <param name="output"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="userContext"></param>
         /// <returns></returns>
         Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
+        /// Upsert operation log record.
+        /// </summary>
+        /// <param name="diskLogRecord">Log record that was read from disk</param>
+        /// <returns></returns>
+        Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -407,24 +348,35 @@ namespace Tsavorite.core
         /// Delete operation
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="input"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Delete(ReadOnlySpan<byte> key, TContext userContext = default);
+        Status Delete(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default);
 
         /// <summary>
         /// Delete operation
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="input"></param>
         /// <param name="deleteOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Delete(ReadOnlySpan<byte> key, ref DeleteOptions deleteOptions, TContext userContext = default);
+        Status Delete(ReadOnlySpan<byte> key, ref TInput input, ref DeleteOptions deleteOptions, TContext userContext = default);
+
+        /// <summary>
+        /// Delete operation
+        /// </summary>
+        /// <param name="logRecord"></param>
+        /// <returns></returns>
+        Status Delete<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
         /// Reset the modified bit of a record (for in memory records)
         /// </summary>
         /// <param name="key"></param>
-        void ResetModified(ReadOnlySpan<byte> key);
+        /// <param name="input"></param>
+        void ResetModified(ReadOnlySpan<byte> key, ref TInput input);
 
         /// <summary>
         /// Refresh session epoch and handle checkpointing phases. Used only

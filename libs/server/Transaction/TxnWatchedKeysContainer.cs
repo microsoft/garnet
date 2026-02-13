@@ -97,7 +97,9 @@ namespace Garnet.server
 
             keySlices[sliceCount].slice = slice;
             keySlices[sliceCount].isWatched = true;
-            keySlices[sliceCount].hash = Utility.HashBytes(slice.ReadOnlySpan);
+
+            // TODO: Doesn't this need to be a session functions?
+            keySlices[sliceCount].hash = Utility.HashBytes(slice.ReadOnlySpan, LogRecord.DefaultNamespace);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
             watchBufferPtr += key.Length;

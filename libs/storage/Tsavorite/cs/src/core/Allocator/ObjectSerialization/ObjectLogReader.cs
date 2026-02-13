@@ -83,10 +83,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.InitialIOSize"/> or less.</param>
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
+        /// <param name="requestNamespaceBytes">The requested namespace; we will compare to see if it matches the record.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, ReadOnlySpan<byte> requestNamespaceBytes, int segmentSizeBits)
         {
             Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
             if (readBuffers is null)
@@ -109,7 +110,7 @@ namespace Tsavorite.core
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
-                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
+                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, requestNamespaceBytes, logRecord.KeyOverflow.Span, logRecord.Namespace))
                         return false;
                 }
 

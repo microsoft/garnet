@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -28,18 +30,27 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
+        [SkipLocalsInit]
         internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            // TODO: Verify that most of this erases if TInput doesn't implement IInputExtraOptions
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref pendingContext.input.Get(), ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
             if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
                 goto NotFound;
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, pendingContext.requestKey.Get()))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, pendingContext.Namespace, pendingContext.requestKey.Get(), namespaceBytes))
                 goto NotFound;
 
             SpinWaitUntilClosed(request.logicalAddress);
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.Key, namespaceBytes));
 
             while (true)
             {
@@ -60,7 +71,7 @@ namespace Tsavorite.core
                     LogRecord memoryRecord = default;
                     if (!pendingContext.IsReadAtAddress)
                     {
-                        if (TryFindRecordInMemory(pendingContext.Key, ref stackCtx, ref pendingContext))
+                        if (TryFindRecordInMemory(pendingContext.Key, namespaceBytes, ref stackCtx, ref pendingContext))
                         {
                             memoryRecord = stackCtx.recSrc.CreateLogRecord();
                             if (memoryRecord.Info.Tombstone)
@@ -246,7 +257,7 @@ namespace Tsavorite.core
                     EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
 
-            // Must do this *after* Unlocking.
+                // Must do this *after* Unlocking.
             CheckRetry:
                 if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
                     return status;
@@ -283,6 +294,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
+        [SkipLocalsInit]
         internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -298,9 +310,18 @@ namespace Tsavorite.core
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.initialLatestLogicalAddress + 1;
             OperationStatus internalStatus;
+
+            // TODO: Confirm code gen erases this if TInput does not implement IInputExtraOptions
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref pendingContext.input.Get(), ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey.Get(), ref stackCtx,
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey.Get(), namespaceBytes, ref stackCtx,
                         currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
