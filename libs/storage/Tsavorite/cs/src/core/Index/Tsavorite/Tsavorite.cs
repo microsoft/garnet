@@ -186,9 +186,6 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => storeFunctions.GetKeyHashCode64(key);
-
         /// <summary>Get the hashcode for a key and namespace.</summary>
         public long GetKeyHash(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes) => storeFunctions.GetKeyHashCode64(key, namespaceBytes);
 
@@ -509,7 +506,7 @@ namespace Tsavorite.core
                 batch.GetInput(0, out var input);
                 batch.GetOutput(0, out var output);
 
-                var hash = storeFunctions.GetKeyHashCode64(key);
+                var hash = InputExtraOptions.GetKeyHashCode64(storeFunctions, key, ref input);
 
                 var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                 OperationStatus internalStatus;
@@ -544,8 +541,9 @@ namespace Tsavorite.core
                         var hashIx = 0;
                         for (; hashIx < PrefetchSize && nextBatchIx < batchCount; hashIx++)
                         {
+                            batch.GetOutput(nextBatchIx, out var input);
                             batch.GetKey(nextBatchIx, out var key);
-                            var hash = hashes[hashIx] = storeFunctions.GetKeyHashCode64(key);
+                            var hash = hashes[hashIx] = InputExtraOptions.GetKeyHashCode64(storeFunctions, key, ref input);
 
                             Sse.Prefetch0(tableAligned + (hash & sizeMask));
 
@@ -599,7 +597,7 @@ namespace Tsavorite.core
                         batch.GetInput(i, out var input);
                         batch.GetOutput(i, out var output);
 
-                        var hash = storeFunctions.GetKeyHashCode64(key);
+                        var hash = InputExtraOptions.GetKeyHashCode64(storeFunctions, key, ref input);
 
                         var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                         OperationStatus internalStatus;
@@ -622,7 +620,7 @@ namespace Tsavorite.core
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
-            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(key);
+            var keyHash = readOptions.KeyHash ?? InputExtraOptions.GetKeyHashCode64(storeFunctions, key, ref input);
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
@@ -735,19 +733,11 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [SkipLocalsInit]
-        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ReadOnlySpan<byte> namespaceBytes,  TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
-
-            // TODO: verify codegen erases this if TInput does not implement IInputExtraOptions
-            Span<byte> namespaceBytesMut = stackalloc byte[8];
-            scoped var namespaceBytes = LogRecord.DefaultNamespace;
-            if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytesMut))
-            {
-                namespaceBytes = namespaceBytesMut;
-            }
 
             do
                 internalStatus = InternalDelete(key, keyHash, namespaceBytes, ref context, ref pcontext, sessionFunctions);

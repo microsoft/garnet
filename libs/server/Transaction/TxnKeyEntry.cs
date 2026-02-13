@@ -77,7 +77,8 @@ namespace Garnet.server
 
         public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
         {
-            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
+            // Txn keys are always in the default namespace
+            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan, LogRecord.DefaultNamespace);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)

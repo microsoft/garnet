@@ -1978,8 +1978,10 @@ namespace Tsavorite.core
                     var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
                     var keyStartPtr = ptr + offsetToKeyStart;
 
+                    // TODO: How do we access namespaces here?
+
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
+                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, ctx.requestNamespace.ReadOnlySpan, new ReadOnlySpan<byte>(keyStartPtr, keyLength), LogRecord.DefaultNamespace))
                         return false;
 
                     // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.

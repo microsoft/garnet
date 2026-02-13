@@ -35,17 +35,10 @@ namespace Tsavorite.core
         #endregion Fields
 
         #region Key Comparer
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetKeyHashCode64(ReadOnlySpan<byte> key) => keyComparer.GetHashCode64(key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetKeyHashCode64(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes) => keyComparer.GetHashCode64(key, namespaceBytes);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => keyComparer.Equals(k1, k2);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

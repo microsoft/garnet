@@ -48,9 +48,6 @@ namespace Tsavorite.core
         public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => clientSession.store.GetKeyHash(key);
-
-        /// <inheritdoc/>
         public long GetKeyHash(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes) => clientSession.store.GetKeyHash(key, namespaceBytes);
 
         /// <inheritdoc/>
@@ -276,41 +273,53 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit]
         public Status Delete(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default)
-            => Delete(key, InputExtraOptions.GetKeyHashCode64(in clientSession.store.storeFunctions, key, ref input), ref input, userContext);
+        {
+            // TODO: confirm this is erased as expected
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
+            return Delete(key, InputExtraOptions.GetKeyHashCode64(in clientSession.store.storeFunctions, key, ref input), namespaceBytes, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit]
         public Status Delete(ReadOnlySpan<byte> key, ref TInput input, ref DeleteOptions deleteOptions, TContext userContext = default)
-            => Delete(key, deleteOptions.KeyHash ?? InputExtraOptions.GetKeyHashCode64(in clientSession.store.storeFunctions, key, ref input), ref input, userContext);
+        {
+            // TODO: confirm this is erased as expected
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
+            return Delete(key, deleteOptions.KeyHash ?? InputExtraOptions.GetKeyHashCode64(in clientSession.store.storeFunctions, key, ref input), namespaceBytes, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
-            TInput ignoredInput = default;
+            var hash = clientSession.store.storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace);
 
-            long hash;
-            if (logRecord.Namespace.IsEmpty)
-            {
-                hash = clientSession.store.storeFunctions.GetKeyHashCode64(logRecord.Key);
-            }
-            else
-            {
-                hash = clientSession.store.storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace);
-            }
-
-            return Delete(logRecord.Key, hash, ref ignoredInput);
+            return Delete(logRecord.Key, hash, logRecord.Namespace);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Delete(ReadOnlySpan<byte> key, long keyHash, ref TInput input, TContext userContext = default)
+        private Status Delete(ReadOnlySpan<byte> key, long keyHash, ReadOnlySpan<byte> namespaceBytes, TContext userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
             return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                    key, keyHash, ref input, userContext, sessionFunctions);
+                    key, keyHash, namespaceBytes, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

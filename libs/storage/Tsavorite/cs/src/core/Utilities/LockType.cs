@@ -32,7 +32,7 @@ namespace Tsavorite.core
     public interface ITransactionalKey
     {
         /// <summary>
-        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash(ReadOnlySpan{byte})"/>
+        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>
         /// </summary>
         public long KeyHash { get; }
 
@@ -52,6 +52,8 @@ namespace Tsavorite.core
         /// </summary>
         public PinnedSpanByte Key;
 
+        public PinnedSpanByte Namespace;
+
         #region ITransactionalKey
         /// <inheritdoc/>
         public long KeyHash { get; set; }
@@ -63,19 +65,21 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, LockType lockType, ITsavoriteContext context)
+        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, LockType lockType, ITsavoriteContext context)
         {
             Key = PinnedSpanByte.FromPinnedSpan(key);
+            Namespace = PinnedSpanByte.FromPinnedSpan(namespaceBytes);
             LockType = lockType;
-            KeyHash = context.GetKeyHash(key);
+            KeyHash = context.GetKeyHash(key, namespaceBytes);
         }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, long keyHash, LockType lockType, ITransactionalContext context)
+        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, long keyHash, ReadOnlySpan<byte> namespaceBytes, LockType lockType, ITransactionalContext context)
         {
             Key = PinnedSpanByte.FromPinnedSpan(key);
+            Namespace = PinnedSpanByte.FromPinnedSpan(namespaceBytes);
             KeyHash = keyHash;
             LockType = lockType;
         }

@@ -60,12 +60,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void LockForScan(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ReadOnlySpan<byte> key)
+        internal void LockForScan(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes)
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
             // This will always be an Ephemeral lock as it is not session-based
-            stackCtx = new(storeFunctions.GetKeyHashCode64(key));
+            stackCtx = new(storeFunctions.GetKeyHashCode64(key, namespaceBytes));
             _ = FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 

@@ -52,7 +52,7 @@ namespace Tsavorite.core
                 }
             }
 
-            return functions.GetKeyHashCode64(key);
+            return functions.GetKeyHashCode64(key, LogRecord.DefaultNamespace);
         }
 
         /// <summary>

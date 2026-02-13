@@ -24,7 +24,15 @@ namespace Tsavorite.core
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(key)); ;
+            // TODO: Confirm most of this gets erased if appropriate
+            Span<byte> namespaceBytesMut = stackalloc byte[8];
+            scoped var namespaceBytes = LogRecord.DefaultNamespace;
+            if (InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytesMut))
+            {
+                namespaceBytes = namespaceBytesMut;
+            }
+
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(key, namespaceBytes));
 
             #region Trace back for record in in-memory HybridLog
             _ = FindTag(ref hei);
@@ -33,27 +41,11 @@ namespace Tsavorite.core
             if (logicalAddress >= hlogBase.HeadAddress)
             {
                 var logRecord = hlog.CreateLogRecord(logicalAddress);
-                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, logRecord.Key))
+                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, namespaceBytes, logRecord.Key, logRecord.Namespace))
                 {
                     logicalAddress = logRecord.Info.PreviousAddress;
 
-                    // TODO: Confirm most of this gets erased if appropriate
-                    if(InputExtraOptions<TInput>.Implements)
-                    {
-                        Span<byte> namespaceBytes = stackalloc byte[8];
-                        if(InputExtraOptions.TryGetNamespace(ref input, ref namespaceBytes))
-                        {
-                            _ = TraceBackForKeyMatch(key, namespaceBytes, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
-                        }
-                        else
-                        {
-                            _ = TraceBackForKeyMatch(key, LogRecord.DefaultNamespace, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
-                        }
-                    }
-                    else
-                    {
-                        _ = TraceBackForKeyMatch(key, LogRecord.DefaultNamespace, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
-                    }
+                    _ = TraceBackForKeyMatch(key, namespaceBytes, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
                 }
             }
             #endregion

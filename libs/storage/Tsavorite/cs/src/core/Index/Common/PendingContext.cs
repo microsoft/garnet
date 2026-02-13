@@ -38,6 +38,7 @@ namespace Tsavorite.core
 
             /// <summary>The Key that was sent to this operation if it was RUMD.</summary>
             internal SpanByteHeapContainer requestKey;
+
             /// <summary>The hash of <see cref="requestKey"/> if it is present.</summary>
             internal long keyHash;
 
@@ -229,6 +230,16 @@ namespace Tsavorite.core
                 {
                     Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'Key'");
                     return diskLogRecord.Key;
+                }
+            }
+
+            /// <inheritdoc/>
+            public readonly ReadOnlySpan<byte> Namespace
+            {
+                get
+                {
+                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'Namespace'");
+                    return diskLogRecord.Namespace;
                 }
             }
             #endregion Shortcuts to contained DiskLogRecord

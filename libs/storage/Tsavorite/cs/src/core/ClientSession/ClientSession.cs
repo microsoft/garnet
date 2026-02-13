@@ -144,12 +144,6 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => store.GetKeyHash(key);
-
-        /// <inheritdoc/>
-        public long GetKeyHash(ref ReadOnlySpan<byte> key) => store.GetKeyHash(key);
-
-        /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

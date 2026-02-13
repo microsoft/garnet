@@ -35,15 +35,6 @@ namespace Tsavorite.core
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
-                goto NotFound;
-
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, pendingContext.requestKey.Get()))
-                goto NotFound;
-
-            SpinWaitUntilClosed(request.logicalAddress);
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.Key));
-
             // TODO: Verify that most of this erases if TInput doesn't implement IInputExtraOptions
             Span<byte> namespaceBytesMut = stackalloc byte[8];
             scoped var namespaceBytes = LogRecord.DefaultNamespace;
@@ -51,6 +42,15 @@ namespace Tsavorite.core
             {
                 namespaceBytes = namespaceBytesMut;
             }
+
+            if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
+                goto NotFound;
+
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, pendingContext.Namespace, pendingContext.requestKey.Get(), namespaceBytes))
+                goto NotFound;
+
+            SpinWaitUntilClosed(request.logicalAddress);
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.Key, namespaceBytes));
 
             while (true)
             {

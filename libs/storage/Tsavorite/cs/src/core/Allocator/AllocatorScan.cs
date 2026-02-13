@@ -33,10 +33,10 @@ namespace Tsavorite.core
         /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, ref TScanFunctions scanFunctions)
+        internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, ref TScanFunctions scanFunctions)
             where TScanFunctions : IScanIteratorFunctions
         {
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key, LogRecord.DefaultNamespace));
             if (!store.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -44,14 +44,14 @@ namespace Tsavorite.core
                 store.SkipReadCache(ref stackCtx, out _);
             if (stackCtx.recSrc.LogicalAddress < store.hlogBase.BeginAddress)
                 return false;
-            return IterateKeyVersions(store, key, stackCtx.recSrc.LogicalAddress, ref scanFunctions);
+            return IterateKeyVersions(store, key, namespaceBytes, stackCtx.recSrc.LogicalAddress, ref scanFunctions);
         }
 
         /// <summary>
         /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal abstract bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal abstract bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, long beginAddress, ref TScanFunctions scanFunctions)
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
@@ -90,7 +90,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions
         /// </summary>
-        internal bool IterateHashChain<TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+        internal bool IterateHashChain<TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
@@ -100,7 +100,7 @@ namespace Tsavorite.core
 
             long numRecords = 1;
             bool stop = false, continueOnDisk = false;
-            for (; !stop && iter.BeginGetPrevInMemory(key, out var logRecord, out continueOnDisk); numRecords++)
+            for (; !stop && iter.BeginGetPrevInMemory(key, namespaceBytes, out var logRecord, out continueOnDisk); numRecords++)
             {
                 OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                 try
@@ -108,7 +108,7 @@ namespace Tsavorite.core
                     // Iter records above readOnlyAddress will be in mutable log memory so the chain must be locked.
                     // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
                     if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
-                        store.LockForScan(ref stackCtx, key);
+                        store.LockForScan(ref stackCtx, key, namespaceBytes);
                     stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
                 }
                 catch (Exception ex)
@@ -130,7 +130,7 @@ namespace Tsavorite.core
                 try
                 {
                     var logicalAddress = iter.CurrentAddress;
-                    while (!stop && GetFromDiskAndPushToReader(key, ref logicalAddress, ref scanFunctions, numRecords, completionEvent, out stop))
+                    while (!stop && GetFromDiskAndPushToReader(key, namespaceBytes, ref logicalAddress, ref scanFunctions, numRecords, completionEvent, out stop))
                         ++numRecords;
                 }
                 catch (Exception ex)
@@ -148,7 +148,7 @@ namespace Tsavorite.core
             return !stop;
         }
 
-        internal bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+        internal bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
             where TScanFunctions : IScanIteratorFunctions
         {
@@ -156,7 +156,7 @@ namespace Tsavorite.core
             if (logicalAddress < BeginAddress)
                 return false;
 
-            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
+            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), SpanByteAndMemory.FromPinnedSpan(namespaceBytes), logicalAddress);
             AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
             completionEvent.Wait();
 
@@ -266,7 +266,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(storeFunctions.GetKeyHashCode64(srcLogRecord.Key, srcLogRecord.Namespace));
 
             OperationStatus internalStatus;
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);

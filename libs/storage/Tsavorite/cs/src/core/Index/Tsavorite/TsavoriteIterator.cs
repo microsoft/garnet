@@ -236,7 +236,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool IsTailmostMainKvRecord(ReadOnlySpan<byte> key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
+            stackCtx = new(store.storeFunctions.GetKeyHashCode64(key, mainKvIter.Namespace));
             if (store.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);

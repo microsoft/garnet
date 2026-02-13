@@ -24,6 +24,11 @@ namespace Tsavorite.core
         /// </summary>
         public PinnedSpanByte requestKey;
 
+        /// <summary>
+        /// Namespace; this is a shallow copy of the namespace in pendingContext, pointing to its requestKey.
+        /// </summary>
+        public SpanByteAndMemory requestNamespace;
+
         /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
         public DiskLogRecord diskLogRecord;
 
@@ -76,7 +81,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override readonly string ToString()
-            => $"id {id}, key {requestKey}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
+            => $"id {id}, key {requestKey}, ns {requestNamespace}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
@@ -100,10 +105,13 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="requestKey"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
         /// </remarks>
-        internal void Prepare(PinnedSpanByte requestKey, long logicalAddress)
+        internal void Prepare(PinnedSpanByte requestKey, SpanByteAndMemory requestNamespace, long logicalAddress)
         {
             request.DisposeRecord();
+            request.requestNamespace.Memory?.Dispose();
+
             request.requestKey = requestKey;
+            request.requestNamespace = requestNamespace;
             request.logicalAddress = logicalAddress;
         }
 
@@ -111,6 +119,8 @@ namespace Tsavorite.core
         internal void Set(ref AsyncIOContext ctx)
         {
             request.DisposeRecord();
+            request.requestNamespace.Memory?.Dispose();
+
             request = ctx;
             exception = null;
             _ = semaphore.Release(1);
@@ -120,6 +130,8 @@ namespace Tsavorite.core
         internal void SetException(Exception ex)
         {
             request.DisposeRecord();
+            request.requestNamespace.Memory?.Dispose();
+
             request = default;
             exception = ex;
             _ = semaphore.Release(1);
@@ -131,6 +143,8 @@ namespace Tsavorite.core
         public void Dispose()
         {
             request.DisposeRecord();
+            request.requestNamespace.Memory?.Dispose();
+
             semaphore?.Dispose();
         }
     }

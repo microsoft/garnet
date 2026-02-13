@@ -68,7 +68,7 @@ namespace Tsavorite.core
 
     internal interface IPushScanIterator
     {
-        bool BeginGetPrevInMemory(ReadOnlySpan<byte> key, out LogRecord logRecord, out bool continueOnDisk);
+        bool BeginGetPrevInMemory(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, out LogRecord logRecord, out bool continueOnDisk);
         void EndGetPrevInMemory();
 
         /// <summary>

@@ -651,7 +651,7 @@ namespace Tsavorite.core
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
+            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, ctx.requestNamespace.ReadOnlySpan, startPosition.SegmentSizeBits))
             {
                 // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
                 ctx.diskLogRecord.objectDisposer = obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
@@ -721,6 +721,7 @@ namespace Tsavorite.core
                 result.readBuffers.nextFileReadPosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
                 ReadOnlySpan<byte> noKey = default;
+                ReadOnlySpan<byte> noNamespace = default;
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
@@ -736,7 +737,7 @@ namespace Tsavorite.core
                     {
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
-                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, startPosition.SegmentSizeBits);
+                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, noNamespace, startPosition.SegmentSizeBits);
                     }
                 }
 
@@ -785,10 +786,10 @@ namespace Tsavorite.core
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
-                ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
+                ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, long beginAddress, ref TScanFunctions scanFunctions)
         {
             using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
-            return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
+            return IterateHashChain(store, key, namespaceBytes, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />

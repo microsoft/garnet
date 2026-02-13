@@ -55,7 +55,10 @@ namespace Tsavorite.core
                     ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
                         ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)    // Most keys are inline and this is faster
                         : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
-                    if (storeFunctions.KeysEqual(key, keySpan))
+
+                    ReadOnlySpan<byte> namespaceSpan = LogRecord.DefaultNamespace;
+
+                    if (storeFunctions.KeysEqual(key, namespaceBytes, keySpan, namespaceSpan))
                     {
                         // Keep these at the current readcache location; they'll be the caller's source record.
                         stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
@@ -225,7 +228,7 @@ namespace Tsavorite.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCheckTailAfterSplice(ReadOnlySpan<byte> key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
+        private void ReadCacheCheckTailAfterSplice(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCheckTailAfterSplice if !UseReadCache");
 
@@ -238,7 +241,7 @@ namespace Tsavorite.core
             {
                 var logRecord = readcache.CreateLogRecord(entry.Address);
                 ref var recordInfo = ref logRecord.InfoRef;
-                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, logRecord.Key))
+                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, namespaceBytes, logRecord.Key, logRecord.Namespace))
                 {
                     recordInfo.SetInvalidAtomic();
                     return;
@@ -291,7 +294,7 @@ namespace Tsavorite.core
                 Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
-                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
+                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace));
                 if (!FindTag(ref hei))
                     goto NextRecord;
 
@@ -323,7 +326,7 @@ namespace Tsavorite.core
                 // Due to collisions, we can compare the hash code *mask* (i.e. the hash bucket index), not the key
                 var mask = state[resizeInfo.version].size_mask;
                 var rc_mask = hei.hash & mask;
-                var pa_mask = storeFunctions.GetKeyHashCode64(logRecord.Key) & mask;
+                var pa_mask = storeFunctions.GetKeyHashCode64(logRecord.Key, logRecord.Namespace) & mask;
                 Debug.Assert(rc_mask == pa_mask, "The keyHash mask of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");
 #endif
 

@@ -15,7 +15,7 @@ namespace Tsavorite.core
             ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key, namespaceBytes));
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
