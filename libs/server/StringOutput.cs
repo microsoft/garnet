@@ -41,7 +41,7 @@ namespace Garnet.server
         /// The span length must exactly match the size of <typeparamref name="T"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref T AsRef<T>() where T : unmanaged 
+        public ref T AsRef<T>() where T : unmanaged
             => ref SpanByteAndMemory.SpanByte.AsRef<T>();
 
         public void ConvertToHeap()
