@@ -46,7 +46,7 @@ namespace Garnet.server
 
         public void ConvertToHeap()
         {
-            // Does not convert to heap when going pending, because we immediately complete pending operations for main store.
+            // Does not convert to heap when going pending, because we complete all pending operations before releasing the pinned source bytes.
         }
 
         public void Dispose()
