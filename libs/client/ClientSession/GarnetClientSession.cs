@@ -181,9 +181,12 @@ namespace Garnet.client
 
             try
             {
-                _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
+
                 if (clientName != null)
+                {
+                    _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
                     _ = ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
             }
             catch (Exception e)
             {
