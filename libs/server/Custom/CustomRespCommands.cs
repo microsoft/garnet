@@ -96,14 +96,14 @@ namespace Garnet.server
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            var output = new SpanByteAndMemory(null);
+            var output = new StringOutput();
             if (type == CommandType.ReadModifyWrite)
             {
                 _ = storageApi.RMW_MainStore(key, ref input, ref output);
-                Debug.Assert(!output.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
-                if (output.Memory != null)
-                    SendAndReset(output.Memory, output.Length);
+                if (output.SpanByteAndMemory.Memory != null)
+                    SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                 else
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -111,19 +111,19 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.Read_MainStore(key, ref input, ref output);
-                Debug.Assert(!output.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (output.Memory != null)
-                        SendAndReset(output.Memory, output.Length);
+                    if (output.SpanByteAndMemory.Memory != null)
+                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                     else
                         while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                 }
                 else
                 {
-                    Debug.Assert(output.Memory == null);
+                    Debug.Assert(output.SpanByteAndMemory.Memory == null);
                     WriteNull();
                 }
             }
@@ -228,16 +228,16 @@ namespace Garnet.server
             var cmd = customCommandManagerSession.GetCustomRespCommand(customCommand.id);
             var stringInput = new StringInput(cmd, ref customCommandParseState, arg1: inputArg);
 
-            var _output = new SpanByteAndMemory(null);
+            var _output = new StringOutput();
             if (customCommand.type == CommandType.ReadModifyWrite)
             {
                 _ = storageApi.RMW_MainStore(key, ref stringInput, ref _output);
-                Debug.Assert(!_output.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
-                if (_output.Memory != null)
+                if (_output.SpanByteAndMemory.Memory != null)
                 {
-                    output = scratchBufferBuilder.FormatScratch(0, _output.ReadOnlySpan);
-                    _output.Memory.Dispose();
+                    output = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
+                    _output.SpanByteAndMemory.Memory.Dispose();
                 }
                 else
                 {
@@ -247,14 +247,14 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.Read_MainStore(key, ref stringInput, ref _output);
-                Debug.Assert(!_output.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (_output.Memory != null)
+                    if (_output.SpanByteAndMemory.Memory != null)
                     {
-                        output = scratchBufferBuilder.FormatScratch(0, _output.ReadOnlySpan);
-                        _output.Memory.Dispose();
+                        output = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
+                        _output.SpanByteAndMemory.Memory.Dispose();
                     }
                     else
                     {
@@ -263,7 +263,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    Debug.Assert(_output.Memory == null);
+                    Debug.Assert(_output.SpanByteAndMemory.Memory == null);
                     if (respProtocolVersion >= 3)
                         output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
                     else

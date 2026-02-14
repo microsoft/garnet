@@ -87,9 +87,9 @@ namespace Garnet.server
         long txnVersion;
         private TransactionStoreTypes storeTypes;
 
-        internal TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
+        internal TransactionalContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
             => stringTransactionalContext;
-        internal TransactionalUnsafeContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
+        internal TransactionalUnsafeContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
             => stringBasicContext.Session.TransactionalUnsafeContext;
         internal TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectTransactionalContext
             => objectTransactionalContext;

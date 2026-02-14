@@ -25,7 +25,7 @@ namespace Garnet.server
                 if (Set.Add(member.ToArray()))
 #endif
                 {
-                    output.Header.result1++;
+                    output.result1++;
                     UpdateSize(member);
                 }
             }
@@ -40,7 +40,7 @@ namespace Garnet.server
             foreach (var item in Set)
             {
                 writer.WriteBulkString(item);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -55,7 +55,7 @@ namespace Garnet.server
             var isMember = Set.Contains(member.ToArray());
 #endif
             writer.WriteInt32(isMember ? 1 : 0);
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -75,7 +75,7 @@ namespace Garnet.server
                 writer.WriteInt32(isMember ? 1 : 0);
             }
 
-            output.Header.result1 = input.parseState.Count;
+            output.result1 = input.parseState.Count;
         }
 
         private void SetRemove(ref ObjectInput input, ref ObjectOutput output)
@@ -90,7 +90,7 @@ namespace Garnet.server
                 if (Set.Remove(field.ToArray()))
 #endif
                 {
-                    output.Header.result1++;
+                    output.result1++;
                     UpdateSize(field, false);
                 }
             }
@@ -99,7 +99,7 @@ namespace Garnet.server
         private void SetLength(ref ObjectOutput output)
         {
             // SCARD key
-            output.Header.result1 = Set.Count;
+            output.result1 = Set.Count;
         }
 
         private void SetPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -151,7 +151,7 @@ namespace Garnet.server
                 countDone++;
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
 
         private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -230,7 +230,7 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
     }
 }
