@@ -28,6 +28,7 @@ namespace Garnet.server
         readonly int networkConnectionLimit;
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
+        volatile bool isListening;
 
         /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
@@ -117,8 +118,29 @@ namespace Garnet.server
             }
 
             listenSocket.Listen(512);
+            isListening = true;
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
+        }
+
+        /// <inheritdoc />
+        public override void StopListening()
+        {
+            if (!isListening)
+                return;
+
+            isListening = false;
+            try
+            {
+                // Close the listen socket to stop accepting new connections
+                // This will cause any pending AcceptAsync to complete with an error
+                listenSocket.Close();
+                logger?.LogDebug("Stopped accepting new connections on {endpoint}", EndPoint);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogDebug(ex, "Error closing listen socket on {endpoint}", EndPoint);
+            }
         }
 
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
@@ -127,9 +149,18 @@ namespace Garnet.server
             {
                 do
                 {
+                    // Check isListening flag before processing and before calling AcceptAsync again
+                    if (!isListening)
+                    {
+                        // Dispose any accepted socket that won't be handled
+                        e.AcceptSocket?.Dispose();
+                        e.AcceptSocket = null;
+                        break;
+                    }
+
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
-                } while (!listenSocket.AcceptAsync(e));
+                } while (isListening && !listenSocket.AcceptAsync(e));
             }
             // socket disposed
             catch (ObjectDisposedException) { }
