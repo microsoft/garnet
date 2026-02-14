@@ -224,9 +224,11 @@ namespace Garnet.client
 
             try
             {
-                _ = ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false).GetAwaiter().GetResult();
                 if (SETNAME != null)
+                {
+                    _ = ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false).GetAwaiter().GetResult();
                     _ = ExecuteForStringResultAsync(CLIENT, SETNAME).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
             }
             catch (Exception e)
             {

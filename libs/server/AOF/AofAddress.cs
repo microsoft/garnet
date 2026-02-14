@@ -151,7 +151,7 @@ namespace Garnet.server
             var aofAddress = new AofAddress(count);
             var idx = 0;
             var value = 0L;
-
+            var negative = false;
             for (var i = 0; i < span.Length; i++)
             {
                 var c = span[i];
@@ -164,6 +164,10 @@ namespace Garnet.server
                 {
                     value = value * 10 + (c - '0');
                 }
+                else if(c == '-')
+                {
+                    negative = true;
+                }
                 else
                 {
                     throw new FormatException($"Invalid character '{c}' in AofAddress string.");
@@ -171,7 +175,7 @@ namespace Garnet.server
             }
 
             // Handle last value
-            aofAddress[idx] = value;
+            aofAddress[idx] = value * (negative ? -1 : 1);
             return aofAddress;
         }
 
