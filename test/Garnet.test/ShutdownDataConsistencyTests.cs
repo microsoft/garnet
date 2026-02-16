@@ -257,9 +257,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Scenario 5: No finalization at all (baseline - expect potential data loss).
+        /// Scenario 5: No finalization at all (baseline - result is configuration-dependent).
         /// Neither AOF commit nor checkpoint before shutdown.
-        /// This serves as a negative baseline to confirm that finalization is actually needed.
+        /// Recovery results may vary if data was already persisted by background AOF or storage tier spill.
         /// </summary>
         [Test]
         public void NoFinalization_DataConsistencyTest()
@@ -269,7 +269,7 @@ namespace Garnet.test
 
             PopulateData();
 
-            // No finalization at all - just dispose
+            // No explicit finalization before shutdown
             server.Dispose(false);
 
             // Recover and verify
@@ -281,8 +281,7 @@ namespace Garnet.test
             TestContext.Progress.WriteLine(
                 $"[No Finalization] Main store: {mainRecovered}/{KeyCount}, Object store: {objRecovered}/{KeyCount}");
 
-            // This is a baseline test - data loss is expected here.
-            // The purpose is to show that finalization (AOF commit and/or checkpoint) is required.
+            // Baseline observation only: recovery depends on prior persistence behavior.
             TestContext.Progress.WriteLine(
                 $"[No Finalization] Data loss: main store={KeyCount - mainRecovered}, object store={KeyCount - objRecovered}");
         }
