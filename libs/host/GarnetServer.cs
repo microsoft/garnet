@@ -437,9 +437,10 @@ namespace Garnet
         /// Stops accepting new connections, waits for active connections to complete, commits AOF, and takes checkpoint if needed.
         /// </summary>
         /// <param name="timeout">Timeout for waiting on active connections (default: 30 seconds)</param>
+        /// <param name="noSave">If true, skip data persistence (AOF commit and checkpoint) during shutdown</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>Task representing the async shutdown operation</returns>
-        public async Task ShutdownAsync(TimeSpan? timeout = null, CancellationToken token = default)
+        public async Task ShutdownAsync(TimeSpan? timeout = null, bool noSave = false, CancellationToken token = default)
         {
             var shutdownTimeout = timeout ?? TimeSpan.FromSeconds(30);
 
@@ -464,17 +465,24 @@ namespace Garnet
             }
             finally
             {
-                // Always attempt AOF commit and checkpoint as best-effort,
-                // even if connection draining was cancelled or failed.
-                // Use a bounded timeout instead of the caller's token to ensure completion.
-                using var finalizeCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                try
+                if (!noSave)
                 {
-                    await FinalizeDataAsync(finalizeCts.Token).ConfigureAwait(false);
+                    // Attempt AOF commit and checkpoint as best-effort,
+                    // even if connection draining was cancelled or failed.
+                    // Use a bounded timeout instead of the caller's token to ensure completion.
+                    using var finalizeCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    try
+                    {
+                        await FinalizeDataAsync(finalizeCts.Token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error during data finalization");
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    logger?.LogError(ex, "Error during data finalization");
+                    logger?.LogInformation("Shutdown with noSave flag - skipping data persistence.");
                 }
             }
         }
