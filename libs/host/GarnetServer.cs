@@ -582,28 +582,6 @@ namespace Garnet
         /// </summary>
         private async Task FinalizeDataAsync(CancellationToken token)
         {
-            // Commit AOF before checkpoint/shutdown
-            if (opts.EnableAOF)
-            {
-                logger?.LogDebug("Committing AOF before shutdown...");
-                try
-                {
-                    var commitSuccess = await Store.CommitAOFAsync(token).ConfigureAwait(false);
-                    if (commitSuccess)
-                    {
-                        logger?.LogDebug("AOF committed successfully.");
-                    }
-                    else
-                    {
-                        logger?.LogInformation("AOF commit skipped (another commit in progress or replica mode).");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Error committing AOF during shutdown");
-                }
-            }
-
             // Take checkpoint for tiered storage
             if (opts.EnableStorageTier)
             {
@@ -625,6 +603,28 @@ namespace Garnet
                     logger?.LogError(ex, "Error taking checkpoint during shutdown");
                 }
             }
+
+            // Commit AOF after checkpoint to ensure all data is persisted, but only if AOF is enabled and we're not in replica mode (since replicas should not commit AOF)
+            if (opts.EnableAOF)
+            {
+                logger?.LogDebug("Committing AOF before shutdown...");
+                try
+                {
+                    var commitSuccess = await Store.CommitAOFAsync(token).ConfigureAwait(false);
+                    if (commitSuccess)
+                    {
+                        logger?.LogDebug("AOF committed successfully.");
+                    }
+                    else
+                    {
+                        logger?.LogInformation("AOF commit skipped (another commit in progress or replica mode).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error committing AOF during shutdown");
+                }
+            }            
         }
 
         /// <summary>
