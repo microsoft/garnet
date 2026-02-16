@@ -28,7 +28,6 @@ namespace Garnet.server
         readonly int networkConnectionLimit;
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
-        volatile bool isListening;
 
         /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
@@ -118,7 +117,6 @@ namespace Garnet.server
             }
 
             listenSocket.Listen(512);
-            isListening = true;
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
         }
@@ -126,10 +124,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public override void StopListening()
         {
-            if (!isListening)
-                return;
-
-            isListening = false;
             try
             {
                 // Close the listen socket to stop accepting new connections
@@ -149,18 +143,9 @@ namespace Garnet.server
             {
                 do
                 {
-                    // Check isListening flag before processing and before calling AcceptAsync again
-                    if (!isListening)
-                    {
-                        // Dispose any accepted socket that won't be handled
-                        e.AcceptSocket?.Dispose();
-                        e.AcceptSocket = null;
-                        break;
-                    }
-
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
-                } while (isListening && !listenSocket.AcceptAsync(e));
+                } while (!listenSocket.AcceptAsync(e));
             }
             // socket disposed
             catch (ObjectDisposedException) { }
