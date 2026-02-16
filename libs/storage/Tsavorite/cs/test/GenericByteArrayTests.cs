@@ -59,7 +59,7 @@ namespace Tsavorite.test
             objlog?.Dispose();
             objlog = null;
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         private static byte[] GetByteArray(int i)

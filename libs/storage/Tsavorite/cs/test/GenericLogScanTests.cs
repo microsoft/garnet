@@ -73,7 +73,7 @@ namespace Tsavorite.test
             objlog?.Dispose();
             objlog = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal struct GenericPushScanTestFunctions : IScanIteratorFunctions<MyKey, MyValue>

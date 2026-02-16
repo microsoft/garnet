@@ -63,7 +63,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir, wait: true);
+            OnTearDown(waitForDelete: true);
         }
 
         const int NumRecords = 1000;

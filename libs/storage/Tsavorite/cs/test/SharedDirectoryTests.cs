@@ -47,7 +47,7 @@ namespace Tsavorite.test.recovery.sumstore
         {
             original.TearDown();
             clone.TearDown();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

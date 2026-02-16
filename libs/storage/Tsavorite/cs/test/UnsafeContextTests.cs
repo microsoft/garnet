@@ -62,7 +62,7 @@ namespace Tsavorite.test.UnsafeContext
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         private void AssertCompleted(Status expected, Status actual)

@@ -29,6 +29,7 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="KeraLua" />
+    <PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
   <ItemGroup>

@@ -44,7 +44,7 @@ namespace Tsavorite.test.Session
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test]

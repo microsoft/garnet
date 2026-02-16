@@ -146,7 +146,7 @@ namespace Tsavorite.test
             store = null;
             _log?.Dispose();
             _log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

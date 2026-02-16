@@ -107,7 +107,7 @@ namespace Tsavorite.test.StructWithString
             objlog = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         void Populate()

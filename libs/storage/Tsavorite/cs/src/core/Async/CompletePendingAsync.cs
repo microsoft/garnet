@@ -47,8 +47,6 @@ namespace Tsavorite.core
 
                 if (sessionFunctions.Ctx.HasNoPendingRequests) return;
 
-                InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-
                 Thread.Yield();
             }
         }

@@ -532,6 +532,7 @@ namespace Resp.benchmark
                 cts.Cancel();
                 Thread.Yield();
             }
+            epoch.Dispose();
         }
 
         public async void OpRunnerGarnetClient(int thread_id)

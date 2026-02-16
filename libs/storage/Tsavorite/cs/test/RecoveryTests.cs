@@ -74,7 +74,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Do NOT clean up here unless specified, as tests use this TearDown() to prepare for recovery
             if (deleteDir)
-                DeleteDirectory(MethodTestDir);
+                OnTearDown();
         }
 
         private void PrepareToRecover(TestDeviceType deviceType)

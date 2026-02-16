@@ -9,22 +9,43 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public interface IEpochAccessor
-    {
-        bool ReleaseIfHeld();
-        void Resume();
-    }
-
     /// <summary>
     /// Epoch protection
     /// </summary>
     public sealed unsafe class LightEpoch : IEpochAccessor
     {
         /// <summary>
-        /// Store thread-static metadata separately from the LightEpoch class because LightEpoch has a static ctor,
-        /// and this inhibits optimization of the .NET helper function that determines the base address of the static variables.
-        /// This is expensive as it goes through multiple lookups, so lift these into a class that does not have a static ctor.
-        /// TODO: This should be fixed in .NET 8; verify this and remove the Metadata class code when we no longer support pre-NET.8.
+        /// Buffer to track information for LightEpoch instances. This is used:
+        /// (1) in AssignInstance, to assign a unique instanceId to each LightEpoch instance, and
+        /// (2) in Metadata, to track per-thread epoch table entries for each LightEpoch instance.
+        /// </summary>
+        [StructLayout(LayoutKind.Explicit, Size = MaxInstances * sizeof(int))]
+        private struct InstanceIndexBuffer
+        {
+            /// <summary>
+            /// Maximum number of concurrent instances of LightEpoch supported.
+            /// </summary>
+            internal const int MaxInstances = 16;
+
+            /// <summary>
+            /// Anchor field for the buffer.
+            /// </summary>
+            [FieldOffset(0)]
+            int field0;
+
+            /// <summary>
+            /// Reference to the entry for the given instance ID.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal ref int GetRef(int instanceId)
+            {
+                Debug.Assert(instanceId >= 0 && instanceId < MaxInstances);
+                return ref Unsafe.AsRef<int>((int*)Unsafe.AsPointer(ref field0) + instanceId);
+            }
+        }
+
+        /// <summary>
+        /// Store for thread-static metadata.
         /// </summary>
         private class Metadata
         {
@@ -47,16 +68,18 @@ namespace Tsavorite.core
             internal static ushort startOffset2;
 
             /// <summary>
-            /// A thread's entry in the epoch table.
+            /// This is the thread-static index for fast access to the tableAligned index 
+            /// that is obtained when each LightEpoch instance calls ReserveEntry.
+            /// The instanceId of the LightEpoch instance (assigned to the instance 
+            /// at constructor time using InstanceTracker) is the lookup offset into 
+            /// Entries.
+            /// 
+            /// Note that Entries effectively gives us ThreadLocal{T} semantics of 
+            /// (instance, thread)-specific metadata, without the overhead of 
+            /// ThreadLocal{T}.
             /// </summary>
             [ThreadStatic]
-            internal static int threadEntryIndex;
-
-            /// <summary>
-            /// Number of instances using this entry
-            /// </summary>
-            [ThreadStatic]
-            internal static int threadEntryIndexCount;
+            internal static InstanceIndexBuffer Entries;
         }
 
         /// <summary>
@@ -85,8 +108,26 @@ namespace Tsavorite.core
         readonly Entry[] tableRaw;
         readonly Entry* tableAligned;
 
-        static readonly Entry[] threadIndex;
-        static readonly Entry* threadIndexAligned;
+        /// <summary>
+        /// Semaphore for threads waiting for an epoch table entry
+        /// </summary>
+        readonly SemaphoreSlim waiterSemaphore = new(0);
+
+        /// <summary>
+        /// Cancellation token source used to cancel threads waiting on the semaphore during Dispose.
+        /// </summary>
+        readonly CancellationTokenSource cts = new();
+
+        /// <summary>
+        /// Number of threads waiting for an epoch table entry (lower 31 bits).
+        /// MSB is set during Dispose to prevent new waiters from entering.
+        /// </summary>
+        volatile int waiterCount = 0;
+
+        /// <summary>
+        /// Flag (MSB) used to mark the epoch as disposed in <see cref="waiterCount"/>.
+        /// </summary>
+        const int kDisposedFlag = unchecked((int)0x80000000);
 
         /// <summary>
         /// List of action, epoch pairs containing actions to be performed when an epoch becomes safe to reclaim.
@@ -106,27 +147,25 @@ namespace Tsavorite.core
         internal long SafeToReclaimEpoch;
 
         /// <summary>
-        /// Static constructor to setup shared cache-aligned space
-        /// to store per-entry count of instances using that entry
+        /// ID of this LightEpoch instance
         /// </summary>
-        static LightEpoch()
-        {
-            long p;
+        readonly int instanceId;
 
-            // Over-allocate to do cache-line alignment
-            threadIndex = GC.AllocateArray<Entry>(kTableSize + 2, true);
-            p = (long)Unsafe.AsPointer(ref threadIndex[0]);
-
-            // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
-            threadIndexAligned = (Entry*)p2;
-        }
+        /// <summary>
+        /// This is the LightEpoch-level static buffer (array) of available instance slots.
+        /// On LightEpoch instance creation, it is used by SelectInstance() to find an
+        /// available slot in this array; this becomes the LightEpoch instance's instanceId,
+        /// which is the lookup index into the thread-static Metadata.Entries.
+        /// </summary>
+        static InstanceIndexBuffer InstanceTracker;
 
         /// <summary>
         /// Instantiate the epoch table
         /// </summary>
         public LightEpoch()
         {
+            instanceId = SelectInstance();
+
             long p;
 
             tableRaw = GC.AllocateArray<Entry>(kTableSize + 2, true);
@@ -145,13 +184,68 @@ namespace Tsavorite.core
             drainCount = 0;
         }
 
+        int SelectInstance()
+        {
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                ref var entry = ref InstanceTracker.GetRef(i);
+                // Try to claim this instance ID (indicated as 1 in the entry)
+                if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
+                    return i;
+            }
+            throw new InvalidOperationException("Exceeded maximum number of active LightEpoch instances");
+        }
+
+        /// <summary>
+        /// Number of active LightEpoch instances. Used for testing and diagnostics.
+        /// </summary>
+        /// <returns></returns>
+        public static int ActiveInstanceCount()
+        {
+            int count = 0;
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                if (kInvalidIndex != InstanceTracker.GetRef(i))
+                    count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Reset all instances. Used for testing to reset static LightEpoch state for all instances.
+        /// </summary>
+        public static void ResetAllInstances()
+        {
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                InstanceTracker.GetRef(i) = kInvalidIndex;
+            }
+        }
+
         /// <summary>
         /// Clean up epoch table
         /// </summary>
         public void Dispose()
         {
+            // Cancel any threads currently waiting on the semaphore so they
+            // unwind and decrement waiterCount.
+            cts.Cancel();
+
+            // Atomically set the disposed flag after all waiters are done.
+            while (true)
+            {
+                if (Interlocked.CompareExchange(ref waiterCount, kDisposedFlag, 0) == 0)
+                    break;
+                Thread.Yield();
+            }
+
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
+            // Mark this instance ID as available
+            InstanceTracker.GetRef(instanceId) = kInvalidIndex;
+
+            cts.Dispose();
+            waiterSemaphore.Dispose();
         }
 
         /// <summary>
@@ -160,25 +254,25 @@ namespace Tsavorite.core
         /// <returns>Result of the check</returns>
         public bool ThisInstanceProtected()
         {
-            int entry = Metadata.threadEntryIndex;
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
             if (kInvalidIndex != entry)
             {
-                if ((*(tableAligned + entry)).threadId == entry)
+                if ((*(tableAligned + entry)).threadId == Metadata.threadId)
                     return true;
             }
             return false;
         }
 
         /// <summary>
-        /// Release epoch if held
+        /// Try to suspend the epoch, if it is currently held
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ReleaseIfHeld()
+        public bool TrySuspend()
         {
             if (ThisInstanceProtected())
             {
-                Release();
+                Suspend();
                 return true;
             }
             return false;
@@ -191,16 +285,35 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ProtectAndDrain()
         {
-            int entry = Metadata.threadEntryIndex;
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
-            // Protect CurrentEpoch by making an entry for it in the non-static epoch table so ComputeNewSafeToReclaimEpoch() will see it.
-            (*(tableAligned + entry)).threadId = Metadata.threadEntryIndex;
+            Debug.Assert(entry > 0, "Trying to refresh unacquired epoch");
+            Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
+
+            // Protect CurrentEpoch by copying it to the instance-specific epoch table
+            // so that ComputeNewSafeToReclaimEpoch() will see it.
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
+            // Max epoch across all threads may have advanced, so check for pending drain actions to process
             if (drainCount > 0)
             {
                 Drain((*(tableAligned + entry)).localCurrentEpoch);
             }
+
+            if (waiterCount > 0)
+            {
+                SuspendResume();
+            }
+        }
+
+        /// <summary>
+        /// Thread suspends, then resumes, to give waiting threads a fair chance of making progress.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void SuspendResume()
+        {
+            Suspend();
+            Resume();
         }
 
         /// <summary>
@@ -220,7 +333,6 @@ namespace Tsavorite.core
         public void Resume()
         {
             Acquire();
-            ProtectAndDrain();
         }
 
         /// <summary>
@@ -355,7 +467,7 @@ namespace Tsavorite.core
         /// Check and invoke trigger actions that are ready
         /// </summary>
         /// <param name="nextEpoch">Next epoch</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         void Drain(long nextEpoch)
         {
             ComputeNewSafeToReclaimEpoch(nextEpoch);
@@ -389,14 +501,26 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Acquire()
         {
-            if (Metadata.threadEntryIndex == kInvalidIndex)
-                Metadata.threadEntryIndex = ReserveEntryForThread();
-
-            Debug.Assert((*(tableAligned + Metadata.threadEntryIndex)).localCurrentEpoch == 0,
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
+            Debug.Assert(entry == kInvalidIndex,
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
-            // This corresponds to AnyInstanceProtected(). We do not mark "ThisInstanceProtected" until ProtectAndDrain().
-            Metadata.threadEntryIndexCount++;
+            // Reserve an entry in the epoch table for this thread
+            ReserveEntryForThread(ref entry);
+
+            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch == 0,
+                "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+            Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
+
+            // Protect CurrentEpoch by copying it to the instance-specific epoch table
+            // so that ComputeNewSafeToReclaimEpoch() will see it.
+            (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
+
+            // Max epoch across all threads may have advanced, so check for pending drain actions to process
+            if (drainCount > 0)
+            {
+                Drain((*(tableAligned + entry)).localCurrentEpoch);
+            }
         }
 
         /// <summary>
@@ -405,7 +529,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Release()
         {
-            int entry = Metadata.threadEntryIndex;
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
@@ -414,54 +538,127 @@ namespace Tsavorite.core
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
 
-            // Decrement "AnyInstanceProtected()" (static thread table)
-            Metadata.threadEntryIndexCount--;
-            if (Metadata.threadEntryIndexCount == 0)
-            {
-                (threadIndexAligned + Metadata.threadEntryIndex)->threadId = 0;
-                Metadata.threadEntryIndex = kInvalidIndex;
-            }
+            entry = kInvalidIndex;
+            if (waiterCount > 0)
+                waiterSemaphore.Release();
         }
 
         /// <summary>
-        /// Reserve entry for thread. This method relies on the fact that no
-        /// thread will ever have ID 0.
+        /// Try to acquire an entry by probing startOffset1, startOffset2, 
+        /// then circling twice around the epoch table. On a successful acquire, 
+        /// startOffset1 contains the acquired offset so that the next acquire 
+        /// can optimistically get the same slot. This method relies on the fact 
+        /// that no thread will ever have ID 0.
         /// </summary>
-        /// <returns>Reserved entry</returns>
-        static int ReserveEntry()
+        /// <returns>True if entry was acquired, false if table is full</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool TryAcquireEntry(ref int entry)
         {
-            while (true)
+            // Try primary offset
+            entry = Metadata.startOffset1;
+            if (0 == (tableAligned + entry)->threadId)
             {
-                // Try to acquire entry
-                if (0 == (threadIndexAligned + Metadata.startOffset1)->threadId)
+                if (0 == Interlocked.CompareExchange(
+                    ref (tableAligned + entry)->threadId,
+                    Metadata.threadId, 0))
+                    return true;
+            }
+
+            // Try alternate offset
+            var tmp = Metadata.startOffset1;
+            Metadata.startOffset1 = Metadata.startOffset2;
+            Metadata.startOffset2 = tmp;
+
+            entry = Metadata.startOffset1;
+            if (0 == (tableAligned + entry)->threadId)
+            {
+                if (0 == Interlocked.CompareExchange(
+                    ref (tableAligned + entry)->threadId,
+                    Metadata.threadId, 0))
+                    return true;
+            }
+
+            // Circle twice around the table looking for free entries
+            for (var i = 0; i < 2 * kTableSize; i++)
+            {
+                Metadata.startOffset1++;
+                if (Metadata.startOffset1 > kTableSize)
+                    Metadata.startOffset1 -= kTableSize;
+
+                entry = Metadata.startOffset1;
+                if (0 == (tableAligned + entry)->threadId)
                 {
                     if (0 == Interlocked.CompareExchange(
-                        ref (threadIndexAligned + Metadata.startOffset1)->threadId,
+                        ref (tableAligned + entry)->threadId,
                         Metadata.threadId, 0))
-                        return Metadata.startOffset1;
+                        return true;
                 }
+            }
 
-                if (Metadata.startOffset2 > 0)
+            // Note: Metadata.startOffset1 should now be back to where it started because
+            // we circled the entire table twice.
+            entry = kInvalidIndex;
+            return false;
+        }
+
+        /// <summary>
+        /// Reserve entry for thread. First try synchronous acquire, then fall back to a SemaphoreSlim wait.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ReserveEntry(ref int entry)
+        {
+            if (TryAcquireEntry(ref entry))
+                return;
+
+            // Table is full, fall back to slow path with waiting
+            ReserveEntryWait(ref entry);
+        }
+
+        /// <summary>
+        /// Slow path for reserving an entry when the table is full.
+        /// Waits on semaphore until an entry becomes available.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ReserveEntryWait(ref int entry)
+        {
+            int newCount = Interlocked.Increment(ref waiterCount);
+            try
+            {
+                // If the MSB (disposed flag) is set, the epoch is being disposed.
+                if ((newCount & kDisposedFlag) != 0)
+                    throw new ObjectDisposedException(nameof(LightEpoch));
+
+                while (true)
                 {
-                    // Try alternate entry
-                    Metadata.startOffset1 = Metadata.startOffset2;
-                    Metadata.startOffset2 = 0;
+                    // Re-check for free slot after incrementing waiterCount. This avoids
+                    // us waiting on the semaphore forever in case we increment waiterCount
+                    // immediately after the epoch releaser sees a zero waiterCount (and
+                    // therefore does not release the semaphore).
+                    if (TryAcquireEntry(ref entry))
+                        return;
+
+                    // No slot available, wait for a signal from Release()
+                    waiterSemaphore.Wait(cts.Token);
                 }
-                else Metadata.startOffset1++; // Probe next sequential entry
-                if (Metadata.startOffset1 > kTableSize)
-                {
-                    Metadata.startOffset1 -= kTableSize;
-                    Thread.Yield();
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw new ObjectDisposedException(nameof(LightEpoch));
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref waiterCount);
             }
         }
 
         /// <summary>
-        /// Allocate a new entry in epoch table. This is called 
-        /// once for a thread.
+        /// Allocate a new entry in epoch table
         /// </summary>
         /// <returns>Reserved entry</returns>
-        static int ReserveEntryForThread()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ReserveEntryForThread(ref int entry)
         {
             if (Metadata.threadId == 0) // run once per thread for performance
             {
@@ -470,11 +667,51 @@ namespace Tsavorite.core
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
-            return ReserveEntry();
+            ReserveEntry(ref entry);
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"Current {CurrentEpoch}, SafeToReclaim {SafeToReclaimEpoch}, drainCount {drainCount}";
+        public override string ToString()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"CurrentEpoch: {CurrentEpoch}, SafeToReclaimEpoch: {SafeToReclaimEpoch}");
+
+            var wc = waiterCount;
+            bool disposed = (wc & kDisposedFlag) != 0;
+            sb.AppendLine($"Waiters: {wc & ~kDisposedFlag}, Disposed: {disposed}");
+
+            // Active epoch table entries
+            sb.Append("Threads: [");
+            bool first = true;
+            for (int i = 1; i <= kTableSize; i++)
+            {
+                var e = *(tableAligned + i);
+                if (e.threadId != 0)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append($"tid={e.threadId} epoch={e.localCurrentEpoch}");
+                    first = false;
+                }
+            }
+            sb.AppendLine(first ? "none]" : "]");
+
+            // Drain list entries
+            sb.Append("DrainList: [");
+            first = true;
+            for (int i = 0; i < kDrainListSize; i++)
+            {
+                var d = drainList[i];
+                if (d.epoch != long.MaxValue)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append($"epoch={d.epoch} action={(d.action is null ? "null" : d.action.Method.Name)}");
+                    first = false;
+                }
+            }
+            sb.Append(first ? "none]" : "]");
+
+            return sb.ToString();
+        }
 
         /// <summary>
         /// Epoch table entry (cache line size).
@@ -494,13 +731,7 @@ namespace Tsavorite.core
             [FieldOffset(8)]
             public int threadId;
 
-            [FieldOffset(12)]
-            public int reentrant;
-
-            [FieldOffset(16)]
-            public fixed long padding[6]; // Padding to end of cache line
-
-            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
+            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}";
         }
 
         /// <summary>
