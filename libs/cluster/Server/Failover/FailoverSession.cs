@@ -27,6 +27,7 @@ namespace Garnet.cluster
         public bool FailoverTimeout => failoverDeadline < DateTime.UtcNow;
 
         readonly ClusterConfig oldConfig;
+        readonly LightEpoch epoch;
 
         /// <summary>
         /// FailoverSession constructor
@@ -44,6 +45,7 @@ namespace Garnet.cluster
             FailoverOption option,
             TimeSpan clusterTimeout,
             TimeSpan failoverTimeout,
+            LightEpoch epoch,
             bool isReplicaSession = true,
             string hostAddress = "",
             int hostPort = -1,
@@ -53,6 +55,7 @@ namespace Garnet.cluster
             this.clusterTimeout = clusterTimeout;
             this.option = option;
             this.logger = logger;
+            this.epoch = epoch;
             oldConfig = clusterProvider.clusterManager.CurrentConfig.Copy();
             cts = new();
 
@@ -69,12 +72,12 @@ namespace Garnet.cluster
                 {
                     for (var i = 0; i < endpoints.Count; i++)
                     {
-                        clients[i] = new GarnetClient(endpoints[i], clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+                        clients[i] = new GarnetClient(endpoints[i], clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
                     }
                 }
                 else
                 {
-                    clients[0] = new GarnetClient(new IPEndPoint(IPAddress.Parse(hostAddress), hostPort), clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+                    clients[0] = new GarnetClient(new IPEndPoint(IPAddress.Parse(hostAddress), hostPort), clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
                 }
             }
 

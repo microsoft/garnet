@@ -78,7 +78,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         static void VerifyRead(ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)

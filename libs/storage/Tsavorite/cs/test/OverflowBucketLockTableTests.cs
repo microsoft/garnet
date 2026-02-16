@@ -74,7 +74,7 @@ namespace Tsavorite.test.LockTable
             log?.Dispose();
             log = default;
             comparer = default;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         void TryLock(long key, LockType lockType, int expectedCurrentReadLocks, bool expectedLockResult)

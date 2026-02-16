@@ -252,9 +252,9 @@ namespace Tsavorite.test
     /// <summary>
     /// Epoch Protected Version Scheme
     /// </summary>
-    public class EpochProtectedVersionScheme
+    public class EpochProtectedVersionScheme : IDisposable
     {
-        private LightEpoch epoch;
+        private readonly LightEpoch epoch;
         private VersionSchemeState state;
         private VersionSchemeStateMachine currentMachine;
 
@@ -263,12 +263,17 @@ namespace Tsavorite.test
         /// epoch framework (WARNING: re-entrance is not yet supported, so nested protection of these shared instances
         /// likely leads to error)
         /// </summary>
-        /// <param name="epoch"> The backing epoch protection framework </param>
-        public EpochProtectedVersionScheme(LightEpoch epoch)
+        public EpochProtectedVersionScheme()
         {
-            this.epoch = epoch;
+            this.epoch = new LightEpoch();
             state = VersionSchemeState.Make(VersionSchemeState.REST, 1);
             currentMachine = null;
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            epoch.Dispose();
         }
 
         /// <summary></summary>

@@ -174,7 +174,7 @@ namespace Garnet.cluster
                     {
                         logger?.LogError("Invalid CLUSTER MEET endpoint!");
                     }
-                    gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, logger: logger);
+                    gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, clusterConnectionStore.Epoch, logger: logger);
                     created = true;
                 }
 
@@ -275,6 +275,10 @@ namespace Garnet.cluster
 
                     await Task.Delay(gossipDelay, ctsGossip.Token);
                 }
+            }
+            catch (TaskCanceledException) when (ctsGossip.Token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
             }
             catch (Exception ex)
             {

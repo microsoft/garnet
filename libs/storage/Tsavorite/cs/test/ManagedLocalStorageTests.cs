@@ -49,7 +49,7 @@ namespace Tsavorite.test
             deviceFullParams = null;
 
             // Clean up log 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
 

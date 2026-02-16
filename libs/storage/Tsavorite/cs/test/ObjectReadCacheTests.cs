@@ -51,7 +51,7 @@ namespace Tsavorite.test.ReadCacheTests
             log = null;
             objlog?.Dispose();
             objlog = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

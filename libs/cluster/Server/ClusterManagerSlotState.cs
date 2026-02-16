@@ -382,7 +382,7 @@ namespace Garnet.cluster
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
-                logger?.LogWarning("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
+                logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
                 FlushConfig();
                 return true;
             }
@@ -428,7 +428,7 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-            logger?.LogWarning("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
+            logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
             FlushConfig();
             return true;
         }

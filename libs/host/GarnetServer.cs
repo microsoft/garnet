@@ -49,14 +49,13 @@ namespace Garnet
         private readonly GarnetServerOptions opts;
         private IGarnetServer[] servers;
         private SubscribeBroker subscribeBroker;
-        private KVSettings<SpanByte, SpanByte> kvSettings;
-        private KVSettings<byte[], IGarnetObject> objKvSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
         private ILogger logger;
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
+        protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -140,6 +139,11 @@ namespace Garnet
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
             this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
             this.InitializeServer();
         }
 
@@ -156,7 +160,22 @@ namespace Garnet
             this.opts = opts;
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
-            this.InitializeServer();
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
+            try
+            {
+                this.InitializeServer();
+            }
+            catch
+            {
+                storeEpoch?.Dispose();
+                aofEpoch?.Dispose();
+                pubSubEpoch?.Dispose();
+                throw;
+            }
         }
 
         private void InitializeServer()
@@ -234,7 +253,7 @@ namespace Garnet
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true, logger);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
@@ -301,8 +320,8 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateMainStore(dbId, clusterFactory, out var epoch, out var stateMachineDriver);
-            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, epoch, stateMachineDriver, out var objectStoreSizeTracker);
+            var store = CreateMainStore(dbId, clusterFactory, storeEpoch, out var stateMachineDriver, out var kvSettings);
+            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, storeEpoch, stateMachineDriver, out var objectStoreSizeTracker, out var objKvSettings);
             var (aofDevice, aof) = CreateAOF(dbId);
 
             var vectorManager = new VectorManager(
@@ -312,7 +331,7 @@ namespace Garnet
                 loggerFactory
             );
 
-            return new GarnetDatabase(dbId, store, objectStore, epoch, stateMachineDriver, objectStoreSizeTracker,
+            return new GarnetDatabase(dbId, store, objectStore, kvSettings, objKvSettings, storeEpoch, stateMachineDriver, objectStoreSizeTracker,
                 aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0,
                 serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0,
                 vectorManager);
@@ -342,9 +361,8 @@ namespace Garnet
         }
 
         private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory,
-            out LightEpoch epoch, out StateMachineDriver stateMachineDriver)
+            LightEpoch epoch, out StateMachineDriver stateMachineDriver, out KVSettings<SpanByte, SpanByte> kvSettings)
         {
-            epoch = new LightEpoch();
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
             kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
@@ -365,9 +383,10 @@ namespace Garnet
         }
 
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            LightEpoch epoch, StateMachineDriver stateMachineDriver, out CacheSizeTracker objectStoreSizeTracker)
+            LightEpoch epoch, StateMachineDriver stateMachineDriver, out CacheSizeTracker objectStoreSizeTracker, out KVSettings<byte[], IGarnetObject> objKvSettings)
         {
             objectStoreSizeTracker = null;
+            objKvSettings = null;
             if (opts.DisableObjects)
                 return null;
 
@@ -411,7 +430,7 @@ namespace Garnet
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
-            opts.GetAofSettings(dbId, out var aofSettings);
+            opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
             var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
@@ -659,12 +678,9 @@ namespace Garnet
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Dispose();
             subscribeBroker?.Dispose();
-            kvSettings.LogDevice?.Dispose();
-            if (!opts.DisableObjects)
-            {
-                objKvSettings.LogDevice?.Dispose();
-                objKvSettings.ObjectLogDevice?.Dispose();
-            }
+            storeEpoch?.Dispose();
+            aofEpoch?.Dispose();
+            pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();

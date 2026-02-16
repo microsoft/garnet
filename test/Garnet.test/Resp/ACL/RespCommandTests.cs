@@ -55,7 +55,7 @@ namespace Garnet.test.Resp.ACL
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

@@ -45,7 +45,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         private long LongRandom() => r.NextInt64(long.MinValue, long.MaxValue);

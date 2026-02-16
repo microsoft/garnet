@@ -14,8 +14,78 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe class LightEpoch
     {
+        /// <summary>
+        /// Buffer to track information for LightEpoch instances. This is used:
+        /// (1) in AssignInstance, to assign a unique instanceId to each LightEpoch instance, and
+        /// (2) in Metadata, to track per-thread epoch table entries for each LightEpoch instance.
+        /// </summary>
+        [StructLayout(LayoutKind.Explicit, Size = MaxInstances * sizeof(int))]
+        private struct InstanceIndexBuffer
+        {
+            /// <summary>
+            /// Maximum number of concurrent instances of LightEpoch supported.
+            /// </summary>
+            internal const int MaxInstances = 16;
+
+            /// <summary>
+            /// Anchor field for the buffer.
+            /// </summary>
+            [FieldOffset(0)]
+            int field0;
+
+            /// <summary>
+            /// Reference to the entry for the given instance ID.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal ref int GetRef(int instanceId)
+            {
+                Debug.Assert(instanceId >= 0 && instanceId < MaxInstances);
+                return ref Unsafe.AsRef<int>((int*)Unsafe.AsPointer(ref field0) + instanceId);
+            }
+        }
+
+        /// <summary>
+        /// Store for thread-static metadata.
+        /// </summary>
+        private class Metadata
+        {
+            /// <summary>
+            /// Managed thread id of this thread
+            /// </summary>
+            [ThreadStatic]
+            internal static int threadId;
+
+            /// <summary>
+            /// Start offset to reserve entry in the epoch table
+            /// </summary>
+            [ThreadStatic]
+            internal static ushort startOffset1;
+
+            /// <summary>
+            /// Alternate start offset to reserve entry in the epoch table (to reduce probing if <see cref="startOffset1"/> slot is already filled)
+            /// </summary>
+            [ThreadStatic]
+            internal static ushort startOffset2;
+
+            /// <summary>
+            /// This is the thread-static index for fast access to the tableAligned index 
+            /// that is obtained when each LightEpoch instance calls ReserveEntry.
+            /// The instanceId of the LightEpoch instance (assigned to the instance 
+            /// at constructor time using InstanceTracker) is the lookup offset into 
+            /// Entries.
+            /// 
+            /// Note that Entries effectively gives us ThreadLocal{T} semantics of 
+            /// (instance, thread)-specific metadata, without the overhead of 
+            /// ThreadLocal{T}.
+            /// </summary>
+            [ThreadStatic]
+            internal static InstanceIndexBuffer Entries;
+        }
+
+        /// <summary>
         /// Size of cache line in bytes
-        public const int kCacheLineBytes = 64;
+        /// </summary>
+        const int kCacheLineBytes = 64;
 
         /// <summary>
         /// Default invalid index entry.
@@ -35,77 +105,71 @@ namespace Garnet.client
         /// <summary>
         /// Thread protection status entries.
         /// </summary>
-        Entry[] tableRaw;
-        Entry* tableAligned;
-
-        static readonly Entry[] threadIndex;
-        static readonly Entry* threadIndexAligned;
+        readonly Entry[] tableRaw;
+        readonly Entry* tableAligned;
 
         /// <summary>
-        /// List of action, epoch pairs containing actions to performed 
-        /// when an epoch becomes safe to reclaim. Marked volatile to
-        /// ensure latest value is seen by the last suspended thread.
+        /// Semaphore for threads waiting for an epoch table entry
+        /// </summary>
+        readonly SemaphoreSlim waiterSemaphore = new(0);
+
+        /// <summary>
+        /// Cancellation token source used to cancel threads waiting on the semaphore during Dispose.
+        /// </summary>
+        readonly CancellationTokenSource cts = new();
+
+        /// <summary>
+        /// Number of threads waiting for an epoch table entry (lower 31 bits).
+        /// MSB is set during Dispose to prevent new waiters from entering.
+        /// </summary>
+        volatile int waiterCount = 0;
+
+        /// <summary>
+        /// Flag (MSB) used to mark the epoch as disposed in <see cref="waiterCount"/>.
+        /// </summary>
+        const int kDisposedFlag = unchecked((int)0x80000000);
+
+        /// <summary>
+        /// List of action, epoch pairs containing actions to be performed when an epoch becomes safe to reclaim.
+        /// Marked volatile to ensure latest value is seen by the last suspended thread.
         /// </summary>
         volatile int drainCount = 0;
         readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
 
         /// <summary>
-        /// A thread's entry in the epoch table.
-        /// </summary>
-        [ThreadStatic]
-        static int threadEntryIndex;
-
-        /// <summary>
-        /// Number of instances using this entry
-        /// </summary>
-        [ThreadStatic]
-        static int threadEntryIndexCount;
-
-        [ThreadStatic]
-        static int threadId;
-
-        [ThreadStatic]
-        static ushort startOffset1;
-        [ThreadStatic]
-        static ushort startOffset2;
-
-        /// <summary>
         /// Global current epoch value
         /// </summary>
-        public int CurrentEpoch;
+        internal long CurrentEpoch;
 
         /// <summary>
         /// Cached value of latest epoch that is safe to reclaim
         /// </summary>
-        public int SafeToReclaimEpoch;
+        internal long SafeToReclaimEpoch;
 
         /// <summary>
-        /// Local view of current epoch, for an epoch-protected thread
+        /// ID of this LightEpoch instance
         /// </summary>
-        public int LocalCurrentEpoch => (*(tableAligned + threadEntryIndex)).localCurrentEpoch;
+        readonly int instanceId;
 
         /// <summary>
-        /// Static constructor to setup shared cache-aligned space
-        /// to store per-entry count of instances using that entry
+        /// This is the LightEpoch-level static buffer (array) of available instance slots.
+        /// On LightEpoch instance creation, it is used by SelectInstance() to find an
+        /// available slot in this array; this becomes the LightEpoch instance's instanceId,
+        /// which is the lookup index into the thread-static Metadata.Entries.
         /// </summary>
-        static LightEpoch()
-        {
-            // Over-allocate to do cache-line alignment
-            threadIndex = GC.AllocateArray<Entry>(kTableSize + 2, true);
-            long p = (long)Unsafe.AsPointer(ref threadIndex[0]);
-
-            // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
-            threadIndexAligned = (Entry*)p2;
-        }
+        static InstanceIndexBuffer InstanceTracker;
 
         /// <summary>
         /// Instantiate the epoch table
         /// </summary>
         public LightEpoch()
         {
+            instanceId = SelectInstance();
+
+            long p;
+
             tableRaw = GC.AllocateArray<Entry>(kTableSize + 2, true);
-            long p = (long)Unsafe.AsPointer(ref tableRaw[0]);
+            p = (long)Unsafe.AsPointer(ref tableRaw[0]);
 
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
@@ -114,9 +178,48 @@ namespace Garnet.client
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
 
+            // Mark all epoch table entries as "available"
             for (int i = 0; i < kDrainListSize; i++)
-                drainList[i].epoch = int.MaxValue;
+                drainList[i].epoch = long.MaxValue;
             drainCount = 0;
+        }
+
+        int SelectInstance()
+        {
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                ref var entry = ref InstanceTracker.GetRef(i);
+                // Try to claim this instance ID (indicated as 1 in the entry)
+                if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
+                    return i;
+            }
+            throw new InvalidOperationException("Exceeded maximum number of active LightEpoch instances");
+        }
+
+        /// <summary>
+        /// Number of active LightEpoch instances. Used for testing and diagnostics.
+        /// </summary>
+        /// <returns></returns>
+        public static int ActiveInstanceCount()
+        {
+            int count = 0;
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                if (kInvalidIndex != InstanceTracker.GetRef(i))
+                    count++;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Reset all instances. Used for testing to reset static LightEpoch state for all instances.
+        /// </summary>
+        public static void ResetAllInstances()
+        {
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                InstanceTracker.GetRef(i) = kInvalidIndex;
+            }
         }
 
         /// <summary>
@@ -124,8 +227,25 @@ namespace Garnet.client
         /// </summary>
         public void Dispose()
         {
+            // Cancel any threads currently waiting on the semaphore so they
+            // unwind and decrement waiterCount.
+            cts.Cancel();
+
+            // Atomically set the disposed flag after all waiters are done.
+            while (true)
+            {
+                if (Interlocked.CompareExchange(ref waiterCount, kDisposedFlag, 0) == 0)
+                    break;
+                Thread.Yield();
+            }
+
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
+            // Mark this instance ID as available
+            InstanceTracker.GetRef(instanceId) = kInvalidIndex;
+
+            cts.Dispose();
+            waiterSemaphore.Dispose();
         }
 
         /// <summary>
@@ -134,25 +254,26 @@ namespace Garnet.client
         /// <returns>Result of the check</returns>
         public bool ThisInstanceProtected()
         {
-            int entry = threadEntryIndex;
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
             if (kInvalidIndex != entry)
             {
-                if ((*(tableAligned + entry)).threadId == entry)
+                if ((*(tableAligned + entry)).threadId == Metadata.threadId)
                     return true;
             }
             return false;
         }
 
         /// <summary>
-        /// Check whether any epoch instance is protected on this thread
+        /// Try to suspend the epoch, if it is currently held
         /// </summary>
-        /// <returns>Result of the check</returns>
-        public static bool AnyInstanceProtected()
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySuspend()
         {
-            int entry = threadEntryIndex;
-            if (kInvalidIndex != entry)
+            if (ThisInstanceProtected())
             {
-                return threadEntryIndexCount > 0;
+                Suspend();
+                return true;
             }
             return false;
         }
@@ -162,19 +283,37 @@ namespace Garnet.client
         /// </summary>
         /// <returns>Current epoch</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int ProtectAndDrain()
+        public void ProtectAndDrain()
         {
-            int entry = threadEntryIndex;
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
-            (*(tableAligned + entry)).threadId = threadEntryIndex;
+            Debug.Assert(entry > 0, "Trying to refresh unacquired epoch");
+            Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
+
+            // Protect CurrentEpoch by copying it to the instance-specific epoch table
+            // so that ComputeNewSafeToReclaimEpoch() will see it.
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
+            // Max epoch across all threads may have advanced, so check for pending drain actions to process
             if (drainCount > 0)
             {
                 Drain((*(tableAligned + entry)).localCurrentEpoch);
             }
 
-            return (*(tableAligned + entry)).localCurrentEpoch;
+            if (waiterCount > 0)
+            {
+                SuspendResume();
+            }
+        }
+
+        /// <summary>
+        /// Thread suspends, then resumes, to give waiting threads a fair chance of making progress.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void SuspendResume()
+        {
+            Suspend();
+            Resume();
         }
 
         /// <summary>
@@ -194,17 +333,23 @@ namespace Garnet.client
         public void Resume()
         {
             Acquire();
-            ProtectAndDrain();
         }
 
         /// <summary>
-        /// Thread resumes its epoch entry
+        /// Increment global current epoch
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Resume(out int resumeEpoch)
+        /// <returns></returns>
+        internal long BumpCurrentEpoch()
         {
-            Acquire();
-            resumeEpoch = ProtectAndDrain();
+            Debug.Assert(ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
+            long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
+
+            if (drainCount > 0)
+                Drain(nextEpoch);
+            else
+                ComputeNewSafeToReclaimEpoch(nextEpoch);
+
+            return nextEpoch;
         }
 
         /// <summary>
@@ -215,14 +360,15 @@ namespace Garnet.client
         /// <returns></returns>
         public void BumpCurrentEpoch(Action onDrain)
         {
-            int PriorEpoch = BumpCurrentEpoch() - 1;
+            long PriorEpoch = BumpCurrentEpoch() - 1;
 
             int i = 0;
             while (true)
             {
-                if (drainList[i].epoch == int.MaxValue)
+                if (drainList[i].epoch == long.MaxValue)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
+                    // This was an empty slot. If it still is, assign this action/epoch to the slot.
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, long.MaxValue) == long.MaxValue)
                     {
                         drainList[i].action = onDrain;
                         drainList[i].epoch = PriorEpoch;
@@ -236,7 +382,8 @@ namespace Garnet.client
 
                     if (triggerEpoch <= SafeToReclaimEpoch)
                     {
-                        if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
+                        // This was a slot with an epoch that was safe to reclaim. If it still is, execute its trigger, then assign this action/epoch to the slot.
+                        if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, triggerEpoch) == triggerEpoch)
                         {
                             var triggerAction = drainList[i].action;
                             drainList[i].action = onDrain;
@@ -249,80 +396,35 @@ namespace Garnet.client
 
                 if (++i == kDrainListSize)
                 {
+                    // We are at the end of the drain list and found no empty or reclaimable slot. ProtectAndDrain, which should clear one or more slots.
                     ProtectAndDrain();
                     i = 0;
                     Thread.Yield();
                 }
             }
 
+            // Now ProtectAndDrain, which may execute the action we just added.
             ProtectAndDrain();
         }
 
         /// <summary>
-        /// Mechanism for threads to mark some activity as completed until
-        /// some version by this thread
+        /// Looks at all threads and return the latest safe epoch
         /// </summary>
-        /// <param name="markerIdx">ID of activity</param>
-        /// <param name="version">Version</param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Mark(int markerIdx, long version)
-        {
-            (*(tableAligned + threadEntryIndex)).markers[markerIdx] = (int)version;
-        }
-
-        /// <summary>
-        /// Check if all active threads have completed the some
-        /// activity until given version.
-        /// </summary>
-        /// <param name="markerIdx">ID of activity</param>
-        /// <param name="version">Version</param>
-        /// <returns>Whether complete</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CheckIsComplete(int markerIdx, long version)
-        {
-            // check if all threads have reported complete
-            for (int index = 1; index <= kTableSize; ++index)
-            {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                int fc_version = (*(tableAligned + index)).markers[markerIdx];
-                if (0 != entry_epoch)
-                {
-                    if ((fc_version != (int)version) && (entry_epoch < int.MaxValue))
-                    {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Increment global current epoch
-        /// </summary>
-        /// <returns></returns>
-        int BumpCurrentEpoch()
-        {
-            int nextEpoch = Interlocked.Add(ref CurrentEpoch, 1);
-
-            if (drainCount > 0)
-                Drain(nextEpoch);
-
-            return nextEpoch;
-        }
+        /// <returns>Safe epoch</returns>
+        internal long ComputeNewSafeToReclaimEpoch() => ComputeNewSafeToReclaimEpoch(CurrentEpoch);
 
         /// <summary>
         /// Looks at all threads and return the latest safe epoch
         /// </summary>
         /// <param name="currentEpoch">Current epoch</param>
         /// <returns>Safe epoch</returns>
-        int ComputeNewSafeToReclaimEpoch(int currentEpoch)
+        long ComputeNewSafeToReclaimEpoch(long currentEpoch)
         {
-            int oldestOngoingCall = currentEpoch;
+            long oldestOngoingCall = currentEpoch;
 
             for (int index = 1; index <= kTableSize; ++index)
             {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entry_epoch)
                 {
                     if (entry_epoch < oldestOngoingCall)
@@ -332,8 +434,7 @@ namespace Garnet.client
                 }
             }
 
-            // The latest safe epoch is the one just before 
-            // the earliest unsafe epoch.
+            // The latest safe epoch is the one just before the earliest unsafe epoch.
             SafeToReclaimEpoch = oldestOngoingCall - 1;
             return SafeToReclaimEpoch;
         }
@@ -351,7 +452,7 @@ namespace Garnet.client
                 Thread.MemoryBarrier();
                 for (int index = 1; index <= kTableSize; ++index)
                 {
-                    int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                    long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entry_epoch)
                     {
                         return;
@@ -366,8 +467,8 @@ namespace Garnet.client
         /// Check and invoke trigger actions that are ready
         /// </summary>
         /// <param name="nextEpoch">Next epoch</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void Drain(int nextEpoch)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void Drain(long nextEpoch)
         {
             ComputeNewSafeToReclaimEpoch(nextEpoch);
 
@@ -377,14 +478,18 @@ namespace Garnet.client
 
                 if (trigger_epoch <= SafeToReclaimEpoch)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, trigger_epoch) == trigger_epoch)
+                    if (Interlocked.CompareExchange(ref drainList[i].epoch, long.MaxValue - 1, trigger_epoch) == trigger_epoch)
                     {
+                        // Store off the trigger action, then set epoch to int.MaxValue to mark this slot as "available for use".
                         var trigger_action = drainList[i].action;
                         drainList[i].action = null;
-                        drainList[i].epoch = int.MaxValue;
+                        drainList[i].epoch = long.MaxValue;
                         Interlocked.Decrement(ref drainCount);
+
+                        // Execute the action
                         trigger_action();
-                        if (drainCount == 0) break;
+                        if (drainCount == 0)
+                            break;
                     }
                 }
             }
@@ -396,13 +501,26 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Acquire()
         {
-            if (threadEntryIndex == kInvalidIndex)
-                threadEntryIndex = ReserveEntryForThread();
-
-            Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
+            Debug.Assert(entry == kInvalidIndex,
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
-            threadEntryIndexCount++;
+            // Reserve an entry in the epoch table for this thread
+            ReserveEntryForThread(ref entry);
+
+            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch == 0,
+                "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+            Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
+
+            // Protect CurrentEpoch by copying it to the instance-specific epoch table
+            // so that ComputeNewSafeToReclaimEpoch() will see it.
+            (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
+
+            // Max epoch across all threads may have advanced, so check for pending drain actions to process
+            if (drainCount > 0)
+            {
+                Drain((*(tableAligned + entry)).localCurrentEpoch);
+            }
         }
 
         /// <summary>
@@ -411,70 +529,188 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Release()
         {
-            int entry = threadEntryIndex;
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
+            // Clear "ThisInstanceProtected()" (non-static epoch table)
             (*(tableAligned + entry)).localCurrentEpoch = 0;
             (*(tableAligned + entry)).threadId = 0;
 
-            threadEntryIndexCount--;
-            if (threadEntryIndexCount == 0)
-            {
-                (threadIndexAligned + threadEntryIndex)->threadId = 0;
-                threadEntryIndex = kInvalidIndex;
-            }
+            entry = kInvalidIndex;
+            if (waiterCount > 0)
+                waiterSemaphore.Release();
         }
 
         /// <summary>
-        /// Reserve entry for thread. This method relies on the fact that no
-        /// thread will ever have ID 0.
+        /// Try to acquire an entry by probing startOffset1, startOffset2, 
+        /// then circling twice around the epoch table. On a successful acquire, 
+        /// startOffset1 contains the acquired offset so that the next acquire 
+        /// can optimistically get the same slot. This method relies on the fact 
+        /// that no thread will ever have ID 0.
         /// </summary>
-        /// <returns>Reserved entry</returns>
-        static int ReserveEntry()
+        /// <returns>True if entry was acquired, false if table is full</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool TryAcquireEntry(ref int entry)
         {
-            while (true)
+            // Try primary offset
+            entry = Metadata.startOffset1;
+            if (0 == (tableAligned + entry)->threadId)
             {
-                // Try to acquire entry
-                if (0 == (threadIndexAligned + startOffset1)->threadId)
+                if (0 == Interlocked.CompareExchange(
+                    ref (tableAligned + entry)->threadId,
+                    Metadata.threadId, 0))
+                    return true;
+            }
+
+            // Try alternate offset
+            var tmp = Metadata.startOffset1;
+            Metadata.startOffset1 = Metadata.startOffset2;
+            Metadata.startOffset2 = tmp;
+
+            entry = Metadata.startOffset1;
+            if (0 == (tableAligned + entry)->threadId)
+            {
+                if (0 == Interlocked.CompareExchange(
+                    ref (tableAligned + entry)->threadId,
+                    Metadata.threadId, 0))
+                    return true;
+            }
+
+            // Circle twice around the table looking for free entries
+            for (var i = 0; i < 2 * kTableSize; i++)
+            {
+                Metadata.startOffset1++;
+                if (Metadata.startOffset1 > kTableSize)
+                    Metadata.startOffset1 -= kTableSize;
+
+                entry = Metadata.startOffset1;
+                if (0 == (tableAligned + entry)->threadId)
                 {
                     if (0 == Interlocked.CompareExchange(
-                        ref (threadIndexAligned + startOffset1)->threadId,
-                        threadId, 0))
-                        return startOffset1;
+                        ref (tableAligned + entry)->threadId,
+                        Metadata.threadId, 0))
+                        return true;
                 }
+            }
 
-                if (startOffset2 > 0)
+            // Note: Metadata.startOffset1 should now be back to where it started because
+            // we circled the entire table twice.
+            entry = kInvalidIndex;
+            return false;
+        }
+
+        /// <summary>
+        /// Reserve entry for thread. First try synchronous acquire, then fall back to a SemaphoreSlim wait.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ReserveEntry(ref int entry)
+        {
+            if (TryAcquireEntry(ref entry))
+                return;
+
+            // Table is full, fall back to slow path with waiting
+            ReserveEntryWait(ref entry);
+        }
+
+        /// <summary>
+        /// Slow path for reserving an entry when the table is full.
+        /// Waits on semaphore until an entry becomes available.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ReserveEntryWait(ref int entry)
+        {
+            int newCount = Interlocked.Increment(ref waiterCount);
+            try
+            {
+                // If the MSB (disposed flag) is set, the epoch is being disposed.
+                if ((newCount & kDisposedFlag) != 0)
+                    throw new ObjectDisposedException(nameof(LightEpoch));
+
+                while (true)
                 {
-                    // Try alternate entry
-                    startOffset1 = startOffset2;
-                    startOffset2 = 0;
+                    // Re-check for free slot after incrementing waiterCount. This avoids
+                    // us waiting on the semaphore forever in case we increment waiterCount
+                    // immediately after the epoch releaser sees a zero waiterCount (and
+                    // therefore does not release the semaphore).
+                    if (TryAcquireEntry(ref entry))
+                        return;
+
+                    // No slot available, wait for a signal from Release()
+                    waiterSemaphore.Wait(cts.Token);
                 }
-                else startOffset1++; // Probe next sequential entry
-                if (startOffset1 > kTableSize)
-                {
-                    startOffset1 -= kTableSize;
-                    Thread.Yield();
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw new ObjectDisposedException(nameof(LightEpoch));
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref waiterCount);
             }
         }
 
         /// <summary>
-        /// Allocate a new entry in epoch table. This is called 
-        /// once for a thread.
+        /// Allocate a new entry in epoch table
         /// </summary>
         /// <returns>Reserved entry</returns>
-        static int ReserveEntryForThread()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ReserveEntryForThread(ref int entry)
         {
-            if (threadId == 0) // run once per thread for performance
+            if (Metadata.threadId == 0) // run once per thread for performance
             {
-                threadId = Environment.CurrentManagedThreadId;
-                uint code = (uint)Utility.Murmur3(threadId);
-                startOffset1 = (ushort)(1 + (code % kTableSize));
-                startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
+                Metadata.threadId = Environment.CurrentManagedThreadId;
+                uint code = (uint)Utility.Murmur3(Metadata.threadId);
+                Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
+                Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
-            return ReserveEntry();
+            ReserveEntry(ref entry);
+        }
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"CurrentEpoch: {CurrentEpoch}, SafeToReclaimEpoch: {SafeToReclaimEpoch}");
+
+            var wc = waiterCount;
+            bool disposed = (wc & kDisposedFlag) != 0;
+            sb.AppendLine($"Waiters: {wc & ~kDisposedFlag}, Disposed: {disposed}");
+
+            // Active epoch table entries
+            sb.Append("Threads: [");
+            bool first = true;
+            for (int i = 1; i <= kTableSize; i++)
+            {
+                var e = *(tableAligned + i);
+                if (e.threadId != 0)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append($"tid={e.threadId} epoch={e.localCurrentEpoch}");
+                    first = false;
+                }
+            }
+            sb.AppendLine(first ? "none]" : "]");
+
+            // Drain list entries
+            sb.Append("DrainList: [");
+            first = true;
+            for (int i = 0; i < kDrainListSize; i++)
+            {
+                var d = drainList[i];
+                if (d.epoch != long.MaxValue)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append($"epoch={d.epoch} action={(d.action is null ? "null" : d.action.Method.Name)}");
+                    first = false;
+                }
+            }
+            sb.Append(first ? "none]" : "]");
+
+            return sb.ToString();
         }
 
         /// <summary>
@@ -487,25 +723,26 @@ namespace Garnet.client
             /// Thread-local value of epoch
             /// </summary>
             [FieldOffset(0)]
-            public int localCurrentEpoch;
+            public long localCurrentEpoch;
 
             /// <summary>
             /// ID of thread associated with this entry.
             /// </summary>
-            [FieldOffset(4)]
+            [FieldOffset(8)]
             public int threadId;
 
-            [FieldOffset(8)]
-            public int reentrant;
+            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}";
+        }
 
-            [FieldOffset(12)]
-            public fixed int markers[13];
-        };
-
+        /// <summary>
+        /// Pair of epoch and action to be executed
+        /// </summary>
         struct EpochActionPair
         {
             public long epoch;
             public Action action;
+
+            public override string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
         }
     }
 }

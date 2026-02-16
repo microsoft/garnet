@@ -48,7 +48,7 @@ namespace Tsavorite.test.LowMemory
             store1 = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         private static void Populate(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> s1)

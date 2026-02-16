@@ -33,7 +33,7 @@ namespace Tsavorite.test
         {
             device?.Dispose();
             device = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

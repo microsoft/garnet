@@ -658,6 +658,10 @@ namespace Garnet.server
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
                 }
             }
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Exception received at AutoCheckpointTask");
@@ -858,8 +862,8 @@ namespace Garnet.server
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
-                    var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
-                    var iter = objectStoreSession.Iterate();
+                    using var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    using var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
                         ref var key = ref iter.GetKey();

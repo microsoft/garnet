@@ -111,7 +111,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             store = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         // Simple Upsert test with Input
