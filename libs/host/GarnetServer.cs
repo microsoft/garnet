@@ -467,7 +467,7 @@ namespace Garnet
             {
                 if (!noSave)
                 {
-                    // Attempt AOF commit and checkpoint as best-effort,
+                    // Attempt AOF commit or checkpoint as best-effort,
                     // even if connection draining was cancelled or failed.
                     // Use a bounded timeout instead of the caller's token to ensure completion.
                     using var finalizeCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -578,33 +578,10 @@ namespace Garnet
         }
 
         /// <summary>
-        /// Commits AOF and takes checkpoint for data durability during shutdown.
+        /// Persists data during shutdown using AOF or checkpoint based on configuration.
         /// </summary>
         private async Task FinalizeDataAsync(CancellationToken token)
         {
-            // Take checkpoint for tiered storage
-            if (opts.EnableStorageTier)
-            {
-                logger?.LogDebug("Taking checkpoint for tiered storage...");
-                try
-                {
-                    var checkpointSuccess = Store.TakeCheckpoint(background: false, token: token);
-                    if (checkpointSuccess)
-                    {
-                        logger?.LogDebug("Checkpoint completed successfully.");
-                    }
-                    else
-                    {
-                        logger?.LogInformation("Checkpoint skipped (another checkpoint in progress or replica mode).");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Error taking checkpoint during shutdown");
-                }
-            }
-
-            // Commit AOF after checkpoint to ensure all data is persisted, but only if AOF is enabled and we're not in replica mode (since replicas should not commit AOF)
             if (opts.EnableAOF)
             {
                 logger?.LogDebug("Committing AOF before shutdown...");
@@ -624,7 +601,30 @@ namespace Garnet
                 {
                     logger?.LogError(ex, "Error committing AOF during shutdown");
                 }
-            }            
+
+                return;
+            }
+
+            if (!opts.EnableStorageTier)
+                return;
+
+            logger?.LogDebug("Taking checkpoint for tiered storage...");
+            try
+            {
+                var checkpointSuccess = Store.TakeCheckpoint(background: false, token: token);
+                if (checkpointSuccess)
+                {
+                    logger?.LogDebug("Checkpoint completed successfully.");
+                }
+                else
+                {
+                    logger?.LogInformation("Checkpoint skipped (another checkpoint in progress or replica mode).");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error taking checkpoint during shutdown");
+            }
         }
 
         /// <summary>
