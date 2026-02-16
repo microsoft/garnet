@@ -47,8 +47,10 @@ namespace Garnet
             {
                 if (server != null)
                 {
-                    // Perform graceful shutdown with AOF commit and checkpoint
-                    await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5), token: cancellationToken).ConfigureAwait(false);
+                    // If cancellation is requested, we will skip the graceful shutdown and proceed to dispose immediately
+                    bool isForceShutdown = cancellationToken.IsCancellationRequested;
+                    // Perform graceful shutdown with AOF commit and checkpoint when not forced Shutdown From OS.
+                    await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5), noSave: isForceShutdown, token: cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
