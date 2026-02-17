@@ -164,7 +164,7 @@ namespace Garnet.server
                 {
                     value = value * 10 + (c - '0');
                 }
-                else if(c == '-')
+                else if (c == '-')
                 {
                     negative = true;
                 }
