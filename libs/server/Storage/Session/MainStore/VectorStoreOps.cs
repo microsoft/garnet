@@ -20,22 +20,23 @@ namespace Garnet.server
         // Redis quantiziations
 
         /// <summary>
-        /// Provided and stored as floats (FP32).
+        /// Vectors stored as is with no quantization.
         /// </summary>
         NoQuant,
         /// <summary>
-        /// Provided as FP32, stored as binary (1 bit).
+        /// Vectors stored as binary (1 bit).
         /// </summary>
         Bin,
         /// <summary>
-        /// Provided as FP32, stored as bytes (8 bits).
+        /// Vectors stored as bytes (8 bits).
         /// </summary>
         Q8,
 
         // Extended quantizations
 
         /// <summary>
-        /// Provided and stored as bytes (8 bits).
+        /// Vectors stored as bytes (8 bits). XPREQ8 is a non-Redis extension, stands for: 
+        /// eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
         /// </summary>
         XPreQ8,
     }
@@ -253,7 +254,7 @@ namespace Garnet.server
         /// Get the approximate vector associated with an element, after (approximately) reversing any transformation.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        public unsafe GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, out VectorQuantType quantType, ref SpanByteAndMemory outputDistances)
         {
             parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
 
@@ -265,10 +266,11 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    quantType = VectorQuantType.Invalid;
                     return status;
                 }
 
-                if (!vectorManager.TryGetEmbedding(indexSpan, element, ref outputDistances))
+                if (!vectorManager.TryGetEmbedding(indexSpan, element, out quantType, ref outputDistances))
                 {
                     return GarnetStatus.NOTFOUND;
                 }
