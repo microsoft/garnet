@@ -80,9 +80,6 @@ namespace Tsavorite.core
         /// <summary>High and low deltas for <see cref="TargetSize"/></summary>
         public (long high, long low) TargetDeltaRange => (highTargetSize, lowTargetSize);
 
-        /// <summary>Return true if the total size is outside the target plus delta</summary>
-        public bool IsBeyondSizeLimit => TotalSize > highTargetSize;
-
         /// <inheritdoc/>
         public override string ToString()
         {
@@ -90,26 +87,31 @@ namespace Tsavorite.core
                  + $" isOver: [{IsBeyondSizeLimit}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
-        /// <summary>Return true if the total size is outside the target plus delta *and*
-        /// we have pages we can (partially or completely) evict</summary>
-        public bool IsBeyondSizeLimitAndCanEvict => TotalSize > highTargetSize && CanEvict;
+        /// <summary>Return true if the total size is outside the target plus delta</summary>
+        public bool IsBeyondSizeLimit => TotalSize > highTargetSize;
+
+        /// <summary>Return true if the total size is outside the target plus delta *and* we have pages we can (partially or completely) evict</summary>
+        /// <param name="addingPage">If true, we are allocating a new page. Otherwise, we are called when adding or growing a new <see cref="IHeapObject"/></param>
+        /// <remarks>This should be used only for non-Recovery, because Recovery does not set up HeadAddress and TailAddress before this is called.</remarks>
+        public bool IsBeyondSizeLimitAndCanEvict(bool addingPage = false)
+        {
+            var headPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.HeadAddress);
+            var tailPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.UnstableGetTailAddress());
+
+            // The number of pages we have is untilPage - headPage + 1. If we're called here when allocating a new page, see if the new page
+            // would put us over the maximum count.
+            var numPages = (int)(tailPage - headPage + 1);
+            if (addingPage && numPages == logAccessor.allocatorBase.MaxAllocatedPageCount)
+                return true;
+
+            // Otherwise, we need at least MinResizeTargetPageCount to be able to evict anything.
+            return (TotalSize > highTargetSize) && numPages > MinResizeTargetPageCount;
+        }
 
         /// <summary>Return true if the total size plus the size needed for the requested number of pages to read is outside the target plus delta *and*
         /// we have pages we can (partially or completely) evict</summary>
-        public bool IsBeyondSizeLimitToReadPagesAndCanEvict(int numPagesToRead) => TotalSize + (numPagesToRead * logAccessor.allocatorBase.PageSize) > highTargetSize && CanEvict;
-
-        /// <summary>Return whether we have enough pages to evict anything.</summary>
-        private bool CanEvict
-        {
-            get
-            {
-                var headPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.HeadAddress);
-                var tailPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.UnstableGetTailAddress());
-
-                // The number of pages we have is untilPage - headPage + 1.
-                return tailPage - headPage + 1 > MinResizeTargetPageCount;
-            }
-        }
+        /// <remarks>This is called by Recovery.</remarks>
+        public bool IsBeyondSizeLimitToReadPages(int numPagesToRead) => TotalSize + (numPagesToRead * logAccessor.allocatorBase.PageSize) > highTargetSize;
 
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
@@ -138,6 +140,26 @@ namespace Tsavorite.core
             resizeTaskEvent.Initialize();
             runState = (int)RunState.Running;
             _ = Task.Run(() => ResizerTask(cancellationToken), cancellationToken);
+        }
+
+        /// <summary>Stop the resizer task</summary>
+        public void Stop(bool wait = false)
+        {
+            var prevState = Interlocked.CompareExchange(ref runState, (int)RunState.StopRequested, (int)RunState.Running);
+            if (prevState == (int)RunState.Running)
+            {
+                // This Set() will wake up the task and it will detect StopRequested and call OnStopped().
+                resizeTaskEvent.Set();
+                while (wait && !IsStopped)
+                    _ = Thread.Yield();
+            }
+        }
+
+        void OnStopped()
+        {
+            _ = Interlocked.Exchange(ref runState, (int)RunState.Stopped);
+            resizeTaskEvent.Dispose();
+            resizeTaskEvent = default;
         }
 
         /// <summary>
@@ -189,7 +211,7 @@ namespace Tsavorite.core
             if (size != 0)
             {
                 heapSize.Increment(size);
-                if (size > 0 && IsBeyondSizeLimitAndCanEvict)
+                if (size > 0 && IsBeyondSizeLimitAndCanEvict())
                     resizeTaskEvent.Set();
                 Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
             }
@@ -205,7 +227,7 @@ namespace Tsavorite.core
                 if (add)
                 {
                     heapSize.Increment(size);
-                    if (IsBeyondSizeLimitAndCanEvict)
+                    if (IsBeyondSizeLimitAndCanEvict())
                         resizeTaskEvent.Set();
                 }
                 else
@@ -254,13 +276,6 @@ namespace Tsavorite.core
                     logger?.LogWarning(e, "Exception when attempting to perform memory resizing.");
                 }
             }
-        }
-
-        void OnStopped()
-        {
-            _ = Interlocked.Exchange(ref runState, (int)RunState.Stopped);
-            resizeTaskEvent.Dispose();
-            resizeTaskEvent = default;
         }
 
         private bool DetermineEvictionRange(long currentSize, CancellationToken cancellationToken, out long headAddress,
@@ -367,18 +382,6 @@ namespace Tsavorite.core
             // would have returned isComplete and thus we didn't wait for the actual eviction.
             PostMemoryTrim(allocatedPageCount, headAddress);
             logger?.LogDebug("Decreased Allocated page count to {allocatedPageCount} and HeadAddress to {headAddress}; isComplete {isComplete}", allocatedPageCount, headAddress, isComplete);
-        }
-
-        /// <summary>Stop the resizer task</summary>
-        public void Stop(bool wait = false)
-        {
-            var prevState = Interlocked.CompareExchange(ref runState, (int)RunState.StopRequested, (int)RunState.Running);
-            if (prevState == (int)RunState.Running)
-            {
-                resizeTaskEvent.Set();
-                while (wait && !IsStopped)
-                    _ = Thread.Yield();
-            }
         }
     }
 }

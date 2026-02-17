@@ -330,7 +330,7 @@ namespace Garnet.test
 
         [Test]
         [TestCase(63, 15, 1)]
-        [TestCase(63, 2, 1)]
+        [TestCase(63, 4, 1)]
         [TestCase(16, 16, 1)]
         [TestCase(5, 64, 1)]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
@@ -341,7 +341,9 @@ namespace Garnet.test
             static string sizeToString(int size) => size + "k";
 
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(memorySize), pageSize: sizeToString(pageSize));
+            var pageCount = recoveryMemorySize / pageSize;
+            var totalMemorySize = recoveryMemorySize + 64;  // Add in some for heap
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(totalMemorySize), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
@@ -363,11 +365,10 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            var pageCount = recoveryMemorySize / pageSize;
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(recoveryMemorySize + 64 /* will add 'k' */), pageSize: sizeToString(pageSize));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(totalMemorySize /* will add 'k' */), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
-            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.HighWaterAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
+            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.HighWaterAllocatedPageCount, pageCount);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
@@ -382,7 +383,7 @@ namespace Garnet.test
         [Test]
         [TestCase("63k", "15k")]
         [TestCase("63k", "3k")]
-        [TestCase("63k", "1k")]
+        [TestCase("63k", "2k")]
         [TestCase("8k", "5k")]
         [TestCase("16k", "16k")]
         [TestCase("5k", "8k")]

@@ -671,10 +671,10 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
+        private long ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
         {
             // Before reading in additional pages, trim memory if needed to make room for the inline space (we can't know the heap size yet)
-            _ = TrimLogMemorySize(recoveryStatus, tailPage: page, numPagesToRead);
+            var freedPage = TrimLogMemorySize(recoveryStatus, tailPage: page, numPagesToRead);
 
             // Set all page read statuses to Pending
             for (var p = page; p < endPage; p++)
@@ -683,50 +683,49 @@ namespace Tsavorite.core
             // Issue request to read pages as much as possible
             hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress, recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                 recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
+            return freedPage;
         }
 
         /// <summary>
         /// Called before 'pagesToRead' number of pages are read into memory, this method determines how many previously allocated pages 
         /// must be (partially or completely) freed to avoid the total memory size to go beyond the specified maximum during recovery.
         /// </summary>
-        /// <returns>True if <paramref name="evictPageCount"/> is nonzero, else false</returns>
-        private bool GetEvictionPageRange(long tailPage, int numPagesToRead, CancellationToken cancellationToken, out long startPage, out int evictPageCount)
+        /// <returns>True if <paramref name="minEvictPageCount"/> is nonzero, else false</returns>
+        private bool GetEvictionPageRange(long tailPage, int numPagesToRead, CancellationToken cancellationToken, out long startPage, out int minEvictPageCount, out int maxEvictPageCount)
         {
             // Determine how many pages we must evict. TailPage is current page we're recovering and have not yet allocated;
             // we must start trimming at the earliest possible page.
+            // Illustration with BufferSize 32, MaxAllocatedPageCount 20, pagesToRead 2:
+            //     startPage: tailPage - 32
+            //     endPage:   tailPage - 18
+            // We free these 14 pages, leaving 18 allocated, and then read 2, which fills up usableCapacity. (startPage, endPage) can only
+            // be zero on the first pass through the buffer, as the page number continuously increases. 
             startPage = Math.Max(0, tailPage - hlogBase.BufferSize);
+            var endPage = Math.Max(0, tailPage - (hlogBase.MaxAllocatedPageCount - numPagesToRead));
+            minEvictPageCount = Math.Max(0, (int)(endPage - startPage));
 
             // If no log size tracker, just ensure MaxPageCount is not exceeded.
             if (hlogBase.logSizeTracker is null)
             {
-                // Illustration with BufferSize 32, MaxAllocatedPageCOunt 20, pagesToRead 2:
-                //     startPage: tailPage - 32
-                //     endPage:   tailPage - 18
-                // We free these 14 pages, leaving 18 allocated, and then read 2, which fills up usableCapacity. (startPage, endPage) can only
-                // be zero on the first pass through the buffer, as the page number continuously increases. 
-                var endPage = Math.Max(0, tailPage - (hlogBase.MaxAllocatedPageCount - numPagesToRead));
-                evictPageCount = (int)(endPage - startPage);
-                if (evictPageCount > 0)
-                    return true;
-                evictPageCount = 0;
-                return false;
+                maxEvictPageCount = minEvictPageCount;
+                return minEvictPageCount > 0;
             }
 
-            // We have a log size tracker, so specify evictCount as the maximum number of pages to evict and we'll when we are no longer over memory
-            // (the caller will also test logSizeTracker.IsBeyondSizeLimitAndCanEvict during the eviction loop);
-            evictPageCount = hlogBase.BufferSize - LogSizeTracker.MinResizeTargetPageCount;
-            return hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict;
+            // We have a log size tracker, so evictPageCount is a minimum; we may need to evict more pages if the logSizeTracker is still
+            // over budget (the caller will also test logSizeTracker.IsBeyondSizeLimitToReadPages during the eviction loop);
+            maxEvictPageCount = Math.Max(minEvictPageCount, (int)(tailPage - startPage) - LogSizeTracker.MinResizeTargetPageCount);
+            return minEvictPageCount > 0 || hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead);
         }
 
         private long TrimLogMemorySize(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead = 0)
         {
             var lastFreedPage = NoPageFreed;
-            if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int evictPageCount))
+            if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int minEvictPageCount, out int maxEvictPageCount))
             {
                 // Evict pages one at a time
-                for (var ii = 0; ii < evictPageCount; ii++)
+                for (var ii = 0; ii < maxEvictPageCount; ii++)
                 {
-                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPagesAndCanEvict(numPagesToRead))
+                    if (hlogBase.logSizeTracker is not null && ii >= minEvictPageCount && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead))
                         break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
@@ -745,12 +744,12 @@ namespace Tsavorite.core
         private async Task<long> TrimLogMemorySizeAsync(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead = 0, CancellationToken cancellationToken = default)
         {
             var lastFreedPage = NoPageFreed;
-            if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int evictPageCount))
+            if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int minEvictPageCount, out int maxEvictPageCount))
             {
                 // Evict pages one at a time
-                for (var ii = 0; ii < evictPageCount; ii++)
+                for (var ii = 0; ii < maxEvictPageCount; ii++)
                 {
-                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPagesAndCanEvict(numPagesToRead))
+                    if (hlogBase.logSizeTracker is not null && ii >= minEvictPageCount && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead))
                         break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
@@ -766,7 +765,7 @@ namespace Tsavorite.core
             return lastFreedPage;
         }
 
-        private long ReadPagesForRecovery(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page)
+        private (long end, long freedPage) ReadPagesForRecovery(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
             if (page < readEndPage)
@@ -777,13 +776,13 @@ namespace Tsavorite.core
                 // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 WaitUntilAllPagesHaveBeenFlushed(page, readEndPage, recoveryStatus);
-                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead);
+                return (readEndPage, ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead));
             }
 
-            return readEndPage;
+            return (readEndPage, NoPageFreed);
         }
 
-        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
+        private async ValueTask<(long end, long freedPage)> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
             if (page < readEndPage)
@@ -794,10 +793,10 @@ namespace Tsavorite.core
                 // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-                ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead);
+                return (readEndPage, ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead));
             }
 
-            return readEndPage;
+            return (readEndPage, NoPageFreed);
         }
 
         /// <summary>
@@ -822,7 +821,9 @@ namespace Tsavorite.core
             Debug.Assert(hlogBase.logSizeTracker is null || numPagesToReadPerIteration == 1, "numPagesToReadPerIteration must be 1 when tracking sizes");
             for (var page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var end = ReadPagesForRecovery(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page);
+                var (end, freedPage) = ReadPagesForRecovery(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page);
+                if (freedPage != NoPageFreed)
+                    lastFreedPage = freedPage;
 
                 for (var p = page; p < end; p++)
                 {
@@ -830,8 +831,9 @@ namespace Tsavorite.core
                     int pageIndex = hlogBase.GetPageIndexForPage(p);
                     recoveryStatus.WaitRead(pageIndex);
 
-                    // Trim the log memory again in case we read large objects on the current page.
-                    var freedPage = TrimLogMemorySize(recoveryStatus, p);
+                    // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
+                    // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
+                    freedPage = TrimLogMemorySize(recoveryStatus, tailPage: p + 1);
                     if (freedPage != NoPageFreed)
                         lastFreedPage = freedPage;
 
@@ -869,7 +871,9 @@ namespace Tsavorite.core
             Debug.Assert(hlogBase.logSizeTracker is null || numPagesToReadPerIteration == 1, "numPagesToReadPerIteration must be 1 when tracking sizes");
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                var (end, freedPage) = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                if (freedPage != NoPageFreed)
+                    lastFreedPage = freedPage;
 
                 for (var p = page; p < end; p++)
                 {
@@ -877,8 +881,9 @@ namespace Tsavorite.core
                     var pageIndex = hlogBase.GetPageIndexForPage(p);
                     await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
 
-                    // Trim the log memory again in case we read large objects on the current page.
-                    var freedPage = await TrimLogMemorySizeAsync(recoveryStatus, p, numPagesToRead: 0, cancellationToken);
+                    // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
+                    // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
+                    freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, numPagesToRead: 0, cancellationToken);
                     if (freedPage != NoPageFreed)
                         lastFreedPage = freedPage;
 
@@ -1018,7 +1023,9 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                _ = ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page);
+                var (_, freedPage) = ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page);
+                if (freedPage != NoPageFreed)
+                    lastFreedPage = freedPage;
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
                 for (long p = page; p < end; p++)
                 {
@@ -1028,8 +1035,9 @@ namespace Tsavorite.core
                         // Ensure the page is read from file
                         recoveryStatus.WaitRead(pageIndex);
 
-                        // Trim the log memory again in case we read large objects on the current page.
-                        var freedPage = TrimLogMemorySize(recoveryStatus, p);
+                        // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
+                        // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
+                        freedPage = TrimLogMemorySize(recoveryStatus, tailPage: p + 1);
                         if (freedPage != NoPageFreed)
                             lastFreedPage = freedPage;
 
@@ -1090,8 +1098,9 @@ namespace Tsavorite.core
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
 
-                        // Trim the log memory again in case we read large objects on the current page.
-                        var freedPage = await TrimLogMemorySizeAsync(recoveryStatus, p, numPagesToRead: 0, cancellationToken).ConfigureAwait(false);
+                        // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
+                        // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
+                        var freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, numPagesToRead: 0, cancellationToken).ConfigureAwait(false);
                         if (freedPage != NoPageFreed)
                             lastFreedPage = freedPage;
 

@@ -936,68 +936,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Sets a new memory limit (replacing <see cref="LogSettings.PageCount"/>) when there is no <see cref="logSizeTracker"/> present.
-        /// </summary>
-        /// <param name="pageCount"></param>
-        internal void SetMaxAllocatedPageCount(int pageCount)
-        {
-            if (logSizeTracker is not null)
-                ThrowTsavoriteException("Cannot set MaxAllocatedPageCount directly when logSizeTracker is present");
-
-            // If we're increasing, just increase the maximum and let normal operations allocate the pages and populate them.
-            if (pageCount > MaxAllocatedPageCount)
-            {
-                if (pageCount > BufferSize)
-                    ThrowTsavoriteException("Cannot set MaxAllocatedPageCount greater than BufferSize");
-                MaxAllocatedPageCount = pageCount;
-                return;
-            }
-
-            // If we're decreasing, we may or may not need to evict, depending on how many pages we have allocated.
-            if (pageCount < MaxAllocatedPageCount)
-            {
-                MaxAllocatedPageCount = pageCount;
-                if (pageCount < AllocatedPageCount)
-                {
-                    // Acquire the epoch long enough to calculate the number of pages we can evict.
-                    epoch.Resume();
-                    var headAddress = HeadAddress;
-                    var readOnlyAddress = ReadOnlyAddress;
-                    var evictPageCount = 0;
-                    try
-                    {
-                        // We can evict pages up to two pages before TailAddress.
-                        var tailPage = GetPage(GetTailAddress());
-                        var headPage = GetPage(headAddress);
-                        if (tailPage - headPage > 2)
-                        {
-                            var evictablePageCount = (int)(tailPage - headPage + 1);
-                            evictPageCount = (int)(evictablePageCount - pageCount);
-                            if (evictPageCount != 0)
-                            {
-                                if (evictPageCount < 0)
-                                    evictPageCount = evictablePageCount;
-                                headAddress = GetLogicalAddressOfStartOfPage(headPage + evictPageCount);
-                                readOnlyAddress = CalculateReadOnlyAddress(GetTailAddress(), headAddress);
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        epoch.Suspend();
-                    }
-
-                    // Shift addresses. If ReadOnlyAddress did not change, the ShiftReadOnlyAddressWithWait inside ShiftAddressesWithWait will do nothing.
-                    if (evictPageCount > 0)
-                    {
-                        logger?.LogInformation("Evicting {evictPageCount} pages to reduce MaxAllocatedPageCount to {maxAllocatedPageCount}", evictPageCount, pageCount);
-                        ShiftAddressesWithWait(readOnlyAddress, headAddress, waitForEviction: false);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
         /// Shift log read-only address, with an optional wait
         /// </summary>
         /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
@@ -1165,7 +1103,7 @@ namespace Tsavorite.core
             }
 
             needSHA = false;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict)
+            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
                 return false;
             logSizeTracker.Signal();
             return true;
@@ -1852,8 +1790,7 @@ namespace Tsavorite.core
                     // Write the entire page up to asyncResult.untilAddress (there can be no previous items in the queue).
                     Debug.Assert(PendingFlush[index].list.Count == 0, $"Expected PendingFlush count {PendingFlush[index].list.Count} to be 0");
 
-                    // This will issue a write that completes in the background as we move to the next page, and the Flush callbacks
-                    // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
+                    // This will issue a write that completes in the background as we move to the next page.
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class
                 }
             }

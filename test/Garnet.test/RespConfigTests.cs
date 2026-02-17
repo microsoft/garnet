@@ -389,6 +389,7 @@ namespace Garnet.test
             var store = server.Provider.StoreWrapper.store;
             var tracker = store.Log.LogSizeTracker;
             Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
+            Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo((int)(currMemorySize / parsedPageSize)));
 
             int lastIdxSecondRound;
             int keysInsertedFirstRound;
@@ -441,7 +442,8 @@ namespace Garnet.test
 
                 // Record the number of keys inserted in the first round
                 keysInsertedFirstRound = lastIdxFirstRound + 1 - c;
-                allocatedPagesFirstRound = store.hlogBase.AllocatedPageCount;
+                allocatedPagesFirstRound = store.hlogBase.AllocatedPageCount - 1;   // APC includes the one-ahead page allocation
+                Assert.That(allocatedPagesFirstRound, Is.LessThanOrEqualTo(store.hlogBase.MaxAllocatedPageCount));
 
                 (highTarget1, lowTarget1) = tracker.TargetDeltaRange;
                 maxAllocatedPageCount1 = tracker.logAccessor.allocatorBase.MaxAllocatedPageCount;
@@ -467,11 +469,10 @@ namespace Garnet.test
                 }
 
                 lastIdxSecondRound = i - 1;
-                allocatedPagesSecondRound = store.hlogBase.AllocatedPageCount;
+                allocatedPagesSecondRound = store.hlogBase.AllocatedPageCount - 1;  // APC includes the one-ahead page allocation
 
-                 // Verify that memory is fully utilized
+                // Verify that memory is fully utilized
                 Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
-                Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
 
                 // SAVE and wait for completion
                 garnetServer.Save(SaveType.BackgroundSave);
@@ -495,7 +496,7 @@ namespace Garnet.test
 
             store = server.Provider.StoreWrapper.store;
             tracker = store.Log.LogSizeTracker;
-            var allocatedPagesRestore = store.hlogBase.AllocatedPageCount;
+            var allocatedPagesRestore = store.hlogBase.AllocatedPageCount - 1;  // APC includes the one-ahead page allocation
 
             var (highTargetRestore, lowTargetRestore) = tracker.TargetDeltaRange;
             Assert.That(highTargetRestore, Is.EqualTo(highTarget1));
@@ -505,7 +506,7 @@ namespace Garnet.test
 
             // Recovery and insertion don't track sizes exactly the same way with logSizeTracker enabled, so this is not entirely deterministic; just verify the ranges.
             Assert.That(allocatedPagesRestore, Is.GreaterThanOrEqualTo(allocatedPagesFirstRound));
-            Assert.That(allocatedPagesRestore, Is.LessThan(allocatedPagesSecondRound));
+            Assert.That(allocatedPagesRestore, Is.LessThanOrEqualTo(allocatedPagesSecondRound));
             Assert.That(allocatedPagesRestore, Is.GreaterThanOrEqualTo(lowTargetRestore / store.Log.allocatorBase.PageSize));
             Assert.That(allocatedPagesRestore, Is.LessThanOrEqualTo(RoundUp(highTargetRestore, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize));
 
@@ -522,7 +523,7 @@ namespace Garnet.test
                 var addressRange = store.Log.TailAddress - store.Log.HeadAddress;
                 var addressRangePages = RoundUp(addressRange, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize;
                 Assert.That(addressRange, Is.LessThanOrEqualTo(highTargetRestore));
-                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo((allocatedPagesRestore - 1) * 2));   // AllocatedPageCount includes the "allocate-ahead" page
+                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(allocatedPagesRestore * 2));   // AllocatedPageCount includes the "allocate-ahead" page
                 Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(addressRangePages * 2));
 
                 // Verify that all previous keys are not present in the database

@@ -87,24 +87,21 @@ namespace Tsavorite.core
         /// <summary>
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
         /// </summary>
-        /// <param name="logRecord">The <see cref="LogRecord"/> whose Keys and Values are to be written to the device.</param>
-        /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately.</remarks>
+        /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately by the caller.</remarks>
         /// <returns>The number of bytes written for the value object, if any.</returns>
-        public ulong WriteRecordObjects(in LogRecord logRecord)
+        public ulong WriteRecordObjects(in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow, in IHeapObject valueObject)
         {
-            Debug.Assert(logRecord.Info.RecordHasObjects, "Cannot call ObjectLogWriter with an inline record");
+            // If the key is overflow, start with that
+            if (!keyOverflow.IsEmpty)
+                WriteDirect(keyOverflow);
 
-            // If the key is overflow, start with that. (Inline keys are written as part of the main-log record.)
-            if (logRecord.Info.KeyIsOverflow)
-                WriteDirect(logRecord.KeyOverflow);
+            // Now do value overflow or object, if either is present
+            if (!valueOverflow.IsEmpty)
+                WriteDirect(valueOverflow);
+            else if (valueObject is not null)
+                DoSerialize(valueObject);
 
-            if (logRecord.Info.ValueIsOverflow)
-                WriteDirect(logRecord.ValueOverflow);
-            else if (logRecord.Info.ValueIsObject)
-            {
-                var obj = logRecord.ValueObject;
-                DoSerialize(obj);
-            }
+            // Signal completion.
             flushBuffers.OnRecordComplete();
             return valueObjectBytesWritten;
         }

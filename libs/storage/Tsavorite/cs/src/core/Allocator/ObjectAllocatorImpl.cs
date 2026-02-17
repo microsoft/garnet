@@ -569,7 +569,17 @@ namespace Tsavorite.core
                                     if (isFirstRecordOnPage)
                                         pageHeader.SetLowestObjectLogPosition(recordStartPosition);
 
-                                    var valueObjectLength = logWriter.WriteRecordObjects(in logRecord);
+                                    OverflowByteArray keyOverflow = default, valueOverflow = default;
+                                    IHeapObject valueObject = default;
+                                    if (logRecord.Info.KeyIsOverflow)
+                                        keyOverflow = logRecord.KeyOverflow;
+
+                                    if (logRecord.Info.ValueIsOverflow)
+                                        valueOverflow = logRecord.ValueOverflow;
+                                    else if (logRecord.Info.ValueIsObject)
+                                        valueObject = logRecord.ValueObject;
+
+                                    var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
                                 }
                                 else

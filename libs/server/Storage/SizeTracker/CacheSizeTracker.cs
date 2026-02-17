@@ -17,36 +17,33 @@ namespace Garnet.server
     {
         internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> mainLogTracker;
         internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> readCacheTracker;
-        private long targetSize;
-        private long readCacheTargetSize;
 
         int isStarted = 0;
         private const int HighTargetSizeDeltaFraction = 10; // When memory usage grows, trigger trimming at 10% above target size (for both main log and readcache)
         private const int LowTargetSizeDeltaFraction = HighTargetSizeDeltaFraction * 5;  // When trimming memory, trim down to 1/5 of HighTargetSizeDeltaFraction below target size (for both main log and readcache)
 
-        internal bool Stopped => (mainLogTracker == null || mainLogTracker.IsStopped) && (readCacheTracker == null || readCacheTracker.IsStopped);
+        internal bool IsStopped => (mainLogTracker == null || mainLogTracker.IsStopped) && (readCacheTracker == null || readCacheTracker.IsStopped);
+        internal bool IsStarted => isStarted == 1;
 
         /// <summary>Total memory size target for main log</summary>
         public long TargetSize
         {
-            get => targetSize;
+            get => mainLogTracker?.TargetSize ?? 0;
             set
             {
                 Debug.Assert(value >= 0);
-                targetSize = value;
-                mainLogTracker?.UpdateTargetSize(targetSize, targetSize / HighTargetSizeDeltaFraction, targetSize / LowTargetSizeDeltaFraction);
+                mainLogTracker?.UpdateTargetSize(value, value / HighTargetSizeDeltaFraction, value / LowTargetSizeDeltaFraction);
             }
         }
 
         /// <summary>Total memory size target for readcache</summary>
         public long ReadCacheTargetSize
         {
-            get => readCacheTargetSize;
+            get => readCacheTracker?.TargetSize ?? 0;
             set
             {
                 Debug.Assert(value >= 0);
-                readCacheTargetSize = value;
-                readCacheTracker?.UpdateTargetSize(readCacheTargetSize, readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction);
+                readCacheTracker?.UpdateTargetSize(value, value / HighTargetSizeDeltaFraction, value / LowTargetSizeDeltaFraction);
             }
         }
 
@@ -74,13 +71,9 @@ namespace Garnet.server
                         readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("ReadCacheSizeTracker"));
                 store.ReadCache.SetLogSizeTracker(readCacheTracker);
             }
-
-            // We've already set the individual Trackers' target sizes on ctor, so set the fields directly here rather than the properties (which calls LogSizeTracker.UpdateSize again).
-            this.targetSize = targetSize;
-            this.readCacheTargetSize = readCacheTargetSize;
         }
 
-        /// <summary>Start the trackers, ensuring that only one thread does so</summary>
+        /// <summary>Start the trackers, ensuring that only one thread does so. We may start it on Checkpoint recovery before starting database operations.</summary>
         public void Start(CancellationToken token)
         {
             // Prevent multiple calls to Start

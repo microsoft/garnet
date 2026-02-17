@@ -111,13 +111,11 @@ namespace Tsavorite.test.recovery.objects
                 var _key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
                 _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), value);
-#if false
                 if (i % 100 == 0)
                 {
                     _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
                     store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
-#endif
             }
         }
 

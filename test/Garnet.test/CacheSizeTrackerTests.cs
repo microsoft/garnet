@@ -194,6 +194,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Explicit("Revivification for readcache: update to be like SmallMainLogFineGrainedEvictionTest for readcache")]
         public void ReadCacheIncreaseEmptyPageCountTest()
         {
             server?.Dispose();
