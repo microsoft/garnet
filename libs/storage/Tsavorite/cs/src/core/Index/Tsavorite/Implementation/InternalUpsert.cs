@@ -130,9 +130,8 @@ namespace Tsavorite.core
                     var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord.Key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
 
                     // Type arg specification is needed because we don't pass TContext
-                    var ok = TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                            ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
-                    if (ok)
+                    if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                        ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -354,8 +353,12 @@ namespace Tsavorite.core
                     else
                         DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
                 }
-                else if (stackCtx.recSrc.HasMainLogSrc)
-                    srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                else
+                {
+                    // If it is in mutable or fuzzy region, we must Seal
+                    if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress > hlogBase.SafeReadOnlyAddress)
+                        srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                }
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;

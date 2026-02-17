@@ -16,7 +16,8 @@ namespace Tsavorite.test
     {
         public int key;
 
-        public override string ToString() => key.ToString();
+        /// <inheritdoc/>
+        public override readonly string ToString() => key.ToString();
 
         public struct Comparer : IKeyComparer
         {
@@ -73,7 +74,10 @@ namespace Tsavorite.test
     public class TestObjectFunctions : SessionFunctionsBase<TestObjectInput, TestObjectOutput, Empty>
     {
         public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = input.value }, in sizeInfo);
+        {
+            // (for debugging specific failures) Assert.That(input.value, Is.EqualTo(logRecord.Key.AsRef<TestObjectKey>().key), $"Record logicalAddress: {rmwInfo.Address}");
+            return logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = input.value }, in sizeInfo);
+        }
 
         public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
@@ -97,7 +101,7 @@ namespace Tsavorite.test
         public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.AreEqual(output.value.value, srcLogRecord.Key.AsRef<TestObjectKey>().key);
+            Assert.That(output.value.value, Is.EqualTo(srcLogRecord.Key.AsRef<TestObjectKey>().key), $"Record logicalAddress: {recordMetadata.Address}");
         }
 
         public override void RMWCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
@@ -109,17 +113,21 @@ namespace Tsavorite.test
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
             output.value = (TestObjectValue)srcLogRecord.ValueObject;
+            // (for debugging specific failures) Assert.That(output.value.value, Is.EqualTo(srcLogRecord.Key.AsRef<TestObjectKey>().key), $"Record logicalAddress: {readInfo.Address}");
             return true;
         }
 
         public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        {
+            // (for debugging specific failures) Assert.That(((TestObjectValue)srcValue).value, Is.EqualTo(logRecord.Key.AsRef<TestObjectKey>().key), $"Record logicalAddress: {upsertInfo.Address}");
+            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        }
 
-        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
+        public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
+        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
             => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
+        public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
             => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 

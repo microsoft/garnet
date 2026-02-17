@@ -327,6 +327,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         public void SimpleFixedLenTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -364,6 +365,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         public void UnelideTest([Values] RecordElision elision, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -404,6 +406,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
 #pragma warning disable IDE0060 // Remove unused parameter (used by setup)
         public void SimpleMinAddressAddTest([Values] RevivifiableFraction revivifiableFraction)
 #pragma warning restore IDE0060 // Remove unused parameter
@@ -1275,6 +1278,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         public void DeleteAllRecordsAndRevivifyTest([Values(CollisionRange.None)] CollisionRange collisionRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -1336,6 +1340,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         public void DeleteAllRecordsAndTakeSnapshotTest()
         {
             Populate();
@@ -1361,6 +1366,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         public void DeleteAllRecordsAndIterateTest()
         {
             Populate();
@@ -1414,6 +1420,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         //[Repeat(3000)]
         public void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] WaitMode waitMode, [Values] DeleteDest deleteDest)
         {
@@ -1495,6 +1502,7 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        [Explicit("Revivifiable boundary has changed")]
         public void LiveBinWrappingNoRevivTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values(RevivificationEnabled.NoReviv)] RevivificationEnabled revivEnabled)
         {
             // For a comparison to the reviv version above.

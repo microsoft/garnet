@@ -222,9 +222,9 @@ namespace Tsavorite.test
 
         public enum KeyEquality { Equal, NotEqual }
 
-        public enum ReadCacheMode { UseReadCache, NoReadCache }
+        public enum ReadCacheMode { UseRC, NoRC }
 
-        public enum KeyContentionMode { Contention, NoContention }
+        public enum KeyContentionMode { Cont, NoCont }
 
         public enum BatchMode { Batch, NoBatch }
 

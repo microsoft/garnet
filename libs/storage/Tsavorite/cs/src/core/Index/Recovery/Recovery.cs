@@ -686,29 +686,35 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Determine how many pages we need to evict, if any.
+        /// Called before 'pagesToRead' number of pages are read into memory, this method determines how many previously allocated pages 
+        /// must be (partially or completely) freed to avoid the total memory size to go beyond the specified maximum during recovery.
         /// </summary>
         /// <returns>True if <paramref name="evictPageCount"/> is nonzero, else false</returns>
         private bool GetEvictionPageRange(long tailPage, int numPagesToRead, CancellationToken cancellationToken, out long startPage, out int evictPageCount)
         {
-            // Determine how many pages we must evict. TailPage is current page we're recovering; we must start trimming at the earliest possible page.
-            startPage = Math.Max(0, tailPage - hlogBase.AllocatedPageCount + 1);
+            // Determine how many pages we must evict. TailPage is current page we're recovering and have not yet allocated;
+            // we must start trimming at the earliest possible page.
+            startPage = Math.Max(0, tailPage - hlogBase.BufferSize);
 
             // If no log size tracker, just ensure MaxPageCount is not exceeded.
             if (hlogBase.logSizeTracker is null)
             {
-                var pagesAllowed = hlogBase.MaxAllocatedPageCount - hlogBase.AllocatedPageCount;
-                if (numPagesToRead > pagesAllowed)
-                {
-                    evictPageCount = numPagesToRead - pagesAllowed;
+                // Illustration with BufferSize 32, MaxAllocatedPageCOunt 20, pagesToRead 2:
+                //     startPage: tailPage - 32
+                //     endPage:   tailPage - 18
+                // We free these 14 pages, leaving 18 allocated, and then read 2, which fills up usableCapacity. (startPage, endPage) can only
+                // be zero on the first pass through the buffer, as the page number continuously increases. 
+                var endPage = Math.Max(0, tailPage - (hlogBase.MaxAllocatedPageCount - numPagesToRead));
+                evictPageCount = (int)(endPage - startPage);
+                if (evictPageCount > 0)
                     return true;
-                }
                 evictPageCount = 0;
                 return false;
             }
 
-            // We have a log size tracker, so we'll stop evictPageCount when we are at the minimum (the caller will also test logSizeTracker.IsBeyondSizeLimitAndCanEvict);
-            evictPageCount = hlogBase.AllocatedPageCount - LogSizeTracker.MinResizeTargetPageCount;
+            // We have a log size tracker, so specify evictCount as the maximum number of pages to evict and we'll when we are no longer over memory
+            // (the caller will also test logSizeTracker.IsBeyondSizeLimitAndCanEvict during the eviction loop);
+            evictPageCount = hlogBase.BufferSize - LogSizeTracker.MinResizeTargetPageCount;
             return hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict;
         }
 
@@ -720,7 +726,7 @@ namespace Tsavorite.core
                 // Evict pages one at a time
                 for (var ii = 0; ii < evictPageCount; ii++)
                 {
-                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict)
+                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPagesAndCanEvict(numPagesToRead))
                         break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
@@ -744,7 +750,7 @@ namespace Tsavorite.core
                 // Evict pages one at a time
                 for (var ii = 0; ii < evictPageCount; ii++)
                 {
-                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict)
+                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPagesAndCanEvict(numPagesToRead))
                         break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);

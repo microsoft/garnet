@@ -69,7 +69,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 if (arg is ReadCacheMode rcm)
                 {
-                    if (rcm == ReadCacheMode.UseReadCache)
+                    if (rcm == ReadCacheMode.UseRC)
                     {
                         kvSettings.ReadCacheMemorySize = 1L << 15;
                         kvSettings.ReadCachePageSize = 1L << 12;
@@ -110,7 +110,7 @@ namespace Tsavorite.test.ReadCacheTests
         //[Repeat(1000)]
         public void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
-            if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
+            if (numThreads == 1 && keyContentionMode == KeyContentionMode.Cont)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");
             if (numThreads > 2 && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
@@ -214,7 +214,7 @@ namespace Tsavorite.test.ReadCacheTests
             for (int t = 0; t < numThreads; t++)
             {
                 var tid = t;
-                if (keyContentionMode == KeyContentionMode.Contention)
+                if (keyContentionMode == KeyContentionMode.Cont)
                     tasks.Add(Task.Factory.StartNew(() => LocalRun(0, MaxKeys)));
                 else
                     tasks.Add(Task.Factory.StartNew(() => LocalRun(numKeysPerThread * tid, numKeysPerThread * (tid + 1))));

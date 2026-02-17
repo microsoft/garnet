@@ -54,8 +54,6 @@ namespace Tsavorite.test.readaddress
 
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
-        public enum UseReadCache { NoReadCache, ReadCache }
-
         internal class Functions : SessionFunctionsBase<ValueStruct, Output, Empty>
         {
             internal long lastWriteAddress = LogAddress.kInvalidAddress;
@@ -68,9 +66,9 @@ namespace Tsavorite.test.readaddress
                 this.preserveCopyUpdaterSource = preserveCopyUpdaterSource;
                 foreach (var arg in TestContext.CurrentContext.Test.Arguments)
                 {
-                    if (arg is UseReadCache urc)
+                    if (arg is ReadCacheMode urc)
                     {
-                        useReadCache = urc == UseReadCache.ReadCache;
+                        useReadCache = urc == ReadCacheMode.UseRC;
                         continue;
                     }
                 }
@@ -264,16 +262,16 @@ namespace Tsavorite.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public void VersionedReadTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public void VersionedReadTests(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
@@ -375,16 +373,16 @@ namespace Tsavorite.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public void ReadAtAddressTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public void ReadAtAddressTests(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
@@ -421,16 +419,16 @@ namespace Tsavorite.test.readaddress
         }
 
         // Test is similar to others but tests the Overload where RadCopy*.None is set -- probably don't need all combinations of test but doesn't hurt
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public async Task ReadAtAddressCopyOptNoRcTest(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public async Task ReadAtAddressCopyOptNoRcTest(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW);
@@ -454,6 +452,7 @@ namespace Tsavorite.test.readaddress
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult(out recordMetadata);
+                    Assert.That(output.recordInfo.Tombstone, Is.EqualTo(lap == DeleteLap), $"lap {lap}");
 
                     if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
@@ -463,16 +462,16 @@ namespace Tsavorite.test.readaddress
         }
 
         // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.NoRC, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk)]
+        [TestCase(ReadCacheMode.UseRC, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk)]
         [Category("TsavoriteKV"), Category("Read")]
-        public async ValueTask ReadNoKeyTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
+        public async ValueTask ReadNoKeyTests(ReadCacheMode urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode)
         {
-            var useReadCache = urc == UseReadCache.ReadCache;
+            var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW);

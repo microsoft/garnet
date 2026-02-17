@@ -103,7 +103,9 @@ namespace Tsavorite.core
         /// <summary>The maximum address of the immutable in-memory log region</summary>
         public long ReadOnlyAddress;
 
-        /// <summary>Safe read-only address</summary>
+        /// <summary>The lowest fuzzy mutable address. This is set by OnPagesMarkedReadOnly as the address to which we are setting the
+        /// <see cref="ReadOnlyAddress"/> prior to actually doing the flushes. If it is less than <see cref="ReadOnlyAddress"/> then it
+        /// is the low address of the "fuzzy region" (<see cref="ReadOnlyAddress"/> is the high address of the "fuzzy region").</summary>
         public long SafeReadOnlyAddress;
 
         /// <summary>
@@ -139,7 +141,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
             => $"TA {AddressString(GetTailAddress())}, ROA {AddressString(ReadOnlyAddress)}, SafeROA {AddressString(SafeReadOnlyAddress)}, HA {AddressString(HeadAddress)},"
-             + $" SafeHA {AddressString(SafeHeadAddress)}, CUA {AddressString(ClosedUntilAddress)}, FUA {AddressString(FlushedUntilAddress)}, BA {AddressString(BeginAddress)}";
+             + $" SafeHA {AddressString(SafeHeadAddress)}, CUA {AddressString(ClosedUntilAddress)}, FUA {AddressString(FlushedUntilAddress)}, BA {AddressString(BeginAddress)},"
+             + $" PgSz {PageSize}, BufSz {BufferSize}, APC {AllocatedPageCount}, MAPC {MaxAllocatedPageCount}";
         #endregion
 
         #region Protected device info
@@ -1304,10 +1307,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
-            // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in.
-            var readOnlyAddress = RoundDown(headAddress + (long)((1.0 - logMutableFraction) * (tailAddress - headAddress)), PageSize);
-            if (readOnlyAddress < headAddress)
-                readOnlyAddress = headAddress;
+            // Snap ReadOnlyAddress to the end of the page that this calculation on logMutableFraction ends up in. This will be at
+            // least the end of the HeadAddress page. And the HeadAddress page is always calculated to be below the TailAddress page.
+            var readOnlyAddress = RoundUp(headAddress + (long)((1.0 - logMutableFraction) * (tailAddress - headAddress)), PageSize);
+            Debug.Assert(readOnlyAddress >= headAddress, $"ReadOnlyAddress {readOnlyAddress} must be at least HeadAddress {headAddress}");
             Debug.Assert(readOnlyAddress <= tailAddress, $"ReadOnlyAddress {readOnlyAddress} must not exceed TailAddress {tailAddress}");
             return readOnlyAddress;
         }
@@ -1824,11 +1827,10 @@ namespace Tsavorite.core
                 if (skip)
                     continue;
 
-                // Partial page starting point, need to wait until the ongoing adjacent flush is completed to ensure correctness
+                // If there is a partial page starting point, we need to wait until the ongoing adjacent flush is completed to ensure correctness
+                var index = GetPageIndexForAddress(asyncResult.fromAddress);
                 if (GetOffsetOnPage(asyncResult.fromAddress) > 0)
                 {
-                    var index = GetPageIndexForAddress(asyncResult.fromAddress);
-
                     // Try to merge request with existing adjacent (earlier) pending requests (these have not yet begun or they
                     // would not be in the queue).
                     while (PendingFlush[index].RemovePreviousAdjacent(asyncResult.fromAddress, out var existingRequest))
@@ -1848,6 +1850,8 @@ namespace Tsavorite.core
                 else
                 {
                     // Write the entire page up to asyncResult.untilAddress (there can be no previous items in the queue).
+                    Debug.Assert(PendingFlush[index].list.Count == 0, $"Expected PendingFlush count {PendingFlush[index].list.Count} to be 0");
+
                     // This will issue a write that completes in the background as we move to the next page, and the Flush callbacks
                     // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class

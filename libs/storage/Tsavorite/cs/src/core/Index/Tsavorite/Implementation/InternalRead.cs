@@ -285,8 +285,8 @@ namespace Tsavorite.core
             try
             {
                 // We're not doing RETRY_LATER if there is a Closed record; we only return valid records here.
-                // Closed records may be reclaimed by revivification, so we do not return them.
-                if (srcLogRecord.Info.IsClosed)
+                // Closed records may be reclaimed by revivification, so we do not return them if we are using the revivification free list.
+                if (srcLogRecord.Info.IsClosed && RevivificationManager.UseFreeRecordPool)
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 

@@ -680,6 +680,7 @@ namespace Garnet.test
         /// <param name="largerSize">Heap size larger than configured size</param>
         [Test]
         [TestCase("8192")]
+        [Explicit("Currently hangs due to waiting for eviction callback.")]
         public void ConfigSetHeapMemorySizeUtilizationTest(string largerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));

@@ -90,13 +90,19 @@ namespace Tsavorite.core
                  + $" isOver: [{IsBeyondSizeLimit}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
-        /// <summary>Return true if the total size is outside the target plus delta *and* we have pages we can (partially or completely) evict</summary>
-        public bool IsBeyondSizeLimitAndCanEvict
+        /// <summary>Return true if the total size is outside the target plus delta *and*
+        /// we have pages we can (partially or completely) evict</summary>
+        public bool IsBeyondSizeLimitAndCanEvict => TotalSize > highTargetSize && CanEvict;
+
+        /// <summary>Return true if the total size plus the size needed for the requested number of pages to read is outside the target plus delta *and*
+        /// we have pages we can (partially or completely) evict</summary>
+        public bool IsBeyondSizeLimitToReadPagesAndCanEvict(int numPagesToRead) => TotalSize + (numPagesToRead * logAccessor.allocatorBase.PageSize) > highTargetSize && CanEvict;
+
+        /// <summary>Return whether we have enough pages to evict anything.</summary>
+        private bool CanEvict
         {
             get
             {
-                if (TotalSize <= highTargetSize)
-                    return false;
                 var headPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.HeadAddress);
                 var tailPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.UnstableGetTailAddress());
 

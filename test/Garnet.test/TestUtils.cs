@@ -379,7 +379,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) == default ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 opts.PageSize = pageSize == default ? "512" : pageSize;
 
                 // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
@@ -580,7 +580,7 @@ namespace Garnet.test
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
                     {
-                        ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
+                        ClassicAssert.Less(iter, 30, "Failed to connect within 30 seconds");
                         TestContext.Progress.WriteLine($"Waiting for Port {ipEndpoint.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
                         Thread.Sleep(1000);
                     }
@@ -771,7 +771,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = memorySize == default ? "1024" : memorySize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 opts.PageSize = pageSize == default ? "512" : pageSize;
             }
 
