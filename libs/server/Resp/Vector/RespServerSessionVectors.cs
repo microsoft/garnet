@@ -322,6 +322,12 @@ namespace Garnet.server
                     return true;
                 }
 
+                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
+                {
+                    WriteError("ERR Unsupported quantization type"u8);
+                    return true;
+                }
+
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
                 VectorManagerResult result;
@@ -899,7 +905,7 @@ namespace Garnet.server
             {
                 if (!parseState.GetArgSliceByRef(2).Span.EqualsUpperCaseSpanIgnoringCase("RAW"u8))
                 {
-                    return AbortWithErrorMessage("Unexpected option to VSIM");
+                    return AbortWithErrorMessage("Unexpected option to VEMB");
                 }
 
                 raw = true;

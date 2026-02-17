@@ -20,22 +20,23 @@ namespace Garnet.server
         // Redis quantiziations
 
         /// <summary>
-        /// Provided and stored as floats (FP32).
+        /// Vectors stored as is with no quantization.
         /// </summary>
         NoQuant,
         /// <summary>
-        /// Provided as FP32, stored as binary (1 bit).
+        /// Vectors stored as binary (1 bit).
         /// </summary>
         Bin,
         /// <summary>
-        /// Provided as FP32, stored as bytes (8 bits).
+        /// Vectors stored as bytes (8 bits).
         /// </summary>
         Q8,
 
         // Extended quantizations
 
         /// <summary>
-        /// Provided and stored as bytes (8 bits).
+        /// Vectors stored as bytes (8 bits). XPREQ8 is a non-Redis extension, stands for: 
+        /// eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
         /// </summary>
         XPreQ8,
     }
