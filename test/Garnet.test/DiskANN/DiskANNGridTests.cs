@@ -10,7 +10,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
-namespace Garnet.test.DiskANN
+namespace Garnet.test
 {
     [AllureNUnit]
     [TestFixture]
