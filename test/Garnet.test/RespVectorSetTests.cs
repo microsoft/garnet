@@ -104,7 +104,7 @@ namespace Garnet.test
                     switch (cmd)
                     {
                         case RespCommand.VADD:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]));
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
                             break;
                         case RespCommand.VCARD:
                             // TODO: Implement when VCARD works
@@ -157,10 +157,10 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // VALUES
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 1, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 1, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             var float3 = new float[75];
@@ -171,7 +171,7 @@ namespace Garnet.test
             }
 
             // FP32
-            var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "FP32", MemoryMarshal.Cast<float, byte>(float3).ToArray(), new byte[] { 2, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "FP32", MemoryMarshal.Cast<float, byte>(float3).ToArray(), new byte[] { 2, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             var byte4 = new byte[75];
@@ -182,32 +182,28 @@ namespace Garnet.test
             }
 
             // XB8
-            var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "XB8", byte4, new byte[] { 3, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "XB8", byte4, new byte[] { 3, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res4);
 
             // TODO: exact duplicates - what does Redis do?
 
             // Add without specifying reductions after first vector
-            var res5 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "150.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res5 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "150.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res5);
 
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]));
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
             ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 4 but set has 75", exc1.Message);
 
-            // Add without specifying quantization after first vector
-            var res6 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "160.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 2 }, "EF", "16", "M", "32"]);
+            // Add without specifying EF after first vector
+            var res6 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "170.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 3 }, "CAS", "NOQUANT", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res6);
 
-            // Add without specifying EF after first vector
-            var res7 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "170.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 3 }, "CAS", "Q8", "M", "32"]);
-            ClassicAssert.AreEqual(1, (int)res7);
-
             // Add without specifying M after first vector
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "180.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "Q8", "EF", "16"]));
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "75", "180.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "NOQUANT", "EF", "16"]));
             ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc2.Message);
 
             // Mismatch vector size for projection
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]));
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]));
             ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 5 but set has 75", exc3.Message);
         }
 
@@ -248,13 +244,47 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // REDUCE not allowed
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "2", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
+            // Build byte array for vector data (75 bytes)
+            var vectorData1 = new byte[75];
+            vectorData1[0] = 1;
+            for (var i = 1; i < vectorData1.Length; i++)
+            {
+                vectorData1[i] = (byte)(vectorData1[i - 1] + 1);
+            }
+
+            var vectorData2 = new byte[75];
+            vectorData2[0] = 100;
+            for (var i = 1; i < vectorData2.Length; i++)
+            {
+                vectorData2[i] = (byte)(vectorData2[i - 1] + 1);
+            }
+
+            // Small vector for REDUCE test
+            var smallVectorData = new byte[4];
+            for (var i = 0; i < smallVectorData.Length; i++)
+            {
+                smallVectorData[i] = (byte)(i + 1);
+            }
+
+            // REDUCE not allowed with XPREQ8
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "2", "XB8", smallVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc1.Message);
 
-            // Create a vector set
-            var res1 = db.Execute("VADD", ["fizz", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+            // Create a vector set with XB8 + XPREQ8
+            var res1 = db.Execute("VADD", ["fizz", "XB8", vectorData1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
             ClassicAssert.AreEqual(1, (int)res1);
+
+            // Add another element
+            var res2 = db.Execute("VADD", ["fizz", "XB8", vectorData2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // Verify the vector was stored correctly
+            var embRes = (string[])db.Execute("VEMB", ["fizz", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(75, embRes.Length);
+            for (var i = 0; i < embRes.Length; i++)
+            {
+                ClassicAssert.AreEqual((float)vectorData1[i], float.Parse(embRes[i]));
+            }
         }
 
         [Test]
@@ -330,7 +360,7 @@ namespace Garnet.test
 
             var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz", "NOQUANT", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 2 but set has 75", exc16.Message);
-            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "Q8", "EF", "6", "M", "10"]));
+            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "XPREQ8", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc17.Message);
             var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "NOQUANT", "EF", "12", "M", "20"]));
             ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc18.Message);
@@ -340,40 +370,154 @@ namespace Garnet.test
             // Empty Vector Set keys are forbidden (TODO: Remove this constraint)
             var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
+
+            // Unsupported quantization types (Q8 and BIN are not yet supported)
+            var exc28 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar"]));
+            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc28.Message);
+            var exc29 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "Q8"]));
+            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc29.Message);
+            var exc30 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "BIN"]));
+            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc30.Message);
         }
 
         [Test]
-        public void VEMB()
+        public void VEMB_FP32Storage()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            // Add a vector using VALUES format with NOQUANT (FP32 storage)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "8", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
-            ClassicAssert.AreEqual(75, res2.Length);
-            for (var i = 0; i < 75; i += 4)
+            // Add a vector using XB8 format with NOQUANT (FP32 storage)
+            byte[] vectorBytes = new byte[8];
+            for (int i = 0; i < 8; i++)
             {
-                ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res2[i + 0]));
-                if (i + 1 < res2.Length)
-                {
-                    ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res2[i + 1]));
-                }
-
-                if (i + 2 < res2.Length)
-                {
-                    ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res2[i + 2]));
-                }
-
-                if (i + 3 < res2.Length)
-                {
-                    ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res2[i + 3]));
-                }
+                vectorBytes[i] = (byte)(i + 10);
             }
 
-            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
-            ClassicAssert.AreEqual(0, res3.Length);
+            var res2 = db.Execute("VADD", ["foo", "XB8", vectorBytes, new byte[] { 0, 0, 0, 2 }, "NOQUANT"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // Verify VEMB for XB8 input vector
+            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 2 }]);
+            ClassicAssert.AreEqual(8, res3.Length);
+            for (var i = 0; i < 8; i++)
+            {
+                ClassicAssert.AreEqual((float)vectorBytes[i], float.Parse(res3[i]));
+            }
+
+            // Verify VEMB for VALUES input vector
+            var res4 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(8, res4.Length);
+            for (var i = 0; i < 8; i++)
+            {
+                ClassicAssert.AreEqual((float)(i + 1), float.Parse(res4[i]));
+            }
+
+            // Verify non-existent element returns empty
+            var res5 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
+            ClassicAssert.AreEqual(0, res5.Length);
+        }
+
+        [Test]
+        public void VEMB_BinaryStorage()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Add a vector using VALUES format with XPREQ8 (Binary storage)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "8", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Add a vector using XB8 format with XPREQ8 (Binary storage)
+            //byte[] vectorBytes = new byte[8];
+            //for (int i = 0; i < 8; i++)
+            //{
+            //    vectorBytes[i] = (byte)(i + 10);
+            //}
+
+            //var res2 = db.Execute("VADD", ["foo", "XB8", vectorBytes, new byte[] { 0, 0, 0, 2 }, "XPREQ8"]);
+            //ClassicAssert.AreEqual(1, (int)res2);
+
+            // Verify VEMB for XB8 input vector
+            //var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 2 }]);
+            //ClassicAssert.AreEqual(8, res3.Length);
+            //for (var i = 0; i < 8; i++)
+            //{
+                //ClassicAssert.AreEqual((float)vectorBytes[i], float.Parse(res3[i]));
+            //}
+
+            // Verify VEMB for VALUES input vector - should return the original float values
+            var res4 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(8, res4.Length);
+            for (var i = 0; i < 8; i++)
+            {
+                ClassicAssert.AreEqual((float)(i + 1), float.Parse(res4[i]));
+            }
+
+            // Verify non-existent element returns empty
+            var res5 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
+            ClassicAssert.AreEqual(0, res5.Length);
+        }
+
+        [Test]
+        public void VEMB_RespVersions()
+        {
+            // VEMB response format depends on the RESP version used:
+            // - Resp3: Array of doubles
+            // - Resp2: Array of bulk strings
+
+            var vectorSetKey = "foo";
+            var elementId = new byte[] { 0, 0, 0, 0 };
+
+            // Create a vector set with known values
+            using var redisResp3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var dbResp3 = redisResp3.GetDatabase();
+
+            var addRes = dbResp3.Execute("VADD", [vectorSetKey, "VALUES", "4", "1.0", "2.0", "3.0", "4.0", elementId, "NOQUANT"]);
+            ClassicAssert.AreEqual(1, (int)addRes);
+
+            // Test RESP3 response - should be array of doubles
+            var resp3Result = dbResp3.Execute("VEMB", [vectorSetKey, elementId]);
+            ClassicAssert.IsFalse(resp3Result.IsNull);
+            ClassicAssert.AreEqual(ResultType.Array, resp3Result.Resp3Type);
+
+            var resp3Array = (RedisValue[])resp3Result;
+            ClassicAssert.AreEqual(4, resp3Array.Length);
+            for (var i = 0; i < resp3Array.Length; i++)
+            {
+                // In RESP3, the values should be doubles that can be directly cast
+                ClassicAssert.AreEqual((double)(i + 1), (double)resp3Array[i]);
+            }
+
+            // Test RESP2 response - should be array of bulk strings
+            using var redisResp2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var dbResp2 = redisResp2.GetDatabase();
+
+            var resp2Result = dbResp2.Execute("VEMB", [vectorSetKey, elementId]);
+            ClassicAssert.IsFalse(resp2Result.IsNull);
+            ClassicAssert.AreEqual(ResultType.Array, resp2Result.Resp2Type);
+
+            var resp2Array = (RedisValue[])resp2Result;
+            ClassicAssert.AreEqual(4, resp2Array.Length);
+            for (var i = 0; i < resp2Array.Length; i++)
+            {
+                // In RESP2, the values are bulk strings that need parsing
+                ClassicAssert.AreEqual((float)(i + 1), float.Parse((string)resp2Array[i]));
+            }
+
+            // Test not found case - both should return empty array
+            var nonExistentElementId = new byte[] { 9, 9, 9, 9 };
+
+            var resp3NotFound = dbResp3.Execute("VEMB", [vectorSetKey, nonExistentElementId]);
+            ClassicAssert.AreEqual(ResultType.Array, resp3NotFound.Resp3Type);
+            ClassicAssert.AreEqual(0, ((RedisValue[])resp3NotFound).Length);
+
+            var resp2NotFound = dbResp2.Execute("VEMB", [vectorSetKey, nonExistentElementId]);
+            ClassicAssert.AreEqual(ResultType.Array, resp2NotFound.Resp2Type);
+            ClassicAssert.AreEqual(0, ((RedisValue[])resp2NotFound).Length);
         }
 
         [Test]
@@ -382,7 +526,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = ClassicAssert.Throws<RedisServerException>(() => db.StringGet("foo"));
@@ -397,7 +541,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = (string)db.StringGet(new byte[] { 0, 0, 0, 0 });
@@ -434,10 +578,10 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             var res3 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
@@ -507,23 +651,23 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             // Equivalent to no attribute
-            var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 2 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", ""]);
+            var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 2 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", ""]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             // Actually no attribute
-            var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "120.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 3 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "120.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 3 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res4);
 
             // Very long attribute
             var bigAttr = Enumerable.Repeat((byte)'a', 1_024).ToArray();
-            var res5 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "130.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", bigAttr]);
+            var res5 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "130.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", bigAttr]);
             ClassicAssert.AreEqual(1, (int)res5);
 
             var res6 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "140.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
@@ -603,13 +747,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = db.Execute("VDIM", "foo");
             ClassicAssert.AreEqual(3, (int)res2);
 
-            var res3 = db.Execute("VADD", ["bar", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res3 = db.Execute("VADD", ["bar", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = db.Execute("VDIM", "bar");
@@ -627,13 +771,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = db.KeyDelete("foo");
             ClassicAssert.IsTrue(res2);
 
-            var res3 = db.Execute("VADD", ["fizz", "REDUCE", "3", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res3 = db.Execute("VADD", ["fizz", "REDUCE", "3", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = db.StringSet("buzz", "abc");
@@ -667,7 +811,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase();
 
-                var res1 = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+                var res1 = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
                 ClassicAssert.AreEqual(1, (int)res1);
 
                 // TODO: we could use EXISTS here... except not all non-Vector Set commands understand Vector Sets, so that's a bit flaky
@@ -714,7 +858,7 @@ namespace Garnet.test
                             case RespCommand.VADD:
                                 try
                                 {
-                                    var res = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+                                    var res = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
                                     ClassicAssert.AreEqual(1, (int)res);
                                 }
                                 catch (RedisServerException e)
@@ -850,7 +994,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                var res = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+                var res = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
                 ClassicAssert.AreEqual(1, (int)res);
 
                 ExceptionInjectionHelper.EnableException(faultLocation);
@@ -1437,7 +1581,7 @@ namespace Garnet.test
 
                     _ = db.KeyDelete("foo");
 
-                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
 #pragma warning disable CS0618 // Intentionally doing bad things
@@ -1456,7 +1600,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
-                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
+                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
                     ClassicAssert.AreEqual(1, (int)res2);
                 }
             }
@@ -1471,7 +1615,7 @@ namespace Garnet.test
 
                     _ = db.KeyDelete("foo");
 
-                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
                     expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "XB8", queryData]);
@@ -1511,11 +1655,11 @@ namespace Garnet.test
 
                     _ = db.KeyDelete("foo");
 
-                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
-                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
-                    ClassicAssert.AreEqual(1, (int)res2);
+                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
 
                     expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(2, expectedVSimResult.Length);
@@ -1553,7 +1697,7 @@ namespace Garnet.test
 
                     _ = db.KeyDelete("foo");
 
-                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
 #pragma warning disable CS0618 // Intentionally doing bad things
@@ -1586,7 +1730,7 @@ namespace Garnet.test
 
                     _ = db.KeyDelete("foo");
 
-                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
 #pragma warning disable CS0618 // Intentionally doing bad things
@@ -1624,10 +1768,10 @@ namespace Garnet.test
 
                     _ = db.KeyDelete("foo");
 
-                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
-                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
 #pragma warning disable CS0618 // Intentionally doing bad things
@@ -1685,7 +1829,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            string[] quantizers = ["XPREQ8", "NOQUANT", "Q8", "BIN"];
+            // TODO: Add tests for Q8 and BIN quantizers once supported in diskann-garnet
+            string[] quantizers = ["XPREQ8", "NOQUANT"];
             int[] reduceValues = [0, 5];
             int[] efValues = [0, 8];
             int[] mValues = [0, 16];
@@ -1709,15 +1854,39 @@ namespace Garnet.test
                                 testCnt++;
                                 string fooKey = $"foo:{testCnt}";
 
-                                // Generate vector values based on dimension
-                                var vectorValues = new List<object> { "VALUES", vectorDim.ToString() };
-                                for (int i = 1; i <= vectorDim; i++)
+                                // Generate vector data based on quantizer type
+                                // XPREQ8 requires XB8 format, NOQUANT uses VALUES format
+                                object vectorData1;
+                                object vectorData2;
+                                if (quantizer == "XPREQ8")
                                 {
-                                    vectorValues.Add($"{i}.0");
+                                    // XB8 format: byte array
+                                    var bytes1 = new byte[vectorDim];
+                                    var bytes2 = new byte[vectorDim];
+                                    for (int i = 0; i < vectorDim; i++)
+                                    {
+                                        bytes1[i] = (byte)(i + 1);
+                                        bytes2[i] = (byte)(i + 2);
+                                    }
+                                    vectorData1 = bytes1;
+                                    vectorData2 = bytes2;
+                                }
+                                else
+                                {
+                                    // VALUES format: list of float strings
+                                    var values1 = new List<object> { "VALUES", vectorDim.ToString() };
+                                    var values2 = new List<object> { "VALUES", vectorDim.ToString() };
+                                    for (int i = 1; i <= vectorDim; i++)
+                                    {
+                                        values1.Add($"{i}.0");
+                                        values2.Add($"{i + 1}.0");
+                                    }
+                                    vectorData1 = values1.ToArray();
+                                    vectorData2 = values2.ToArray();
                                 }
 
                                 // Create a vector set with known parameters
-                                var res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorValues.ToArray(), [0, 0, 0, 0]));
+                                var res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData1, [0, 0, 0, 0]));
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 string expectedEf = ef == 0 ? "200" : ef.ToString();
@@ -1735,11 +1904,8 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
                                 ClassicAssert.AreEqual(values["size"], "1");
 
-                                // Modify first value for second add (change from "1.0" to "2.0")
-                                vectorValues[2] = "2.0";
-
                                 // Add another element and try again
-                                res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorValues.ToArray(), [0, 0, 0, 1]));
+                                res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorData2, [0, 0, 0, 1]));
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 vinfoRes = (RedisValue[])db.Execute(command: "VINFO", [fooKey]);
@@ -1761,7 +1927,7 @@ namespace Garnet.test
                 }
             }
 
-            static object[] GenerateVADDOptions(string key, string quantizer, int reduce, int buildExplorationFactor, int numLinks, object[] values, byte[] elementId)
+            static object[] GenerateVADDOptions(string key, string quantizer, int reduce, int buildExplorationFactor, int numLinks, object vectorData, byte[] elementId)
             {
                 if (quantizer == "XPREQ8")
                 {
@@ -1775,7 +1941,19 @@ namespace Garnet.test
                     opts.Add(reduce.ToString());
                 }
 
-                opts.AddRange(values);
+                // Add vector data based on quantizer type
+                if (quantizer == "XPREQ8")
+                {
+                    // XB8 format for XPREQ8
+                    opts.Add("XB8");
+                    opts.Add(vectorData);
+                }
+                else
+                {
+                    // VALUES format for NOQUANT
+                    opts.AddRange((object[])vectorData);
+                }
+
                 opts.Add(elementId);
                 opts.Add(quantizer);
                 if (buildExplorationFactor > 0)
@@ -1829,7 +2007,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(resp2Result1.Resp2Type == ResultType.BulkString);
 
             // Create a vector set with first element
-            var res1 = dbResp3.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "XPREQ8"]);
+            var res1 = dbResp3.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "NOQUANT"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             // Test not found case - non-existent element (RESP3)
@@ -1853,7 +2031,7 @@ namespace Garnet.test
             var elementId1 = new byte[] { 0, 0, 0, 0 };
 
             // Create a vector set with first element (no attribute)
-            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "XPREQ8"]);
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "NOQUANT"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             // Test success case - element with no attribute
@@ -1870,7 +2048,7 @@ namespace Garnet.test
                 var elementId = new byte[] { 0, 0, 0, (byte)(i + 1) };
 
                 // Add element with attribute of specific size
-                var addRes = db.Execute("VADD", ["foo", "VALUES", "3", "4.0", "5.0", "6.0", elementId, "XPREQ8", "SETATTR", attrData]);
+                var addRes = db.Execute("VADD", ["foo", "VALUES", "3", "4.0", "5.0", "6.0", elementId, "NOQUANT", "SETATTR", attrData]);
                 ClassicAssert.AreEqual(1, (int)addRes);
 
                 // Get and validate attribute
@@ -1881,7 +2059,7 @@ namespace Garnet.test
 
             // Test empty string attribute (equivalent to no attribute)
             var emptyAttrElement = new byte[] { 0, 0, 0, 99 };
-            var res3 = db.Execute("VADD", ["foo", "VALUES", "3", "7.0", "8.0", "9.0", emptyAttrElement, "XPREQ8", "SETATTR", ""]);
+            var res3 = db.Execute("VADD", ["foo", "VALUES", "3", "7.0", "8.0", "9.0", emptyAttrElement, "NOQUANT", "SETATTR", ""]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, emptyAttrElement]);
@@ -1895,10 +2073,10 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Populate
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 1, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "100.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 1, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             // Remove on non-vector set fails

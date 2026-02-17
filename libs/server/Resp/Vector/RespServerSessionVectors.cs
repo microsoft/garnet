@@ -322,6 +322,12 @@ namespace Garnet.server
                     return true;
                 }
 
+                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
+                {
+                    WriteError("ERR Unsupported quantization type"u8);
+                    return true;
+                }
+
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
                 VectorManagerResult result;
@@ -899,7 +905,7 @@ namespace Garnet.server
             {
                 if (!parseState.GetArgSliceByRef(2).Span.EqualsUpperCaseSpanIgnoringCase("RAW"u8))
                 {
-                    return AbortWithErrorMessage("Unexpected option to VSIM");
+                    return AbortWithErrorMessage("Unexpected option to VEMB");
                 }
 
                 raw = true;
@@ -917,19 +923,31 @@ namespace Garnet.server
 
             try
             {
-                var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
+                var res = storageApi.VectorSetEmbedding(key, elem, out var quantType, ref distanceResult);
 
                 if (res == GarnetStatus.OK)
                 {
-                    var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
-
-                    while (!RespWriteUtils.TryWriteArrayLength(distanceSpan.Length, ref dcurr, dend))
-                        SendAndReset();
-
-                    for (var i = 0; i < distanceSpan.Length; i++)
+                    if (quantType == VectorQuantType.NoQuant)
                     {
-                        while (!RespWriteUtils.TryWriteDoubleBulkString(distanceSpan[i], ref dcurr, dend))
-                            SendAndReset();
+                        var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
+                        WriteArrayLength(distanceSpan.Length);
+                        for (var i = 0; i < distanceSpan.Length; i++)
+                        {
+                            WriteDoubleNumeric(distanceSpan[i]);
+                        }
+                    }
+                    else if (quantType == VectorQuantType.XPreQ8)
+                    {
+                        var distanceSpan = distanceResult.AsReadOnlySpan();
+                        WriteArrayLength(distanceSpan.Length);
+                        for (var i = 0; i < distanceSpan.Length; i++)
+                        {
+                            WriteDoubleNumeric(distanceSpan[i]);
+                        }
+                    }
+                    else
+                    {
+                        throw new GarnetException($"Unsupported quantization type for embedding extraction: {quantType}");
                     }
                 }
                 else if (res == GarnetStatus.WRONGTYPE)
