@@ -1560,7 +1560,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(1, (int)res1);
 
                     var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
-                    ClassicAssert.AreEqual(1, (int)res1);
+                    ClassicAssert.AreEqual(1, (int)res2);
 
                     expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(2, expectedVSimResult.Length);
@@ -1673,7 +1673,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(1, (int)res1);
 
                     var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
-                    ClassicAssert.AreEqual(1, (int)res1);
+                    ClassicAssert.AreEqual(1, (int)res2);
 
 #pragma warning disable CS0618 // Intentionally doing bad things
                     s.Save(SaveType.ForegroundSave);
