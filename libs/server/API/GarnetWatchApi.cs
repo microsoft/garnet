@@ -664,10 +664,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetEmbedding(ArgSlice key, ArgSlice element, out VectorQuantType quantType, ref SpanByteAndMemory outputDistances)
+        public GarnetStatus VectorSetEmbedding(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputDistances)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetEmbedding(key, element, out quantType, ref outputDistances);
+            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances);
         }
 
         /// <inheritdoc/>

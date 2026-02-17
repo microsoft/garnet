@@ -2054,7 +2054,7 @@ namespace Garnet.server
         /// <summary>
         /// Fetch the embedding of a given element in a Vector set.
         /// </summary>
-        GarnetStatus VectorSetEmbedding(ArgSlice key, ArgSlice element, out VectorQuantType quantType, ref SpanByteAndMemory outputDistances);
+        GarnetStatus VectorSetEmbedding(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputDistances);
 
         /// <summary>
         /// Fetch the dimensionality of the given Vector Set.

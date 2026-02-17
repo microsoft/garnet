@@ -923,31 +923,19 @@ namespace Garnet.server
 
             try
             {
-                var res = storageApi.VectorSetEmbedding(key, elem, out var quantType, ref distanceResult);
+                var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
 
                 if (res == GarnetStatus.OK)
                 {
-                    if (quantType == VectorQuantType.NoQuant)
+                    var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
+
+                    while (!RespWriteUtils.TryWriteArrayLength(distanceSpan.Length, ref dcurr, dend))
+                        SendAndReset();
+
+                    for (var i = 0; i < distanceSpan.Length; i++)
                     {
-                        var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
-                        WriteArrayLength(distanceSpan.Length);
-                        for (var i = 0; i < distanceSpan.Length; i++)
-                        {
-                            WriteDoubleNumeric(distanceSpan[i]);
-                        }
-                    }
-                    else if (quantType == VectorQuantType.XPreQ8)
-                    {
-                        var distanceSpan = distanceResult.AsReadOnlySpan();
-                        WriteArrayLength(distanceSpan.Length);
-                        for (var i = 0; i < distanceSpan.Length; i++)
-                        {
-                            WriteDoubleNumeric(distanceSpan[i]);
-                        }
-                    }
-                    else
-                    {
-                        throw new GarnetException($"Unsupported quantization type for embedding extraction: {quantType}");
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(distanceSpan[i], ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
                 else if (res == GarnetStatus.WRONGTYPE)

@@ -254,7 +254,7 @@ namespace Garnet.server
         /// Get the approximate vector associated with an element, after (approximately) reversing any transformation.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, out VectorQuantType quantType, ref SpanByteAndMemory outputDistances)
+        public unsafe GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
             parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
 
@@ -266,11 +266,10 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
-                    quantType = VectorQuantType.Invalid;
                     return status;
                 }
 
-                if (!vectorManager.TryGetEmbedding(indexSpan, element, out quantType, ref outputDistances))
+                if (!vectorManager.TryGetEmbedding(indexSpan, element, ref outputDistances))
                 {
                     return GarnetStatus.NOTFOUND;
                 }
