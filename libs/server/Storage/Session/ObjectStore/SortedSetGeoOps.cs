@@ -22,7 +22,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus GeoAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-          => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+          => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
@@ -37,7 +37,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus GeoCommands<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Geospatial search and return result..
@@ -198,7 +198,7 @@ namespace Garnet.server
                     var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
                     var zAddOutput = new ObjectOutput();
-                    RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);
+                    RMWObjectStoreOperation(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);
 
                     writer.WriteInt32(foundItems);
                 }

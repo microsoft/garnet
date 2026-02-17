@@ -33,12 +33,12 @@ namespace Garnet.server
             }
 
             if (added == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(added);
 
-            output.Header.result1 = added;
+            output.result1 = added;
         }
 
         private void SetMembers(ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -48,7 +48,7 @@ namespace Garnet.server
             foreach (var item in Set)
             {
                 writer.WriteBulkString(item);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -61,7 +61,7 @@ namespace Garnet.server
             var isMember = Set.Contains(member.ToArray());
 #endif
             writer.WriteInt32(isMember ? 1 : 0);
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -79,7 +79,7 @@ namespace Garnet.server
                 writer.WriteInt32(isMember ? 1 : 0);
             }
 
-            output.Header.result1 = input.parseState.Count;
+            output.result1 = input.parseState.Count;
         }
 
         private void SetRemove(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -102,12 +102,12 @@ namespace Garnet.server
             }
 
             if (removed == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(removed);
 
-            output.Header.result1 = removed;
+            output.result1 = removed;
         }
 
         private void SetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -118,7 +118,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(length);
 
-            output.Header.result1 = length;
+            output.result1 = length;
         }
 
         private void SetPop(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -129,7 +129,7 @@ namespace Garnet.server
             if (Set.Count == 0 || count == 0)
             {
                 writer.WriteEmptyArray();
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
@@ -176,7 +176,7 @@ namespace Garnet.server
                 countDone++;
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
 
         private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -253,7 +253,7 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
     }
 }

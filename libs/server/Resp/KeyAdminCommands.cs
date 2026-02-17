@@ -275,19 +275,16 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL(sbKey, ref o);
+            var output = GetStringOutput();
+            var status = garnetApi.GETDEL(sbKey, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
-                else
-                    dcurr += o.Length;
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
-                Debug.Assert(o.IsSpanByte);
+                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                 WriteNull();
             }
 
@@ -415,10 +412,10 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.EXPIRE, ref metaCommandInfo, ref parseState, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             if (status == GarnetStatus.OK)
             {
@@ -453,10 +450,10 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.PERSIST, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             if (status == GarnetStatus.OK)
             {
@@ -491,7 +488,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.TTL(key, ref input, ref output);
 
@@ -528,7 +525,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
 

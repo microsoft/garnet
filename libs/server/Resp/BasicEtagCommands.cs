@@ -24,8 +24,7 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedInput(RespCommand.GETETAG, ref metaCommandInfo, ref parseState);
 
-            // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.GETETAG(key, ref input, ref output);
 

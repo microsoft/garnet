@@ -31,7 +31,7 @@ namespace Garnet.server
             else
                 writer.WriteNull();
 
-            output.Header.result1++;
+            output.result1++;
         }
 
         private void HashMultipleGet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -50,7 +50,7 @@ namespace Garnet.server
                     writer.WriteNull();
                 }
 
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -84,12 +84,12 @@ namespace Garnet.server
             }
 
             if (removed == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(removed);
 
-            output.Header.result1 = removed;
+            output.result1 = removed;
         }
 
         private void HashLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -99,7 +99,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(length);
 
-            output.Header.result1 = length;
+            output.result1 = length;
         }
 
         private void HashStrLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -107,9 +107,10 @@ namespace Garnet.server
             var key = GetByteSpanFromInput(ref input, 0);
             var length = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
 
-            writer.WriteInt32(length);
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(length);
 
-            output.Header.result1 = length;
+            output.result1 = length;
         }
 
         private void HashExists(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -120,7 +121,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(exists);
 
-            output.Header.result1 = exists;
+            output.result1 = exists;
         }
 
         private void HashRandomField(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -140,7 +141,7 @@ namespace Garnet.server
                 if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
                     writer.WriteEmptyArray();
-                    output.Header.result1 = 0;
+                    output.result1 = 0;
                     return;
                 }
 
@@ -181,7 +182,7 @@ namespace Garnet.server
                 if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
                     writer.WriteNull();
-                    output.Header.result1 = 0;
+                    output.result1 = 0;
                     return;
                 }
 
@@ -191,7 +192,7 @@ namespace Garnet.server
                 countDone = 1;
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
 
         private void HashSet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -263,14 +264,14 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.result1 = added;
+            output.result1 = added;
         }
 
         private void HashCollect(ref ObjectInput input, ref ObjectOutput output)
         {
             DeleteExpiredItems();
-            output.Header.result1 = 1;
-            output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.result1 = 1;
+            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
         private void HashGetKeysOrValues(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -298,7 +299,7 @@ namespace Garnet.server
                     writer.WriteBulkString(item.Value);
                 }
 
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -306,7 +307,7 @@ namespace Garnet.server
         private void HashIncrement(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // This value is used to indicate partial command execution
-            output.Header.result1 = int.MinValue;
+            output.result1 = int.MinValue;
 
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
@@ -333,7 +334,7 @@ namespace Garnet.server
                 if (!NumUtils.TryParse(hashValueRef, out long result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
-                    output.OutputFlags |= OutputFlags.ValueUnchanged;
+                    output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                     return;
                 }
 
@@ -360,7 +361,7 @@ namespace Garnet.server
 
             writer.WriteIntegerFromBytes(hashValueRef);
 
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         [SkipLocalsInit] // avoid zeroing the stackalloc buffer
@@ -369,7 +370,7 @@ namespace Garnet.server
             var op = input.header.HashOp;
 
             // This value is used to indicate partial command execution
-            output.Header.result1 = int.MinValue;
+            output.result1 = int.MinValue;
 
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
@@ -378,7 +379,7 @@ namespace Garnet.server
             if (double.IsInfinity(incr))
             {
                 writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
@@ -403,14 +404,14 @@ namespace Garnet.server
                 if (!NumUtils.TryParseWithInfinity(hashValueRef, out var result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
-                    output.OutputFlags |= OutputFlags.ValueUnchanged;
+                    output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                     return;
                 }
 
                 if (double.IsInfinity(result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                    output.OutputFlags |= OutputFlags.ValueUnchanged;
+                    output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                     return;
                 }
 
@@ -437,7 +438,7 @@ namespace Garnet.server
 
             writer.WriteBulkString(hashValueRef);
 
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void HashExpire(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -457,10 +458,10 @@ namespace Garnet.server
 #endif
                 writer.WriteInt32((int)result);
 
-                output.Header.result1++;
+                output.result1++;
             }
 
-            output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
         private void HashTimeToLive(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -502,7 +503,7 @@ namespace Garnet.server
                 }
 
                 writer.WriteInt64(result);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -522,10 +523,10 @@ namespace Garnet.server
                 var result = Persist(item.ToArray());
 #endif
                 writer.WriteInt32((int)result);
-                output.Header.result1++;
+                output.result1++;
             }
 
-            output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

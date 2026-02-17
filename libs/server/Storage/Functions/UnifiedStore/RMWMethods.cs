@@ -92,7 +92,7 @@ namespace Garnet.server
                     if (execCmd)
                         rmwInfo.Action = RMWAction.ExpireAndStop;
 
-                    output.Header.etag = LogRecord.NoETag;
+                    output.etag = LogRecord.NoETag;
                     ETagState.ResetState(ref functionsState.etagState);
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
@@ -157,7 +157,7 @@ namespace Garnet.server
             if (recordHadEtagPreMutation || shouldUpdateEtag)
             {
                 dstLogRecord.TrySetETag(updatedEtag);
-                output.Header.etag = functionsState.etagState.ETag;
+                output.etag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
 
@@ -213,7 +213,7 @@ namespace Garnet.server
                 if (recordHadEtagPreMutation || shouldUpdateEtag)
                 {
                     dstLogRecord.TrySetETag(updatedEtag);
-                    output.Header.etag = functionsState.etagState.ETag;
+                    output.etag = functionsState.etagState.ETag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
 
@@ -287,7 +287,7 @@ namespace Garnet.server
 
             if (!execCmd)
             {
-                output.Header.etag = functionsState.etagState.ETag;
+                output.etag = functionsState.etagState.ETag;
                 rmwInfo.Action = RMWAction.CancelOperation;
                 if (hadETagPreMutation)
                 {
@@ -334,12 +334,12 @@ namespace Garnet.server
             if (shouldUpdateEtag)
             {
                 logRecord.TrySetETag(updatedEtag);
-                output.Header.etag = functionsState.etagState.ETag;
+                output.etag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (hadETagPreMutation)
             {
-                output.Header.etag = functionsState.etagState.ETag;
+                output.etag = functionsState.etagState.ETag;
                 // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }

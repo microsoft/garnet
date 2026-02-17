@@ -36,8 +36,9 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
+            var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             saddCount = output.result1;
             return status;
@@ -69,11 +70,10 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
+            var output = new ObjectOutput();
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
-
-
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             saddCount = output.result1;
 
             return status;
@@ -101,8 +101,9 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
+            var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             sremCount = output.result1;
 
             return status;
@@ -135,8 +136,9 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
+            var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             sremCount = output.result1;
             return status;
@@ -160,8 +162,9 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.Set, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SCARD };
+            var output = new ObjectOutput();
 
-            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             count = output.result1;
             return status;
@@ -188,7 +191,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
                 members = ProcessRespArrayOutput(output, out _);
@@ -237,7 +240,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             if (status != GarnetStatus.OK)
                 return status;
@@ -649,7 +652,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-           => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+           => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Removes the specified members from the set.
@@ -664,7 +667,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the number of elements of the set.
@@ -677,7 +680,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns all members of the set at key.
@@ -690,7 +693,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns if member is a member of the set stored at key.
@@ -703,7 +706,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetIsMember<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns whether each member is a member of the set stored at key.
@@ -729,7 +732,7 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = members.Length == 1 ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
                 result = ProcessRespIntegerArrayOutput(output, out _);
@@ -748,7 +751,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetPop<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
@@ -765,7 +768,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetRandomMember<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.

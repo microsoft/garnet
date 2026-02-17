@@ -351,7 +351,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.TYPE, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
 
@@ -470,13 +470,10 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES);
             }
 
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetStringOutput();
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
-            else
-                dcurr += output.Length;
+            ProcessOutput(output.SpanByteAndMemory);
 
             return true;
         }

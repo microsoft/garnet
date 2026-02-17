@@ -4,7 +4,6 @@
 //#define HLL_SINGLE_PFADD_ENABLED
 
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -33,7 +32,7 @@ namespace Garnet.server
             for (var i = 1; i < parseState.Count; i++)
             {
                 input.parseState = parseState.Slice(i, 1);
-                var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
+                var o = StringOutput.FromPinnedPointer(output, 1);
                 storageApi.HyperLogLogAdd(key, ref input, ref o);
 
                 // Invalid HLL Type

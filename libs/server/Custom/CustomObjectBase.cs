@@ -90,7 +90,7 @@ namespace Garnet.server
                     if ((byte)input.header.type != this.type)
                     {
                         // Indicates an incorrect type of key
-                        output.OutputFlags |= OutputFlags.WrongType;
+                        output.OutputFlags |= ObjectOutputFlags.WrongType;
                         output.SpanByteAndMemory.Length = 0;
                         return true;
                     }

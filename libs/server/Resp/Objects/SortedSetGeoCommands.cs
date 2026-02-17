@@ -85,10 +85,10 @@ namespace Garnet.server
                 arg1: (int)addOption)
             { SortedSetOp = SortedSetOperation.GEOADD };
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.GeoAdd(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -164,10 +164,10 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.GeoCommands(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -273,14 +273,14 @@ namespace Garnet.server
                 if (status == GarnetStatus.OK)
                 {
                     ProcessOutput(output.SpanByteAndMemory);
-                    etag = output.Header.etag;
+                    etag = output.etag;
                     return true;
                 }
             }
             else
             {
                 status = storageApi.GeoSearchReadOnly(sourceKey, ref searchOpts, ref input, ref output);
-                etag = output.Header.etag;
+                etag = output.etag;
 
                 if (status == GarnetStatus.OK)
                 {

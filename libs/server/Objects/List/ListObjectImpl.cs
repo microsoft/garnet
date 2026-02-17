@@ -65,9 +65,9 @@ namespace Garnet.server
                 writer.WriteInt32(removedCount);
 
             if (removedCount == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
-            output.Header.result1 = removedCount;
+            output.result1 = removedCount;
         }
 
         private void ListInsert(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -111,23 +111,23 @@ namespace Garnet.server
                 writer.WriteInt32(result);
 
             if (result == -1)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
-            output.Header.result1 = result;
+            output.result1 = result;
         }
 
         private void ListIndex(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var index = input.arg1;
 
-            output.Header.result1 = -1;
+            output.result1 = -1;
 
             index = index < 0 ? list.Count + index : index;
             var item = list.ElementAtOrDefault(index);
             if (item != null)
             {
                 writer.WriteBulkString(item);
-                output.Header.result1 = 1;
+                output.result1 = 1;
             }
         }
 
@@ -170,7 +170,7 @@ namespace Garnet.server
                         writer.WriteBulkString(bytes);
                     }
 
-                    output.Header.result1 = count;
+                    output.result1 = count;
                 }
             }
         }
@@ -228,9 +228,9 @@ namespace Garnet.server
             writer.WriteDirect(CmdStrings.RESP_OK);
 
             if (trimmed == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
-            output.Header.result1 = trimmed;
+            output.result1 = trimmed;
         }
 
         private void ListLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -240,14 +240,14 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(length);
 
-            output.Header.result1 = length;
+            output.result1 = length;
         }
 
         private void ListPush(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var addFirst = input.header.ListOp is ListOperation.LPUSH or ListOperation.LPUSHX;
 
-            output.Header.result1 = 0;
+            output.result1 = 0;
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var value = input.parseState.GetArgSliceByRef(i).ToArray();
@@ -264,7 +264,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(list.Count);
 
-            output.Header.result1 = list.Count;
+            output.result1 = list.Count;
         }
 
         private void ListPop(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -304,7 +304,7 @@ namespace Garnet.server
                 writer.WriteBulkString(node.Value);
 
                 count--;
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -318,7 +318,7 @@ namespace Garnet.server
             if (index > list.Count - 1 || index < 0)
             {
                 writer.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE);
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
@@ -334,7 +334,7 @@ namespace Garnet.server
             UpdateSize(targetNode.Value);
 
             writer.WriteDirect(CmdStrings.RESP_OK);
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void ListPosition(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -436,7 +436,7 @@ namespace Garnet.server
                 writer.DecreaseArrayLength(noOfFoundItem, totalArrayHeaderLen);
             }
 
-            output.Header.result1 = noOfFoundItem;
+            output.result1 = noOfFoundItem;
         }
     }
 }

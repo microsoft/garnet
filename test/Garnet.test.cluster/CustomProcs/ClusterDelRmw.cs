@@ -21,8 +21,6 @@ namespace Garnet.test.cluster
         public override unsafe void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var timeStamp = DateTime.Now.Ticks;
-            var unixTimeInMilliSecond = timeStamp / TimeSpan.TicksPerMillisecond;
 
             var key = GetNextArg(ref procInput, ref offset);
             var value = GetNextArg(ref procInput, ref offset);
@@ -36,10 +34,11 @@ namespace Garnet.test.cluster
 
             var input = new StringInput(RespCommand.INCRBY, arg1: valueToIncrement);
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
-            var outputArgSlice = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
+
             // Increment key
-            status = api.Increment(key, ref input, ref outputArgSlice);
-            Debug.Assert(status == GarnetStatus.OK);
+            _ = api.Increment(key, ref input, ref stringOutput);
+            Debug.Assert(!stringOutput.HasError);
 
             WriteSimpleString(ref output, "OK");
         }

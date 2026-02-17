@@ -95,7 +95,7 @@ namespace Garnet.server
                     }
                 }
 
-                output.Header.result1 = items.Count;
+                output.result1 = items.Count;
             }
             else
             {

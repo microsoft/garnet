@@ -77,7 +77,7 @@ namespace Garnet.server
 
             var addedOrChanged = (options & GeoAddOptions.CH) == 0 ? elementsAdded : elementsChanged;
             if (addedOrChanged == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             writer.WriteInt32(addedOrChanged);
         }

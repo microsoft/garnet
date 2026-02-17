@@ -45,11 +45,10 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = hop };
 
-            // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = new ObjectOutput();
 
             var status = storageApi.HashSet(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -84,10 +83,10 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HGET };
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGet(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -126,10 +125,10 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, arg1: respProtocolVersion) { HashOp = HashOperation.HGETALL }; ;
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGetAll(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -168,10 +167,10 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HMGET };
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGetMultiple(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -246,7 +245,7 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, arg1: countWithMetadata, arg2: seed) { HashOp = HashOperation.HRANDFIELD };
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = GarnetStatus.NOTFOUND;
 
@@ -254,9 +253,9 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare output
-                output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                output = GetObjectOutput();
                 status = storageApi.HashRandomField(key, ref input, ref output);
-                etag = output.Header.etag;
+                etag = output.etag;
             }
 
             switch (status)
@@ -303,12 +302,10 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState) { HashOp = HashOperation.HLEN };
-
-            // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = new ObjectOutput();
 
             var status = storageApi.HashLength(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -346,12 +343,11 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HSTRLEN };
+            var output = new ObjectOutput();
 
-            // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.HashStrLength(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -389,12 +385,10 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HDEL };
-
-            // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = new ObjectOutput();
 
             var status = storageApi.HashDelete(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -431,15 +425,15 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HEXISTS };
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = new ObjectOutput();
 
             var status = storageApi.HashExists(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output.Header.result1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.NOTFOUND:
@@ -485,12 +479,12 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState) { HashOp = op };
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = command == RespCommand.HKEYS
                 ? storageApi.HashKeys(key, ref input, ref output)
                 : storageApi.HashVals(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -554,10 +548,10 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = op };
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashIncrement(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -636,10 +630,10 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: currIdx, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail) { HashOp = HashOperation.HEXPIRE };
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashExpire(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -723,10 +717,10 @@ namespace Garnet.server
                 arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0)
             { HashOp = HashOperation.HTTL };
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashTimeToLive(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {
@@ -782,10 +776,10 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref fieldsParseState) { HashOp = HashOperation.HPERSIST };
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashPersist(key, ref input, ref output);
-            etag = output.Header.etag;
+            etag = output.etag;
 
             switch (status)
             {

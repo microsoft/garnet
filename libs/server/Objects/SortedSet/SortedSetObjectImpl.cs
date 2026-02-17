@@ -67,7 +67,7 @@ namespace Garnet.server
                     {
                         // Invalid Score encountered
                         writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                        output.OutputFlags |= OutputFlags.ValueUnchanged;
+                        output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                         return;
                     }
                 }
@@ -104,7 +104,7 @@ namespace Garnet.server
 
                         if (double.IsNaN(score))
                         {
-                            output.OutputFlags |= OutputFlags.ValueUnchanged;
+                            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                             writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
                             return;
                         }
@@ -126,7 +126,7 @@ namespace Garnet.server
                         if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                         {
                             writer.WriteNull();
-                            output.OutputFlags |= OutputFlags.ValueUnchanged;
+                            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                             return;
                         }
 
@@ -155,7 +155,7 @@ namespace Garnet.server
                 writer.WriteInt32(addedOrChanged);
                 
                 if (addedOrChanged == 0)
-                    output.OutputFlags |= OutputFlags.ValueUnchanged;
+                    output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
             }
         }
 
@@ -183,9 +183,9 @@ namespace Garnet.server
             writer.WriteInt32(removedItems);
 
             if (removedItems == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
-            output.Header.result1 = removedItems;
+            output.result1 = removedItems;
         }
 
         private void SortedSetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -198,7 +198,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt64(length);
 
-            output.Header.result1 = length;
+            output.result1 = length;
         }
 
         private void SortedSetScore(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -211,7 +211,7 @@ namespace Garnet.server
             else
                 writer.WriteDoubleNumeric(score);
 
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void SortedSetScores(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -235,7 +235,7 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.result1 = count;
+            output.result1 = count;
         }
 
         private void SortedSetCount(ref ObjectInput input, ref RespMemoryWriter writer)
@@ -282,7 +282,7 @@ namespace Garnet.server
                 if (double.IsNaN(result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
-                    output.OutputFlags |= OutputFlags.ValueUnchanged;
+                    output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                     return;
                 }
 
@@ -435,7 +435,7 @@ namespace Garnet.server
 
             if (start > sortedSetDict.Count - 1)
             {
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
@@ -479,7 +479,7 @@ namespace Garnet.server
                 false, false, true).Count;
 
             if (elementCount == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             // Write the number of elements
             writer.WriteInt32(elementCount);
@@ -525,7 +525,7 @@ namespace Garnet.server
             }
 
             // Write count done into output footer
-            output.Header.result1 = count;
+            output.result1 = count;
         }
 
         private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -544,9 +544,9 @@ namespace Garnet.server
                 writer.WriteInt32(rem.Count);
 
             if (isRemove && rem.Count == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
-            output.Header.result1 = rem.Count;
+            output.result1 = rem.Count;
         }
 
         /// <summary>
@@ -645,8 +645,8 @@ namespace Garnet.server
             if (count == 0)
             {
                 writer.WriteEmptyArray();
-                output.Header.result1 = 0;
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+                output.result1 = 0;
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
@@ -677,7 +677,7 @@ namespace Garnet.server
                 count--;
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
 
         private void SortedSetPersist(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -691,10 +691,10 @@ namespace Garnet.server
             {
                 var result = Persist(item.ToArray());
                 writer.WriteInt32(result);
-                output.Header.result1++;
+                output.result1++;
             }
 
-            output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
         private void SortedSetTimeToLive(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -732,7 +732,7 @@ namespace Garnet.server
                 }
 
                 writer.WriteInt64(result);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -750,18 +750,18 @@ namespace Garnet.server
                     expirationWithOption.ExpireOption);
 
                 writer.WriteInt32((int)result);
-                output.Header.result1++;
+                output.result1++;
             }
 
-            output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
         private void SortedSetCollect(ref ObjectOutput output)
         {
             DeleteExpiredItems();
             
-            output.Header.result1 = 1;
-            output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.result1 = 1;
+            output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
         #region CommonMethods

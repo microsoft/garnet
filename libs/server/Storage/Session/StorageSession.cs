@@ -80,7 +80,7 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var session = db.Store.NewSession<StringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var session = db.Store.NewSession<StringInput, StringOutput, long, MainSessionFunctions>(functions);
 
             if (!storeWrapper.serverOptions.DisableObjects)
             {

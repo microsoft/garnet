@@ -41,7 +41,7 @@ namespace Garnet.server
 
                     if (srcLogRecord.Info.HasETag)
                     {
-                        output.Header.etag = srcLogRecord.ETag;
+                        output.etag = srcLogRecord.ETag;
                         ETagState.ResetState(ref functionsState.etagState);
                     }
 
@@ -50,7 +50,7 @@ namespace Garnet.server
 
                 if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
                 {
-                    output.OutputFlags |= OutputFlags.WrongType;
+                    output.OutputFlags |= ObjectOutputFlags.WrongType;
                     return true;
                 }
 
@@ -73,7 +73,7 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.etag = srcLogRecord.ETag;
+            output.etag = srcLogRecord.ETag;
             output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }
