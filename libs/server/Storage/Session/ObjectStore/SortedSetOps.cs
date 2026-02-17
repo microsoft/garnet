@@ -42,7 +42,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             itemBroker?.HandleCollectionUpdate(key.ToArray());
 
             if (status == GarnetStatus.OK)
@@ -82,7 +82,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             itemBroker?.HandleCollectionUpdate(key.ToArray());
 
             if (status == GarnetStatus.OK)
@@ -118,8 +118,9 @@ namespace Garnet.server
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
             var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             zremCount = output.result1;
             return status;
@@ -148,8 +149,9 @@ namespace Garnet.server
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
             var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             zremCount = output.result1;
             return status;
@@ -193,8 +195,9 @@ namespace Garnet.server
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
             var input = new ObjectInput(header, ref parseState);
+            var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             countRemoved = output.result1;
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
@@ -243,7 +246,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext,
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext,
                 ref output);
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
@@ -303,7 +306,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext,
+            status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext,
                 ref output);
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
@@ -340,7 +343,7 @@ namespace Garnet.server
 
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             //process output
             if (status == GarnetStatus.OK)
@@ -382,7 +385,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, arg2: 2);
 
             var output = new ObjectOutput();
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext,
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext,
                 ref output);
 
             // Process output
@@ -419,8 +422,9 @@ namespace Garnet.server
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCARD };
             var input = new ObjectInput(header);
+            var output = new ObjectOutput();
 
-            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
+            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             zcardCount = output.result1;
             return status;
@@ -493,7 +497,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, arg2: (int)rangeOpts);
 
             var output = new ObjectOutput();
-            var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             for (var i = arguments.Count - 1; i > 1; i--)
             {
@@ -648,7 +652,7 @@ namespace Garnet.server
             var outputContainer = stackalloc byte[outputContainerSize];
             var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
-            var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
             {
@@ -679,7 +683,7 @@ namespace Garnet.server
         public GarnetStatus SortedSetAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
         where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
@@ -773,7 +777,7 @@ namespace Garnet.server
                         }, ref parseState);
 
                         var zAddOutput = new ObjectOutput();
-                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref ssObjectTransactionalContext, ref zAddOutput);
+                        RMWObjectStoreOperation(destinationKey, ref zAddInput, ref ssObjectTransactionalContext, ref zAddOutput);
                         itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                     }
                 }
@@ -800,9 +804,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the number of members of the sorted set.
@@ -813,9 +817,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.
@@ -830,7 +834,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetRange<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the score of member in the sorted set at key.
@@ -844,7 +848,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetScore<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the scores of members in the sorted set at key.
@@ -858,7 +862,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetScores<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Removes and returns the first element from the sorted set stored at key,
@@ -872,7 +876,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetPop<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
@@ -902,7 +906,7 @@ namespace Garnet.server
             var outputContainer = stackalloc byte[outputContainerSize];
             var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
-            var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
             {
@@ -925,7 +929,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetCount<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Removes all elements in the sorted set between the
@@ -937,9 +941,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.
@@ -952,9 +956,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetLengthByValue<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetLengthByValue<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -968,7 +972,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetIncrement<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// ZREMRANGEBYRANK: Removes all elements in the sorted set stored at key with rank between start and stop.
@@ -982,7 +986,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetRemoveRange<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -995,7 +999,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetRank<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns a random member from the sorted set key.
@@ -1008,7 +1012,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetRandomMember<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
@@ -1022,7 +1026,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetScan<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
          where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-           => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+           => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
@@ -1543,7 +1547,7 @@ namespace Garnet.server
         public GarnetStatus SortedSetExpire<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
+            return RMWObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output);
         }
 
         /// <summary>
@@ -1571,7 +1575,7 @@ namespace Garnet.server
             var innerInput = new ObjectInput(header, ref parseState, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
             var output = new ObjectOutput();
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ToArray(), ref innerInput, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
             {
@@ -1592,7 +1596,7 @@ namespace Garnet.server
         /// <returns>The status of the operation.</returns>
         public GarnetStatus SortedSetTimeToLive<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
+            => ReadObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the time-to-live (TTL) of a SortedSet member.
@@ -1615,7 +1619,7 @@ namespace Garnet.server
             var innerInput = new ObjectInput(header, ref parseState, arg1: isMilliseconds, arg2: isTimestamp);
 
             var output = new ObjectOutput();
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
+            var status = ReadObjectStoreOperation(key.ToArray(), ref innerInput, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
                 expireIn = [.. ProcessRespInt64ArrayOutput(output, out _).Select(x => TimeSpan.FromMilliseconds(x < 0 ? 0 : x))];
@@ -1633,7 +1637,7 @@ namespace Garnet.server
         /// <returns>The status of the operation.</returns>
         public GarnetStatus SortedSetPersist<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
+            => RMWObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Removes the expiration time from the specified members in the sorted set stored at the given key.
@@ -1654,7 +1658,7 @@ namespace Garnet.server
             var innerInput = new ObjectInput(header, ref parseState);
             var output = new ObjectOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
+            var status = RMWObjectStoreOperation(key.ToArray(), ref innerInput, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
             {
@@ -1684,9 +1688,10 @@ namespace Garnet.server
                 return ObjectCollect(keys[0], CmdStrings.ZSET, _zcollectTaskLock, ref input, ref objectContext);
             }
 
+            var output = new ObjectOutput();
             foreach (var key in keys)
             {
-                RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+                RMWObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output);
             }
 
             return GarnetStatus.OK;

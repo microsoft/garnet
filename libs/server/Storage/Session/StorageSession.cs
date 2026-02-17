@@ -22,8 +22,8 @@ namespace Garnet.server
         /// </summary>
         public StringBasicContext stringBasicContext;
         public StringTransactionalContext stringTransactionalContext;
-        public ConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
-        public TransactionalConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
+        public ConsistentReadContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
+        public TransactionalConsistentReadContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -92,7 +92,7 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var session = db.Store.NewSession<StringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions, IsConsistentReadSession);
+            var session = db.Store.NewSession<StringInput, StringOutput, long, MainSessionFunctions>(functions, IsConsistentReadSession);
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;
             consistentReadContext = session.ConsistentReadContext;

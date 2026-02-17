@@ -220,7 +220,7 @@ namespace Garnet.server
                 if (!sortedSetDict.Remove(valueArray, out var key))
                     continue;
 
-                output.Header.result1++;
+                output.result1++;
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
 
@@ -232,7 +232,7 @@ namespace Garnet.server
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
-            output.Header.result1 = Count();
+            output.result1 = Count();
         }
 
         private void SortedSetScore(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -250,7 +250,7 @@ namespace Garnet.server
             {
                 writer.WriteDoubleNumeric(score);
             }
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void SortedSetScores(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -276,7 +276,7 @@ namespace Garnet.server
                 }
             }
 
-            output.Header.result1 = count;
+            output.result1 = count;
         }
 
         private void SortedSetCount(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -672,7 +672,7 @@ namespace Garnet.server
             }
 
             // Write count done into output footer
-            output.Header.result1 = count;
+            output.result1 = count;
         }
 
         private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, ref ObjectOutput output, SortedSetOperation op)
@@ -681,7 +681,7 @@ namespace Garnet.server
             // ZLEXCOUNT key min max
 
             // Using minValue for partial execution detection
-            output.Header.result1 = int.MinValue;
+            output.result1 = int.MinValue;
 
             var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
@@ -695,9 +695,9 @@ namespace Garnet.server
 
             var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, isRemove, out int errorCode);
 
-            output.Header.result1 = errorCode;
+            output.result1 = errorCode;
             if (errorCode == 0)
-                output.Header.result1 = rem.Count;
+                output.result1 = rem.Count;
         }
 
         /// <summary>
@@ -804,7 +804,7 @@ namespace Garnet.server
             if (count == 0)
             {
                 writer.WriteEmptyArray();
-                output.Header.result1 = 0;
+                output.result1 = 0;
                 return;
             }
 
@@ -835,7 +835,7 @@ namespace Garnet.server
                 count--;
             }
 
-            output.Header.result1 = countDone;
+            output.result1 = countDone;
         }
 
         private void SortedSetPersist(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -852,7 +852,7 @@ namespace Garnet.server
             {
                 var result = Persist(item.ToArray());
                 writer.WriteInt32(result);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -893,7 +893,7 @@ namespace Garnet.server
                 }
 
                 writer.WriteInt64(result);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -910,7 +910,7 @@ namespace Garnet.server
             {
                 var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
                 writer.WriteInt32(result);
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -918,7 +918,7 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         #region CommonMethods

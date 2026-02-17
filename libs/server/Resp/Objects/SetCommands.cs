@@ -36,8 +36,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var status = storageApi.SetAdd(key, ref input, out var output);
+            var status = storageApi.SetAdd(key, ref input, ref output);
 
             switch (status)
             {
@@ -322,8 +323,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var status = storageApi.SetRemove(key, ref input, out var output);
+            var status = storageApi.SetRemove(key, ref input, ref output);
 
             switch (status)
             {
@@ -365,8 +367,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
             var input = new ObjectInput(header);
+            var output = new ObjectOutput();
 
-            var status = storageApi.SetLength(key, ref input, out var output);
+            var status = storageApi.SetLength(key, ref input, ref output);
 
             switch (status)
             {
@@ -410,7 +413,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.SetMembers(key, ref input, ref output);
 
@@ -461,7 +464,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.SetIsMember(key, ref input, ref output);
 
@@ -539,7 +542,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.SetPop(key, ref input, ref output);
 
@@ -652,7 +655,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
 

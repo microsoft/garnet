@@ -152,11 +152,11 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.SETBIT, ref parseState, startIdx: 1, arg1: offset);
 
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringSetBit(key, ref input, ref o);
+            var output = GetStringOutput();
+            var status = storageApi.StringSetBit(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
-                dcurr += o.Length;
+                dcurr += output.SpanByteAndMemory.Length;
 
             return true;
         }
@@ -182,14 +182,14 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.GETBIT, ref parseState, startIdx: 1, arg1: offset);
 
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringGetBit(key, ref input, ref o);
+            var output = GetStringOutput();
+            var status = storageApi.StringGetBit(key, ref input, ref output);
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             else
-                dcurr += o.Length;
+                dcurr += output.SpanByteAndMemory.Length;
 
             return true;
         }
@@ -219,16 +219,13 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1);
 
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetStringOutput();
 
-            var status = storageApi.StringBitCount(key, ref input, ref o);
+            var status = storageApi.StringBitCount(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
-                else
-                    dcurr += o.Length;
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
@@ -282,16 +279,13 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.BITPOS, ref parseState, startIdx: 1);
 
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetStringOutput();
 
-            var status = storageApi.StringBitPosition(key, ref input, ref o);
+            var status = storageApi.StringBitPosition(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
-                else
-                    dcurr += o.Length;
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
@@ -510,7 +504,7 @@ namespace Garnet.server
 
                 input.parseState = parseState;
 
-                var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                var output = GetStringOutput();
                 var status = storageApi.StringBitField(sbKey, ref input, opCode,
                     ref output);
 
@@ -521,10 +515,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                 }
             }
 
