@@ -78,6 +78,22 @@ global using StringTransactionalUnsafeContext = Tsavorite.core.TransactionalUnsa
     Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 
+global using ConsistentReadStringBasicContext = Tsavorite.core.ConsistentReadContext<
+    Garnet.server.StringInput,
+    Garnet.server.StringOutput,
+    long,
+    Garnet.server.MainSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
+global using ConsistentReadStringTransactionalContext = Tsavorite.core.TransactionalConsistentReadContext<
+    Garnet.server.StringInput,
+    Garnet.server.StringOutput,
+    long,
+    Garnet.server.MainSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
 global using ObjectBasicContext = Tsavorite.core.BasicContext<
     Garnet.server.ObjectInput,
     Garnet.server.ObjectOutput,
@@ -93,6 +109,21 @@ global using ObjectTransactionalContext = Tsavorite.core.TransactionalContext<
     Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 
+global using ConsistentReadObjectBasicContext = Tsavorite.core.ConsistentReadContext<
+    Garnet.server.ObjectInput,
+    Garnet.server.ObjectOutput,
+    long, Garnet.server.ObjectSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
+global using ConsistentReadObjectTransactionalContext = Tsavorite.core.TransactionalConsistentReadContext<
+    Garnet.server.ObjectInput,
+    Garnet.server.ObjectOutput,
+    long,
+    Garnet.server.ObjectSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
 global using UnifiedBasicContext = Tsavorite.core.BasicContext<
     Garnet.server.UnifiedInput,
     Garnet.server.UnifiedOutput,
@@ -101,6 +132,20 @@ global using UnifiedBasicContext = Tsavorite.core.BasicContext<
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 
 global using UnifiedTransactionalContext = Tsavorite.core.TransactionalContext<
+    Garnet.server.UnifiedInput,
+    Garnet.server.UnifiedOutput,
+    long, Garnet.server.UnifiedSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
+global using ConsistentReadUnifiedBasicContext = Tsavorite.core.ConsistentReadContext<
+    Garnet.server.UnifiedInput,
+    Garnet.server.UnifiedOutput,
+    long, Garnet.server.UnifiedSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
+global using ConsistentReadUnifiedTransactionalContext = Tsavorite.core.TransactionalConsistentReadContext<
     Garnet.server.UnifiedInput,
     Garnet.server.UnifiedOutput,
     long, Garnet.server.UnifiedSessionFunctions,

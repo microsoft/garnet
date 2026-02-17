@@ -22,8 +22,8 @@ namespace Garnet.server
         /// </summary>
         public StringBasicContext stringBasicContext;
         public StringTransactionalContext stringTransactionalContext;
-        public ConsistentReadContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
-        public TransactionalConsistentReadContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
+        public ConsistentReadStringBasicContext consistentReadContext;
+        public ConsistentReadStringTransactionalContext transactionalConsistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -37,16 +37,16 @@ namespace Garnet.server
         /// </summary>
         public ObjectBasicContext objectBasicContext;
         public ObjectTransactionalContext objectTransactionalContext;
-        public ConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreConsistentReadContext;
-        public TransactionalConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalConsistentReadContext;
+        public ConsistentReadObjectBasicContext objectStoreConsistentReadContext;
+        public ConsistentReadObjectTransactionalContext objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
         public UnifiedBasicContext unifiedBasicContext;
         public UnifiedTransactionalContext unifiedTransactionalContext;
-        public ConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
-        public TransactionalConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalConsistentReadContext;
+        public ConsistentReadUnifiedBasicContext unifiedStoreConsistentReadContext;
+        public ConsistentReadUnifiedTransactionalContext unifiedStoreTransactionalConsistentReadContext;
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
