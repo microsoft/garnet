@@ -973,21 +973,30 @@ namespace Garnet.test
             TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0];
 
         /// <summary>
-        /// Build path for unit test working directory using Guid
+        /// Build path for unit test working directory.
         /// </summary>
-        /// <param name="category"></param>
-        /// <param name="includeGuid"></param>
         /// <returns></returns>
-        internal static string UnitTestWorkingDir(string category = null, bool includeGuid = false)
+        internal static string UnitTestWorkingDir()
         {
             // Include process id to avoid conflicts between parallel test runs
             var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
+
+            if ((TestContext.CurrentContext.Test.Arguments?.Length ?? 0) > 0)
+            {
+                var illegalChars = Path.GetInvalidPathChars().Concat(Path.GetInvalidFileNameChars()).ToArray();
+
+                foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+                {
+                    var argStr = arg?.ToString() ?? "--null--";
+                    var safeArgStr = string.Join("-", argStr.Split(illegalChars));
+
+                    testPath += $"_{safeArgStr}";
+                }
+            }
+
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
-            if (category != null)
-                rootPath = Path.Combine(rootPath, category);
-
-            return includeGuid ? Path.Combine(rootPath, Guid.NewGuid().ToString()) : rootPath;
+            return rootPath;
         }
 
         /// <summary>
