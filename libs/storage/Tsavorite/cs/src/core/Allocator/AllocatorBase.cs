@@ -97,6 +97,11 @@ namespace Tsavorite.core
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         protected long* pagePointers;
 
+        /// <summary>
+        /// Array of pages kept to ensure the pinned pages are not garbage collected.
+        /// </summary>
+        protected readonly byte[][] pageArrays;
+
         #endregion
 
         #region Public addresses
@@ -388,11 +393,6 @@ namespace Tsavorite.core
 
             if (pagePointers is not null)
             {
-                for (var ii = 0; ii < BufferSize; ii++)
-                {
-                    if (pagePointers[ii] != 0)
-                        NativeMemory.AlignedFree((void*)pagePointers[ii]);
-                }
                 NativeMemory.AlignedFree((void*)pagePointers);
                 pagePointers = null;
             }
@@ -659,6 +659,7 @@ namespace Tsavorite.core
 
             if (BufferSize > 0)
             {
+                pageArrays = new byte[BufferSize][];
                 var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
                 pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
                 NativeMemory.Clear(pagePointers, bufferSizeInBytes);
@@ -669,7 +670,7 @@ namespace Tsavorite.core
         internal long GetPhysicalAddress(long logicalAddress)
         {
             if (disposed)
-                throw new TsavoriteException("GetPhysicalAddress called when disposed");
+                ThrowTsavoriteException("GetPhysicalAddress called when disposed");
 
             // Index of page within the circular buffer, and offset on the page.
             var pageIndex = GetPageIndexForAddress(logicalAddress);
@@ -738,6 +739,16 @@ namespace Tsavorite.core
                     RemoveSegment(s);
                 }
             }
+        }
+
+        /// <summary>Allocate a pinned byte[] for the page at <paramref name="index"/></summary>
+        protected void AllocatePinnedPageArray(int index)
+        {
+            var adjustedSize = PageSize + 2 * sectorSize;
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pagePointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            pageArrays[index] = tmp;
         }
 
         /// <summary>Initialize allocator</summary>
@@ -1228,10 +1239,13 @@ namespace Tsavorite.core
         {
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
+                // -1: RETRY_NOW
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
                 _ = Thread.Yield();
             }
+
+            // 0: RETRY_LATER
             return logicalAddress != 0;
         }
 

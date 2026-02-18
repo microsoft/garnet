@@ -47,8 +47,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            semaphore?.Dispose();
-            semaphore = null;
+            var tempSemaphore = semaphore;
+            if (tempSemaphore != null && Interlocked.CompareExchange(ref semaphore, null, tempSemaphore) == tempSemaphore)
+                tempSemaphore.Dispose();
         }
     }
 }

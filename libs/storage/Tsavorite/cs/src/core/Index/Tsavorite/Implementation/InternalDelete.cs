@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -41,6 +42,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TContext userContext,
                             ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -60,6 +62,12 @@ namespace Tsavorite.core
 
             LogRecord srcLogRecord = default;
 
+            DeleteInfo deleteInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
+
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
@@ -69,13 +77,8 @@ namespace Tsavorite.core
 
                 // Note: Delete does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingDelete
 
-                DeleteInfo deleteInfo = new()
-                {
-                    Version = sessionFunctions.Ctx.version,
-                    SessionID = sessionFunctions.Ctx.sessionID,
-                    Address = stackCtx.recSrc.LogicalAddress,
-                    KeyHash = stackCtx.hei.hash
-                };
+                deleteInfo.Address = stackCtx.recSrc.LogicalAddress;
+                deleteInfo.KeyHash = stackCtx.hei.hash;
 
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
@@ -154,7 +157,7 @@ namespace Tsavorite.core
 
             CreateNewRecord:
                 // Immutable region or new record
-                status = CreateNewRecordDelete(key, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx);
+                status = CreateNewRecordDelete(key, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx, ref deleteInfo);
 
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
@@ -163,6 +166,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
+                sessionFunctions.PostDeleteOperation(key, ref deleteInfo, epoch);
                 EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
 
@@ -199,8 +203,9 @@ namespace Tsavorite.core
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
+        /// <param name="deleteInfo">DeleteInfo</param>
         private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref DeleteInfo deleteInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var sizeInfo = hlog.GetDeleteRecordSize(key);
@@ -218,13 +223,8 @@ namespace Tsavorite.core
             newLogRecord.InfoRef.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 
-            DeleteInfo deleteInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = newLogicalAddress,
-                KeyHash = stackCtx.hei.hash,
-            };
+            deleteInfo.Address = newLogicalAddress;
+            deleteInfo.KeyHash = stackCtx.hei.hash;
 
             if (!sessionFunctions.InitialDeleter(ref newLogRecord, ref deleteInfo))
             {

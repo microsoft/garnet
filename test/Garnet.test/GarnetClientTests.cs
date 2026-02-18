@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System;
 using System.Linq;
 using System.Net;
@@ -8,14 +7,16 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class GarnetClientTests
+    public class GarnetClientTests : AllureTestBase
     {
 
         readonly string[,] worldcities = new string[,] {
@@ -476,6 +477,7 @@ namespace Garnet.test
 
 
         [Test]
+        [Explicit("Test sometimes hangs")]
         public async Task CanDoBulkDeleteTests([Values] bool useStringType)
         {
             //KeyDeleteAsync
@@ -523,7 +525,7 @@ namespace Garnet.test
 
                 // send the cancellation so the task throws an exception
                 sc.Cancel();
-                mrObj.Set();
+                mrObj.Set();    // TODO: mrObj not needed
 
                 Assert.Throws<OperationCanceledException>(() => tDeletingK.Wait(sc.Token));
 

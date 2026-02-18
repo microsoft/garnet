@@ -17,22 +17,6 @@ namespace Garnet.server
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
 
-        /// <summary>
-        /// Output header
-        /// </summary>
-        public OutputHeader Header;
-
-        /// <summary>
-        /// Output flags
-        /// </summary>
-        public OutputFlags OutputFlags;
-
-        /// <summary>
-        /// True if output flag RemoveKey is set
-        /// </summary>
-        public readonly bool HasRemoveKey =>
-            (OutputFlags & OutputFlags.RemoveKey) == OutputFlags.RemoveKey;
-
         public UnifiedOutput() => SpanByteAndMemory = new(null);
 
         public UnifiedOutput(SpanByteAndMemory sbam) => SpanByteAndMemory = sbam;
@@ -42,7 +26,7 @@ namespace Garnet.server
 
         public void ConvertToHeap()
         {
-            // Does not convert to heap when going pending, because we immediately complete pending operations for unified store.
+            // Does not convert to heap when going pending, because we complete all pending operations before releasing the pinned source bytes.
         }
 
         public void Dispose()

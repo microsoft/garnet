@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -16,8 +18,9 @@ namespace Tsavorite.test
     using RMWValueAllocator = ObjectAllocator<StoreFunctions<IntKeyComparer, DefaultRecordDisposer>>;
     using RMWValueStoreFunctions = StoreFunctions<IntKeyComparer, DefaultRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class NeedCopyUpdateTests
+    internal class NeedCopyUpdateTests : AllureTestBase
     {
         private TsavoriteKV<RMWValueStoreFunctions, RMWValueAllocator> store;
         private IDevice log, objlog;
@@ -187,8 +190,9 @@ namespace Tsavorite.test
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    internal class NeedCopyUpdateTestsSinglePage
+    internal class NeedCopyUpdateTestsSinglePage : AllureTestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;

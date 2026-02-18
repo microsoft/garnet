@@ -170,6 +170,7 @@ namespace Tsavorite.core
             Exclusive
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a newly-inserted record.

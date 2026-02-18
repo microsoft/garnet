@@ -37,13 +37,13 @@ namespace Tsavorite.benchmark
         readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        readonly TsavoriteKV<SpanByteStoreFunctions, TAllocator> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
+        internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader, Func<AllocatorSettings, SpanByteStoreFunctions, TAllocator> allocatorFactory)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -112,7 +112,7 @@ namespace Tsavorite.benchmark
 
             store = new(kvSettings
                 , StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordDisposer())
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                , allocatorFactory
             );
         }
 

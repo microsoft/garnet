@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Allure.NUnit;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -10,6 +11,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for the <see cref="ACLParser"/>.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     internal class AclParserTests : AclTest
     {

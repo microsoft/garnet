@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,6 +16,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for ACL Configuration file related operations.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     class AclConfigurationFileTests : AclTest
     {

@@ -3,13 +3,16 @@
 
 using System;
 using System.Globalization;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    public class GeoHashTests
+    [AllureNUnit]
+    [TestFixture]
+    public class GeoHashTests : AllureTestBase
     {
         [Test]
         [TestCase(30.5388942218, 104.0555758833)]

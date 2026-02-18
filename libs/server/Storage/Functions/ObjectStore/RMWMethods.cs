@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
+    public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc />
         public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
@@ -76,7 +76,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
-                WriteLogRMW(dstLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
 
             functionsState.cacheSizeTracker?.AddHeapSize(dstLogRecord.ValueObject.HeapMemorySize);
@@ -88,7 +88,7 @@ namespace Garnet.server
             if (!logRecord.Info.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
-                output.OutputFlags |= OutputFlags.WrongType;
+                output.OutputFlags |= ObjectOutputFlags.WrongType;
                 return true;
             }
 
@@ -97,7 +97,7 @@ namespace Garnet.server
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
-                    WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                    rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                 functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                 return true;
             }
@@ -143,7 +143,7 @@ namespace Garnet.server
             var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
             if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
             {
-                output.OutputFlags |= OutputFlags.WrongType;
+                output.OutputFlags |= ObjectOutputFlags.WrongType;
                 return true;
             }
 
@@ -218,7 +218,7 @@ namespace Garnet.server
                 // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
                 if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
                 {
-                    output.OutputFlags |= OutputFlags.WrongType;
+                    output.OutputFlags |= ObjectOutputFlags.WrongType;
                     return true;
                 }
 
@@ -242,8 +242,17 @@ namespace Garnet.server
             functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(srcLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
+        }
+
+
+        /// <inheritdoc />
+        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogRMW(key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }
     }
 }

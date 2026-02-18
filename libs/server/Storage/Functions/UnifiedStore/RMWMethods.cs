@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
+    public readonly partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
         /// <inheritdoc />
         public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output,
@@ -51,7 +51,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
-                WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
 
             if (logRecord.Info.ValueIsObject)
@@ -177,7 +177,7 @@ namespace Garnet.server
             }
 
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(dstLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
             return true;
         }
@@ -195,7 +195,7 @@ namespace Garnet.server
                     if (!logRecord.Info.Modified)
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
-                        WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                        rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                     if (logRecord.Info.ValueIsObject)
                         functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                     return true;
@@ -337,6 +337,15 @@ namespace Garnet.server
                 ETagState.ResetState(ref functionsState.etagState);
                 shouldUpdateEtag = false;
             }
+        }
+
+
+        /// <inheritdoc />
+        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogRMW(key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }
     }
 }
