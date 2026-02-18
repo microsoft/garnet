@@ -27,19 +27,8 @@ namespace Garnet.server
 
             output.ETag = srcLogRecord.ETag;
 
-            _ = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd, init: false, readOnly: true);
-
-            if (!execCmd)
-            {
-                var skipResp = input.header.CheckSkipRespOutputFlag();
-                if (!skipResp)
-                {
-                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                    writer.WriteNull();
-                }
-
-                return true;
-            }
+            if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
 
             var cmd = input.header.cmd;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations

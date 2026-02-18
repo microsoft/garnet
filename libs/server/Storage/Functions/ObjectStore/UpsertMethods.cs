@@ -94,7 +94,7 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            var updatedEtag = EtagUtils.GetUpdatedEtag(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, init: true);
+            var updatedEtag = EtagUtils.CheckConditionalExecution(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, initContext: true);
 
             if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedEtag))
                 return false;
@@ -125,7 +125,7 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            var updatedEtag = EtagUtils.GetUpdatedEtag(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, init: true);
+            var updatedEtag = EtagUtils.CheckConditionalExecution(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, initContext: true);
 
             if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedEtag))
                 return false;
@@ -153,7 +153,7 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            var updatedEtag = EtagUtils.GetUpdatedEtag(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, init: true);
+            var updatedEtag = EtagUtils.CheckConditionalExecution(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, initContext: true);
 
             if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedEtag))
                 return false;

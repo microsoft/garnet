@@ -122,7 +122,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     ref RespMemoryWriter writer, out long memorySizeChange)
+            byte respProtocolVersion, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -138,31 +138,31 @@ namespace Garnet.server
             switch (input.header.SetOp)
             {
                 case SetOperation.SADD:
-                    SetAdd(ref input, ref output, ref writer);
+                    SetAdd(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SMEMBERS:
-                    SetMembers(ref output, ref writer);
+                    SetMembers(ref output, respProtocolVersion);
                     break;
                 case SetOperation.SISMEMBER:
-                    SetIsMember(ref input, ref output, ref writer);
+                    SetIsMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SMISMEMBER:
-                    SetMultiIsMember(ref input, ref output, ref writer);
+                    SetMultiIsMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SREM:
-                    SetRemove(ref input, ref output, ref writer);
+                    SetRemove(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SCARD:
-                    SetLength(ref input, ref output, ref writer);
+                    SetLength(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SPOP:
-                    SetPop(ref input, ref output, ref writer);
+                    SetPop(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SRANDMEMBER:
-                    SetRandomMember(ref input, ref output, ref writer);
+                    SetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SSCAN:
-                    Scan(ref input, ref output, ref writer);
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");

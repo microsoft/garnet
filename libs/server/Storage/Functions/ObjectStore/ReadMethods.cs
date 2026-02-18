@@ -32,16 +32,26 @@ namespace Garnet.server
             if (input.header.type != 0)
             {
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
+                var srcRecordHasETag = srcLogRecord.Info.HasETag;
+
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    if (srcLogRecord.Info.HasETag)
+                    if (srcRecordHasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-                    _ = HandleMetaCommandAndOperate(garnetObject, ref input, ref output, srcLogRecord.ETag, out _, readOnly: true);
+                    if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _,
+                            readOnlyContext: true))
+                    {
+                        if (srcRecordHasETag)
+                            ETagState.ResetState(ref functionsState.etagState);
+                        return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                    }
+
+                    garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
 
                     output.ETag = srcLogRecord.ETag;
 
-                    if (srcLogRecord.Info.HasETag)
+                    if (srcRecordHasETag)
                         ETagState.ResetState(ref functionsState.etagState);
 
                     return true;
@@ -53,7 +63,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (srcLogRecord.Info.HasETag)
+                if (srcRecordHasETag)
                 {
                     functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                     return true;

@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public partial class ListObject : IGarnetObject
     {
-        private void ListRemove(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListRemove(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var count = input.arg1;
 
@@ -62,7 +62,10 @@ namespace Garnet.server
             }
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(removedCount);
+            }
 
             if (removedCount == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
@@ -70,7 +73,7 @@ namespace Garnet.server
             output.Result1 = removedCount;
         }
 
-        private void ListInsert(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListInsert(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // Result is -1 if the pivot was not found.
             var result = -1;
@@ -108,7 +111,10 @@ namespace Garnet.server
             }
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(result);
+            }
 
             if (result == -1)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
@@ -116,7 +122,7 @@ namespace Garnet.server
             output.Result1 = result;
         }
 
-        private void ListIndex(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListIndex(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var index = input.arg1;
 
@@ -126,15 +132,18 @@ namespace Garnet.server
             var item = list.ElementAtOrDefault(index);
             if (item != null)
             {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteBulkString(item);
                 output.Result1 = 1;
             }
         }
 
-        private void ListRange(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListRange(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var start = input.arg1;
             var stop = input.arg2;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (0 == list.Count)
             {
@@ -175,7 +184,7 @@ namespace Garnet.server
             }
         }
 
-        private void ListTrim(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListTrim(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var start = input.arg1;
             var end = input.arg2;
@@ -225,6 +234,7 @@ namespace Garnet.server
                 }
             }
 
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteDirect(CmdStrings.RESP_OK);
 
             if (trimmed == 0)
@@ -233,17 +243,20 @@ namespace Garnet.server
             output.Result1 = trimmed;
         }
 
-        private void ListLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListLength(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var length = list.Count;
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(length);
+            }
 
             output.Result1 = length;
         }
 
-        private void ListPush(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListPush(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var addFirst = input.header.ListOp is ListOperation.LPUSH or ListOperation.LPUSHX;
 
@@ -262,12 +275,15 @@ namespace Garnet.server
             }
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(list.Count);
+            }
 
             output.Result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var removeFirst = input.header.ListOp == ListOperation.LPOP;
 
@@ -275,6 +291,8 @@ namespace Garnet.server
 
             if (list.Count < count)
                 count = list.Count;
+            
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (list.Count == 0)
             {
@@ -308,12 +326,14 @@ namespace Garnet.server
             }
         }
 
-        private void ListSet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListSet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // index
             var index = input.parseState.GetInt(0);
 
             index = index < 0 ? list.Count + index : index;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (index > list.Count - 1 || index < 0)
             {
@@ -337,9 +357,11 @@ namespace Garnet.server
             output.Result1 = 1;
         }
 
-        private void ListPosition(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void ListPosition(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (!input.parseState.TryGetListPositionOptions(1, out var rank, out var count, out var isDefaultCount,
                     out var maxLen, out var error))

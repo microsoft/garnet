@@ -26,7 +26,7 @@ namespace Garnet.server
             public (double Latitude, double Longitude) Coordinates;
         }
 
-        private void GeoAdd(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void GeoAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -79,11 +79,13 @@ namespace Garnet.server
             if (addedOrChanged == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteInt32(addedOrChanged);
         }
 
-        private void GeoHash(ref ObjectInput input, ref RespMemoryWriter writer)
+        private void GeoHash(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
@@ -103,7 +105,7 @@ namespace Garnet.server
             }
         }
 
-        private void GeoDistance(ref ObjectInput input, ref RespMemoryWriter writer)
+        private void GeoDistance(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // Read 1st member
             var member1 = input.parseState.GetArgSliceByRef(0).ToArray();
@@ -119,6 +121,8 @@ namespace Garnet.server
                 var validUnit = input.parseState.TryGetGeoDistanceUnit(2, out units);
                 Debug.Assert(validUnit);
             }
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
             {
@@ -137,8 +141,9 @@ namespace Garnet.server
             }
         }
 
-        private void GeoPosition(ref ObjectInput input, ref RespMemoryWriter writer)
+        private void GeoPosition(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)

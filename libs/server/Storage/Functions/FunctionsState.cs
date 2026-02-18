@@ -108,7 +108,7 @@ namespace Garnet.server
             }
         }
 
-        internal byte GetRespProtocolVersion(ref ObjectInput input)
+        internal byte GetRespProtocolVersion(in ObjectInput input)
         {
             return input.header.type switch
             {
@@ -123,6 +123,17 @@ namespace Garnet.server
                     },
                 _ => respProtocolVersion
             };
+        }
+
+        internal bool HandleSkippedExecution(in RespInputHeader inputHeader, ref SpanByteAndMemory output)
+        {
+            if (inputHeader.CheckSkipRespOutputFlag())
+                return true;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            writer.WriteNull();
+
+            return true;
         }
     }
 }

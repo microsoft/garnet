@@ -48,11 +48,14 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
 
-                var updatedEtag = HandleMetaCommandAndOperate(value, ref input, ref output, LogRecord.NoETag, out _, init: true);
-               
+                // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+                _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedEtag, initContext: true);
+                
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
-                // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+                // Increment on initial etag is for satisfying the variant that any key with no etag is the same as a zeroed etag
                 if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedEtag))
                 {
                     functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
@@ -138,46 +141,53 @@ namespace Garnet.server
                 return false;
             }
 
-            // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var inputHeaderHasEtag = metaCmd.IsEtagCommand();
             var hadETagPreMutation = logRecord.Info.HasETag;
-            if (!hadETagPreMutation && inputHeaderHasEtag)
-                return false;
-
             if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = HandleMetaCommandAndOperate((IGarnetObject)logRecord.ValueObject, ref input, ref output, logRecord.ETag, out sizeChange);
+                if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
+                {
+                    if (hadETagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
+                    return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                }
+
+                ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                var shouldUpdateEtag = (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
+                {
+                    if (hadETagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
                     return true;
+                }
                 if (output.HasRemoveKey)
                 {
                     functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(obj => { });
+                    logRecord.ClearValueIfHeap(_ => { });
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     logRecord.RemoveETag();
+                    if (hadETagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
                     return false;
                 }
 
-                if (updatedEtag != logRecord.ETag)
+                if (shouldUpdateEtag)
                 {
                     logRecord.TrySetETag(updatedEtag);
                     output.ETag = updatedEtag;
+                    ETagState.ResetState(ref functionsState.etagState);
                 }
-                else
+                else if (hadETagPreMutation)
                 {
                     output.ETag = functionsState.etagState.ETag;
-                }
-
-                if (hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
+                }
 
                 sizeInfo.AssertOptionals(logRecord.Info);
                 return true;
@@ -187,6 +197,14 @@ namespace Garnet.server
             if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
             {
                 output.OutputFlags |= ObjectOutputFlags.WrongType;
+                return true;
+            }
+
+            if (hadETagPreMutation)
+            {
+                functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
+                // reset etag state that may have been initialized earlier but don't update ETag
+                ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
@@ -247,9 +265,8 @@ namespace Garnet.server
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
-            var shouldUpdateEtag = recordHadEtagPreMutation;
-            if (shouldUpdateEtag)
+            var hadEtagPreMutation = srcLogRecord.Info.HasETag;
+            if (hadEtagPreMutation)
             {
                 // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
@@ -257,14 +274,24 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = HandleMetaCommandAndOperate(value, ref input, ref output, srcLogRecord.ETag, out _);
-                shouldUpdateEtag |= (srcLogRecord.ETag != updatedEtag);
+                // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedEtag);
+                Debug.Assert(execOp);
+
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                var shouldUpdateEtag = (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
+                {
+                    if (hadEtagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
                     return true;
+                }
                 if (output.HasRemoveKey)
                 {
                     rmwInfo.Action = RMWAction.ExpireAndStop;
+                    if (hadEtagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
                     return false;
                 }
 
@@ -274,7 +301,7 @@ namespace Garnet.server
                     output.ETag = updatedEtag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
-                else if (recordHadEtagPreMutation)
+                else if (hadEtagPreMutation)
                 {
                     output.ETag = functionsState.etagState.ETag;
                     ETagState.ResetState(ref functionsState.etagState);
@@ -287,6 +314,16 @@ namespace Garnet.server
                 if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
                 {
                     output.OutputFlags |= ObjectOutputFlags.WrongType;
+                    if (hadEtagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
+                    return true;
+                }
+
+                if (hadEtagPreMutation)
+                {
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
+                    // reset etag state that may have been initialized earlier but don't update ETag
+                    ETagState.ResetState(ref functionsState.etagState);
                     return true;
                 }
 
@@ -320,39 +357,6 @@ namespace Garnet.server
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
                 WriteLogRMW(key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
-        }
-
-        private long HandleMetaCommandAndOperate(IGarnetObject value, ref ObjectInput input, ref ObjectOutput output,
-            long currEtag, out long sizeChange, bool init = false, bool readOnly = false)
-        {
-            sizeChange = 0;
-
-            var updatedEtag = EtagUtils.GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
-
-            var skipResp = input.header.CheckSkipRespOutputFlag();
-            var respProtocolVersion = functionsState.GetRespProtocolVersion(ref input);
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            try
-            {
-                if (execCmd)
-                {
-                    value.Operate(ref input, ref output, ref writer, out sizeChange);
-
-                    if (!readOnly && (currEtag != LogRecord.NoETag) && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == ObjectOutputFlags.ValueUnchanged)
-                        updatedEtag = currEtag;
-                }
-                else if (!skipResp)
-                    writer.WriteNull();
-
-                output.ETag = updatedEtag;
-            }
-            finally
-            {
-                writer.Dispose();
-            }
-
-            return updatedEtag;
         }
     }
 }

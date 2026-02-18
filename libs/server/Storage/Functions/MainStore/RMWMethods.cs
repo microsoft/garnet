@@ -61,7 +61,8 @@ namespace Garnet.server
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
-            var updatedEtag = EtagUtils.GetUpdatedEtag(LogRecord.NoETag, ref input.metaCommandInfo, out _, init: true);
+            // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+            _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedEtag, initContext: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -365,32 +366,22 @@ namespace Garnet.server
             }
 
             var hadETagPreMutation = logRecord.Info.HasETag;
-            var shouldUpdateEtag = hadETagPreMutation;
-            if (shouldUpdateEtag)
+            if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             var shouldCheckExpiration = true;
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-
-            if (!execCmd)
+            if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
             {
+                if (hadETagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
                 output.ETag = functionsState.etagState.ETag;
                 rmwInfo.Action = RMWAction.CancelOperation;
-                if (hadETagPreMutation)
-                {
-                    // reset etag state that may have been initialized earlier
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
-
-                if (!input.header.CheckSkipRespOutputFlag())
-                {
-                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                    writer.WriteNull();
-                }
-
-                return IPUResult.Failed;
+                functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                return IPUResult.NotUpdated;
             }
+
+            var shouldUpdateEtag = hadETagPreMutation || metaCmd.IsEtagCommand();
 
             switch (cmd)
             {
@@ -412,8 +403,6 @@ namespace Garnet.server
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(metaCmd == RespMetaCommand.None);
-
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
@@ -424,7 +413,7 @@ namespace Garnet.server
 
                     // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
                     // due to srcRecordInfo having expiration set; here, that srcRecordInfo is us, so we should do nothing if input.arg1 == 0.
-                    if (input.arg1 == 0 && !metaCmd.IsEtagCondExecCommand())
+                    if (input.arg1 == 0)
                         logRecord.RemoveExpiration();
                     else if (!logRecord.TrySetExpiration(input.arg1))
                         return IPUResult.Failed;
@@ -635,6 +624,7 @@ namespace Garnet.server
                     return IPUResult.Failed;
 
                 case RespCommand.GETEX:
+                    shouldUpdateEtag = false;
                     CopyRespTo(logRecord.ValueSpan, ref output);
 
                     var ipuResult = IPUResult.NotUpdated;
@@ -753,10 +743,6 @@ namespace Garnet.server
             if (srcLogRecord.Info.HasETag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-            Debug.Assert(execCmd);
-
             switch (input.header.cmd)
             {
                 case RespCommand.SETEXNX:
@@ -856,8 +842,10 @@ namespace Garnet.server
             }
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-            Debug.Assert(execCmd);
+
+            // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+            var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedEtag);
+            Debug.Assert(execOp);
 
             switch (cmd)
             {

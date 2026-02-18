@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public partial class SetObject : IGarnetObject
     {
-        private void SetAdd(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var added = 0;
 
@@ -36,13 +36,17 @@ namespace Garnet.server
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(added);
+            }
 
             output.Result1 = added;
         }
 
-        private void SetMembers(ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetMembers(ref ObjectOutput output, byte respProtocolVersion)
         {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteSetLength(Set.Count);
 
             foreach (var item in Set)
@@ -52,7 +56,7 @@ namespace Garnet.server
             }
         }
 
-        private void SetIsMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 #if NET9_0_OR_GREATER
@@ -60,12 +64,14 @@ namespace Garnet.server
 #else
             var isMember = Set.Contains(member.ToArray());
 #endif
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteInt32(isMember ? 1 : 0);
             output.Result1 = 1;
         }
 
-        private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
@@ -82,7 +88,7 @@ namespace Garnet.server
             output.Result1 = input.parseState.Count;
         }
 
-        private void SetRemove(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetRemove(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var removed = 0;
 
@@ -105,26 +111,34 @@ namespace Garnet.server
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(removed);
+            }
 
             output.Result1 = removed;
         }
 
-        private void SetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetLength(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SCARD key
             var length = Set.Count;
 
             if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteInt32(length);
+            }
 
             output.Result1 = length;
         }
 
-        private void SetPop(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SPOP key [count]
             var count = input.arg1;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (Set.Count == 0 || count == 0)
             {
@@ -179,12 +193,14 @@ namespace Garnet.server
             output.Result1 = countDone;
         }
 
-        private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var count = input.arg1;
             var seed = input.arg2;
 
             var countDone = 0;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (count > 0)
             {

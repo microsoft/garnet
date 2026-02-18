@@ -51,6 +51,7 @@ namespace Garnet.test.Resp.ETag
 
             var setCmdArgs = new object[] { "SET", StringKeys[0], StringData[0] };
             var results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
+
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual("OK", (string)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1

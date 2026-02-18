@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using static Garnet.server.SessionFunctionsUtils;
@@ -37,7 +36,8 @@ namespace Garnet.server
             Debug.Assert(logRecord.Info.ValueIsObject || (!logRecord.Info.HasETag && !logRecord.Info.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
 
-            var updatedEtag = EtagUtils.GetUpdatedEtag(LogRecord.NoETag, ref input.metaCommandInfo, out _, init: true);
+            // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+            _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedEtag, initContext: true);
 
             var result =  input.header.cmd switch
             {
@@ -86,14 +86,10 @@ namespace Garnet.server
                 return false;
             }
 
-            _ = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-
             switch (input.header.cmd)
             {
                 case RespCommand.DEL:
-                    if (execCmd)
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
                     output.ETag = LogRecord.NoETag;
                     ETagState.ResetState(ref functionsState.etagState);
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
@@ -130,18 +126,19 @@ namespace Garnet.server
                 return true;
             }
 
-            var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
-            var shouldUpdateEtag = recordHadEtagPreMutation;
+            var hadEtagPreMutation = srcLogRecord.Info.HasETag;
+            var shouldUpdateEtag = hadEtagPreMutation;
             if (shouldUpdateEtag)
             {
                 // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
-            var cmd = input.header.cmd;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-            Debug.Assert(execCmd);
+            // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+            var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedEtag);
+            Debug.Assert(execOp);
 
+            var cmd = input.header.cmd;
             var result = cmd switch
             {
                 RespCommand.EXPIRE => HandleExpireCopyUpdate(srcLogRecord, ref dstLogRecord, in sizeInfo, ref shouldUpdateEtag, ref input, ref output),
@@ -150,12 +147,20 @@ namespace Garnet.server
             };
 
             if (!result)
+            {
+                if (hadEtagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
                 return false;
+            }
 
-            updatedEtag = shouldUpdateEtag ? updatedEtag : functionsState.etagState.ETag;
-            if (recordHadEtagPreMutation || shouldUpdateEtag)
+            if (shouldUpdateEtag)
             {
                 dstLogRecord.TrySetETag(updatedEtag);
+                output.ETag = updatedEtag;
+                ETagState.ResetState(ref functionsState.etagState);
+            }
+            else if (hadEtagPreMutation)
+            {
                 output.ETag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
@@ -173,8 +178,8 @@ namespace Garnet.server
 
             if (srcLogRecord.Info.ValueIsObject)
             {
-                var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
-                var shouldUpdateEtag = recordHadEtagPreMutation;
+                var hadEtagPreMutation = srcLogRecord.Info.HasETag;
+                var shouldUpdateEtag = hadEtagPreMutation;
                 if (shouldUpdateEtag)
                 {
                     // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
@@ -192,8 +197,9 @@ namespace Garnet.server
                 if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
                     return false;
 
-                var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-                Debug.Assert(execCmd);
+                // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedEtag);
+                Debug.Assert(execOp);
 
                 var cmd = input.header.cmd;
                 switch (cmd)
@@ -208,10 +214,14 @@ namespace Garnet.server
                         break;
                 }
 
-                updatedEtag = shouldUpdateEtag ? updatedEtag : functionsState.etagState.ETag;
-                if (recordHadEtagPreMutation || shouldUpdateEtag)
+                if (shouldUpdateEtag)
                 {
                     dstLogRecord.TrySetETag(updatedEtag);
+                    output.ETag = updatedEtag;
+                    ETagState.ResetState(ref functionsState.etagState);
+                }
+                else if (hadEtagPreMutation)
+                {
                     output.ETag = functionsState.etagState.ETag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
@@ -282,25 +292,13 @@ namespace Garnet.server
 
             var hasExpiration = logRecord.Info.HasExpiration;
 
-            var updatedEtag = EtagUtils.GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
-
-            if (!execCmd)
+            if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
             {
-                output.ETag = functionsState.etagState.ETag;
-                rmwInfo.Action = RMWAction.CancelOperation;
                 if (hadETagPreMutation)
-                {
-                    // reset etag state that may have been initialized earlier
                     ETagState.ResetState(ref functionsState.etagState);
-                }
-
-                if (!input.header.CheckSkipRespOutputFlag())
-                {
-                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                    writer.WriteNull();
-                }
-
-                return IPUResult.Failed;
+                functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return IPUResult.NotUpdated;
             }
 
             var ipuResult = IPUResult.Succeeded;
@@ -344,7 +342,6 @@ namespace Garnet.server
             else if (hadETagPreMutation)
             {
                 output.ETag = functionsState.etagState.ETag;
-                // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }
 

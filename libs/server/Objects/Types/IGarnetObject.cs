@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -22,10 +21,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
-        /// <param name="writer"></param>
+        /// <param name="respProtocolVersion"></param>
         /// <param name="sizeChange"></param>
         /// <returns></returns>
-        bool Operate(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer, out long sizeChange);
+        bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long sizeChange);
 
         /// <summary>
         /// Scan the items of the collection

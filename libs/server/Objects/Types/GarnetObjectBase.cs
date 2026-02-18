@@ -29,7 +29,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public abstract bool Operate(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer, out long sizeChange);
+        public abstract bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long sizeChange);
 
         /// <summary>
         /// Serialize to given writer
@@ -60,9 +60,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
-        /// <param name="writer"></param>
-        protected unsafe void Scan(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
+        /// <param name="respProtocolVersion"></param>
+        protected unsafe void Scan(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
             if (ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
                               out var patternLength, out var limitCount, out var isNoValue, out var error))
             {

@@ -182,7 +182,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, HeapMemorySize);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer, out long memorySizeChange)
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -200,56 +200,56 @@ namespace Garnet.server
                 case HashOperation.HSET:
                 case HashOperation.HSETNX:
                 case HashOperation.HMSET:
-                    HashSet(ref input, ref output, ref writer);
+                    HashSet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HGET:
-                    HashGet(ref input, ref output, ref writer);
+                    HashGet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HMGET:
-                    HashMultipleGet(ref input, ref output, ref writer);
+                    HashMultipleGet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HGETALL:
-                    HashGetAll(ref writer);
+                    HashGetAll(ref output, respProtocolVersion);
                     break;
                 case HashOperation.HDEL:
-                    HashDelete(ref input, ref output, ref writer);
+                    HashDelete(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HLEN:
-                    HashLength(ref input, ref output, ref writer);
+                    HashLength(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HSTRLEN:
-                    HashStrLength(ref input, ref output, ref writer);
+                    HashStrLength(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HEXISTS:
-                    HashExists(ref input, ref output, ref writer);
+                    HashExists(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HEXPIRE:
-                    HashExpire(ref input, ref output, ref writer);
+                    HashExpire(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HTTL:
-                    HashTimeToLive(ref input, ref output, ref writer);
+                    HashTimeToLive(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HPERSIST:
-                    HashPersist(ref input, ref output, ref writer);
+                    HashPersist(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HKEYS:
                 case HashOperation.HVALS:
-                    HashGetKeysOrValues(ref input, ref output, ref writer);
+                    HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HINCRBY:
-                    HashIncrement(ref input, ref output, ref writer);
+                    HashIncrement(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HINCRBYFLOAT:
-                    HashIncrementFloat(ref input, ref output, ref writer);
+                    HashIncrementFloat(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HRANDFIELD:
-                    HashRandomField(ref input, ref output, ref writer);
+                    HashRandomField(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HCOLLECT:
                     HashCollect(ref input, ref output);
                     break;
                 case HashOperation.HSCAN:
-                    Scan(ref input, ref output, ref writer);
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
