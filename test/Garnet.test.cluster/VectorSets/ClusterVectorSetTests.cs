@@ -1796,7 +1796,7 @@ namespace Garnet.test.cluster
                                             var wholeExpected = $"0x{string.Join("", data.Select(static q => q.ToString("X2")))}";
                                             var wholeActual = $"0x{string.Join("", emb.Select(static q => ((byte)float.Parse(q)).ToString("X2")))}";
 
-                                            ClassicAssert.Fail($"Unexpected embedded value, expected {expected} != actual {actual} ({expected} != {actual})");
+                                            ClassicAssert.Fail($"Unexpected embedded value, expected {expected} != actual {actual} ({wholeExpected} != {wholeActual})");
                                         }
                                     }
 
