@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -145,9 +146,19 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryRemove(MigrateSession mSession)
         {
+            var locked = false;
             try
             {
-                _lock.WriteLock();
+                // Due to cancellation, re-entrance is possible here so we don't want to spin indefinitely without checking disposal
+                if (!_lock.TryWriteLock())
+                {
+                    if (_disposed) return false;
+
+                    _ = Thread.Yield();
+                }
+
+                locked = true;
+
                 if (_disposed) return false;
 
                 foreach (var slot in mSession.GetSlots)
@@ -166,7 +177,10 @@ namespace Garnet.cluster
             }
             finally
             {
-                _lock.WriteUnlock();
+                if (locked)
+                {
+                    _lock.WriteUnlock();
+                }
             }
         }
 
