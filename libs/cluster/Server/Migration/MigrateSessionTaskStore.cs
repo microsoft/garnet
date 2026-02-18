@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -24,20 +23,25 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
-            try
+            _lock.WriteLock();
+            var skipDispose = _disposed;
+
+            _disposed = true;
+            _lock.WriteUnlock();
+
+            if (skipDispose)
             {
-                _lock.WriteLock();
-                _disposed = true;
-                for (var i = 0; i < sessions.Length; i++)
-                    sessions[i]?.Dispose();
-                Array.Clear(sessions);
+                return;
             }
-            finally
+
+            for (var i = 0; i < sessions.Length; i++)
             {
-                _lock.WriteUnlock();
+                sessions[i]?.Dispose();
             }
+            Array.Clear(sessions);
         }
 
         /// <summary>
@@ -146,19 +150,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryRemove(MigrateSession mSession)
         {
-            var locked = false;
             try
             {
-                // Due to cancellation, re-entrance is possible here so we don't want to spin indefinitely without checking disposal
-                if (!_lock.TryWriteLock())
-                {
-                    if (_disposed) return false;
-
-                    _ = Thread.Yield();
-                }
-
-                locked = true;
-
+                _lock.WriteLock();
                 if (_disposed) return false;
 
                 foreach (var slot in mSession.GetSlots)
@@ -177,10 +171,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (locked)
-                {
-                    _lock.WriteUnlock();
-                }
+                _lock.WriteUnlock();
             }
         }
 
