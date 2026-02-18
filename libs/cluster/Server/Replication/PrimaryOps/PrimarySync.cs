@@ -3,6 +3,9 @@
 
 using System;
 using System.Text;
+#if DEBUG
+using Garnet.common;
+#endif
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -30,6 +33,10 @@ namespace Garnet.cluster
                     logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 }
 
+#if DEBUG
+                ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).GetAwaiter().GetResult();
+#endif
+
                 var status = replicationSyncManager.ReplicationSyncDriver(replicaSyncSession).GetAwaiter().GetResult();
                 if (status.syncStatus == SyncStatus.FAILED)
                     errorMessage = Encoding.ASCII.GetBytes(status.error);
@@ -48,7 +55,7 @@ namespace Garnet.cluster
         /// <param name="replicaAofTailAddress">AOF tail address at replica</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryBeginDiskSync(
+        public bool TryBeginDiskbasedSync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
@@ -75,6 +82,10 @@ namespace Garnet.cluster
                         logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                         return false;
                     }
+
+#if DEBUG
+                    ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).GetAwaiter().GetResult();
+#endif
 
                     if (!session.SendCheckpoint().GetAwaiter().GetResult())
                     {

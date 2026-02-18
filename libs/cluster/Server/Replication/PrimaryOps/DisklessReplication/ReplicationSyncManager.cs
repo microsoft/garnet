@@ -40,12 +40,11 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            // Return if original value is true, hence already disposed
-            disposed.WriteLock();
             cts?.Cancel();
+            syncInProgress.WriteLock();
+            disposed.WriteLock();
             cts?.Dispose();
             cts = null;
-            syncInProgress.WriteLock();
         }
 
         /// <summary>
@@ -172,10 +171,13 @@ namespace Garnet.cluster
         async Task MainStreamingSnapshotDriver(SemaphoreSlim signalCompletion)
         {
             // Parameters for sync operation
+            var syncInProgressAcquired = false;
             try
             {
                 // Lock to avoid the addition of new replica sync sessions while sync is in progress
-                syncInProgress.WriteLock();
+                syncInProgressAcquired = syncInProgress.TryWriteLock();
+                if (!syncInProgressAcquired)
+                    throw new GarnetException("Failed to acquire write syncInProgress lock!");
 
                 // Get sync session info
                 NumSessions = GetSessionStore.GetNumSessions();
@@ -222,7 +224,8 @@ namespace Garnet.cluster
                 ClusterProvider.storeWrapper.ResumeCheckpoints();
 
                 // Unlock sync session lock
-                syncInProgress.WriteUnlock();
+                if (syncInProgressAcquired)
+                    syncInProgress.WriteUnlock();
 
                 // Release to indicate completion of the main sync task
                 signalCompletion.Release();

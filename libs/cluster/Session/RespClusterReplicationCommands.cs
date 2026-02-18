@@ -202,7 +202,7 @@ namespace Garnet.cluster
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            if (!clusterProvider.replicationManager.TryBeginDiskSync(
+            if (!clusterProvider.replicationManager.TryBeginDiskbasedSync(
                 replicaNodeId,
                 replicaAssignedPrimaryId,
                 replicaCheckpointEntry,
