@@ -981,17 +981,26 @@ namespace Garnet.test
             // Include process id to avoid conflicts between parallel test runs
             var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
 
+            // Incorporate arguments (as a hash code) so different runs of the same method get different folders
+            //
+            // Using hashes instead of the arugments themselves to keep length down
             if ((TestContext.CurrentContext.Test.Arguments?.Length ?? 0) > 0)
             {
-                var illegalChars = Path.GetInvalidPathChars().Concat(Path.GetInvalidFileNameChars()).ToArray();
-
+                HashCode hash = new();
                 foreach (var arg in TestContext.CurrentContext.Test.Arguments)
                 {
-                    var argStr = arg?.ToString() ?? "--null--";
-                    var safeArgStr = string.Join("-", argStr.Split(illegalChars));
-
-                    testPath += $"_{safeArgStr}";
+                    if (arg is string str)
+                    {
+                        hash.Add(str);
+                    }
+                    else
+                    {
+                        var argAsStr = arg?.ToString() ?? "--EMPTY--";
+                        hash.Add(argAsStr);
+                    }
                 }
+
+                testPath += $"_{hash.ToHashCode()}";
             }
 
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
