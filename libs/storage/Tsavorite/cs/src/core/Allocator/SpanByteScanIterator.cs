@@ -95,7 +95,6 @@ namespace Tsavorite.core
             {
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
-                diskLogRecord = default;
             }
             diskLogRecord = default;
             currentAddress = nextAddress;
@@ -384,6 +383,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public int ActualSize => diskLogRecord.ActualSize;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long CalculateHeapMemorySize() => diskLogRecord.CalculateHeapMemorySize();
         #endregion // ISourceLogRecord
 
         /// <summary>

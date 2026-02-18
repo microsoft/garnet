@@ -52,7 +52,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal OperationStatus InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output,
                                     TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -88,9 +88,9 @@ namespace Tsavorite.core
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         pendingContext.eTag = srcLogRecord.ETag;
-                        if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
-                            return OperationStatus.SUCCESS;
-                        return CheckFalseActionStatus(ref readInfo);
+                        return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
+                            ? OperationStatus.SUCCESS
+                            : CheckFalseActionStatus(ref readInfo);
                     }
 
                     // FindInReadCache updated recSrc so update the readInfo accordingly.
@@ -285,8 +285,8 @@ namespace Tsavorite.core
             try
             {
                 // We're not doing RETRY_LATER if there is a Closed record; we only return valid records here.
-                // Closed records may be reclaimed by revivification, so we do not return them.
-                if (srcLogRecord.Info.IsClosed)
+                // Closed records may be reclaimed by revivification, so we do not return them if we are using the revivification free list.
+                if (srcLogRecord.Info.IsClosed && RevivificationManager.UseFreeRecordPool)
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 

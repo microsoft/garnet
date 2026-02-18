@@ -32,7 +32,7 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10,
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 10,

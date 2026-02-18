@@ -388,9 +388,8 @@ namespace Tsavorite.core
 
             ClearPage(page, 0);
 
-            // If all pages are being used (i.e. EmptyPageCount == 0), nothing to re-utilize by adding
-            // to overflow pool.
-            if (EmptyPageCount > 0)
+            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
+            if (logSizeTracker is not null)
                 ReturnPage((int)(page % BufferSize));
         }
 
@@ -568,7 +567,17 @@ namespace Tsavorite.core
                                     if (isFirstRecordOnPage)
                                         pageHeader.SetLowestObjectLogPosition(recordStartPosition);
 
-                                    var valueObjectLength = logWriter.WriteRecordObjects(in logRecord);
+                                    OverflowByteArray keyOverflow = default, valueOverflow = default;
+                                    IHeapObject valueObject = default;
+                                    if (logRecord.Info.KeyIsOverflow)
+                                        keyOverflow = logRecord.KeyOverflow;
+
+                                    if (logRecord.Info.ValueIsOverflow)
+                                        valueOverflow = logRecord.ValueOverflow;
+                                    else if (logRecord.Info.ValueIsObject)
+                                        valueObject = logRecord.ValueObject;
+
+                                    var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
                                 }
                                 else
@@ -737,6 +746,7 @@ namespace Tsavorite.core
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
                         _ = logReader.ReadRecordObjects(ref logRecord, noKey, startPosition.SegmentSizeBits);
+                        logSizeTracker?.UpdateSize(in logRecord, add: true);
                     }
                 }
 

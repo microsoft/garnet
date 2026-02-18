@@ -60,12 +60,16 @@ namespace Garnet
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]
-        [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
-        public string MemorySize { get; set; }
+        [Option('m', "memory", Required = false, HelpText = "Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2")]
+        public string LogMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option('p', "page", Required = false, HelpText = "Size of each page in bytes (rounds down to power of 2)")]
+        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2).")]
         public string PageSize { get; set; }
+
+        [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
+        [Option("pagecount", Required = false, HelpText = "Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than LogMemorySize divided by PageSize.")]
+        public int PageCount { get; set; }
 
         [MemorySizeValidation]
         [Option('s', "segment", Required = false, HelpText = "Size of each main-log segment in bytes on disk (rounds down to power of 2)")]
@@ -77,11 +81,11 @@ namespace Garnet
 
         [MemorySizeValidation]
         [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexSize { get; set; }
+        public string IndexMemorySize { get; set; }
 
         [MemorySizeValidation(false)]
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexMaxSize { get; set; }
+        public string IndexMaxMemorySize { get; set; }
 
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
@@ -92,20 +96,16 @@ namespace Garnet
         public bool? EnableReadCache { get; set; }
 
         [MemorySizeValidation]
-        [Option("readcache-memory", Required = false, HelpText = "Total read cache log memory used in bytes (rounds down to power of 2)")]
+        [Option("readcache-memory", Required = false, HelpText = "Total readcache-log memory (inline and heap) to use if readcache is enabled, in bytes. Does not need to be a power of 2")]
         public string ReadCacheMemorySize { get; set; }
 
         [MemorySizeValidation]
         [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
         public string ReadCachePageSize { get; set; }
 
-        [MemorySizeValidation(false)]
-        [Option("heap-memory", Required = false, HelpText = "Heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string HeapMemorySize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("readcache-heap-memory", Required = false, HelpText = "Read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ReadCacheHeapMemorySize { get; set; }
+        [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
+        [Option("readcache-pagecount", Required = false, HelpText = "Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.")]
+        public int ReadCachePageCount { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -790,18 +790,18 @@ namespace Garnet
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
                 ClusterPreferredEndpointType = ClusterPreferredEndpointType,
-                MemorySize = MemorySize,
+                LogMemorySize = LogMemorySize,
                 PageSize = PageSize,
+                PageCount = PageCount,
                 SegmentSize = SegmentSize,
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
-                IndexSize = IndexSize,
-                IndexMaxSize = IndexMaxSize,
+                IndexMemorySize = IndexMemorySize,
+                IndexMaxMemorySize = IndexMaxMemorySize,
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
                 ReadCachePageSize = ReadCachePageSize,
-                HeapMemorySize = HeapMemorySize,
-                ReadCacheHeapMemorySize = ReadCacheHeapMemorySize,
+                ReadCachePageCount = ReadCachePageCount,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
                 LogDir = logDir,

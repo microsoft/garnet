@@ -61,11 +61,10 @@ namespace Garnet.server
         private void PopulateMemoryInfo(StoreWrapper storeWrapper)
         {
             var store_index_size = 0L;
-            var store_log_memory_size = 0L;
-            var store_read_cache_size = 0L;
-            var store_heap_memory_target_size = 0L;
-            var store_heap_memory_size = 0L;
-            var store_read_cache_heap_memory_size = 0L;
+            var store_mainlog_memory_target_size = 0L;
+            var store_mainlog_memory_size = 0L;
+            var store_readcache_memory_size = 0L;
+            var store_readcache_memory_target_size = 0L;
             long total_store_size;
 
             var enableAof = storeWrapper.serverOptions.EnableAOF;
@@ -76,18 +75,26 @@ namespace Garnet.server
             foreach (var db in databases)
             {
                 store_index_size += db.Store.IndexSize * 64;
-                store_log_memory_size += db.Store.Log.MemorySizeBytes;
-                store_read_cache_size += db.Store.ReadCache?.MemorySizeBytes ?? 0;
-
                 aof_log_memory_size += db.AppendOnlyFile?.MemorySizeBytes ?? 0;
 
-                store_heap_memory_target_size += db.SizeTracker?.mainLogTracker.TargetSize ?? 0;
-                store_heap_memory_size += db.SizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
-                store_read_cache_heap_memory_size += db.SizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
+                if (db.SizeTracker?.mainLogTracker is null)
+                    store_mainlog_memory_size += db.Store.Log.MemorySizeBytes;
+                else
+                {
+                    store_mainlog_memory_target_size += db.SizeTracker?.mainLogTracker?.TargetSize ?? 0;
+                    store_mainlog_memory_size += db.SizeTracker?.mainLogTracker.TotalSize ?? 0;
+                }
+
+                if (db.SizeTracker?.mainLogTracker is null)
+                    store_readcache_memory_size += db.Store.ReadCache?.MemorySizeBytes ?? 0;
+                else
+                {
+                    store_readcache_memory_target_size += db.SizeTracker?.readCacheTracker?.TargetSize ?? 0;
+                    store_readcache_memory_size += db.SizeTracker?.readCacheTracker?.TotalSize ?? 0;
+                }
             }
 
-            total_store_size = store_index_size + store_log_memory_size + store_read_cache_size +
-                               store_heap_memory_size + store_read_cache_heap_memory_size;
+            total_store_size = store_index_size + store_mainlog_memory_size + store_readcache_memory_size;
 
             var gcMemoryInfo = GC.GetGCMemoryInfo();
             var gcAvailableMemory = gcMemoryInfo.TotalCommittedBytes - gcMemoryInfo.HeapSizeBytes;
@@ -120,12 +127,10 @@ namespace Garnet.server
                 new("gc_managed_memory_bytes_excluding_heap", gcAvailableMemory.ToString()),
                 new("gc_fragmented_bytes", gcMemoryInfo.FragmentedBytes.ToString()),
                 new("store_index_size", store_index_size.ToString()),
-                new("store_log_memory_size", store_log_memory_size.ToString()),
-                new("store_read_cache_size", store_read_cache_size.ToString()),
+                new("store_mainlog_memory_size", store_mainlog_memory_size.ToString()),
+                new("store_readcache_memory_size", store_readcache_memory_size.ToString()),
                 new("total_main_store_size", total_store_size.ToString()),
-                new("store_heap_memory_target_size", store_heap_memory_target_size.ToString()),
-                new("store_heap_memory_size", store_heap_memory_size.ToString()),
-                new("store_read_cache_heap_memory_size", store_read_cache_heap_memory_size.ToString()),
+                new("store_heap_memory_target_size", store_mainlog_memory_target_size.ToString()),
                 new("aof_memory_size", aof_log_memory_size.ToString())
             ];
         }
@@ -216,21 +221,22 @@ namespace Garnet.server
             new($"CurrentVersion", db.Store.CurrentVersion.ToString()),
             new($"LastCheckpointedVersion", db.Store.LastCheckpointedVersion.ToString()),
             new($"SystemState", db.Store.SystemState.ToString()),
-            new($"IndexSize", db.Store.IndexSize.ToString()),
+            new($"IndexMemorySize", db.Store.IndexSize.ToString()),
             new($"LogDir", storeWrapper.serverOptions.LogDir),
             new($"Log.BeginAddress", db.Store.Log.BeginAddress.ToString()),
             new($"Log.BufferSize", db.Store.Log.BufferSize.ToString()),
-            new($"Log.EmptyPageCount", db.Store.Log.EmptyPageCount.ToString()),
-            new($"Log.MinEmptyPageCount", db.Store.Log.MinEmptyPageCount.ToString()),
+            new($"Log.AllocatedPageCount", db.Store.Log.AllocatedPageCount.ToString()),
             new($"Log.HeadAddress", db.Store.Log.HeadAddress.ToString()),
             new($"Log.MemorySizeBytes", db.Store.Log.MemorySizeBytes.ToString()),
+            new($"Log.HeapSizeBytes", db.Store.Log.HeapSizeBytes.ToString()),
             new($"Log.SafeReadOnlyAddress", db.Store.Log.SafeReadOnlyAddress.ToString()),
             new($"Log.TailAddress", db.Store.Log.TailAddress.ToString()),
             new($"ReadCache.BeginAddress", db.Store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
             new($"ReadCache.BufferSize", db.Store.ReadCache?.BufferSize.ToString() ?? "N/A"),
-            new($"ReadCache.EmptyPageCount", db.Store.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+            new($"ReadCache.AllocatedPageCount", db.Store.ReadCache?.AllocatedPageCount.ToString() ?? "N/A"),
             new($"ReadCache.HeadAddress", db.Store.ReadCache?.HeadAddress.ToString() ?? "N/A"),
             new($"ReadCache.MemorySizeBytes", db.Store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.HeapSizeBytes", db.Store.ReadCache?.HeapSizeBytes.ToString() ?? "N/A"),
             new($"ReadCache.TailAddress", db.Store.ReadCache?.TailAddress.ToString() ?? "N/A"),
         ];
 

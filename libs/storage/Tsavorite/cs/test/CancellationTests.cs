@@ -151,7 +151,7 @@ namespace Tsavorite.test.Cancellation
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 17,
+                LogMemorySize = 1L << 17,
                 PageSize = 1L << 12
             }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

@@ -525,7 +525,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(!addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
+                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
                 newLogRecord.InfoRef.SetDirtyAndModified();
                 newLogRecord.InfoRef.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
@@ -592,8 +592,12 @@ namespace Tsavorite.core
                         else
                             DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
                     }
-                    else if (stackCtx.recSrc.HasMainLogSrc)
-                        srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                    else
+                    {
+                        // If it is in mutable or fuzzy region, we must Seal
+                        if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress > hlogBase.SafeReadOnlyAddress)
+                            srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                    }
                 }
 
             Done:

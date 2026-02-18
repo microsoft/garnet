@@ -57,7 +57,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1L << 29,
+                    LogMemorySize = 1L << 29,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -112,7 +112,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1L << 29,
+                    LogMemorySize = 1L << 29,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

@@ -98,7 +98,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 22,
+                LogMemorySize = 1L << 22,
                 SegmentSize = 1L << 22,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)

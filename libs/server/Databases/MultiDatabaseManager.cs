@@ -94,7 +94,7 @@ namespace Garnet.server
                     $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpoint)} with {nameof(replicaRecover)} == true.");
 
             var checkpointParentDir = StoreWrapper.serverOptions.StoreCheckpointBaseDirectory;
-            var checkpointDirBaseName = StoreWrapper.serverOptions.GetCheckpointDirectoryName(0);
+            var checkpointDirBaseName = GarnetServerOptions.GetCheckpointDirectoryName(0);
 
             int[] dbIdsToRecover;
             try
@@ -403,7 +403,7 @@ namespace Garnet.server
         public override void RecoverAOF()
         {
             var aofParentDir = StoreWrapper.serverOptions.AppendOnlyFileBaseDirectory;
-            var aofDirBaseName = StoreWrapper.serverOptions.GetAppendOnlyFileDirectoryName(0);
+            var aofDirBaseName = GarnetServerOptions.GetAppendOnlyFileDirectoryName(0);
 
             int[] dbIdsToRecover;
             try
@@ -947,12 +947,14 @@ namespace Garnet.server
             {
                 case SingleDatabaseManager sdbm:
                     var defaultDbCopy = new GarnetDatabase(0, sdbm.DefaultDatabase, enableAof);
+                    sizeTrackersStarted = sdbm.SizeTracker?.IsStarted ?? false;
                     TryAddDatabase(0, defaultDbCopy);
                     return;
                 case MultiDatabaseManager mdbm:
                     var activeDbIdsMapSize = mdbm.activeDbIds.ActualSize;
                     var activeDbIdsMapSnapshot = mdbm.activeDbIds.Map;
                     var databasesMapSnapshot = mdbm.databases.Map;
+                    sizeTrackersStarted = mdbm.sizeTrackersStarted;
 
                     for (var i = 0; i < activeDbIdsMapSize; i++)
                     {

@@ -26,6 +26,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
+            server = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -43,11 +44,12 @@ namespace Garnet.test
 
             // Start at tail address after PageHeader (64)
             const int PageHeaderSize = 64;
+            ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheHeadAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheBeginAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheTailAddress);
 
             // Do enough writes to overflow memory to push records to disk
-            for (var i = 0; i < 100; i++)
+            for (var i = 0; i < 120; i++)
             {
                 var key = $"key{i:00000}";
                 var value = $"val{i:00000}";
@@ -78,26 +80,29 @@ namespace Garnet.test
             ClassicAssert.AreEqual(PageHeaderSize + RecordSize, info.ReadCacheTailAddress);
 
             // Read more keys to update read cache
-            for (var j = 1; j < 20; j++)
+            for (var j = 1; j < 40; j++)
             {
                 var key = $"key{j:00000}";
                 var value = db.StringGet(key);
                 ClassicAssert.AreEqual($"val{j:00000}", (string)value);
             }
             info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
-            // 32 bytes for 14 records plus PageHeader ends on page boundary so no bytes needed for 512b page alignment, but we pick up the next page's header.
-            ClassicAssert.AreEqual(PageHeaderSize * 2 + RecordSize * 20, info.ReadCacheTailAddress);
+            // 32 bytes for 14 records plus PageHeader ends on page boundary so no bytes needed for 512b page alignment, but we pick up the next pages' headers.
+            ClassicAssert.AreEqual(PageHeaderSize * 3 + RecordSize * 40, info.ReadCacheTailAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheBeginAddress); // Read cache should not have been evicted yet
+            ClassicAssert.AreEqual(info.ReadCacheBeginAddress, info.ReadCacheHeadAddress);
 
             // Issue more reads to start evicting read cache entries
-            for (var j = 20; j < 40; j++)
+            for (var j = 40; j < 80; j++)
             {
                 var key = $"key{j:00000}";
                 var value = db.StringGet(key);
                 ClassicAssert.AreEqual($"val{j:00000}", (string)value);
             }
+
             info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.Greater(info.ReadCacheBeginAddress, PageHeaderSize); // Read cache entries should have been evicted
+            ClassicAssert.AreEqual(info.ReadCacheBeginAddress, info.ReadCacheHeadAddress);
         }
 
         [Test]
@@ -111,6 +116,7 @@ namespace Garnet.test
             // Start at tail address after PageHeader (64)
             const int PageHeaderSize = 64;
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheBeginAddress);
+            ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheHeadAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheTailAddress);
 
             // Do enough list pushes to overflow memory to push records to disk
@@ -155,6 +161,7 @@ namespace Garnet.test
             // 40 bytes for 11 records plus PageHeader ends 8 bytes short of page boundary so add 8 bytes needed for page alignment plus next page's header.
             ClassicAssert.AreEqual(PageHeaderSize * 2 + RecordSize * 20 + 8, info.ReadCacheTailAddress);
             ClassicAssert.AreEqual(PageHeaderSize, info.ReadCacheBeginAddress); // Read cache should not have been evicted yet
+            ClassicAssert.AreEqual(info.ReadCacheBeginAddress, info.ReadCacheHeadAddress);
 
             // Issue more reads to start evicting read cache entries
             for (var j = 40; j < 80; j++)
@@ -165,6 +172,7 @@ namespace Garnet.test
             }
             info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.Greater(info.ReadCacheBeginAddress, PageHeaderSize); // Read cache entries should have been evicted
+            ClassicAssert.AreEqual(info.ReadCacheBeginAddress, info.ReadCacheHeadAddress);
         }
     }
 }

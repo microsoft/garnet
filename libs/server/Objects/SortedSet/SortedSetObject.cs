@@ -705,7 +705,7 @@ namespace Garnet.server
                 expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);
 
-                // MemorySize of dictionary entry already accounted for as the key already exists.
+                // LogMemorySize of dictionary entry already accounted for as the key already exists.
                 // DiskSize of expiration already accounted for as the key already exists in expirationTimes.
                 HeapMemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
             }

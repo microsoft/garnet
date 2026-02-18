@@ -104,7 +104,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Task notifying log flush completions
         /// </summary>
-        internal CompletionEvent FlushEvent => allocator.FlushEvent;
+        internal CompletionEvent FlushEvent => allocator.flushEvent;
 
         /// <summary>
         /// Committed view of commitMetadataVersion
@@ -165,9 +165,9 @@ namespace Tsavorite.core
         public long MaxMemorySizeBytes => allocator.MaxMemorySizeBytes;
 
         /// <summary>
-        /// Actual memory used by log
+        /// Actual memory used by log. Does not include overflow free pages.
         /// </summary>
-        public long MemorySizeBytes => allocator.GetLogicalAddressOfStartOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
+        public long MemorySizeBytes => allocator.GetLogicalAddressOfStartOfPage(allocator.AllocatedPageCount);
 
         /// <summary>
         /// Create new log instance
@@ -295,13 +295,9 @@ namespace Tsavorite.core
                     }
                     // Work is done, wait for the next iteration of the worker loop
                     if (safeTailRefreshFrequencyMs > 0)
-                    {
                         await Task.Delay(safeTailRefreshFrequencyMs, token).ConfigureAwait(false);
-                    }
                     else
-                    {
                         await safeTailRefreshEntryEnqueued.WaitAsync().ConfigureAwait(false);
-                    }
                 }
             }
             catch (Exception e)
@@ -332,9 +328,7 @@ namespace Tsavorite.core
                             if (_asi != null)
                             {
                                 foreach (var iter in _asi)
-                                {
                                     iter.Signal();
-                                }
                             }
                             // Invoke callback, if any
                             _callback?.Invoke(oldSafeTailAddress, safeTailRefreshLastTailAddress);
@@ -580,13 +574,15 @@ namespace Tsavorite.core
             }
             try
             {
-                if (!isProtected) epoch.Resume();
+                if (!isProtected)
+                    epoch.Resume();
                 if (!allocator.ShiftReadOnlyToTail(out _, out _))
                     CommitMetadataOnly(ref info);
             }
             finally
             {
-                if (!isProtected) epoch.Suspend();
+                if (!isProtected)
+                    epoch.Suspend();
             }
         }
 
@@ -599,7 +595,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyAddressLagOffset() => allocator.GetReadOnlyAddressLagOffset();
+        public long UnsafeGetReadOnlyAddressAbove(long newTailAddress, int numPagesAbove)
+        {
+            var readOnlyAddress = allocator.CalculateReadOnlyAddress(newTailAddress, allocator.HeadAddress) + numPagesAbove * allocator.PageSize;
+            if (readOnlyAddress > newTailAddress)
+                readOnlyAddress = newTailAddress;
+            return readOnlyAddress;
+        }
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -1123,7 +1125,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var flushEvent = allocator.FlushEvent;
+                var flushEvent = allocator.flushEvent;
                 if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                     return logicalAddress;
 
@@ -1150,7 +1152,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var flushEvent = allocator.FlushEvent;
+                var flushEvent = allocator.flushEvent;
                 allocator.TryAllocateRetryNow(recordSize, out var logicalAddress);
                 if (logicalAddress > 0)
                     return logicalAddress;

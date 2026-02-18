@@ -31,7 +31,7 @@ namespace Garnet.server
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+            functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
 
             if (logRecord.Info.ValueIsObject)
             {

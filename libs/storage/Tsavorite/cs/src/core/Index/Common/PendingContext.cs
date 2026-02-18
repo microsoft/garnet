@@ -15,23 +15,17 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal struct PendingContext<TInput, TOutput, TContext>// : ISourceLogRecord
+        internal struct PendingContext<TInput, TOutput, TContext>
         {
             // User provided information
             internal OperationType type;
             internal readonly bool IsConditionalOp => type is OperationType.CONDITIONAL_INSERT or OperationType.CONDITIONAL_SCAN_PUSH;
 
             /// <summary>
-            /// DiskLogRecord carries a log record image. It is used for:
+            /// DiskLogRecord carries a log record image. It is used for pending ConditionalCopy operations, where it is one of:
             /// <list type="bullet">
-            ///     <item>Pending RUMD operations; in this case it contains only the key for all operations, and values for Upsert.
-            ///         Optionals (ETag and Expiration) are presumed to be carried in <see cref="input"/></item>
-            ///     <item>For pending ConditionalCopy operations, where it is one of:
-            ///         <list type="bullet">
-            ///             <item>A <see cref="DiskLogRecord"/> created by serializing from an in-memory <see cref="LogRecord"/></item>
-            ///             <item>A <see cref="DiskLogRecord"/> retrieved from the disk, for operations such as Compact</item>
-            ///         </list>
-            ///     </item>
+            ///     <item>A <see cref="DiskLogRecord"/> created by serializing from an in-memory <see cref="LogRecord"/></item>
+            ///     <item>A <see cref="DiskLogRecord"/> retrieved from the disk, for operations such as Compact</item>
             /// </list>
             /// </summary>
             internal DiskLogRecord diskLogRecord;
@@ -102,7 +96,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
-                // The async flag is often set when the PendingContext is created, so preserve that.
                 operationFlags = kNoOpFlags;
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
             }
@@ -110,7 +103,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions readCopyOptions)
             {
-                // The async flag is often set when the PendingContext is created, so preserve that.
                 operationFlags = kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
             }

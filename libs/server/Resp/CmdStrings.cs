@@ -31,8 +31,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
-        public static ReadOnlySpan<byte> Memory => "memory"u8;
-        public static ReadOnlySpan<byte> HeapMemory => "heap-memory"u8;
+        public static ReadOnlySpan<byte> MainLogMemory => "memory"u8;
+        public static ReadOnlySpan<byte> ReadCacheMemory => "readcache-memory"u8;
         public static ReadOnlySpan<byte> Index => "index"u8;
         public static ReadOnlySpan<byte> ObjIndex => "obj-index"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
@@ -338,7 +338,8 @@ namespace Garnet.server
         public const string GenericErrIndexSizeSmallerThanCurrent = "ERR Cannot set dynamic index size smaller than current index size (option: '{0}')";
         public const string GenericErrIndexSizeGrowFailed = "ERR failed to grow index size beyond current size (option: '{0}')";
         public const string GenericErrMemorySizeGreaterThanBuffer = "ERR Cannot set dynamic memory size greater than configured circular buffer size (option: '{0}')";
-        public const string GenericErrHeapMemorySizeTrackerNotRunning = "ERR Cannot adjust object store heap memory size when size tracker is not running (option: '{0}')";
+        public const string GenericErrMainLogMemorySizeTrackerNotRunning = "ERR Cannot adjust main log memory size configuration when size tracker is not running (option: '{0}')";
+        public const string GenericErrReadCacheMemorySizeTrackerNotRunning = "ERR Cannot adjust readcache memory size configuration when size tracker is not running (option: '{0}')";
 
         /// <summary>
         /// Response errors while scripting

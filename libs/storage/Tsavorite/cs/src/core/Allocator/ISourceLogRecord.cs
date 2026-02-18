@@ -91,5 +91,8 @@ namespace Tsavorite.core
 
         /// <summary>The total used inline portion of the size of the main-log portion of the record; does not include filler length.</summary>
         int ActualSize { get; }
+
+        /// <summary>Calculate the heap memory size of this log record</summary>
+        public long CalculateHeapMemorySize();
     }
 }

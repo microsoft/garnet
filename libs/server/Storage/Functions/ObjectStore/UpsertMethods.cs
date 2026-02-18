@@ -43,20 +43,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            // TODO: This is called by readcache directly, but is the only ISessionFunctions call for that; the rest is internal. Clean this up, maybe as a new PostReadCacheInsert method.
-            if (upsertInfo.Address == LogAddress.kInvalidAddress)
-            {
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
-                return;
-            }
-
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            // TODO: Need to track lengths written to readcache, which is now internal in Tsavorite
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -67,8 +59,8 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -80,9 +72,8 @@ namespace Garnet.server
             {
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -104,7 +95,7 @@ namespace Garnet.server
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
             if (logRecord.Info.ValueIsOverflow)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Length - oldSize);
+                functionsState.cacheSizeTracker?.AddHeapSize(srcValue.Length - oldSize);
             return true;
         }
 
@@ -127,7 +118,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.HeapMemorySize - oldSize);
+            functionsState.cacheSizeTracker?.AddHeapSize(srcValue.HeapMemorySize - oldSize);
             return true;
         }
 
@@ -152,7 +143,7 @@ namespace Garnet.server
             var newSize = logRecord.Info.ValueIsInline
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+            functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
             return true;
         }
 

@@ -111,7 +111,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 9,
                 SegmentSize = 1L << 18,
                 ObjectLogSegmentSize = 1L << 22
@@ -199,7 +199,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << 15,
                 SegmentSize = 1L << 18
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
@@ -277,7 +277,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << 15,
                 SegmentSize = 1L << 18
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
@@ -388,7 +388,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << 15,
                 SegmentSize = 1L << 18
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())

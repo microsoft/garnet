@@ -146,7 +146,7 @@ namespace Tsavorite.core
 
         /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long RoundUp(long value, int alignment)
+        internal static long RoundUp(long value, long alignment)
         {
             Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(long) alignment must be a power of two");
             return (value + (alignment - 1)) & ~(alignment - 1);
@@ -154,7 +154,7 @@ namespace Tsavorite.core
 
         /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ulong RoundUp(ulong value, int alignment)
+        internal static ulong RoundUp(ulong value, ulong alignment)
         {
             Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(ulong) alignment must be a power of two");
             return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
@@ -303,9 +303,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong Rotr64(ulong x, int n) => BitOperations.RotateRight(x, n);
 
-        /// <inheritdoc cref="BitOperations.IsPow2(ulong)"/>
+        /// <inheritdoc cref="BitOperations.IsPow2(long)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsPowerOfTwo(long x) => BitOperations.IsPow2(x);
+
+        /// <inheritdoc cref="BitOperations.IsPow2(ulong)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsPowerOfTwo(ulong x) => BitOperations.IsPow2(x);
 
         /// <inheritdoc cref="BitOperations.Log2(uint)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

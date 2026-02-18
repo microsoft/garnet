@@ -30,6 +30,7 @@ namespace Tsavorite.core
                 {
                     // Release all waiting threads
                     tempSemaphore.Release(int.MaxValue);
+                    // tempSemaphore.Dispose();    TODO: We cannot Dispose() here because there may still be waiters that have not yet been released.
                     break;
                 }
             }
@@ -41,11 +42,14 @@ namespace Tsavorite.core
 
         internal Task WaitAsync(CancellationToken token = default) => semaphore.WaitAsync(token);
 
+        internal Task WaitAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default) => semaphore.WaitAsync(timeSpan, cancellationToken);
+
         /// <inheritdoc/>
         public void Dispose()
         {
-            semaphore?.Dispose();
-            semaphore = null;
+            var tempSemaphore = semaphore;
+            if (tempSemaphore != null && Interlocked.CompareExchange(ref semaphore, null, tempSemaphore) == tempSemaphore)
+                tempSemaphore.Dispose();
         }
     }
 }

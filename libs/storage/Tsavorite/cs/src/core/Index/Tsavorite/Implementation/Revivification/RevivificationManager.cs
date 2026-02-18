@@ -29,12 +29,12 @@ namespace Tsavorite.core
 
         public RevivificationManager(TsavoriteKV<TStoreFunctions, TAllocator> store, RevivificationSettings revivSettings, LogSettings logSettings)
         {
-            revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
-                ? logSettings.MutableFraction
-                : revivSettings.RevivifiableFraction;
-
             if (revivSettings is null)
+            {
+                revivifiableFraction = RevivificationSettings.DefaultRevivifiableFraction;
                 return;
+            }
+            revivifiableFraction = revivSettings.RevivifiableFraction;
 
             revivSettings.Verify(logSettings.MutableFraction);
             if (!revivSettings.EnableRevivification)

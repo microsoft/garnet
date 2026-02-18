@@ -398,7 +398,10 @@ namespace Garnet.server
         /// Recover checkpoint
         /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
-            => databaseManager.RecoverCheckpoint(replicaRecover, recoverFromToken, metadata);
+        {
+            StartSizeTrackers();    // We need to start this before recovery to have size tracking during the recovery process.
+            databaseManager.RecoverCheckpoint(replicaRecover, recoverFromToken, metadata);
+        }
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
@@ -799,9 +802,10 @@ namespace Garnet.server
             // Start generic node tasks
             StartGenericNodeTasks();
 
-            // Start object size trackers
-            databaseManager.StartSizeTrackers(ctsCommit.Token);
+            StartSizeTrackers();    // We may have already started this for recovery.
         }
+
+        private void StartSizeTrackers() => databaseManager.StartSizeTrackers(ctsCommit.Token);
 
         public bool HasKeysInSlots(List<int> slots)
         {

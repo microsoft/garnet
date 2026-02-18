@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -19,7 +20,7 @@ namespace Tsavorite.test.recovery.objects
     [TestFixture]
     public class ObjectRecoveryTests2 : AllureTestBase
     {
-        int iterations;
+        int numberOfRecords;
 
         [SetUp]
         public void Setup()
@@ -40,34 +41,41 @@ namespace Tsavorite.test.recovery.objects
 
         public async ValueTask ObjectRecoveryTest2(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Range(300, 700, 300)] int iterations,
-            [Values] bool isAsync)
+            [Range(300, 700, 300)] int numberOfRecords,
+            [Values] CompletionSyncMode syncMode)
         {
-            this.iterations = iterations;
-            Prepare(out IDevice log, out IDevice objlog, out var store);
+            this.numberOfRecords = numberOfRecords;
 
-            var session1 = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
-            Write(session1, store, checkpointType);
-            Read(session1, false);
-            session1.Dispose();
+            // Populate and checkpoint
+            {
+                Prepare(out var log, out var objlog, out var store);
 
-            _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
-            store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+                var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                Write(session, store, checkpointType);
+                Read(session, delete: false);
+                session.Dispose();
 
-            Destroy(log, objlog, store);
+                _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
-            Prepare(out log, out objlog, out store);
+                Destroy(log, objlog, store);
+            }
 
-            if (isAsync)
-                _ = await store.RecoverAsync();
-            else
-                _ = store.Recover();
+            // Restore and verify
+            {
+                Prepare(out var log, out var objlog, out var store);
 
-            var session2 = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
-            Read(session2, true);
-            session2.Dispose();
+                if (syncMode == CompletionSyncMode.Async)
+                    _ = await store.RecoverAsync();
+                else
+                    _ = store.Recover();
 
-            Destroy(log, objlog, store);
+                var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                Read(session, delete: true);
+                session.Dispose();
+
+                Destroy(log, objlog, store);
+            }
         }
 
         private static void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
@@ -80,7 +88,7 @@ namespace Tsavorite.test.recovery.objects
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 SegmentSize = 1L << 12,
-                MemorySize = 1L << 12,
+                LogMemorySize = 1L << 12,
                 PageSize = 1L << 9,
                 CheckpointDir = Path.Combine(MethodTestDir, "check-points")
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer())
@@ -101,12 +109,11 @@ namespace Tsavorite.test.recovery.objects
         {
             var bContext = session.BasicContext;
 
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < numberOfRecords; i++)
             {
                 var _key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
                 _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), value);
-
                 if (i % 100 == 0)
                 {
                     _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
@@ -119,21 +126,25 @@ namespace Tsavorite.test.recovery.objects
         {
             var bContext = session.BasicContext;
 
-            for (int i = 0; i < iterations; i++)
+            for (int i = 0; i < numberOfRecords; i++)
             {
                 TestObjectKey key = new() { key = i };
                 TestObjectInput input = default;
-                TestObjectOutput g1 = new();
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref g1);
+                TestObjectOutput output = new();
+
+                if (i == 196)
+                { }
+
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
 
                 if (status.IsPending)
                 {
                     Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
-                    (status, g1) = GetSinglePendingResult(completedOutputs);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
 
-                ClassicAssert.IsTrue(status.Found);
-                ClassicAssert.AreEqual(i, g1.value.value);
+                ClassicAssert.IsTrue(status.Found, $"key: {key.key}");
+                ClassicAssert.AreEqual(i, output.value.value);
             }
 
             if (delete)
@@ -144,13 +155,8 @@ namespace Tsavorite.test.recovery.objects
                 _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
                 var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
 
-                if (status.IsPending)
-                {
-                    Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
-                    (status, output) = GetSinglePendingResult(completedOutputs);
-                }
-
-                ClassicAssert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.IsPending, $"key: {key.key}");
+                ClassicAssert.IsFalse(status.Found, $"key: {key.key}");
             }
         }
     }

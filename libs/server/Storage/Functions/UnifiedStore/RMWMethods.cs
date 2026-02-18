@@ -55,7 +55,7 @@ namespace Garnet.server
             }
 
             if (logRecord.Info.ValueIsObject)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.HeapMemorySize);
+                functionsState.cacheSizeTracker?.AddHeapSize(logRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
@@ -173,7 +173,7 @@ namespace Garnet.server
 
                 // If oldValue has been set to null, subtract its size from the tracked heap size
                 var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
+                functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
             }
 
             if (functionsState.appendOnlyFile != null)
@@ -197,7 +197,7 @@ namespace Garnet.server
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                     if (logRecord.Info.ValueIsObject)
-                        functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
+                        functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                     return true;
                 case IPUResult.NotUpdated:
                 default:
@@ -215,7 +215,7 @@ namespace Garnet.server
             {
                 if (logRecord.Info.ValueIsObject)
                 {
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                    functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);

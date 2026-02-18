@@ -12,7 +12,7 @@ namespace Tsavorite.core
     internal unsafe struct ConcurrentCounter
     {
         [StructLayout(LayoutKind.Explicit, Size = Constants.kCacheLineBytes)]
-        private unsafe struct Counter
+        private struct Counter
         {
             [FieldOffset(0)]
             internal long value;
@@ -43,10 +43,11 @@ namespace Tsavorite.core
         /// <param name="incrValue">The value to increment the counter by.</param>
         internal void Increment(long incrValue)
         {
-            if (incrValue == 0) return;
-
-            var partition = Environment.CurrentManagedThreadId % partitionCount;
-            Interlocked.Add(ref partitionsPtr[partition].value, incrValue);
+            if (incrValue != 0)
+            {
+                var partition = Environment.CurrentManagedThreadId % partitionCount;
+                _ = Interlocked.Add(ref partitionsPtr[partition].value, incrValue);
+            }
         }
 
         /// <summary>Gets the total value of the counter.</summary>
@@ -55,11 +56,9 @@ namespace Tsavorite.core
             get
             {
                 // return sum of all partitioned counter values
-                long total = 0;
-
-                for (int i = 0; i < partitionCount; i++)
+                var total = 0L;
+                for (var i = 0; i < partitionCount; i++)
                     total += partitionsPtr[i].value;
-
                 return total;
             }
         }

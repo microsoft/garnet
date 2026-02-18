@@ -34,7 +34,7 @@ namespace Tsavorite.test.Objects
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

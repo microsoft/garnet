@@ -725,8 +725,12 @@ namespace Garnet.test.cluster
 
         [Test, Order(13)]
         [Category("REPLICATION")]
+        //[Repeat(20)]
         public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
+
             var replica_count = 1;//Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);

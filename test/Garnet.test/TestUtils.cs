@@ -41,6 +41,7 @@ namespace Garnet.test
         public long ReadOnlyAddress;
         public long TailAddress;
         public long MemorySize;
+        public long ReadCacheHeadAddress;
         public long ReadCacheBeginAddress;
         public long ReadCacheTailAddress;
     }
@@ -227,6 +228,7 @@ namespace Garnet.test
             bool lowMemory = false,
             string memorySize = default,
             string pageSize = default,
+            int pageCount = 0,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -238,8 +240,6 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            string heapMemorySize = default,
-            string readCacheHeapMemorySize = default,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -251,6 +251,9 @@ namespace Garnet.test
             ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
             bool enableReadCache = false,
+            string readCacheMemorySize = default,
+            string readCachePageSize = default,
+            int readCachePageCount = 0,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
             string pubSubPageSize = null,
@@ -277,47 +280,44 @@ namespace Garnet.test
             if (useAzureStorage && !useLogNullDevice)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice)
+                logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
             if (useAzureStorage)
                 checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage)
+                checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
 
             if (useAcl)
             {
                 if (authenticationSettings != null)
-                {
                     throw new ArgumentException($"Cannot set both {nameof(useAcl)} and {nameof(authenticationSettings)}");
-                }
-
                 authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
                 if (authenticationSettings != null)
-                {
                     throw new ArgumentException($"Cannot set both {nameof(defaultPassword)} and {nameof(authenticationSettings)}");
-                }
-
                 authenticationSettings = new PasswordAuthenticationSettings(defaultPassword);
             }
 
             // Increase minimum thread pool size to 16 if needed
             int threadPoolMinThreads = 0;
             ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
-            if (workerThreads < 16 || completionPortThreads < 16) threadPoolMinThreads = 16;
+            if (workerThreads < 16 || completionPortThreads < 16)
+                threadPoolMinThreads = 16;
 
             GarnetServerOptions opts = new(logger)
             {
                 EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoints = endpoints ?? ([EndPoint]),
+                EndPoints = endpoints ?? [EndPoint],
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
-                IndexSize = indexSize,
+                IndexMemorySize = indexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 CommitFrequencyMs = commitFrequencyMs,
@@ -357,31 +357,46 @@ namespace Garnet.test
             };
 
             if (!string.IsNullOrEmpty(memorySize))
-                opts.MemorySize = memorySize;
+                opts.LogMemorySize = memorySize;
 
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
 
+            if (pageCount != 0)
+            {
+                opts.PageCount = pageCount;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                if (string.IsNullOrEmpty(memorySize))
+                    opts.LogMemorySize = string.Empty;
+            }
+
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
 
-            if (!string.IsNullOrEmpty(heapMemorySize))
-                opts.HeapMemorySize = heapMemorySize;
-
-            if (!string.IsNullOrEmpty(readCacheHeapMemorySize))
-                opts.ReadCacheHeapMemorySize = readCacheHeapMemorySize;
-
-            if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
+            if (indexMaxSize != default)
+                opts.IndexMaxMemorySize = indexMaxSize;
 
             if (lowMemory)
             {
-                opts.MemorySize = memorySize == default ? "1024" : memorySize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 opts.PageSize = pageSize == default ? "512" : pageSize;
-                if (enableReadCache)
-                {
-                    opts.ReadCacheMemorySize = opts.MemorySize;
-                    opts.ReadCachePageSize = opts.PageSize;
-                }
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                // This is especially useful for two-page tests, which is less than LogSizeTracker.MinTargetPageCount pages.
+                if (pageCount != 0 && memorySize == default)
+                    opts.LogMemorySize = string.Empty;
+            }
+
+            if (enableReadCache)
+            {
+                opts.ReadCacheMemorySize = readCacheMemorySize ?? opts.LogMemorySize;
+                opts.ReadCachePageSize = readCachePageSize ?? opts.PageSize;
+                opts.ReadCachePageCount = readCachePageCount != 0 ? readCachePageCount : opts.PageCount;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                if (opts.ReadCachePageCount != 0 && string.IsNullOrEmpty(opts.ReadCacheMemorySize))
+                    opts.ReadCacheMemorySize = string.Empty;
             }
 
             ILoggerFactory loggerFactory = null;
@@ -571,7 +586,7 @@ namespace Garnet.test
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
                     {
-                        ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
+                        ClassicAssert.Less(iter, 30, "Failed to connect within 30 seconds");
                         TestContext.Progress.WriteLine($"Waiting for Port {ipEndpoint.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
                         Thread.Sleep(1000);
                     }
@@ -699,13 +714,13 @@ namespace Garnet.test
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
-                IndexSize = "1m",
+                IndexMemorySize = "1m",
                 EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
                 QuietMode = true,
                 EnableAOF = enableAOF,
-                MemorySize = "1g",
+                LogMemorySize = "1g",
                 GossipDelay = gossipDelay,
                 EnableFastCommit = fastCommit,
                 MetricsSamplingFrequency = metricsSamplingFrequency,
@@ -768,7 +783,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = memorySize == default ? "1024" : memorySize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? "2k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 opts.PageSize = pageSize == default ? "512" : pageSize;
             }
 
@@ -1114,6 +1129,8 @@ using System.Threading.Tasks;
                         result.TailAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.MemorySizeBytes"))
                         result.MemorySize = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.HeadAddress"))
+                        result.ReadCacheHeadAddress = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.BeginAddress"))
                         result.ReadCacheBeginAddress = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.TailAddress"))
@@ -1132,9 +1149,8 @@ using System.Threading.Tasks;
         /// <returns>Effective memory size</returns>
         public static long GetEffectiveMemorySize(string memorySize, string pageSize, out long parsedPageSize)
         {
-            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
-            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memorySize, pageSize, out var epc);
-            return parsedMemorySize - (epc * parsedPageSize);
+            parsedPageSize = ServerOptions.PreviousPowerOf2(ServerOptions.ParseSize(pageSize, out _));
+            return ServerOptions.ParseSize(memorySize, out _);
         }
 
         /// <summary>

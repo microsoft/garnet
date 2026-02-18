@@ -59,22 +59,12 @@ namespace Garnet.server
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             ReadOnlySpan<byte> srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (logRecord.Info.ValueIsObject && upsertInfo.Address == LogAddress.kInvalidAddress)
-            {
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
-                return;
-            }
-
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            if (logRecord.Info.ValueIsObject)
-            {
-                // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(
-                    MemoryUtils.CalculateHeapMemorySize(in logRecord));
-            }
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -86,8 +76,8 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -99,11 +89,8 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            if (logRecord.Info.ValueIsObject)
-            {
-                // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
-            }
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -129,7 +116,7 @@ namespace Garnet.server
 
                 // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
                 if (logRecord.Info.ValueIsOverflow)
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(newValue.Length - oldSize);
+                    functionsState.cacheSizeTracker?.AddHeapSize(newValue.Length - oldSize);
                 return true;
             }
 
@@ -182,7 +169,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newValue.HeapMemorySize - oldSize);
+            functionsState.cacheSizeTracker?.AddHeapSize(newValue.HeapMemorySize - oldSize);
             return true;
         }
 
@@ -205,9 +192,7 @@ namespace Garnet.server
                     var newETag = functionsState.etagState.ETag + 1;
                     ok = logRecord.TrySetETag(newETag);
                     if (ok)
-                    {
                         functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                    }
                 }
                 else
                     ok = logRecord.RemoveETag();
@@ -226,7 +211,7 @@ namespace Garnet.server
                     : (!logRecord.Info.ValueIsObject
                         ? logRecord.ValueSpan.Length
                         : logRecord.ValueObject.HeapMemorySize);
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+                functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
                 return true;
             }
 

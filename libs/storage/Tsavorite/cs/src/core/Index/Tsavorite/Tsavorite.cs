@@ -44,9 +44,9 @@ namespace Tsavorite.core
         public long EntryCount => GetEntryCount();
 
         /// <summary>
-        /// Maximum number of memory pages ever allocated
+        /// High-water mark of the number of memory pages that were allocated in the circular buffer
         /// </summary>
-        public long MaxAllocatedPageCount => hlogBase.MaxAllocatedPageCount;
+        public long HighWaterAllocatedPageCount => hlogBase.HighWaterAllocatedPageCount;
 
         /// <summary>
         /// Size of index in #cache lines (64 bytes each)
@@ -155,9 +155,9 @@ namespace Tsavorite.core
                 {
                     LogDevice = new NullDevice(),
                     ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
+                    MemorySize = logSettings.ReadCacheSettings.MemorySize,
                     PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                    MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                    SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                    SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits + 1,   // Not used by readcache but make sure it passes validation
                     MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                 };
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");

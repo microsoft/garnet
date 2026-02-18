@@ -341,6 +341,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public int ActualSize => CurrentIter.ActualSize;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long CalculateHeapMemorySize() => CurrentIter.CalculateHeapMemorySize();
         #endregion // ISourceLogRecord
     }
 }

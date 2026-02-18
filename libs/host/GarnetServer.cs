@@ -326,7 +326,7 @@ namespace Garnet
             epoch = new LightEpoch();
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
-            kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory, out var heapMemorySize, out var readCacheHeapMemorySize);
+            kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -343,9 +343,8 @@ namespace Garnet
                     () => new GarnetObjectSerializer(customCommandManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-            if (heapMemorySize > 0 || readCacheHeapMemorySize > 0)
-                sizeTracker = new CacheSizeTracker(store, heapMemorySize, readCacheHeapMemorySize, this.loggerFactory);
-
+            if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
+                sizeTracker = new CacheSizeTracker(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
             return store;
         }
 
@@ -428,14 +427,10 @@ namespace Garnet
             try
             {
                 foreach (string directory in Directory.GetDirectories(path))
-                {
                     DeleteDirectory(directory);
-                }
-
                 Directory.Delete(path, true);
             }
-            catch (Exception ex) when (ex is IOException ||
-                                       ex is UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 try
                 {

@@ -6,7 +6,7 @@ namespace Tsavorite.core
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
-    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -72,7 +72,7 @@ namespace Tsavorite.core
             if (success)
             {
                 // We don't call PostInitialWriter here so we must do the size tracking separately.
-                readcacheBase.OnDeserializationObserver?.OnRecord(in newLogRecord);
+                readcacheBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
 
                 newLogRecord.InfoRef.UnsealAndValidate();
                 // Do not clear pendingContext.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache
