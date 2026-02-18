@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -30,7 +31,8 @@ namespace Garnet.cluster
             SLOTOUTOFRANGE,
             NOTMIGRATING,
             MULTI_TRANSFER_OPTION,
-            FAILEDTOADDKEY
+            FAILEDTOADDKEY,
+            HOSTNAME_RESOLUTION_FAILED
         }
 
         private bool HandleCommandParsingErrors(MigrateCmdParseState mpState, string targetAddress, int targetPort, int slotMultiRef)
@@ -50,6 +52,7 @@ namespace Garnet.cluster
                 MigrateCmdParseState.SLOTOUTOFRANGE => Encoding.ASCII.GetBytes($"ERR Slot {slotMultiRef} out of range."),
                 MigrateCmdParseState.NOTMIGRATING => CmdStrings.RESP_ERR_GENERIC_SLOTNOTMIGRATING,
                 MigrateCmdParseState.FAILEDTOADDKEY => CmdStrings.RESP_ERR_GENERIC_FAILEDTOADDKEY,
+                MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED => CmdStrings.RESP_ERR_GENERIC_HOSTNAME_RESOLUTION_FAILED,
                 _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
             };
             while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
@@ -102,13 +105,40 @@ namespace Garnet.cluster
             var pstate = MigrateCmdParseState.CLUSTERDOWN;
             var slotParseError = -1;
             var transferOption = TransferOption.NONE;
+            string resolvedAddress = targetAddress;
             if (clusterProvider.serverOptions.EnableCluster)
             {
                 pstate = MigrateCmdParseState.SUCCESS;
                 current = clusterProvider.clusterManager.CurrentConfig;
                 sourceNodeId = current.LocalNodeId;
-                targetNodeId = current.GetWorkerNodeIdFromAddress(targetAddress, targetPort);
-                if (targetNodeId == null) pstate = MigrateCmdParseState.UNKNOWNTARGET;
+                
+                // First try to find worker by the provided address (could be IP or hostname)
+                targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(targetAddress, targetPort);
+                
+                // If not found directly, check if targetAddress is a hostname and try to resolve it
+                if (targetNodeId == null && !IPAddress.TryParse(targetAddress, out _))
+                {
+                    // targetAddress is not a valid IP, try to resolve it as hostname
+                    try
+                    {
+                        var hostEntry = Dns.GetHostEntry(targetAddress);
+                        if (hostEntry.AddressList.Length > 0)
+                        {
+                            // Use the first resolved IP address
+                            resolvedAddress = hostEntry.AddressList[0].ToString();
+                            // Try again with the resolved IP address
+                            targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(resolvedAddress, targetPort);
+                        }
+                    }
+                    catch
+                    {
+                        // Hostname resolution failed
+                        pstate = MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED;
+                    }
+                }
+                
+                if (targetNodeId == null && pstate == MigrateCmdParseState.SUCCESS) 
+                    pstate = MigrateCmdParseState.UNKNOWNTARGET;
             }
 
             // Add single key if specified
@@ -295,7 +325,7 @@ namespace Garnet.cluster
             if (!clusterProvider.migrationManager.TryAddMigrationTask(
                 this,
                 sourceNodeId,
-                targetAddress,
+                resolvedAddress,
                 targetPort,
                 targetNodeId,
                 username,

@@ -65,6 +65,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_FAILEDTOADDKEY => "ERR Failed to add key for migration tracking"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_PARSING => "ERR Parsing error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOT_STATE => "ERR Invalid slot state"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_HOSTNAME_RESOLUTION_FAILED => "ERR hostname resolution failed"u8;
 
         /// <summary>
         /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
