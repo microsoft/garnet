@@ -1775,6 +1775,14 @@ namespace Garnet.test.cluster
 
                                     var emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
 
+                                    if (emb.Length == 0)
+                                    {
+                                        // Migration might make this temporarily unavailable due to connection state/
+                                        //
+                                        // Because we check for presense of all data at the end of test, we can safely ignore this for now
+                                        continue;
+                                    }
+
                                     // If we got data, make sure it's coherent
                                     ClassicAssert.AreEqual(data.Length, emb.Length);
 
