@@ -78,7 +78,7 @@ namespace Garnet.test.cluster
 
         private static readonly Dictionary<string, LogLevel> MonitorTests = new()
         {
-            [nameof(MigrateVectorStressAsync)] = LogLevel.Debug,
+            [nameof(MigrateVectorStressAsync)] = LogLevel.Error,
         };
 
 
@@ -121,9 +121,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(Enum.TryParse<VectorValueType>(vectorFormat, ignoreCase: true, out var vectorFormatParsed));
             ClassicAssert.IsTrue(Enum.TryParse<VectorQuantType>(quantizer, ignoreCase: true, out var quantTypeParsed));
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -210,9 +208,7 @@ namespace Garnet.test.cluster
             const int Vectors = 2_000;
             const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -364,9 +360,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -478,9 +472,7 @@ namespace Garnet.test.cluster
             const int Vectors = 2_000;
             const string Key = nameof(MultipleReplicasWithVectorSetsAsync);
 
-            context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5);
+            _ = SimpleSetupCluster(HighReplicationShards, primaryCount: 1, replicaCount: 5);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -625,9 +617,7 @@ namespace Garnet.test.cluster
             const int Deletes = Vectors / 10;
             const string Key = nameof(MultipleReplicasWithVectorSetsAndDeletesAsync);
 
-            context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5);
+            _ = SimpleSetupCluster(HighReplicationShards, primaryCount: 1, replicaCount: 5);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -819,9 +809,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -950,9 +938,7 @@ namespace Garnet.test.cluster
             const int ShardCount = 3;
             const int KeyCount = 10;
 
-            context.CreateInstances(ShardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster();
+            _ = SimpleSetupCluster(ShardCount, primaryCount: -1, replicaCount: -1);
 
             var otherNodeIndex = 0;
             var sourceNodeIndex = 1;
@@ -1304,9 +1290,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, onDemandCheckpoint: true, enableIncrementalSnapshots: true);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1479,9 +1463,7 @@ namespace Garnet.test.cluster
             const int Primary0Index = 0;
             const int Primary1Index = 1;
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards, replica_count: 0);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: DefaultShards, replicaCount: 0);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1629,9 +1611,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-                context.CreateConnection(useTLS: true);
-                _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
+                _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
 
                 var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
                 var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -2013,9 +1993,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int ReplicaIndex = 1;
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards / 2, replica_count: DefaultShards / 2);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var replica = (IPEndPoint)context.endpoints[ReplicaIndex];
@@ -2052,6 +2030,13 @@ namespace Garnet.test.cluster
 
             var vsimRes = (byte[][])context.clusterTestUtils.Execute(replica, "VSIM", [new RedisKey("foo"), "XB8", vectorData0]);
             ClassicAssert.IsTrue(vsimRes.Length > 0);
+        }
+
+        private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false)
+        {
+            context.CreateInstances(shardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots);
+            context.CreateConnection(useTLS: true);
+            return context.clusterTestUtils.SimpleSetupCluster(primary_count: primaryCount, replica_count: replicaCount);
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
