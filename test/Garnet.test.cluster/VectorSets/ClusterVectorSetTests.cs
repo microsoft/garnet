@@ -1788,7 +1788,16 @@ namespace Garnet.test.cluster
 
                                     for (var i = 0; i < data.Length; i++)
                                     {
-                                        ClassicAssert.AreEqual(data[i], (byte)float.Parse(emb[i]));
+                                        var expected = data[i];
+                                        var actual = (byte)float.Parse(emb[i]);
+
+                                        if (expected != actual)
+                                        {
+                                            var wholeExpected = $"0x{string.Join("", data.Select(static q => q.ToString("X2")))}";
+                                            var wholeActual = $"0x{string.Join("", emb.Select(static q => ((byte)float.Parse(q)).ToString("X2")))}";
+
+                                            ClassicAssert.Fail($"Unexpected embedded value, expected {expected} != actual {actual} ({expected} != {actual})");
+                                        }
                                     }
 
                                     successfulReads++;
