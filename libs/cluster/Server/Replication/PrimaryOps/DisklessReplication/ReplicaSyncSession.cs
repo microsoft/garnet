@@ -95,8 +95,8 @@ namespace Garnet.cluster
         /// <summary>
         /// Associated aof sync task instance with this replica sync session
         /// </summary>
-        /// <param name="aofSyncTask"></param>
-        public void AddAofSyncTask(AofSyncDriver aofSyncTask) => AofSyncDriver = aofSyncTask;
+        /// <param name="aofSyncDriver"></param>
+        public void AddAofSyncTask(AofSyncDriver aofSyncDriver) => AofSyncDriver = aofSyncDriver;
 
         /// <summary>
         /// Set status of replica sync session
@@ -113,8 +113,11 @@ namespace Garnet.cluster
             switch (status)
             {
                 case SyncStatus.SUCCESS:
+                    _ = signalCompletion.Release();
+                    break;
                 case SyncStatus.FAILED:
-                    signalCompletion.Release();
+                    _ = clusterProvider.replicationManager.AofSyncDriverStore.TryRemove(AofSyncDriver);
+                    _ = signalCompletion.Release();
                     break;
             }
         }
@@ -243,7 +246,6 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.BeginAofSync)}");
                 SetStatus(SyncStatus.FAILED, ex.Message);
-                _ = clusterProvider.replicationManager.AofSyncDriverStore.TryRemove(AofSyncDriver);
             }
         }
     }

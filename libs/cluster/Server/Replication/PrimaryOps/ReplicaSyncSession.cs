@@ -228,7 +228,8 @@ namespace Garnet.cluster
                 else
                     logger?.LogError("Error at attaching: {ex}", ex.Message);
 
-                if (aofSyncDriver != null) _ = clusterProvider.replicationManager.AofSyncDriverStore.TryRemove(aofSyncDriver);
+                if (aofSyncDriver != null)
+                    _ = clusterProvider.replicationManager.AofSyncDriverStore.TryRemove(aofSyncDriver);
                 errorMsg = ex.Message;// this is error sent to remote client
                 return false;
             }

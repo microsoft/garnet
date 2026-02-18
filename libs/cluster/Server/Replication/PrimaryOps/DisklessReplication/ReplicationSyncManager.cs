@@ -134,8 +134,10 @@ namespace Garnet.cluster
                 // This will be the task added first in the replica sync session array.
                 if (isLeader)
                 {
+                    using SemaphoreSlim signalCompletion = new(0);
                     // Launch a background task to sync the attached replicas using streaming snapshot
-                    _ = Task.Run(MainStreamingSnapshotDriver);
+                    _ = Task.Run(() => MainStreamingSnapshotDriver(signalCompletion));
+                    await signalCompletion.WaitAsync();
                 }
 
                 // Wait for main sync driver to complete
@@ -161,10 +163,13 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Streaming snapshot driver
+        /// Coordinates the main streaming snapshot synchronization process across replica sessions.
         /// </summary>
-        /// <returns></returns>
-        async Task MainStreamingSnapshotDriver()
+        /// <param name="signalCompletion">A semaphore used to signal completion of the main synchronization task. The method releases this semaphore
+        /// when the synchronization process finishes.</param>
+        /// <returns>A task that represents the asynchronous operation of the streaming snapshot synchronization driver.</returns>
+        /// <exception cref="GarnetException">Thrown if the streaming checkpoint operation fails during synchronization.</exception>
+        async Task MainStreamingSnapshotDriver(SemaphoreSlim signalCompletion)
         {
             // Parameters for sync operation
             try
@@ -218,6 +223,9 @@ namespace Garnet.cluster
 
                 // Unlock sync session lock
                 syncInProgress.WriteUnlock();
+
+                // Release to indicate completion of the main sync task
+                signalCompletion.Release();
             }
 
             // Acquire checkpoint and lock AOF if possible

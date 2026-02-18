@@ -2649,6 +2649,24 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Blocks execution until the specified number of replicas are connected to the given node.
+        /// </summary>
+        /// <param name="nodeIndex">The zero-based index of the node to check for connected replicas.</param>
+        /// <param name="replicaCount">The number of replicas that must be connected before the method returns. Must be non-negative.</param>
+        /// <param name="logger">An optional logger used to record diagnostic information during the wait operation. May be null.</param>
+        public void WaitForReplicasConnected(int nodeIndex, int replicaCount, ILogger logger = null)
+        {
+            // Ensure that replicas have connected before completing the test
+            var count = context.clusterTestUtils.GetConnectedReplicas(nodeIndex, logger: logger);
+            while (count != replicaCount)
+            {
+                BackOff();
+                count = context.clusterTestUtils.GetConnectedReplicas(nodeIndex, logger: logger);
+            }
+            ClassicAssert.AreEqual(replicaCount, count);
+        }
+
         public long GetConnectedReplicas(int nodeIndex, ILogger logger = null)
             => GetConnectedReplicas((IPEndPoint)endpoints[nodeIndex], logger);
 

@@ -196,6 +196,7 @@ namespace Garnet.cluster
                 {
                     if (acquireReadLock)
                         aofSyncDriver.SuspendAofStreaming();
+                    garnetClient?.Dispose();
                 }
             }
         }

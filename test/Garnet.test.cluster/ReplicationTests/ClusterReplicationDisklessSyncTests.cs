@@ -432,6 +432,9 @@ namespace Garnet.test.cluster
 
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
+
+            // Ensure that replicas have connected before completing the test
+            context.clusterTestUtils.WaitForReplicasConnected(primaryIndex, 1, logger: context.logger);
         }
 #endif
     }
