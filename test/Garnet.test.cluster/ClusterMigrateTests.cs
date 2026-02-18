@@ -2132,7 +2132,7 @@ namespace Garnet.test.cluster
             var msp = context.clusterTestUtils.GetSlotPortMapFromNode(0, context.logger);
             for (var i = 1; i < Shards; i++)
                 msp = ClusterTestUtils.MergeSlotPortMap(msp, context.clusterTestUtils.GetSlotPortMapFromNode(i, context.logger));
-            
+
             var sourcePort = msp[(ushort)slot];
             var targetPort = msp[(ushort)context.r.Next(0, 16384)];
             while (sourcePort == targetPort)
@@ -2203,11 +2203,11 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("1. Creating data");
             var keyCount = 10;
             var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
-            
+
             var msp = context.clusterTestUtils.GetSlotPortMapFromNode(0, context.logger);
             for (var i = 1; i < Shards; i++)
                 msp = ClusterTestUtils.MergeSlotPortMap(msp, context.clusterTestUtils.GetSlotPortMapFromNode(i, context.logger));
-            
+
             var sourcePort = msp[(ushort)slot];
             var targetPort = msp[(ushort)context.r.Next(0, 16384)];
             while (sourcePort == targetPort)
@@ -2218,7 +2218,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("2. Attempting migration with invalid hostname");
             // Get server and execute migrate command with an invalid hostname that should not resolve
             var server = context.clusterTestUtils.GetMultiplexer().GetServer(sourceEndPoint);
-            
+
             // Use a hostname that is guaranteed to fail DNS lookup - using the .invalid TLD
             // which is reserved by RFC 6761 specifically for this purpose
             var invalidHostname = "this-hostname-will-never-resolve.invalid";

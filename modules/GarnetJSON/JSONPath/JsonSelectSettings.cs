@@ -1,4 +1,7 @@
-﻿namespace GarnetJSON.JSONPath
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+namespace GarnetJSON.JSONPath
 {
     /// <summary>
     /// Specifies the settings used when selecting JSON.

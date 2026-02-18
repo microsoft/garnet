@@ -112,10 +112,10 @@ namespace Garnet.cluster
                 pstate = MigrateCmdParseState.SUCCESS;
                 current = clusterProvider.clusterManager.CurrentConfig;
                 sourceNodeId = current.LocalNodeId;
-                
+
                 // First try to find worker by the provided address (could be IP or hostname)
                 targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(targetAddress, targetPort);
-                
+
                 // If not found directly, check if targetAddress is a hostname and try to resolve it
                 if (targetNodeId == null && !IPAddress.TryParse(targetAddress, out _))
                 {
@@ -140,8 +140,8 @@ namespace Garnet.cluster
                         pstate = MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED;
                     }
                 }
-                
-                if (targetNodeId == null && pstate == MigrateCmdParseState.SUCCESS) 
+
+                if (targetNodeId == null && pstate == MigrateCmdParseState.SUCCESS)
                     pstate = MigrateCmdParseState.UNKNOWNTARGET;
             }
 
