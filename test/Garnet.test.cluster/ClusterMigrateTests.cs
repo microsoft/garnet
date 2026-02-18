@@ -12,8 +12,6 @@ using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
-#if DEBUG
-#endif
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
