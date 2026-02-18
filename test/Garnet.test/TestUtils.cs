@@ -1190,12 +1190,15 @@ using System.Threading.Tasks;
         {
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
             var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+
+            var failMessage = "";
+
             if (count != 0)
             {
                 // Reset all instances to avoid impacting other tests
                 Tsavorite.core.LightEpoch.ResetAllInstances();
                 logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
-                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
+                failMessage += $"Tsavorite.core.LightEpoch instances still active: {count}; ";
             }
 
             var count2 = client.LightEpoch.ActiveInstanceCount();
@@ -1204,7 +1207,12 @@ using System.Threading.Tasks;
                 // Reset all instances to avoid impacting other tests
                 client.LightEpoch.ResetAllInstances();
                 logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
-                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
+                failMessage += $"Garnet.client.LightEpoch instances still active: {count2}; ";
+            }
+
+            if (failMessage != "")
+            {
+                ClassicAssert.Fail(failMessage);
             }
         }
     }
