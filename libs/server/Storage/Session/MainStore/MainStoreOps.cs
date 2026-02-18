@@ -333,7 +333,7 @@ namespace Garnet.server
             // Use the meta-command info to store the existing eTag
             metaCommandInfo.Initialize();
             metaCommandInfo.MetaCommand = RespMetaCommand.ExecIfMatch;
-            metaCommandInfo.Arg1 = getOutput.etag;
+            metaCommandInfo.Arg1 = getOutput.ETag;
 
             ObjectOutput upsertOutput = default;
 

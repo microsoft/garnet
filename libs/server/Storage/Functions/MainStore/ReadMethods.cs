@@ -25,16 +25,24 @@ namespace Garnet.server
             if (LogRecordUtils.CheckExpiry(in srcLogRecord))
                 return false;
 
-            var execCmd = true;
-            var cmd = input.header.cmd;
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
+            output.ETag = srcLogRecord.ETag;
 
-            if (metaCmd.IsEtagCondExecCommand())
+            _ = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd, init: false, readOnly: true);
+
+            if (!execCmd)
             {
-                var inputEtag = input.metaCommandInfo.Arg1;
-                execCmd = metaCmd.CheckConditionalExecution(srcLogRecord.ETag, inputEtag);
+                var skipResp = input.header.CheckSkipRespOutputFlag();
+                if (!skipResp)
+                {
+                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    writer.WriteNull();
+                }
+
+                return true;
             }
+
+            var cmd = input.header.cmd;
+            var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
 
             if (cmd > RespCommandExtensions.LastValidCommand)
             {
@@ -60,27 +68,10 @@ namespace Garnet.server
                 }
             }
 
-            if (srcLogRecord.Info.HasETag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
-            {
-                if (execCmd)
-                    CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
-                else
-                    WriteValueAndEtagToDst(functionsState.nilResp, srcLogRecord.ETag, ref output, functionsState.memoryPool, writeDirect: true);
-                ETagState.ResetState(ref functionsState.etagState);
-                return true;
-            }
-
             if (cmd == RespCommand.NONE)
                 CopyRespTo(value, ref output);
             else
                 CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
-
-            if (srcLogRecord.Info.HasETag)
-                ETagState.ResetState(ref functionsState.etagState);
 
             return true;
         }

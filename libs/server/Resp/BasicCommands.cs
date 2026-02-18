@@ -583,9 +583,11 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (!getValue && !metaCommandInfo.MetaCommand.IsEtagCommand())
+            if (!getValue)
             {
-                var status = storageApi.SET_Conditional(key, ref input);
+                var output = new StringOutput();
+                var status = storageApi.SET_Conditional(key, ref input, ref output);
+                etag = output.ETag;
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
                 if (cmd == RespCommand.SETKEEPTTL)
@@ -597,8 +599,8 @@ namespace Garnet.server
                 {
                     var ok = status != GarnetStatus.NOTFOUND;
 
-                    // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
-                    if (cmd == RespCommand.SETEXNX)
+                    // the status returned for SET / SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
+                    if (cmd == RespCommand.SET || cmd == RespCommand.SETEXNX)
                         ok = !ok;
 
                     if (ok)
@@ -616,15 +618,15 @@ namespace Garnet.server
             }
             else
             {
-                if (getValue)
-                    input.header.SetSetGetFlag();
+                input.header.SetSetGetFlag();
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 var output = GetStringOutput();
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
+                etag = output.ETag;
 
-                // The data will be on the buffer either when we know the response is ok o  r when the withEtag flag is set.
-                bool ok = status != GarnetStatus.NOTFOUND || metaCommandInfo.MetaCommand.IsEtagCommand();
+                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
+                bool ok = status != GarnetStatus.NOTFOUND;
 
                 if (ok)
                 {
@@ -667,6 +669,7 @@ namespace Garnet.server
             var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, arg1: incrByValue);
             _ = storageApi.Increment(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
+            etag = stringOutput.ETag;
 
             if (!stringOutput.HasError)
             {
@@ -744,6 +747,7 @@ namespace Garnet.server
             var output = StringOutput.FromPinnedSpan(outputBuffer);
 
             storageApi.APPEND(sbKey, ref input, ref output);
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
                 SendAndReset();

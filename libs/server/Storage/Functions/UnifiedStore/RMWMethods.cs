@@ -53,8 +53,10 @@ namespace Garnet.server
                 functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
                 return false;
             }
+
             ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
-            
+            output.ETag = functionsState.etagState.ETag;
+
             return result;
         }
 
@@ -92,7 +94,7 @@ namespace Garnet.server
                     if (execCmd)
                         rmwInfo.Action = RMWAction.ExpireAndStop;
 
-                    output.etag = LogRecord.NoETag;
+                    output.ETag = LogRecord.NoETag;
                     ETagState.ResetState(ref functionsState.etagState);
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
@@ -111,12 +113,9 @@ namespace Garnet.server
 
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
-                if (!srcLogRecord.Info.ValueIsObject)
-                {
-                    _ = dstLogRecord.RemoveETag();
-                    // reset etag state that may have been initialized earlier
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
+                _ = dstLogRecord.RemoveETag();
+                // reset etag state that may have been initialized earlier
+                ETagState.ResetState(ref functionsState.etagState);
 
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
@@ -157,7 +156,7 @@ namespace Garnet.server
             if (recordHadEtagPreMutation || shouldUpdateEtag)
             {
                 dstLogRecord.TrySetETag(updatedEtag);
-                output.etag = functionsState.etagState.ETag;
+                output.ETag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
 
@@ -213,7 +212,7 @@ namespace Garnet.server
                 if (recordHadEtagPreMutation || shouldUpdateEtag)
                 {
                     dstLogRecord.TrySetETag(updatedEtag);
-                    output.etag = functionsState.etagState.ETag;
+                    output.ETag = functionsState.etagState.ETag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
 
@@ -287,7 +286,7 @@ namespace Garnet.server
 
             if (!execCmd)
             {
-                output.etag = functionsState.etagState.ETag;
+                output.ETag = functionsState.etagState.ETag;
                 rmwInfo.Action = RMWAction.CancelOperation;
                 if (hadETagPreMutation)
                 {
@@ -308,13 +307,18 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.DEL:
-                    rmwInfo.Action = execCmd ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
-                    ETagState.ResetState(ref functionsState.etagState);
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    if (hadETagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
                     return IPUResult.Failed;
                 case RespCommand.EXPIRE:
                     ipuResult = HandleExpireInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateEtag, ref input, ref output);
                     if (ipuResult == IPUResult.Failed)
+                    {
+                        if (hadETagPreMutation)
+                            ETagState.ResetState(ref functionsState.etagState);
                         return IPUResult.Failed;
+                    }
                     break;
                 case RespCommand.PERSIST:
                     HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateEtag, ref output);
@@ -334,12 +338,12 @@ namespace Garnet.server
             if (shouldUpdateEtag)
             {
                 logRecord.TrySetETag(updatedEtag);
-                output.etag = functionsState.etagState.ETag;
+                output.ETag = updatedEtag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (hadETagPreMutation)
             {
-                output.etag = functionsState.etagState.ETag;
+                output.ETag = functionsState.etagState.ETag;
                 // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }

@@ -126,7 +126,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            zremCount = output.result1;
+            zremCount = output.Result1;
             return status;
         }
 
@@ -159,7 +159,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            zremCount = output.result1;
+            zremCount = output.Result1;
             return status;
         }
 
@@ -206,7 +206,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            countRemoved = output.result1;
+            countRemoved = output.Result1;
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
@@ -435,7 +435,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            zcardCount = output.result1;
+            zcardCount = output.Result1;
             return status;
         }
 

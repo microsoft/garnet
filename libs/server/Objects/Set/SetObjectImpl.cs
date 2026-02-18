@@ -38,7 +38,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(added);
 
-            output.result1 = added;
+            output.Result1 = added;
         }
 
         private void SetMembers(ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -48,7 +48,7 @@ namespace Garnet.server
             foreach (var item in Set)
             {
                 writer.WriteBulkString(item);
-                output.result1++;
+                output.Result1++;
             }
         }
 
@@ -61,7 +61,7 @@ namespace Garnet.server
             var isMember = Set.Contains(member.ToArray());
 #endif
             writer.WriteInt32(isMember ? 1 : 0);
-            output.result1 = 1;
+            output.Result1 = 1;
         }
 
         private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -79,7 +79,7 @@ namespace Garnet.server
                 writer.WriteInt32(isMember ? 1 : 0);
             }
 
-            output.result1 = input.parseState.Count;
+            output.Result1 = input.parseState.Count;
         }
 
         private void SetRemove(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -107,7 +107,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(removed);
 
-            output.result1 = removed;
+            output.Result1 = removed;
         }
 
         private void SetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -118,7 +118,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(length);
 
-            output.result1 = length;
+            output.Result1 = length;
         }
 
         private void SetPop(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -176,7 +176,7 @@ namespace Garnet.server
                 countDone++;
             }
 
-            output.result1 = countDone;
+            output.Result1 = countDone;
         }
 
         private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -253,7 +253,7 @@ namespace Garnet.server
                 }
             }
 
-            output.result1 = countDone;
+            output.Result1 = countDone;
         }
     }
 }

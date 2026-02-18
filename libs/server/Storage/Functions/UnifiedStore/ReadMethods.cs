@@ -25,8 +25,24 @@ namespace Garnet.server
                 return false;
             }
 
+            output.ETag = srcLogRecord.ETag;
+
+            _ = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd, init: false, readOnly: true);
+
+            if (!execCmd)
+            {
+                var skipResp = input.header.CheckSkipRespOutputFlag();
+                if (!skipResp)
+                {
+                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    writer.WriteNull();
+                }
+
+                return true;
+            }
+
             var cmd = input.header.cmd;
-            return cmd switch
+            var result =  cmd switch
             {
                 RespCommand.EXISTS => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
@@ -40,6 +56,8 @@ namespace Garnet.server
                 RespCommand.RENAME or RespCommand.RENAMENX => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
+
+            return result;
         }
 
         private bool HandleGetEtag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,

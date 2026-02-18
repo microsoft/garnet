@@ -31,7 +31,7 @@ namespace Garnet.server
             else
                 writer.WriteNull();
 
-            output.result1++;
+            output.Result1++;
         }
 
         private void HashMultipleGet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -50,7 +50,7 @@ namespace Garnet.server
                     writer.WriteNull();
                 }
 
-                output.result1++;
+                output.Result1++;
             }
         }
 
@@ -89,7 +89,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(removed);
 
-            output.result1 = removed;
+            output.Result1 = removed;
         }
 
         private void HashLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -99,7 +99,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(length);
 
-            output.result1 = length;
+            output.Result1 = length;
         }
 
         private void HashStrLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -110,7 +110,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(length);
 
-            output.result1 = length;
+            output.Result1 = length;
         }
 
         private void HashExists(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -121,7 +121,7 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
                 writer.WriteInt32(exists);
 
-            output.result1 = exists;
+            output.Result1 = exists;
         }
 
         private void HashRandomField(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -141,7 +141,7 @@ namespace Garnet.server
                 if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
                     writer.WriteEmptyArray();
-                    output.result1 = 0;
+                    output.Result1 = 0;
                     return;
                 }
 
@@ -182,7 +182,7 @@ namespace Garnet.server
                 if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
                     writer.WriteNull();
-                    output.result1 = 0;
+                    output.Result1 = 0;
                     return;
                 }
 
@@ -192,7 +192,7 @@ namespace Garnet.server
                 countDone = 1;
             }
 
-            output.result1 = countDone;
+            output.Result1 = countDone;
         }
 
         private void HashSet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -264,13 +264,13 @@ namespace Garnet.server
                 }
             }
 
-            output.result1 = added;
+            output.Result1 = added;
         }
 
         private void HashCollect(ref ObjectInput input, ref ObjectOutput output)
         {
             DeleteExpiredItems();
-            output.result1 = 1;
+            output.Result1 = 1;
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
@@ -299,7 +299,7 @@ namespace Garnet.server
                     writer.WriteBulkString(item.Value);
                 }
 
-                output.result1++;
+                output.Result1++;
             }
         }
 
@@ -307,7 +307,7 @@ namespace Garnet.server
         private void HashIncrement(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // This value is used to indicate partial command execution
-            output.result1 = int.MinValue;
+            output.Result1 = int.MinValue;
 
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
@@ -361,7 +361,7 @@ namespace Garnet.server
 
             writer.WriteIntegerFromBytes(hashValueRef);
 
-            output.result1 = 1;
+            output.Result1 = 1;
         }
 
         [SkipLocalsInit] // avoid zeroing the stackalloc buffer
@@ -370,7 +370,7 @@ namespace Garnet.server
             var op = input.header.HashOp;
 
             // This value is used to indicate partial command execution
-            output.result1 = int.MinValue;
+            output.Result1 = int.MinValue;
 
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
@@ -438,7 +438,7 @@ namespace Garnet.server
 
             writer.WriteBulkString(hashValueRef);
 
-            output.result1 = 1;
+            output.Result1 = 1;
         }
 
         private void HashExpire(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -458,7 +458,7 @@ namespace Garnet.server
 #endif
                 writer.WriteInt32((int)result);
 
-                output.result1++;
+                output.Result1++;
             }
 
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
@@ -503,7 +503,7 @@ namespace Garnet.server
                 }
 
                 writer.WriteInt64(result);
-                output.result1++;
+                output.Result1++;
             }
         }
 
@@ -523,7 +523,7 @@ namespace Garnet.server
                 var result = Persist(item.ToArray());
 #endif
                 writer.WriteInt32((int)result);
-                output.result1++;
+                output.Result1++;
             }
 
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;

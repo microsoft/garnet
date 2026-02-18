@@ -40,7 +40,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            saddCount = output.result1;
+            saddCount = output.Result1;
             return status;
         }
 
@@ -74,7 +74,7 @@ namespace Garnet.server
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            saddCount = output.result1;
+            saddCount = output.Result1;
 
             return status;
         }
@@ -104,7 +104,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            sremCount = output.result1;
+            sremCount = output.Result1;
 
             return status;
         }
@@ -140,7 +140,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            sremCount = output.result1;
+            sremCount = output.Result1;
             return status;
         }
 
@@ -166,7 +166,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            count = output.result1;
+            count = output.Result1;
             return status;
         }
 

@@ -70,7 +70,7 @@ namespace Garnet.server
                     // Process output
                     ProcessOutput(output.SpanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (output.result1 == int.MinValue)
+                    if (output.Result1 == int.MinValue)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:

@@ -41,7 +41,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            itemsDoneCount = output.result1;
+            itemsDoneCount = output.Result1;
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
@@ -74,7 +74,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            itemsDoneCount = output.result1;
+            itemsDoneCount = output.Result1;
 
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
@@ -188,7 +188,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            count = output.result1;
+            count = output.Result1;
             return status;
         }
 

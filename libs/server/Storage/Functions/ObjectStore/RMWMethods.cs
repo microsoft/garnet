@@ -60,6 +60,7 @@ namespace Garnet.server
                 }
 
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+                output.ETag = functionsState.etagState.ETag;
 
                 return true;
             }
@@ -144,14 +145,12 @@ namespace Garnet.server
             if (!hadETagPreMutation && inputHeaderHasEtag)
                 return false;
 
-            var shouldUpdateEtag = hadETagPreMutation;
-            if (shouldUpdateEtag)
+            if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 var updatedEtag = HandleMetaCommandAndOperate((IGarnetObject)logRecord.ValueObject, ref input, ref output, logRecord.ETag, out sizeChange);
-                shouldUpdateEtag |= (updatedEtag != logRecord.ETag);
 
                 if (output.HasWrongType)
                     return true;
@@ -167,15 +166,18 @@ namespace Garnet.server
                     return false;
                 }
 
-                if (shouldUpdateEtag)
+                if (updatedEtag != logRecord.ETag)
                 {
                     logRecord.TrySetETag(updatedEtag);
-                    ETagState.ResetState(ref functionsState.etagState);
+                    output.ETag = updatedEtag;
                 }
-                else if (hadETagPreMutation)
+                else
                 {
-                    ETagState.ResetState(ref functionsState.etagState);
+                    output.ETag = functionsState.etagState.ETag;
                 }
+
+                if (hadETagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
 
                 sizeInfo.AssertOptionals(logRecord.Info);
                 return true;
@@ -269,10 +271,12 @@ namespace Garnet.server
                 if (shouldUpdateEtag)
                 {
                     dstLogRecord.TrySetETag(updatedEtag);
+                    output.ETag = updatedEtag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
                 else if (recordHadEtagPreMutation)
                 {
+                    output.ETag = functionsState.etagState.ETag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
             }
@@ -341,7 +345,7 @@ namespace Garnet.server
                 else if (!skipResp)
                     writer.WriteNull();
 
-                output.etag = updatedEtag;
+                output.ETag = updatedEtag;
             }
             finally
             {

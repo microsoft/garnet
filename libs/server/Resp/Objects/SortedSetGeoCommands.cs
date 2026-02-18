@@ -88,7 +88,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.GeoAdd(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -167,7 +167,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.GeoCommands(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -273,14 +273,14 @@ namespace Garnet.server
                 if (status == GarnetStatus.OK)
                 {
                     ProcessOutput(output.SpanByteAndMemory);
-                    etag = output.etag;
+                    etag = output.ETag;
                     return true;
                 }
             }
             else
             {
                 status = storageApi.GeoSearchReadOnly(sourceKey, ref searchOpts, ref input, ref output);
-                etag = output.etag;
+                etag = output.ETag;
 
                 if (status == GarnetStatus.OK)
                 {

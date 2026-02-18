@@ -53,12 +53,12 @@ namespace Garnet.server
         /// <summary>
         /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
-        public int result1;
+        public int Result1;
 
         /// <summary>
         /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
         /// </summary>
-        public long etag;
+        public long ETag;
 
         /// <summary>
         /// Output flags

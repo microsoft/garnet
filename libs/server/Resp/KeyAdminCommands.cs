@@ -415,7 +415,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -453,7 +453,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {

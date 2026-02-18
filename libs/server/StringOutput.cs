@@ -24,6 +24,11 @@ namespace Garnet.server
         /// </summary>
         public StringOutputFlags OutputFlags;
 
+        /// <summary>
+        /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
+        /// </summary>
+        public long ETag;
+
         public readonly bool HasError => (OutputFlags & StringOutputFlags.Error) != 0;
 
         public StringOutput() => SpanByteAndMemory = new(null);

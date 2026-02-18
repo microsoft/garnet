@@ -20,7 +20,7 @@ namespace Garnet.server
         /// <summary>
         /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
         /// </summary>
-        public long etag;
+        public long ETag;
 
         public UnifiedOutput() => SpanByteAndMemory = new(null);
 

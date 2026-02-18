@@ -84,7 +84,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetAdd(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -122,7 +122,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetRemove(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -162,7 +162,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetLength(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -212,7 +212,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRange(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -298,7 +298,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetScore(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -343,7 +343,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetScores(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -412,7 +412,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetPop(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -584,7 +584,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetCount(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -646,7 +646,7 @@ namespace Garnet.server
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
                 storageApi.SortedSetRemoveRangeByLex(key, ref input, ref output) :
                 storageApi.SortedSetLengthByValue(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -699,7 +699,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetIncrement(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -764,7 +764,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRank(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -833,7 +833,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRemoveRange(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -915,7 +915,7 @@ namespace Garnet.server
                 // Prepare output
                 output = GetObjectOutput();
                 status = storageApi.SortedSetRandomMember(key, ref input, ref output);
-                etag = output.etag;
+                etag = output.ETag;
             }
 
             switch (status)
@@ -1836,7 +1836,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetExpire(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -1928,7 +1928,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -1994,7 +1994,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetPersist(key, ref input, ref output);
-            etag = output.etag;
+            etag = output.ETag;
 
             switch (status)
             {
