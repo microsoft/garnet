@@ -2109,25 +2109,22 @@ namespace Garnet.test.cluster
         }
 #endif
 
-        [Test, Order(99)]
+        [Test, Order(24)]
         [Category("CLUSTER")]
         public void ClusterMigrateSlotsWithHostname()
         {
-            context.logger.LogDebug("0. ClusterMigrateSlotsWithHostname started");
             var Shards = defaultShards;
             // Create standard instances (not using useClusterAnnounceHostname since that causes test infrastructure issues)
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
-            var (_, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
-            context.logger.LogDebug("1. Creating data");
             var keyCount = 50;
             var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
             var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot);
             ClassicAssert.AreEqual(expectedKeyCount, keyCount);
-            context.logger.LogDebug("2. Data created {keyCount}", keyCount);
 
             var msp = context.clusterTestUtils.GetSlotPortMapFromNode(0, context.logger);
             for (var i = 1; i < Shards; i++)
@@ -2141,12 +2138,11 @@ namespace Garnet.test.cluster
             var sourceEndPoint = context.clusterTestUtils.GetEndPointFromPort(sourcePort);
             var targetEndPoint = context.clusterTestUtils.GetEndPointFromPort(targetPort);
 
-            context.logger.LogDebug("3. Initiating async migration with hostname (localhost)");
             // Get server and execute migrate command with hostname instead of IP
             // Since the nodes are configured with 127.0.0.1, using "localhost" should resolve to 127.0.0.1
             var server = context.clusterTestUtils.GetMultiplexer().GetServer(sourceEndPoint);
-            ICollection<object> args = new List<object>
-            {
+            ICollection<object> args =
+            [
                 "localhost", // Use hostname instead of IP address
                 targetPort,
                 "",
@@ -2155,7 +2151,7 @@ namespace Garnet.test.cluster
                 "SLOTSRANGE",
                 slot,
                 slot
-            };
+            ];
 
             try
             {
@@ -2168,7 +2164,6 @@ namespace Garnet.test.cluster
                 Assert.Fail($"Migration with hostname should succeed: {ex.Message}");
             }
 
-            context.logger.LogDebug("4. Checking keys starting");
             // Wait for keys to become available for reading
             var keysList = data.Keys.ToList();
             for (var i = 0; i < keysList.Count; i++)
@@ -2183,26 +2178,19 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(targetPort, endPoint.Port, $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {targetPort}, actual: {endPoint.Port}");
                 ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
             }
-            context.logger.LogDebug("5. Checking keys done");
-
-            context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
-            context.logger.LogDebug("6. ClusterMigrateSlotsWithHostname done");
         }
 
-        [Test, Order(100)]
+        [Test, Order(25)]
         [Category("CLUSTER")]
         public void ClusterMigrateWithInvalidHostname()
         {
-            context.logger.LogDebug("0. ClusterMigrateWithInvalidHostname started");
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
-            var (_, slots) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
-
-            context.logger.LogDebug("1. Creating data");
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
             var keyCount = 10;
-            var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
+            var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out _);
 
             var msp = context.clusterTestUtils.GetSlotPortMapFromNode(0, context.logger);
             for (var i = 1; i < Shards; i++)
@@ -2215,15 +2203,14 @@ namespace Garnet.test.cluster
 
             var sourceEndPoint = context.clusterTestUtils.GetEndPointFromPort(sourcePort);
 
-            context.logger.LogDebug("2. Attempting migration with invalid hostname");
             // Get server and execute migrate command with an invalid hostname that should not resolve
             var server = context.clusterTestUtils.GetMultiplexer().GetServer(sourceEndPoint);
 
             // Use a hostname that is guaranteed to fail DNS lookup - using the .invalid TLD
             // which is reserved by RFC 6761 specifically for this purpose
             var invalidHostname = "this-hostname-will-never-resolve.invalid";
-            ICollection<object> args = new List<object>
-            {
+            ICollection<object> args =
+            [
                 invalidHostname,
                 targetPort,
                 "",
@@ -2232,7 +2219,7 @@ namespace Garnet.test.cluster
                 "SLOTSRANGE",
                 slot,
                 slot
-            };
+            ];
 
             try
             {
@@ -2241,13 +2228,10 @@ namespace Garnet.test.cluster
             }
             catch (RedisServerException ex)
             {
-                context.logger.LogDebug("3. Got expected error: {message}", ex.Message);
                 // Should get either hostname resolution failed or unknown endpoint error
                 ClassicAssert.IsTrue(ex.Message.Contains("ERR hostname resolution failed") || ex.Message.Contains("ERR Unknown endpoint"),
                     $"Expected hostname resolution error or unknown endpoint error, got: {ex.Message}");
             }
-
-            context.logger.LogDebug("4. ClusterMigrateWithInvalidHostname done");
         }
     }
 }
