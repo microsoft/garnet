@@ -1777,7 +1777,7 @@ namespace Garnet.test.cluster
 
                                     if (emb.Length == 0)
                                     {
-                                        // Migration might make this temporarily unavailable due to connection state/
+                                        // Migration might make this temporarily unavailable due to connection state
                                         //
                                         // Because we check for presense of all data at the end of test, we can safely ignore this for now
                                         continue;
