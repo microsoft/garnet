@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Text;
 using Garnet.common;
@@ -124,15 +125,18 @@ namespace Garnet.cluster
                         var hostEntry = Dns.GetHostEntry(targetAddress);
                         if (hostEntry.AddressList.Length > 0)
                         {
-                            // Use the first resolved IP address
-                            resolvedAddress = hostEntry.AddressList[0].ToString();
+                            // Prefer IPv4 addresses to match most common cluster configurations
+                            var resolvedIp = hostEntry.AddressList.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                                          ?? hostEntry.AddressList[0]; // Fallback to first address if no IPv4 found
+                            resolvedAddress = resolvedIp.ToString();
                             // Try again with the resolved IP address
                             targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(resolvedAddress, targetPort);
                         }
                     }
-                    catch
+                    catch (System.Net.Sockets.SocketException ex)
                     {
-                        // Hostname resolution failed
+                        // Hostname resolution failed (DNS failure, network issue, etc.)
+                        logger?.LogWarning(ex, "Failed to resolve hostname {hostname}", targetAddress);
                         pstate = MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED;
                     }
                 }
@@ -311,7 +315,7 @@ namespace Garnet.cluster
             #endregion
 
             #region checkParseErrors
-            if (clusterProvider.clusterManager != null && current.GetNodeRoleFromNodeId(targetNodeId) != NodeRole.PRIMARY)
+            if (clusterProvider.clusterManager != null && targetNodeId != null && current.GetNodeRoleFromNodeId(targetNodeId) != NodeRole.PRIMARY)
                 pstate = MigrateCmdParseState.TARGETNODENOTMASTER;
 
             if (!HandleCommandParsingErrors(pstate, targetAddress, targetPort, slotParseError))

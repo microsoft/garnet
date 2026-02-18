@@ -2219,8 +2219,9 @@ namespace Garnet.test.cluster
             // Get server and execute migrate command with an invalid hostname that should not resolve
             var server = context.clusterTestUtils.GetMultiplexer().GetServer(sourceEndPoint);
             
-            // Use a completely invalid hostname with special characters that DNS will reject
-            var invalidHostname = "definitely-does-not-exist-xyz123456789.invalid.domain.test";
+            // Use a hostname that is guaranteed to fail DNS lookup - using the .invalid TLD
+            // which is reserved by RFC 6761 specifically for this purpose
+            var invalidHostname = "this-hostname-will-never-resolve.invalid";
             ICollection<object> args = new List<object>
             {
                 invalidHostname,
@@ -2241,13 +2242,9 @@ namespace Garnet.test.cluster
             catch (RedisServerException ex)
             {
                 context.logger.LogDebug("3. Got expected error: {message}", ex.Message);
-                // The error could be either hostname resolution failed or unknown endpoint
-                // Both are acceptable as they indicate the hostname was not found
-                var isExpectedError = ex.Message.Contains("ERR hostname resolution failed") || 
-                                      ex.Message.Contains("ERR Unknown endpoint") ||
-                                      ex.Message.Contains("is not a primary"); // This can happen if hostname accidentally resolves
-                ClassicAssert.IsTrue(isExpectedError,
-                    $"Expected hostname resolution error, unknown endpoint error, or 'is not a primary' error, got: {ex.Message}");
+                // Should get either hostname resolution failed or unknown endpoint error
+                ClassicAssert.IsTrue(ex.Message.Contains("ERR hostname resolution failed") || ex.Message.Contains("ERR Unknown endpoint"),
+                    $"Expected hostname resolution error or unknown endpoint error, got: {ex.Message}");
             }
 
             context.logger.LogDebug("4. ClusterMigrateWithInvalidHostname done");
