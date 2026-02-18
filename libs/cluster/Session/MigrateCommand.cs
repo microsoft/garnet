@@ -106,7 +106,7 @@ namespace Garnet.cluster
             var pstate = MigrateCmdParseState.CLUSTERDOWN;
             var slotParseError = -1;
             var transferOption = TransferOption.NONE;
-            string resolvedAddress = targetAddress;
+            string effectiveAddress = targetAddress;
             if (clusterProvider.serverOptions.EnableCluster)
             {
                 pstate = MigrateCmdParseState.SUCCESS;
@@ -128,9 +128,9 @@ namespace Garnet.cluster
                             // Prefer IPv4 addresses to match most common cluster configurations
                             var resolvedIp = hostEntry.AddressList.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                                           ?? hostEntry.AddressList[0]; // Fallback to first address if no IPv4 found
-                            resolvedAddress = resolvedIp.ToString();
+                            effectiveAddress = resolvedIp.ToString();
                             // Try again with the resolved IP address
-                            targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(resolvedAddress, targetPort);
+                            targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(effectiveAddress, targetPort);
                         }
                     }
                     catch (System.Net.Sockets.SocketException ex)
@@ -329,7 +329,7 @@ namespace Garnet.cluster
             if (!clusterProvider.migrationManager.TryAddMigrationTask(
                 this,
                 sourceNodeId,
-                resolvedAddress,
+                effectiveAddress,
                 targetPort,
                 targetNodeId,
                 username,
