@@ -297,7 +297,7 @@ namespace Garnet.test
             var store = server.Provider.StoreWrapper.store;
             var tracker = store.Log.LogSizeTracker;
             Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
-            
+
             using var trimCompleteEvent = new ManualResetEventSlim(false);
             tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
 
@@ -398,7 +398,7 @@ namespace Garnet.test
 
             int lastIdxSecondRound;
             int keysInsertedFirstRound;
-            
+
             // These are outside the individual blocks for debugging
             var lastIdxFirstRound = -1;
             var allocatedPagesFirstRound = -1;

@@ -226,7 +226,7 @@ namespace Tsavorite.core
         internal static long SetIndexSizeFromCacheLines(long cacheLines)
             => cacheLines * 64;
 
-        internal LogSettings GetLogSettings() 
+        internal LogSettings GetLogSettings()
             => new()
             {
                 ReadCopyOptions = ReadCopyOptions,

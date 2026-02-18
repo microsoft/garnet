@@ -183,7 +183,7 @@ namespace Tsavorite.core
             highTargetSize = newTargetSize + highDelta;
             lowTargetSize = newTargetSize - lowDelta;
             logger?.LogInformation("Target size updated to {targetSize} with highDelta {highDelta}, lowDelta {lowDelta}", newTargetSize, highDelta, lowDelta);
-            
+
             // Only signal if we are shrinking; growth is handled normally as we add pages and records.
             if (shrink)
                 resizeTaskEvent.Set();

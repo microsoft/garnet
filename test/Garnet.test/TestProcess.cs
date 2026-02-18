@@ -42,8 +42,8 @@ namespace Garnet.test
                 Thread.Sleep(1_000);
             }
 
-            name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
-                ? string.Concat(name.AsSpan(0, pos), ".exe") 
+            name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? string.Concat(name.AsSpan(0, pos), ".exe")
                 : name.Substring(0, pos);
 
             var endPoint = new IPEndPoint(IPAddress.Loopback, port);

@@ -92,7 +92,7 @@ namespace Tsavorite.core
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus) 
+            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus)
             => OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status)
                 ? status
                 : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);

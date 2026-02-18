@@ -134,7 +134,7 @@ namespace Tsavorite.test.recovery.objects
 
                 if (i == 196)
                 { }
-                
+
                 var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
 
                 if (status.IsPending)
