@@ -277,7 +277,8 @@ namespace Garnet.test
             bool useReviv = false,
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
-            bool enableVectorSetPreview = true
+            bool enableVectorSetPreview = true,
+            string aofMemorySize = "64m"
         )
         {
             if (useAzureStorage)
@@ -330,6 +331,7 @@ namespace Garnet.test
                 ObjectStoreIndexSize = objectStoreIndexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(

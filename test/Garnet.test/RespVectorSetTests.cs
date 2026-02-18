@@ -22,13 +22,15 @@ namespace Garnet.test
     [TestFixture]
     public class RespVectorSetTests : AllureTestBase
     {
+        private const string DefaultAOFMemorySize = "2g";  // Very large because CI boxes have low IOPS, so try and flush to disk veeeeeery rarely
+
         GarnetServer server;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server = CreateGarnetServer(tryRecover: false);
 
             server.Start();
         }
@@ -47,7 +49,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, enableVectorSetPreview: false);
+            server = CreateGarnetServer(tryRecover: false, enableVectorSetPreview: false);
 
             server.Start();
 
@@ -879,7 +881,7 @@ namespace Garnet.test
             // Restart Garnet, which should block applying any pending Vector Set deletes
             server.Dispose(deleteDir: false);
 
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server = CreateGarnetServer(tryRecover: true);
             server.Start();
 
             // Validate that Vector Set index key is gone, even if no Vector Set command ran
@@ -1448,7 +1450,7 @@ namespace Garnet.test
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
-                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server = CreateGarnetServer(tryRecover: true);
                     server.Start();
                 }
 
@@ -1484,7 +1486,7 @@ namespace Garnet.test
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
-                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server = CreateGarnetServer(tryRecover: true);
                     server.Start();
                 }
 
@@ -1527,7 +1529,7 @@ namespace Garnet.test
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
-                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server = CreateGarnetServer(tryRecover: true);
                     server.Start();
                 }
 
@@ -1564,7 +1566,7 @@ namespace Garnet.test
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
-                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server = CreateGarnetServer(tryRecover: true);
                     server.Start();
                 }
 
@@ -1597,7 +1599,7 @@ namespace Garnet.test
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
-                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server = CreateGarnetServer(tryRecover: true);
                     server.Start();
                 }
 
@@ -1638,7 +1640,7 @@ namespace Garnet.test
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
-                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server = CreateGarnetServer(tryRecover: true);
                     server.Start();
                 }
 
@@ -2060,6 +2062,12 @@ namespace Garnet.test
                 }
             }
         }
+
+        /// <summary>
+        /// Create a new GarnetServer instance with common parameters.
+        /// </summary>
+        private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)
+        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: enableVectorSetPreview);
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "opts")]
         private static extern ref GarnetServerOptions GetOpts(GarnetServer server);
