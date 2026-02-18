@@ -1677,10 +1677,14 @@ namespace Garnet.test.cluster
 
                 var mostRecentWrite = 0L;
 
+                var commonRandom = new Random(2025_02_18_00);
+
                 for (var i = 0; i < vectorSetKeys.Count; i++)
                 {
                     var (key, _) = vectorSetKeys[i];
                     var written = writeResults[i] = new();
+
+                    var writeTaskRandom = new Random((int)commonRandom.NextInt64());
 
                     writeTasks[i] =
                         Task.Run(
@@ -1697,10 +1701,10 @@ namespace Garnet.test.cluster
                                     BinaryPrimitives.WriteInt32LittleEndian(elem, ix);
 
                                     var data = new byte[75];
-                                    Random.Shared.NextBytes(data);
+                                    writeTaskRandom.NextBytes(data);
 
                                     var attr = new byte[100];
-                                    Random.Shared.NextBytes(attr);
+                                    writeTaskRandom.NextBytes(attr);
 
                                     while (true)
                                     {
@@ -1754,6 +1758,9 @@ namespace Garnet.test.cluster
                 {
                     var (key, _) = vectorSetKeys[i];
                     var written = writeResults[i];
+
+                    var readTaskRandom = new Random((int)commonRandom.NextInt64());
+
                     readTasks[i] =
                         Task.Run(
                             async () =>
@@ -1771,7 +1778,7 @@ namespace Garnet.test.cluster
                                         continue;
                                     }
 
-                                    var (elem, data, _, _) = written.ToList()[Random.Shared.Next(r)];
+                                    var (elem, data, _, _) = written.ToList()[readTaskRandom.Next(r)];
 
                                     var emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
 
@@ -1786,17 +1793,32 @@ namespace Garnet.test.cluster
                                     // If we got data, make sure it's coherent
                                     ClassicAssert.AreEqual(data.Length, emb.Length);
 
+                                    var embParsed = emb.Select(static e => (byte)float.Parse(e)).ToArray();
+
                                     for (var i = 0; i < data.Length; i++)
                                     {
                                         var expected = data[i];
-                                        var actual = (byte)float.Parse(emb[i]);
+                                        var actual = embParsed[i];
 
                                         if (expected != actual)
                                         {
                                             var wholeExpected = $"0x{string.Join("", data.Select(static q => q.ToString("X2")))}";
                                             var wholeActual = $"0x{string.Join("", emb.Select(static q => ((byte)float.Parse(q)).ToString("X2")))}";
 
-                                            ClassicAssert.Fail($"Unexpected embedded value, expected {expected} != actual {actual} ({wholeExpected} != {wholeActual})");
+                                            var matchData = written.Where(t => t.Data.SequenceEqual(embParsed));
+                                            var sb = new StringBuilder();
+                                            foreach (var m in matchData)
+                                            {
+                                                _ = sb.Append($"; matches {BinaryPrimitives.ReadInt32LittleEndian(m.Elem)} data");
+                                            }
+
+                                            var matchAttr = written.Where(t => t.Attr.SequenceEqual(embParsed));
+                                            foreach (var m in matchAttr)
+                                            {
+                                                _ = sb.Append($"; matches {BinaryPrimitives.ReadInt32LittleEndian(m.Elem)} attr");
+                                            }
+
+                                            ClassicAssert.Fail($"Unexpected embedded value for {BinaryPrimitives.ReadInt32LittleEndian(elem)} at {i}, expected {expected} != actual {actual} ({wholeExpected} != {wholeActual})" + sb.ToString());
                                         }
                                     }
 
