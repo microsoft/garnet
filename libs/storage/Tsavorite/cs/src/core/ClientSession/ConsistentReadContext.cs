@@ -53,15 +53,14 @@ namespace Tsavorite.core
             var callbacks = Session.functions.GetContextCallbacks();
             callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
             var status = BasicContext.Read(key, ref input, ref output, userContext);
-            if (status.Found)
-                callbacks.updateKeySequenceNumber.Invoke();
+            callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-            => Read(key, ref input, ref output, ref readOptions, userContext);
+            => Read(key, ref input, ref output, ref readOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -104,8 +103,7 @@ namespace Tsavorite.core
             var callbacks = Session.functions.GetContextCallbacks();
             callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
             var status = BasicContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
-            if (status.Found)
-                callbacks.updateKeySequenceNumber.Invoke();
+            callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
