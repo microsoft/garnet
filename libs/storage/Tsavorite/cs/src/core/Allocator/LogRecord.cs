@@ -746,8 +746,7 @@ namespace Tsavorite.core
             // We're adding an ETag where there wasn't one before.
             fillerLen = dataHeader.GetFillerLength(Info, recordLength);
             // We'll keep the original FillerLen address and back up, for speed.
-            fillerLen -= ETagSize;
-            return fillerLen >= 0;
+            return fillerLen - ETagSize >= 0;
         }
 
         /// <summary>
@@ -768,6 +767,7 @@ namespace Tsavorite.core
 
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
+            fillerLen -= ETagSize;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
             if (Info.RecordHasObjects)
@@ -864,8 +864,7 @@ namespace Tsavorite.core
             // We're adding an Expiration where there wasn't one before.
             fillerLen = dataHeader.GetFillerLength(Info, recordLength);
             // We'll keep the original FillerLen address and back up, for speed.
-            fillerLen -= ExpirationSize;
-            return fillerLen >= 0;
+            return fillerLen - ExpirationSize >= 0;
         }
 
         /// <summary>
@@ -889,6 +888,7 @@ namespace Tsavorite.core
                 return false;
 
             var address = physicalAddress + recordLength - fillerLen;
+            fillerLen -= ExpirationSize;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
             if (Info.RecordHasObjects)
