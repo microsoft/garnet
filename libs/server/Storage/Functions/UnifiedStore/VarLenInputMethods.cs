@@ -17,7 +17,7 @@ namespace Garnet.server
             {
                 KeySize = key.Length,
                 ValueSize = 0,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
         }
 
@@ -105,7 +105,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
         }
 
@@ -116,7 +116,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
         }
 
@@ -129,7 +129,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand(),
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand(),
                 HasExpiration = inputLogRecord.Info.HasExpiration
             };
         }

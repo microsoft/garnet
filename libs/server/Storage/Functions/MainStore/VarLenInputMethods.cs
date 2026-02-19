@@ -104,7 +104,7 @@ namespace Garnet.server
             {
                 KeySize = key.Length,
                 ValueSize = 0,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
 
             switch (cmd)
@@ -344,7 +344,7 @@ namespace Garnet.server
             {
                 KeySize = key.Length,
                 ValueSize = value.Length,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
 
             switch (input.header.cmd)

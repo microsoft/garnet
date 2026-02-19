@@ -522,7 +522,7 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue || metaCommandInfo.MetaCommand.IsEtagCommand()
+                            return getValue || metaCommandInfo.MetaCommand.IsETagCommand()
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:

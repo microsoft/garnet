@@ -45,7 +45,7 @@ namespace Garnet.server.Objects.Types
 
         private static void WriteArrayHeaderWithEtagIfNeeded(this ref RespMemoryWriter writer, RespMetaCommand metaCmd, long etag)
         {
-            if (!metaCmd.IsEtagCommand())
+            if (!metaCmd.IsETagCommand())
                 return;
 
             writer.WriteArrayLength(2);

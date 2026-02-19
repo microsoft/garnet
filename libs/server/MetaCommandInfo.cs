@@ -17,7 +17,7 @@ namespace Garnet.server
         /// </summary>
         None = 0,
 
-        // Beginning of etag-related meta-commands (if adding new etag meta-commands before this, update IsEtagCommand)
+        // Beginning of etag-related meta-commands (if adding new etag meta-commands before this, update IsETagCommand)
 
         /// <summary>
         /// Execute the main command and add the current etag to the output
@@ -41,7 +41,7 @@ namespace Garnet.server
 
         // End of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands after this, update IsEtagCondExecCommand)
 
-        // End of etag-related meta-commands (if adding new etag meta-commands after this, update IsEtagCommand)
+        // End of etag-related meta-commands (if adding new etag meta-commands after this, update IsETagCommand)
     }
 
     static class RespMetaCommandExtensions
@@ -51,7 +51,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if etag meta-command</returns>
-        public static bool IsEtagCommand(this RespMetaCommand metaCmd)
+        public static bool IsETagCommand(this RespMetaCommand metaCmd)
             => metaCmd is >= RespMetaCommand.ExecWithEtag and <= RespMetaCommand.ExecIfGreater;
 
         /// <summary>
@@ -69,7 +69,7 @@ namespace Garnet.server
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if meta command does not require serialization of meta-command parse state</returns>
         public static bool SkipMetaParseStateSerialization(this RespMetaCommand metaCmd)
-            => metaCmd.IsEtagCommand();
+            => metaCmd.IsETagCommand();
 
         /// <summary>
         /// Check conditional execution of command based on meta-command

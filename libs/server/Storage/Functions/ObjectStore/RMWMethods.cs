@@ -145,8 +145,10 @@ namespace Garnet.server
             if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            else if (input.metaCommandInfo.MetaCommand.IsEtagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
+            else if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
                 return false;
+
+            var shouldUpdateETag = !hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand();
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
@@ -159,7 +161,7 @@ namespace Garnet.server
                 }
 
                 ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                var shouldUpdateEtag = (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
+                shouldUpdateETag |= (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
                 {
@@ -181,7 +183,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                if (shouldUpdateEtag)
+                if (shouldUpdateETag)
                 {
                     // Should always succeed since we checked CanAddETagInPlace
                     logRecord.TrySetETag(updatedEtag);
@@ -270,12 +272,14 @@ namespace Garnet.server
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            var hadEtagPreMutation = srcLogRecord.Info.HasETag;
-            if (hadEtagPreMutation)
+            var hadETagPreMutation = srcLogRecord.Info.HasETag;
+            if (hadETagPreMutation)
             {
                 // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
+
+            var shouldUpdateETag = !hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand(); 
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
@@ -284,29 +288,29 @@ namespace Garnet.server
                 Debug.Assert(execOp);
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                var shouldUpdateEtag = (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
+                shouldUpdateETag |= (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
                 {
-                    if (hadEtagPreMutation)
+                    if (hadETagPreMutation)
                         ETagState.ResetState(ref functionsState.etagState);
                     return true;
                 }
                 if (output.HasRemoveKey)
                 {
                     rmwInfo.Action = RMWAction.ExpireAndStop;
-                    if (hadEtagPreMutation)
+                    if (hadETagPreMutation)
                         ETagState.ResetState(ref functionsState.etagState);
                     return false;
                 }
 
-                if (shouldUpdateEtag)
+                if (shouldUpdateETag)
                 {
                     dstLogRecord.TrySetETag(updatedEtag);
                     output.ETag = updatedEtag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
-                else if (hadEtagPreMutation)
+                else if (hadETagPreMutation)
                 {
                     dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                     output.ETag = functionsState.etagState.ETag;
@@ -320,12 +324,12 @@ namespace Garnet.server
                 if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
                 {
                     output.OutputFlags |= ObjectOutputFlags.WrongType;
-                    if (hadEtagPreMutation)
+                    if (hadETagPreMutation)
                         ETagState.ResetState(ref functionsState.etagState);
                     return true;
                 }
 
-                if (hadEtagPreMutation)
+                if (hadETagPreMutation)
                 {
                     functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                     // reset etag state that may have been initialized earlier but don't update ETag

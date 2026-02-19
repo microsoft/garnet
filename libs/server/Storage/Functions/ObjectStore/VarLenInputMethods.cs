@@ -19,7 +19,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand(),
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand(),
                 // No object commands take an Expiration for InitialUpdater.
             };
         }
@@ -45,7 +45,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -57,7 +57,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -70,7 +70,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
-                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }

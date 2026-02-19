@@ -99,11 +99,11 @@ namespace Garnet.server
             var metaCmd = metaCommandInfo.MetaCommand;
 
             // Source record has an etag or meta command is not a conditional execution etag command - destination record will have an etag
-            if (currEtag != LogRecord.NoETag || (metaCmd.IsEtagCommand() && !metaCmd.IsEtagCondExecCommand()))
+            if (currEtag != LogRecord.NoETag || (metaCmd.IsETagCommand() && !metaCmd.IsEtagCondExecCommand()))
                 return true;
 
             // Source record does not have an etag and the current meta command is not an etag command - the destination record will not have an etag
-            if (!metaCmd.IsEtagCommand())
+            if (!metaCmd.IsETagCommand())
                 return false;
 
             // Current meta command is a conditional execution etag command - check the condition to determine etag addition to the destination record

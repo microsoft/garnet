@@ -705,7 +705,7 @@ namespace Garnet.server
 
         private bool IsMetaCommandInfoValid()
         {
-            if (metaCommandInfo.MetaCommand.IsEtagCommand() && metaCommandInfo.MetaCommandParseState.Count > 0)
+            if (metaCommandInfo.MetaCommand.IsETagCommand() && metaCommandInfo.MetaCommandParseState.Count > 0)
             {
                 if (!metaCommandInfo.MetaCommandParseState.TryGetLong(0, out var etag))
                 {
@@ -731,7 +731,7 @@ namespace Garnet.server
                 if (!IsMetaCommandInfoValid())
                     return true;
 
-                if (metaCommandInfo.MetaCommand.IsEtagCommand())
+                if (metaCommandInfo.MetaCommand.IsETagCommand())
                 {
                     if (!cmd.IsDataCommand())
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
