@@ -69,15 +69,7 @@ namespace Garnet.server
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
             {
-                if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                }
-                else
-                    ok = logRecord.RemoveETag();
+                ok = logRecord.RemoveETag();
             }
             if (ok)
             {

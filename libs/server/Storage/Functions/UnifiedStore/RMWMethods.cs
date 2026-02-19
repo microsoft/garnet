@@ -161,6 +161,7 @@ namespace Garnet.server
             }
             else if (hadEtagPreMutation)
             {
+                dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                 output.ETag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
@@ -222,6 +223,7 @@ namespace Garnet.server
                 }
                 else if (hadEtagPreMutation)
                 {
+                    dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                     output.ETag = functionsState.etagState.ETag;
                     ETagState.ResetState(ref functionsState.etagState);
                 }
@@ -289,11 +291,15 @@ namespace Garnet.server
             var shouldUpdateEtag = hadETagPreMutation;
             if (shouldUpdateEtag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
+            else if (input.metaCommandInfo.MetaCommand.IsEtagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
+                return IPUResult.Failed;
 
             var hasExpiration = logRecord.Info.HasExpiration;
 
             if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
             {
+                output.ETag = functionsState.etagState.ETag;
                 if (hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
                 functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
@@ -335,6 +341,7 @@ namespace Garnet.server
             // increment the Etag transparently if in place update happened
             if (shouldUpdateEtag)
             {
+                // Should always succeed since we checked CanAddETagInPlace
                 logRecord.TrySetETag(updatedEtag);
                 output.ETag = updatedEtag;
                 ETagState.ResetState(ref functionsState.etagState);

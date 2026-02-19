@@ -29,6 +29,8 @@ namespace Garnet.server
                 return false;
             }
 
+            output.ETag = srcLogRecord.ETag;
+
             if (input.header.type != 0)
             {
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
@@ -82,7 +84,6 @@ namespace Garnet.server
                 }
             }
 
-            output.ETag = srcLogRecord.ETag;
             output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }
