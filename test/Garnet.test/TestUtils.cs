@@ -277,7 +277,8 @@ namespace Garnet.test
             bool useReviv = false,
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
-            bool enableVectorSetPreview = true
+            bool enableVectorSetPreview = true,
+            string aofMemorySize = "64m"
         )
         {
             if (useAzureStorage)
@@ -330,6 +331,7 @@ namespace Garnet.test
                 ObjectStoreIndexSize = objectStoreIndexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
@@ -971,21 +973,39 @@ namespace Garnet.test
             TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0];
 
         /// <summary>
-        /// Build path for unit test working directory using Guid
+        /// Build path for unit test working directory.
         /// </summary>
-        /// <param name="category"></param>
-        /// <param name="includeGuid"></param>
         /// <returns></returns>
-        internal static string UnitTestWorkingDir(string category = null, bool includeGuid = false)
+        internal static string UnitTestWorkingDir()
         {
             // Include process id to avoid conflicts between parallel test runs
             var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
+
+            // Incorporate arguments (as a hash code) so different runs of the same method get different folders
+            //
+            // Using hashes instead of the arugments themselves to keep length down
+            if ((TestContext.CurrentContext.Test.Arguments?.Length ?? 0) > 0)
+            {
+                HashCode hash = new();
+                foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+                {
+                    if (arg is string str)
+                    {
+                        hash.Add(str);
+                    }
+                    else
+                    {
+                        var argAsStr = arg?.ToString() ?? "--EMPTY--";
+                        hash.Add(argAsStr);
+                    }
+                }
+
+                testPath += $"_{hash.ToHashCode()}";
+            }
+
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
-            if (category != null)
-                rootPath = Path.Combine(rootPath, category);
-
-            return includeGuid ? Path.Combine(rootPath, Guid.NewGuid().ToString()) : rootPath;
+            return rootPath;
         }
 
         /// <summary>
@@ -1179,12 +1199,15 @@ using System.Threading.Tasks;
         {
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
             var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+
+            var failMessage = "";
+
             if (count != 0)
             {
                 // Reset all instances to avoid impacting other tests
                 Tsavorite.core.LightEpoch.ResetAllInstances();
                 logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
-                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
+                failMessage += $"Tsavorite.core.LightEpoch instances still active: {count}; ";
             }
 
             var count2 = client.LightEpoch.ActiveInstanceCount();
@@ -1193,7 +1216,12 @@ using System.Threading.Tasks;
                 // Reset all instances to avoid impacting other tests
                 client.LightEpoch.ResetAllInstances();
                 logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
-                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
+                failMessage += $"Garnet.client.LightEpoch instances still active: {count2}; ";
+            }
+
+            if (failMessage != "")
+            {
+                ClassicAssert.Fail(failMessage);
             }
         }
     }

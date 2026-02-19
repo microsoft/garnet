@@ -23,20 +23,25 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
-            try
+            _lock.WriteLock();
+            var skipDispose = _disposed;
+
+            _disposed = true;
+            _lock.WriteUnlock();
+
+            if (skipDispose)
             {
-                _lock.WriteLock();
-                _disposed = true;
-                for (var i = 0; i < sessions.Length; i++)
-                    sessions[i]?.Dispose();
-                Array.Clear(sessions);
+                return;
             }
-            finally
+
+            for (var i = 0; i < sessions.Length; i++)
             {
-                _lock.WriteUnlock();
+                sessions[i]?.Dispose();
             }
+            Array.Clear(sessions);
         }
 
         /// <summary>

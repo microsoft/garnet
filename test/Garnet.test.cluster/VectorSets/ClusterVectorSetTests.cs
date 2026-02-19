@@ -74,10 +74,11 @@ namespace Garnet.test.cluster
         private const int DefaultShards = 2;
         private const int HighReplicationShards = 6;
         private const int DefaultMultiPrimaryShards = 4;
+        private const string DefaultAOFMemorySize = "2g";  // Very large because CI boxes have low IOPS, so try and flush to disk veeeeeery rarely
 
         private static readonly Dictionary<string, LogLevel> MonitorTests = new()
         {
-            [nameof(MigrateVectorStressAsync)] = LogLevel.Debug,
+            [nameof(MigrateVectorStressAsync)] = LogLevel.Error,
         };
 
 
@@ -120,9 +121,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(Enum.TryParse<VectorValueType>(vectorFormat, ignoreCase: true, out var vectorFormatParsed));
             ClassicAssert.IsTrue(Enum.TryParse<VectorQuantType>(quantizer, ignoreCase: true, out var quantTypeParsed));
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -209,9 +208,7 @@ namespace Garnet.test.cluster
             const int Vectors = 2_000;
             const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -363,9 +360,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: 1, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -477,9 +472,7 @@ namespace Garnet.test.cluster
             const int Vectors = 2_000;
             const string Key = nameof(MultipleReplicasWithVectorSetsAsync);
 
-            context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5);
+            _ = SimpleSetupCluster(HighReplicationShards, primaryCount: 1, replicaCount: 5);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -624,9 +617,7 @@ namespace Garnet.test.cluster
             const int Deletes = Vectors / 10;
             const string Key = nameof(MultipleReplicasWithVectorSetsAndDeletesAsync);
 
-            context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5);
+            _ = SimpleSetupCluster(HighReplicationShards, primaryCount: 1, replicaCount: 5);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -818,9 +809,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -949,9 +938,7 @@ namespace Garnet.test.cluster
             const int ShardCount = 3;
             const int KeyCount = 10;
 
-            context.CreateInstances(ShardCount, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster();
+            _ = SimpleSetupCluster(ShardCount, primaryCount: -1, replicaCount: -1);
 
             var otherNodeIndex = 0;
             var sourceNodeIndex = 1;
@@ -1086,7 +1073,7 @@ namespace Garnet.test.cluster
 
             const int VectorSetsPerPrimary = 8;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
+            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
             context.CreateConnection(useTLS: true);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
 
@@ -1303,9 +1290,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
+            _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, onDemandCheckpoint: true, enableIncrementalSnapshots: true);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1478,9 +1463,7 @@ namespace Garnet.test.cluster
             const int Primary0Index = 0;
             const int Primary1Index = 1;
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards, replica_count: 0);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: DefaultShards, replicaCount: 0);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1628,9 +1611,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
-                context.CreateConnection(useTLS: true);
-                _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
+                _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
 
                 var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
                 var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1696,10 +1677,14 @@ namespace Garnet.test.cluster
 
                 var mostRecentWrite = 0L;
 
+                var commonRandom = new Random(2025_02_18_00);
+
                 for (var i = 0; i < vectorSetKeys.Count; i++)
                 {
                     var (key, _) = vectorSetKeys[i];
                     var written = writeResults[i] = new();
+
+                    var writeTaskRandom = new Random((int)commonRandom.NextInt64());
 
                     writeTasks[i] =
                         Task.Run(
@@ -1716,10 +1701,10 @@ namespace Garnet.test.cluster
                                     BinaryPrimitives.WriteInt32LittleEndian(elem, ix);
 
                                     var data = new byte[75];
-                                    Random.Shared.NextBytes(data);
+                                    writeTaskRandom.NextBytes(data);
 
                                     var attr = new byte[100];
-                                    Random.Shared.NextBytes(attr);
+                                    writeTaskRandom.NextBytes(attr);
 
                                     while (true)
                                     {
@@ -1773,6 +1758,9 @@ namespace Garnet.test.cluster
                 {
                     var (key, _) = vectorSetKeys[i];
                     var written = writeResults[i];
+
+                    var readTaskRandom = new Random((int)commonRandom.NextInt64());
+
                     readTasks[i] =
                         Task.Run(
                             async () =>
@@ -1790,16 +1778,48 @@ namespace Garnet.test.cluster
                                         continue;
                                     }
 
-                                    var (elem, data, _, _) = written.ToList()[Random.Shared.Next(r)];
+                                    var (elem, data, _, _) = written.ToList()[readTaskRandom.Next(r)];
 
                                     var emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
+
+                                    if (emb.Length == 0)
+                                    {
+                                        // Migration might make this temporarily unavailable due to connection state
+                                        //
+                                        // Because we check for presense of all data at the end of test, we can safely ignore this for now
+                                        continue;
+                                    }
 
                                     // If we got data, make sure it's coherent
                                     ClassicAssert.AreEqual(data.Length, emb.Length);
 
+                                    var embParsed = emb.Select(static e => (byte)float.Parse(e)).ToArray();
+
                                     for (var i = 0; i < data.Length; i++)
                                     {
-                                        ClassicAssert.AreEqual(data[i], (byte)float.Parse(emb[i]));
+                                        var expected = data[i];
+                                        var actual = embParsed[i];
+
+                                        if (expected != actual)
+                                        {
+                                            var wholeExpected = $"0x{string.Join("", data.Select(static q => q.ToString("X2")))}";
+                                            var wholeActual = $"0x{string.Join("", emb.Select(static q => ((byte)float.Parse(q)).ToString("X2")))}";
+
+                                            var matchData = written.Where(t => t.Data.SequenceEqual(embParsed));
+                                            var sb = new StringBuilder();
+                                            foreach (var m in matchData)
+                                            {
+                                                _ = sb.Append($"; matches {BinaryPrimitives.ReadInt32LittleEndian(m.Elem)} data");
+                                            }
+
+                                            var matchAttr = written.Where(t => t.Attr.SequenceEqual(embParsed));
+                                            foreach (var m in matchAttr)
+                                            {
+                                                _ = sb.Append($"; matches {BinaryPrimitives.ReadInt32LittleEndian(m.Elem)} attr");
+                                            }
+
+                                            ClassicAssert.Fail($"Unexpected embedded value for {BinaryPrimitives.ReadInt32LittleEndian(elem)} at {i}, expected {expected} != actual {actual} ({wholeExpected} != {wholeActual})" + sb.ToString());
+                                        }
                                     }
 
                                     successfulReads++;
@@ -2012,9 +2032,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int ReplicaIndex = 1;
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards / 2, replica_count: DefaultShards / 2);
+            _ = SimpleSetupCluster(DefaultShards, primaryCount: DefaultShards / 2, replicaCount: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var replica = (IPEndPoint)context.endpoints[ReplicaIndex];
@@ -2051,6 +2069,13 @@ namespace Garnet.test.cluster
 
             var vsimRes = (byte[][])context.clusterTestUtils.Execute(replica, "VSIM", [new RedisKey("foo"), "XB8", vectorData0]);
             ClassicAssert.IsTrue(vsimRes.Length > 0);
+        }
+
+        private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false)
+        {
+            context.CreateInstances(shardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots);
+            context.CreateConnection(useTLS: true);
+            return context.clusterTestUtils.SimpleSetupCluster(primary_count: primaryCount, replica_count: replicaCount);
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
