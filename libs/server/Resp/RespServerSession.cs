@@ -809,11 +809,8 @@ namespace Garnet.server
             };
 
             if (outputEtag)
-            {
-                Debug.Assert(etag != -1);
                 while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
                     SendAndReset();
-            }
 
             return true;
         }

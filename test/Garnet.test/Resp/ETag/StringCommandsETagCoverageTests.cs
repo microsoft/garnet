@@ -42,6 +42,19 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
+        [Test]
+        public async Task IncrByFloatETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 2.2 };
+
+            await CheckCommandAsync(RespCommand.INCRBYFLOAT, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(long.Parse(StringData[0]) + 2.2, (double)result);
+            }
+        }
+
         public override void DataSetUp()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

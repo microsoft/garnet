@@ -666,12 +666,17 @@ namespace Garnet.server
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, arg1: incrByValue);
+            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, arg1: incrByValue, flags: RespInputFlags.SkipRespOutput);
             _ = storageApi.Increment(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
             etag = stringOutput.ETag;
 
-            if (!stringOutput.HasError)
+            if (stringOutput.IsOperationSkipped)
+            {
+                while(!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if (!stringOutput.HasError)
             {
                 while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                     SendAndReset();
@@ -706,10 +711,19 @@ namespace Garnet.server
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            _ = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
-            output.Length = stringOutput.SpanByteAndMemory.Length;
+            var input = new StringInput(RespCommand.INCRBYFLOAT, ref metaCommandInfo, ref parseState,
+                arg1: BitConverter.DoubleToInt64Bits(dbl), flags: RespInputFlags.SkipRespOutput);
 
-            if (!stringOutput.HasError)
+            _ = storageApi.IncrementByFloat(key, ref input, ref stringOutput);
+            output.Length = stringOutput.SpanByteAndMemory.Length;
+            etag = stringOutput.ETag;
+
+            if (stringOutput.IsOperationSkipped)
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if (!stringOutput.HasError)
             {
                 while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
@@ -741,7 +755,7 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0);
 
-            var input = new StringInput(RespCommand.APPEND, ref metaCommandInfo, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.APPEND, ref metaCommandInfo, ref parseState, startIdx: 1, flags: RespInputFlags.SkipRespOutput);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = StringOutput.FromPinnedSpan(outputBuffer);
@@ -749,8 +763,16 @@ namespace Garnet.server
             storageApi.APPEND(sbKey, ref input, ref output);
             etag = output.ETag;
 
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
-                SendAndReset();
+            if (!output.IsOperationSkipped)
+            {
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }

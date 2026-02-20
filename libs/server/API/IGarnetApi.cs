@@ -266,10 +266,10 @@ namespace Garnet.server
         /// Increment by float (INCRBYFLOAT)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="val"></param>
+        /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val);
+        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)

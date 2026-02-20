@@ -172,15 +172,8 @@ namespace Garnet.server
             => Increment(key, out output, -decrementCount);
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val)
-        {
-            SessionParseState parseState = default;
-            MetaCommandInfo metaCommandInfo = default;
-
-            var input = new StringInput(RespCommand.INCRBYFLOAT, ref metaCommandInfo, ref parseState, arg1: BitConverter.DoubleToInt64Bits(val));
-            _ = Increment(key, ref input, ref output);
-            return GarnetStatus.OK;
-        }
+        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => Increment(key, ref input, ref output);
 
         /// <inheritdoc />
         public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val)
@@ -188,9 +181,12 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
 
-            _ = IncrementByFloat(key, ref stringOutput, val);
+            var input = new StringInput(RespCommand.INCRBYFLOAT,
+                arg1: BitConverter.DoubleToInt64Bits(val), flags: RespInputFlags.SkipRespOutput);
 
-            if (!stringOutput.HasError)
+            _ = Increment(key, ref input, ref stringOutput);
+
+            if (!stringOutput.HasError || stringOutput.IsOperationSkipped)
             {
                 _ = NumUtils.TryReadDouble(stringOutput.SpanByteAndMemory.Span, out output);
             }

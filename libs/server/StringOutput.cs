@@ -31,6 +31,8 @@ namespace Garnet.server
 
         public readonly bool HasError => (OutputFlags & StringOutputFlags.Error) != 0;
 
+        public readonly bool IsOperationSkipped => (OutputFlags & StringOutputFlags.OperationSkipped) != 0;
+
         public StringOutput() => SpanByteAndMemory = new(null);
 
         public StringOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
@@ -68,6 +70,7 @@ namespace Garnet.server
     {
         // Non-error flags
         None = 0,
+        OperationSkipped = 1 << 0,
 
         // Error marker
         Error = 1 << 7,

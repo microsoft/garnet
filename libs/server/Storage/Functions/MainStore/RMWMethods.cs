@@ -377,6 +377,7 @@ namespace Garnet.server
             if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
             {
                 output.ETag = functionsState.etagState.ETag;
+                output.OutputFlags |= StringOutputFlags.OperationSkipped;
                 if (hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
                 rmwInfo.Action = RMWAction.CancelOperation;
