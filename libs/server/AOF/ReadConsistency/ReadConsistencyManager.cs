@@ -135,7 +135,7 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="ct"></param>
-        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        public void BeforeConsistentReadKey(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
         {
             var hash = GarnetLog.HASH(key);
             var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
@@ -182,7 +182,7 @@ namespace Garnet.server
         ///     we cannot be certain at prepare phase what is the actual sequence number.
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
-        public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
+        public void AfterConsistentReadKey(ref ReplicaReadSessionContext replicaReadSessionContext)
         {
             replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(
                 replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(replicaReadSessionContext.lastHash));

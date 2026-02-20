@@ -66,12 +66,17 @@ namespace Garnet.server
         /// </summary>
         readonly bool IsConsistentReadSession;
 
+        /// <summary>
+        /// Read session state use to enforce prefix consistency with sharded-log
+        /// </summary>
+        readonly ReadSessionState readSessionState;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
-            ConsistentReadContextCallbacks consistentReadContextCallbacks,
+            ReadSessionState readSessionState,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -80,13 +85,13 @@ namespace Garnet.server
             this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-            this.IsConsistentReadSession = consistentReadContextCallbacks != null;
+            this.IsConsistentReadSession = readSessionState != null;
+            this.readSessionState = readSessionState;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
-            functionsState.consistentReadContextCallbacks = consistentReadContextCallbacks;
 
-            var functions = new MainSessionFunctions(functionsState);
+            var functions = new MainSessionFunctions(functionsState, readSessionState);
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
@@ -100,7 +105,7 @@ namespace Garnet.server
 
             if (!storeWrapper.serverOptions.DisableObjects)
             {
-                var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
+                var objectStoreFunctions = new ObjectSessionFunctions(functionsState, readSessionState);
                 var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions, IsConsistentReadSession);
                 objectBasicContext = objectStoreSession.BasicContext;
                 objectTransactionalContext = objectStoreSession.TransactionalContext;
@@ -108,7 +113,7 @@ namespace Garnet.server
                 objectStoreTransactionalConsistentReadContext = objectStoreSession.TransactionalConsistentReadContext;
             }
 
-            var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
+            var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState, readSessionState);
             var unifiedStoreSession = db.Store.NewSession<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession);
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Threading;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -13,16 +12,6 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        /// <summary>
-        /// Replica read context used with sharded log
-        /// </summary>
-        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1 };
-
-        /// <summary>
-        /// A CancellationTokenSource used to signal cancellation for consistent read operations.
-        /// </summary>
-        CancellationTokenSource consistentReadCts = new();
-
         /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
         /// </summary>
@@ -63,22 +52,5 @@ namespace Garnet.server
 
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
-
-        /// <summary>
-        /// Consistent read key prepare callback
-        /// </summary>
-        /// <param name="key"></param>
-        public void ValidateKeySequenceNumber(PinnedSpanByte key)
-        {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
-            timeoutCts.CancelAfter(storeWrapper.serverOptions.ReplicaSyncTimeout);
-            storeWrapper.appendOnlyFile.readConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadContext, timeoutCts.Token);
-        }
-
-        /// <summary>
-        /// Consistent read key update callback
-        /// </summary>
-        public void UpdateKeySequenceNumber()
-            => storeWrapper.appendOnlyFile.readConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadContext);
     }
 }

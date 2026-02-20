@@ -107,10 +107,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            var callbacks = Session.functions.GetContextCallbacks();
-            callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
+            Session.functions.BeforeConsistentReadCallback(PinnedSpanByte.FromPinnedSpan(key));
             var status = TransactionalContext.Read(key, ref input, ref output, userContext);
-            callbacks.updateKeySequenceNumber.Invoke();
+            Session.functions.AfterConsistentReadKeyCallback();
             return status;
         }
 
@@ -157,10 +156,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            var callbacks = Session.functions.GetContextCallbacks();
-            callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
+            Session.functions.BeforeConsistentReadCallback(PinnedSpanByte.FromPinnedSpan(key));
             var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
-            callbacks.updateKeySequenceNumber.Invoke();
+            Session.functions.AfterConsistentReadKeyCallback();
             return status;
         }
 

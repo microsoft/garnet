@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -12,14 +13,17 @@ namespace Garnet.server
     {
         const byte NeedAofLog = 0x1;
         readonly FunctionsState functionsState;
+        readonly ReadSessionState readSessionState;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="functionsState"></param>
-        internal MainSessionFunctions(FunctionsState functionsState)
+        /// <param name="readSessionState"></param>
+        internal MainSessionFunctions(FunctionsState functionsState, ReadSessionState readSessionState = null)
         {
             this.functionsState = functionsState;
+            this.readSessionState = readSessionState;
         }
 
         /// <inheritdoc />
@@ -30,7 +34,24 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public ConsistentReadContextCallbacks GetContextCallbacks()
-            => functionsState.consistentReadContextCallbacks;
+        public void BeforeConsistentReadCallback(PinnedSpanByte key)
+            => readSessionState.BeforeConsistentReadKeyCallback(key);
+
+        /// <inheritdoc />
+        public void AfterConsistentReadKeyCallback()
+            => readSessionState.AfterConsistentReadKeyCallback();
+
+        /// <inheritdoc />
+        public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
+            where TBatch : IReadArgBatch<StringInput, StringOutput>
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public void AfterConsistentReadKeyBatchCallback()
+        {
+            throw new NotImplementedException();
+        }
     }
 }

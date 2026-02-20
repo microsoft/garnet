@@ -80,7 +80,7 @@ namespace Garnet.server
 
             var patternPtr = patternB.ToPointer();
 
-            unifiedStoreDbScanFuncs ??= IsConsistentReadSession ? new ConsistentUnifiedStoreGetDBKeys(functionsState.consistentReadContextCallbacks) : new UnifiedStoreGetDBKeys();
+            unifiedStoreDbScanFuncs ??= IsConsistentReadSession ? new ConsistentUnifiedStoreGetDBKeys(readSessionState) : new UnifiedStoreGetDBKeys();
             unifiedStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
             storeCursor = cursor;
@@ -135,7 +135,7 @@ namespace Garnet.server
 
             var allKeys = *pattern.ToPointer() == '*' && pattern.Length == 1;
 
-            unifiedStoreDbKeysFuncs ??= IsConsistentReadSession ? new ConsistentUnifiedStoreGetDBKeys(functionsState.consistentReadContextCallbacks) : new UnifiedStoreGetDBKeys();
+            unifiedStoreDbKeysFuncs ??= IsConsistentReadSession ? new ConsistentUnifiedStoreGetDBKeys(readSessionState) : new UnifiedStoreGetDBKeys();
             unifiedStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length);
             unifiedBasicContext.Session.Iterate(ref unifiedStoreDbKeysFuncs);
 
@@ -225,15 +225,15 @@ namespace Garnet.server
 
             internal sealed class ConsistentUnifiedStoreGetDBKeys : UnifiedStoreGetDBKeys
             {
-                readonly ConsistentReadContextCallbacks callbacks;
-                internal ConsistentUnifiedStoreGetDBKeys(ConsistentReadContextCallbacks consistentReadContextCallbacks) : base()
-                    => callbacks = consistentReadContextCallbacks;
+                readonly ReadSessionState readSessionState;
+                internal ConsistentUnifiedStoreGetDBKeys(ReadSessionState readSessionState) : base()
+                    => this.readSessionState = readSessionState;
 
                 public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(logRecord.Key));
+                    readSessionState.BeforeConsistentReadKeyCallback(PinnedSpanByte.FromPinnedSpan(logRecord.Key));
                     var status = base.Reader(in logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
-                    callbacks.updateKeySequenceNumber.Invoke();
+                    readSessionState.AfterConsistentReadKeyCallback();
                     return status;
                 }
             }

@@ -91,6 +91,7 @@ namespace Garnet.server
         internal TransactionManager txnManager;
         internal ConsistentReadGarnetApi consistentReadGarnetApi;
         internal TransactionalConsistentReadGarnetApi txnConsistentReadApi;
+        internal ReadSessionState readSessionState;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -273,7 +274,7 @@ namespace Garnet.server
                 throw new GarnetException("Failed to set initialize database session in database sessions map!");
 
             // Create consistent read APIs and storageSession
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.MultiLogEnabled)
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.MultiLogEnabled && storeWrapper.appendOnlyFile != null)
                 consistentReadDBSession = CreateConsistentReadApi();
 
             // Set the current active session to the default session
@@ -369,6 +370,8 @@ namespace Garnet.server
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
             }
 
+            // Dispose read session state
+            readSessionState?.Dispose();
             // Dispose special consistent read database session
             consistentReadDBSession?.Dispose();
 
@@ -1532,7 +1535,7 @@ namespace Garnet.server
                 sessionMetrics,
                 LatencyMetrics,
                 dbId,
-                consistentReadContextCallbacks: null,
+                readSessionState: null,
                 logger,
                 respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
@@ -1559,6 +1562,8 @@ namespace Garnet.server
             // Session id is set at the caller.
             var dbId = 0;
 
+            readSessionState = new ReadSessionState(storeWrapper.appendOnlyFile, storeWrapper.serverOptions);
+
             // NOTE: We need to create storage session to tie it to the consistent read API
             var dbStorageSession = new StorageSession(
                 storeWrapper,
@@ -1566,7 +1571,7 @@ namespace Garnet.server
                 sessionMetrics,
                 LatencyMetrics,
                 dbId: dbId, // NOTE: only for cluster need to retrieve default database
-                consistentReadContextCallbacks: new(ValidateKeySequenceNumber, UpdateKeySequenceNumber),
+                readSessionState: readSessionState,
                 logger,
                 respProtocolVersion);
 
