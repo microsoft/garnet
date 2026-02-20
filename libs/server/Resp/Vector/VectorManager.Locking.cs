@@ -348,6 +348,18 @@ namespace Garnet.server
                             newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                         }
 
+                        if (newlyAllocatedIndex == 0)
+                        {
+                            if (!needsRecreate)
+                            {
+                                CleanupDroppedIndex(ref ActiveThreadSession.vectorContext, indexContext);
+                            }
+
+                            status = GarnetStatus.BADSTATE;
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            return default;
+                        }
+
                         input.parseState.EnsureCapacity(12);
 
                         // Save off for insertion
