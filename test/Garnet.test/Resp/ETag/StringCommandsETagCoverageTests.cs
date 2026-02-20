@@ -30,6 +30,32 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task DecrETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.DECR, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(long.Parse(StringData[0]) - 1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task DecrByETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 2 };
+
+            await CheckCommandAsync(RespCommand.DECRBY, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(long.Parse(StringData[0]) - 2, (long)result);
+            }
+        }
+
+        [Test]
         public async Task IncrETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
@@ -52,6 +78,19 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(long.Parse(StringData[0]) + 2.2, (double)result);
+            }
+        }
+
+        [Test]
+        public async Task SetETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringData[1] };
+
+            await CheckCommandAsync(RespCommand.SET, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", (string)result);
             }
         }
 

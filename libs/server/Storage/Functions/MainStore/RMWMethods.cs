@@ -415,6 +415,9 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return IPUResult.Failed;
 
+                    if (!metaCmd.IsETagCommand() && !logRecord.RemoveETag())
+                        return IPUResult.Failed;
+
                     // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
                     // due to srcRecordInfo having expiration set; here, that srcRecordInfo is us, so we should do nothing if input.arg1 == 0.
                     if (input.arg1 == 0)

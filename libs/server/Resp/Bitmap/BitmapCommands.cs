@@ -507,6 +507,7 @@ namespace Garnet.server
                 var output = GetStringOutput();
                 var status = storageApi.StringBitField(sbKey, ref input, opCode,
                     ref output);
+                etag = output.ETag;
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {

@@ -45,7 +45,7 @@ namespace Garnet.test.Resp.ETag
                     continue;
                 }
 
-                if (simpleRespCommandInfo.IsOverwriteCommand())
+                if (simpleRespCommandInfo.IsOverwriteCommand() || cmd == RespCommand.SET)
                     OverwriteCommands.Add(cmd);
             }
         }
@@ -130,7 +130,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecuteAsync("EXECWITHETAG", args);
 
             // Verify result & expected ETag
-            var expectedEtag = OverwriteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
         }
 
@@ -145,7 +145,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecuteAsync("EXECIFMATCH", args);
 
             // Verify result & expected ETag
-            var expectedEtag = OverwriteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data
@@ -170,7 +170,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecuteAsync("EXECIFGREATER", args);
 
             // Verify result & expected ETag
-            var expectedEtag = OverwriteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data

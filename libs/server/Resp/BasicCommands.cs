@@ -599,11 +599,13 @@ namespace Garnet.server
                 {
                     var ok = status != GarnetStatus.NOTFOUND;
 
-                    // the status returned for SET / SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
-                    if (cmd == RespCommand.SET || cmd == RespCommand.SETEXNX)
+                    // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
+                    if (cmd == RespCommand.SETEXNX)
                         ok = !ok;
+                    else if (cmd == RespCommand.SET)
+                        ok = status is GarnetStatus.NOTFOUND or GarnetStatus.OK;
 
-                    if (ok)
+                    if (ok && !output.IsOperationSkipped)
                     {
                         while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
