@@ -30,10 +30,6 @@ namespace Garnet.test.Resp.ETag
         [Test]
         public async Task ExpireETagAdvancedTestAsync()
         {
-            //var cmdArgs = new object[] { StringKeys[0], 1 };
-
-            //await CheckCommandAsync(RespCommand.EXPIRE, cmdArgs, VerifyResult);
-
             var cmdArgs = new object[] { ListKeys[0], 100 };
 
             await CheckCommandAsync(RespCommand.EXPIRE, cmdArgs, VerifyResult, [2]);
@@ -49,13 +45,37 @@ namespace Garnet.test.Resp.ETag
         {
             var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
 
-            //var cmdArgs = new object[] { StringKeys[0], expireTimestamp };
-
-            //await CheckCommandAsync(RespCommand.EXPIREAT, cmdArgs, VerifyResult);
-
             var cmdArgs = new object[] { ListKeys[0], expireTimestamp };
 
             await CheckCommandAsync(RespCommand.EXPIREAT, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task PExpireETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], 1000 };
+
+            await CheckCommandAsync(RespCommand.PEXPIRE, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task PExpireAtETagAdvancedTestAsync()
+        {
+            var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds().ToString();
+
+            var cmdArgs = new object[] { ListKeys[0], expireTimestamp };
+
+            await CheckCommandAsync(RespCommand.PEXPIREAT, cmdArgs, VerifyResult, [2]);
 
             static void VerifyResult(RedisResult result)
             {

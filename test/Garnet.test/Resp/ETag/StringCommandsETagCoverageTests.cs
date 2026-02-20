@@ -56,6 +56,32 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task GetExETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], "EX", 2 };
+
+            await CheckCommandAsync(RespCommand.GETEX, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
+            }
+        }
+
+        [Test]
+        public async Task GetSetETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringData[1] };
+
+            await CheckCommandAsync(RespCommand.GETSET, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
+            }
+        }
+
+        [Test]
         public async Task IncrETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
@@ -69,6 +95,19 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task IncrByETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 2 };
+
+            await CheckCommandAsync(RespCommand.INCRBY, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(long.Parse(StringData[0]) + 2, (double)result);
+            }
+        }
+
+        [Test]
         public async Task IncrByFloatETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], 2.2 };
@@ -78,6 +117,19 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(long.Parse(StringData[0]) + 2.2, (double)result);
+            }
+        }
+
+        [Test]
+        public async Task MSetETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringData[1], StringKeys[1], StringData[0] };
+
+            await CheckCommandAsync(RespCommand.MSET, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", (string)result);
             }
         }
 

@@ -103,6 +103,7 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.GETEX(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {

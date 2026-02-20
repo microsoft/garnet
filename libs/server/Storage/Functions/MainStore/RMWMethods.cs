@@ -396,10 +396,10 @@ namespace Garnet.server
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
 
-                    // reset etag state after done using
+                    // Nothing is set because being in this block means NX was already violated
+                    output.ETag = functionsState.etagState.ETag;
                     if (hadETagPreMutation)
                         ETagState.ResetState(ref functionsState.etagState);
-                    // Nothing is set because being in this block means NX was already violated
                     return IPUResult.NotUpdated;
 
                 case RespCommand.SET:
@@ -516,15 +516,10 @@ namespace Garnet.server
                             (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, logRecord.ValueSpan.Length);
 
                     if (overflow)
-                    {
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    else
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
 
-                        // reset etag state that may have been initialized earlier, but don't update etag
-                        ETagState.ResetState(ref functionsState.etagState);
-                        return IPUResult.Succeeded;
-                    }
-
-                    functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.PFADD:
@@ -557,8 +552,10 @@ namespace Garnet.server
                     {
                         *output.SpanByteAndMemory.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
 
+                        output.ETag = functionsState.etagState.ETag;
                         // reset etag state that may have been initialized earlier, but don't update etag
-                        ETagState.ResetState(ref functionsState.etagState);
+                        if (hadETagPreMutation)
+                            ETagState.ResetState(ref functionsState.etagState);
                         return IPUResult.NotUpdated;
                     }
 
@@ -602,8 +599,10 @@ namespace Garnet.server
                         //InvalidType                                                
                         *output.SpanByteAndMemory.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
 
+                        output.ETag = functionsState.etagState.ETag;
                         // reset etag state that may have been initialized earlier, but don't update etag
-                        ETagState.ResetState(ref functionsState.etagState);
+                        if (hadETagPreMutation)
+                            ETagState.ResetState(ref functionsState.etagState);
                         return IPUResult.NotUpdated;
                     }
                     if (!result)
@@ -634,7 +633,7 @@ namespace Garnet.server
                     shouldUpdateETag = false;
                     CopyRespTo(logRecord.ValueSpan, ref output);
 
-                    var ipuResult = IPUResult.NotUpdated;
+                    IPUResult ipuResult;
 
                     // If both EX and PERSIST were specified, EX wins
                     if (input.arg1 > 0)
@@ -645,17 +644,20 @@ namespace Garnet.server
                         ipuResult = EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output);
                         if (ipuResult == IPUResult.Failed)
                             return IPUResult.Failed;
+                        if (ipuResult == IPUResult.NotUpdated)
+                        {
+                            output.ETag = functionsState.etagState.ETag;
+                            if (hadETagPreMutation)
+                                ETagState.ResetState(ref functionsState.etagState);
+                            return IPUResult.NotUpdated;
+                        }
                     }
                     else if (!sizeInfo.FieldInfo.HasExpiration)
                     {
                         // GetRMWModifiedFieldLength saw PERSIST; if there is no expiration, the following is a no-op.
                         _ = logRecord.RemoveExpiration();
-                        ipuResult = IPUResult.Succeeded;
                     }
-
-                    // reset etag state that may have been initialized earlier, but don't update etag
-                    ETagState.ResetState(ref functionsState.etagState);
-                    return ipuResult;
+                    break;
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
@@ -670,9 +672,6 @@ namespace Garnet.server
 
                         // Append the new value with the client input at the end of the old data
                         appendValue.ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
-                        if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
-                            return IPUResult.Failed;
-                        break;
                     }
 
                     if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
@@ -685,7 +684,8 @@ namespace Garnet.server
                         {
                             functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                             // reset etag state that may have been initialized earlier but don't update ETag
-                            ETagState.ResetState(ref functionsState.etagState);
+                            if (hadETagPreMutation)
+                                ETagState.ResetState(ref functionsState.etagState);
                             return IPUResult.Succeeded;
                         }
 
@@ -730,7 +730,8 @@ namespace Garnet.server
                 // Should always succeed since we checked CanAddETagInPlace
                 logRecord.TrySetETag(updatedEtag);
                 output.ETag = updatedEtag;
-                ETagState.ResetState(ref functionsState.etagState);
+                if (hadETagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
             }
             else if (hadETagPreMutation)
             {
@@ -1200,7 +1201,8 @@ namespace Garnet.server
                         {
                             functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                             // reset etag state that may have been initialized earlier
-                            ETagState.ResetState(ref functionsState.etagState);
+                            if (hadETagPreMutation)
+                                ETagState.ResetState(ref functionsState.etagState);
                             return true;
                         }
 
@@ -1231,7 +1233,8 @@ namespace Garnet.server
             {
                 dstLogRecord.TrySetETag(updatedEtag);
                 output.ETag = updatedEtag;
-                ETagState.ResetState(ref functionsState.etagState);
+                if (hadETagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
             }
             else if (hadETagPreMutation)
             {
