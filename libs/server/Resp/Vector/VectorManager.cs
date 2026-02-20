@@ -7,10 +7,12 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
+using Garnet.server.Vector.Filter;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -564,6 +566,30 @@ namespace Garnet.server
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
             }
 
+            // Apply post-filtering if filter is specified
+            if (!filter.IsEmpty)
+            {
+                if (includeAttributes)
+                {
+                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
+                }
+                else
+                {
+                    // Fetch attributes internally for filtering even when not returning them.
+                    // FetchVectorElementAttributes will resize the buffer dynamically if needed.
+                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
+                    try
+                    {
+                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
+                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
+                    }
+                    finally
+                    {
+                        tempAttributes.Memory?.Dispose();
+                    }
+                }
+            }
+
             if (continuation != 0)
             {
                 // TODO: paged results!
@@ -664,6 +690,30 @@ namespace Garnet.server
             if (includeAttributes)
             {
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+            }
+
+            // Apply post-filtering if filter is specified
+            if (!filter.IsEmpty)
+            {
+                if (includeAttributes)
+                {
+                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
+                }
+                else
+                {
+                    // Fetch attributes internally for filtering even when not returning them.
+                    // FetchVectorElementAttributes will resize the buffer dynamically if needed.
+                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
+                    try
+                    {
+                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
+                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
+                    }
+                    finally
+                    {
+                        tempAttributes.Memory?.Dispose();
+                    }
+                }
             }
 
             if (continuation != 0)
@@ -880,6 +930,123 @@ namespace Garnet.server
             else
             {
                 throw new NotImplementedException($"{valueType}");
+            }
+        }
+
+        /// <summary>
+        /// Apply post-filtering to vector search results based on JSON path filter expression.
+        /// </summary>
+        private int ApplyPostFilter(
+            ReadOnlySpan<byte> filter,
+            int numResults,
+            ref SpanByteAndMemory outputIds,
+            ref SpanByteAndMemory outputDistances,
+            ref SpanByteAndMemory outputAttributes)
+        {
+            if (numResults == 0)
+            {
+                return numResults;
+            }
+
+            var filterStr = Encoding.UTF8.GetString(filter);
+
+            try
+            {
+                var filteredCount = 0;
+
+                // Parse the filter expression once, then evaluate per result
+                var tokens = VectorFilterTokenizer.Tokenize(filterStr);
+                var filterExpr = VectorFilterParser.ParseExpression(tokens, 0, out var endIndex);
+
+                // Ensure the entire token stream was consumed by the parser
+                if (endIndex != tokens.Count)
+                {
+                    throw new ArgumentException("Invalid filter expression: unexpected tokens after end of expression.", nameof(filter));
+                }
+
+                var idsSpan = outputIds.AsSpan();
+                var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+                var attributesSpan = outputAttributes.AsSpan();
+
+                var idReadPos = 0;
+                var attrReadPos = 0;
+                var idWritePos = 0;
+                var distWritePos = 0;
+                var attrWritePos = 0;
+
+                for (var i = 0; i < numResults; i++)
+                {
+                    // Read ID
+                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
+                    var idTotalLen = sizeof(int) + idLen;
+
+                    // Read attribute
+                    var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
+                    var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
+
+                    // Evaluate filter
+                    if (EvaluateFilter(filterExpr, attrData))
+                    {
+                        // Copy ID if not already in place
+                        if (idReadPos != idWritePos)
+                        {
+                            idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
+                        }
+
+                        // Copy distance if not already in place
+                        if (i != distWritePos)
+                        {
+                            distancesSpan[distWritePos] = distancesSpan[i];
+                        }
+
+                        // Copy attribute if not already in place
+                        if (attrReadPos != attrWritePos)
+                        {
+                            attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
+                        }
+
+                        idWritePos += idTotalLen;
+                        distWritePos++;
+                        attrWritePos += sizeof(int) + attrLen;
+                        filteredCount++;
+                    }
+
+                    idReadPos += idTotalLen;
+                    attrReadPos += sizeof(int) + attrLen;
+                }
+
+                // Update lengths
+                outputIds.Length = idWritePos;
+                outputDistances.Length = distWritePos * sizeof(float);
+                outputAttributes.Length = attrWritePos;
+
+                return filteredCount;
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is InvalidOperationException)
+            {
+                throw new ArgumentException("Invalid filter expression.", nameof(filter), ex);
+            }
+        }
+
+        /// <summary>
+        /// Evaluate a pre-parsed filter expression against attribute data.
+        /// </summary>
+        private static bool EvaluateFilter(Expr filterExpr, ReadOnlySpan<byte> attributeJson)
+        {
+            try
+            {
+                var reader = new Utf8JsonReader(attributeJson);
+                using var jsonDoc = JsonDocument.ParseValue(ref reader);
+                var root = jsonDoc.RootElement;
+                var result = VectorFilterEvaluator.EvaluateExpression(filterExpr, root);
+
+                return VectorFilterEvaluator.IsTruthy(result);
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            {
+                // If filter evaluation fails (malformed JSON or invalid expression), exclude the result
+                Trace.TraceWarning("Vector filter evaluation failed: {0}", ex);
+                return false;
             }
         }
 
