@@ -121,6 +121,22 @@ namespace Garnet.server
                 AcceptEventArg_Completed(null, acceptEventArg);
         }
 
+        /// <inheritdoc />
+        public override void StopListening()
+        {
+            try
+            {
+                // Close the listen socket to stop accepting new connections
+                // This will cause any pending AcceptAsync to complete with an error
+                listenSocket.Close();
+                logger?.LogDebug("Stopped accepting new connections on {endpoint}", EndPoint);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogDebug(ex, "Error closing listen socket on {endpoint}", EndPoint);
+            }
+        }
+
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
         {
             try

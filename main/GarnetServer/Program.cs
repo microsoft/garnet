@@ -22,7 +22,18 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                Thread.Sleep(Timeout.Infinite);
+                using var shutdownEvent = new ManualResetEventSlim(false);
+
+                Console.CancelKeyPress += (sender, e) =>
+                {
+                    e.Cancel = true;
+                    // Graceful shutdown: drain connections, commit AOF, take checkpoint
+                    server.ShutdownAsync(TimeSpan.FromSeconds(5))
+                        .GetAwaiter().GetResult();
+                    shutdownEvent.Set();
+                };
+
+                shutdownEvent.Wait();
             }
             catch (Exception ex)
             {

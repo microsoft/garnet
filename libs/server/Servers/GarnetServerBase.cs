@@ -155,6 +155,12 @@ namespace Garnet.server
         public abstract void Start();
 
         /// <inheritdoc />
+        public virtual void StopListening()
+        {
+            // Base implementation does nothing; derived classes should override
+        }
+
+        /// <inheritdoc />
         public virtual void Dispose()
         {
             Disposed = true;
