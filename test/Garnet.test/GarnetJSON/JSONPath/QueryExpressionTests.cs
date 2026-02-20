@@ -1,7 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
-
-#region License
+﻿#region License
 
 // Copyright (c) 2007 James Newton-King
 //

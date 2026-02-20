@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Text;
 using Garnet.common;
@@ -125,12 +124,14 @@ namespace Garnet.cluster
                         var hostEntry = Dns.GetHostEntry(targetAddress);
                         if (hostEntry.AddressList.Length > 0)
                         {
-                            // Prefer IPv4 addresses to match most common cluster configurations
-                            var resolvedIp = hostEntry.AddressList.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                                          ?? hostEntry.AddressList[0]; // Fallback to first address if no IPv4 found
-                            effectiveAddress = resolvedIp.ToString();
-                            // Try again with the resolved IP address
-                            targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(effectiveAddress, targetPort);
+                            // Try each resolved IP address to find one that matches cluster config
+                            foreach (var resolvedIp in hostEntry.AddressList)
+                            {
+                                effectiveAddress = resolvedIp.ToString();
+                                targetNodeId = current.GetWorkerNodeIdFromAddressOrHostname(effectiveAddress, targetPort);
+                                if (targetNodeId != null)
+                                    break; // Found a match in cluster config
+                            }
                         }
                     }
                     catch (System.Net.Sockets.SocketException ex)
