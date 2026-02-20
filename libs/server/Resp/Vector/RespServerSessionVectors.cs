@@ -299,13 +299,13 @@ namespace Garnet.server
                 }
 
                 // Default unspecified options
-                quantType ??= VectorQuantType.Q8;
+                quantType ??= VectorQuantType.NoQuant;
                 buildExplorationFactor ??= 200;
                 attributes ??= default;
                 numLinks ??= 16;
 
                 // TODO: Distance metric specification is an extension - still needs to be implemented
-                distanceMetric ??= VectorDistanceMetricType.L2;
+                distanceMetric ??= VectorDistanceMetricType.Cosine;
 
                 // Validate that DiskANN is expected to succeed given data sizes
                 //
