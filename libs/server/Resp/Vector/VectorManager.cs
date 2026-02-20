@@ -1012,7 +1012,8 @@ namespace Garnet.server
         {
             try
             {
-                using var jsonDoc = JsonDocument.Parse(attributeJson.ToArray());
+                var reader = new Utf8JsonReader(attributeJson);
+                using var jsonDoc = JsonDocument.ParseValue(ref reader);
                 var root = jsonDoc.RootElement;
                 var result = VectorFilterEvaluator.EvaluateExpression(filterExpr, root);
 
