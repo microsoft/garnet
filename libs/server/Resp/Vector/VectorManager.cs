@@ -926,69 +926,83 @@ namespace Garnet.server
             }
 
             var filterStr = Encoding.UTF8.GetString(filter);
-            var filteredCount = 0;
 
-            // Parse the filter expression once, then evaluate per result
-            var tokens = VectorFilterTokenizer.Tokenize(filterStr);
-            var filterExpr = VectorFilterParser.ParseExpression(tokens, 0, out _);
-
-            var idsSpan = outputIds.AsSpan();
-            var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
-            var attributesSpan = outputAttributes.AsSpan();
-
-            var idReadPos = 0;
-            var attrReadPos = 0;
-            var idWritePos = 0;
-            var distWritePos = 0;
-            var attrWritePos = 0;
-
-            for (var i = 0; i < numResults; i++)
+            try
             {
-                // Read ID
-                var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
-                var idTotalLen = sizeof(int) + idLen;
+                var filteredCount = 0;
 
-                // Read attribute
-                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
-                var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
+                // Parse the filter expression once, then evaluate per result
+                var tokens = VectorFilterTokenizer.Tokenize(filterStr);
+                var filterExpr = VectorFilterParser.ParseExpression(tokens, 0, out var endIndex);
 
-                // Evaluate filter
-                if (EvaluateFilter(filterExpr, attrData))
+                // Ensure the entire token stream was consumed by the parser
+                if (endIndex != tokens.Count)
                 {
-                    // Copy ID if not already in place
-                    if (idReadPos != idWritePos)
-                    {
-                        idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
-                    }
-
-                    // Copy distance if not already in place
-                    if (i != distWritePos)
-                    {
-                        distancesSpan[distWritePos] = distancesSpan[i];
-                    }
-
-                    // Copy attribute if not already in place
-                    if (attrReadPos != attrWritePos)
-                    {
-                        attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
-                    }
-
-                    idWritePos += idTotalLen;
-                    distWritePos++;
-                    attrWritePos += sizeof(int) + attrLen;
-                    filteredCount++;
+                    throw new ArgumentException("Invalid filter expression: unexpected tokens after end of expression.", nameof(filter));
                 }
 
-                idReadPos += idTotalLen;
-                attrReadPos += sizeof(int) + attrLen;
+                var idsSpan = outputIds.AsSpan();
+                var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+                var attributesSpan = outputAttributes.AsSpan();
+
+                var idReadPos = 0;
+                var attrReadPos = 0;
+                var idWritePos = 0;
+                var distWritePos = 0;
+                var attrWritePos = 0;
+
+                for (var i = 0; i < numResults; i++)
+                {
+                    // Read ID
+                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
+                    var idTotalLen = sizeof(int) + idLen;
+
+                    // Read attribute
+                    var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
+                    var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
+
+                    // Evaluate filter
+                    if (EvaluateFilter(filterExpr, attrData))
+                    {
+                        // Copy ID if not already in place
+                        if (idReadPos != idWritePos)
+                        {
+                            idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
+                        }
+
+                        // Copy distance if not already in place
+                        if (i != distWritePos)
+                        {
+                            distancesSpan[distWritePos] = distancesSpan[i];
+                        }
+
+                        // Copy attribute if not already in place
+                        if (attrReadPos != attrWritePos)
+                        {
+                            attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
+                        }
+
+                        idWritePos += idTotalLen;
+                        distWritePos++;
+                        attrWritePos += sizeof(int) + attrLen;
+                        filteredCount++;
+                    }
+
+                    idReadPos += idTotalLen;
+                    attrReadPos += sizeof(int) + attrLen;
+                }
+
+                // Update lengths
+                outputIds.Length = idWritePos;
+                outputDistances.Length = distWritePos * sizeof(float);
+                outputAttributes.Length = attrWritePos;
+
+                return filteredCount;
             }
-
-            // Update lengths
-            outputIds.Length = idWritePos;
-            outputDistances.Length = distWritePos * sizeof(float);
-            outputAttributes.Length = attrWritePos;
-
-            return filteredCount;
+            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is InvalidOperationException)
+            {
+                throw new ArgumentException("Invalid filter expression.", nameof(filter), ex);
+            }
         }
 
         /// <summary>
