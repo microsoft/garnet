@@ -21,6 +21,7 @@ using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Exporter;
 using Tsavorite.core;
 using Tsavorite.devices;
 
@@ -362,6 +363,18 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
         public int MetricsSamplingFrequency { get; set; }
+
+        [Option("opentelemetry-endpoint", Required = false, HelpText = "The endpoint to which OpenTelemetry metrics will be exported. If null, OpenTelemetry metrics will not be exported.")]
+        public Uri OpenTelemetryEndpoint { get; set; }
+
+        [Option("opentelemetry-export-interval", Required = false, HelpText = "The interval in milliseconds to export OpenTelemetry metrics. If null, the default interval of 60 seconds will be used.")]
+        public int? OpenTelemetryExportInterval { get; set; }
+
+        [Option("opentelemetry-export-protocol", Required = false, HelpText = "The protocol to use when exporting OpenTelemetry metrics. Value options: Grpc, HttpProtobuf. If null, the default protocol will be used.")]
+        public OtlpExportProtocol? OpenTelemetryExportProtocol { get; set; }
+
+        [Option("opentelemetry-export-timeout", Required = false, HelpText = "The timeout in milliseconds when exporting OpenTelemetry metrics. If null, the default timeout will be used.")]
+        public int? OpenTelemetryExportTimeout { get; set; }
 
         [OptionValidation]
         [Option('q', Required = false, HelpText = "Enabling quiet mode does not print server version and text art.")]
@@ -914,6 +927,10 @@ namespace Garnet
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
+                OpenTelemetryEndpoint = OpenTelemetryEndpoint,
+                OpenTelemetryExportInterval = OpenTelemetryExportInterval,
+                OpenTelemetryExportProtocol = OpenTelemetryExportProtocol,
+                OpenTelemetryExportTimeout = OpenTelemetryExportTimeout,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,
                 QuietMode = QuietMode.GetValueOrDefault(),

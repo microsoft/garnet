@@ -25,6 +25,8 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.6.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="8.6.1" />
+    <PackageVersion Include="OpenTelemetry" Version="1.13.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.13.1" />
     <PackageVersion Include="StackExchange.Redis" Version="2.9.25" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.6.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />

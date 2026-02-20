@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using Garnet.common;
+using Garnet.server.Metrics.Latency;
 
 namespace Garnet.server
 {
@@ -71,6 +72,8 @@ namespace Garnet.server
             int new_idx = (int)newCmd;
             metrics[new_idx].startTimestamp = metrics[old_idx].startTimestamp;
             metrics[old_idx].startTimestamp = 0;
+            // This call has to happen before the GarnetLatencyMetricsSession's RecordValue call because the latter resets the startTimestamp.
+            GarnetOpenTelemetryLatencyMetrics.Instance?.RecordLatency(metrics[new_idx].startTimestamp, newCmd);
             metrics[new_idx].RecordValue(Version);
         }
 
@@ -78,6 +81,8 @@ namespace Garnet.server
         public void Stop(LatencyMetricsType cmd)
         {
             int idx = (int)cmd;
+            // This call has to happen before the GarnetLatencyMetricsSession's RecordValue call because the latter resets the startTimestamp.
+            GarnetOpenTelemetryLatencyMetrics.Instance?.RecordLatency(metrics[idx].startTimestamp, cmd);
             metrics[idx].RecordValue(Version);
         }
 

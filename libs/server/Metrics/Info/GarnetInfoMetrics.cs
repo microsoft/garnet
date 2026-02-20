@@ -56,6 +56,8 @@ namespace Garnet.server
                 new("uptime_in_days", ((int)uptime.TotalDays).ToString()),
                 new("monitor_task", storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? "enabled" : "disabled"),
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
+                new("otel_export", storeWrapper.serverOptions.OpenTelemetryEndpoint != null ? "enabled" : "disabled"),
+                new("otel_endpoint", storeWrapper.serverOptions.OpenTelemetryEndpoint?.ToString() ?? "-"),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
                 new("run_id", storeWrapper.RunId),
                 new("redis_version", storeWrapper.redisProtocolVersion),
