@@ -670,6 +670,31 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VSIMWithFilterButWithoutWithAttribs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete("foo");
+
+            // Add vectors with attributes
+            db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
+            db.Execute("VADD", ["foo", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960}"]);
+            db.Execute("VADD", ["foo", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1940}"]);
+
+            // FILTER without WITHATTRIBS should work: fetch attributes internally and apply filter
+            var res = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".year > 1950", "COUNT", "3"]);
+
+            // Should return only 2 element ids (no attributes since WITHATTRIBS not specified)
+            ClassicAssert.AreEqual(2, res.Length,
+                "Should return 2 element ids (year > 1950) without attributes");
+        }
+
+        [Test]
         public void VSIMWithAdvancedFiltering()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

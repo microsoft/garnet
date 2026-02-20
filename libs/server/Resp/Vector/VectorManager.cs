@@ -569,14 +569,25 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                if (!includeAttributes)
+                if (includeAttributes)
                 {
-                    // Filters currently rely on attributes; reject inconsistent request instead of silently ignoring filter
-                    logger?.LogWarning("Filter expression was provided, but includeAttributes is false. Post-filtering requires attributes.");
-                    outputIdFormat = VectorIdFormat.Invalid;
-                    return VectorManagerResult.BadParams;
+                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
                 }
-                found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
+                else
+                {
+                    // Fetch attributes internally for filtering even when not returning them.
+                    // FetchVectorElementAttributes will resize the buffer dynamically if needed.
+                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
+                    try
+                    {
+                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
+                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
+                    }
+                    finally
+                    {
+                        tempAttributes.Memory?.Dispose();
+                    }
+                }
             }
 
             if (continuation != 0)
@@ -684,13 +695,25 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                if (!includeAttributes)
+                if (includeAttributes)
                 {
-                    logger?.LogWarning("Filter expression was provided, but includeAttributes is false. Post-filtering requires attributes.");
-                    outputIdFormat = VectorIdFormat.Invalid;
-                    return VectorManagerResult.BadParams;
+                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
                 }
-                found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
+                else
+                {
+                    // Fetch attributes internally for filtering even when not returning them.
+                    // FetchVectorElementAttributes will resize the buffer dynamically if needed.
+                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
+                    try
+                    {
+                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
+                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
+                    }
+                    finally
+                    {
+                        tempAttributes.Memory?.Dispose();
+                    }
+                }
             }
 
             if (continuation != 0)
