@@ -622,6 +622,116 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VSIMWithAttributeFiltering()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete("foo");
+
+            // Add first vector with year=1980
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Add second vector with year=1960
+            var res2 = db.Execute("VADD", ["foo", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960}"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // Add third vector with year=1940
+            var res3 = db.Execute("VADD", ["foo", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1940}"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+
+            // Search with filter for year > 1950 - should return 2 results (years 1980 and 1960)
+            var res5 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".year > 1950", "COUNT", "3", "WITHATTRIBS"]);
+
+            ClassicAssert.AreEqual(4, res5.Length,
+                "Should return 2 results (2 pairs of id+attribute) for year > 1950");
+
+            // Verify both results have year > 1950
+            for (var i = 0; i < res5.Length; i += 2)
+            {
+                var attr = res5[i + 1];
+                var attrStr = Encoding.UTF8.GetString(attr);
+                ClassicAssert.IsTrue(attrStr.Contains("\"year\":1980") || attrStr.Contains("\"year\":1960"),
+                    $"Result should have year > 1950, got: {attrStr}");
+            }
+
+            // Search with filter for year > 1990 - should return NO results since all years are < 1990
+            var res4 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".year > 1990", "COUNT", "3", "WITHATTRIBS"]);
+
+            ClassicAssert.AreEqual(0, res4.Length,
+                "Should return 0 results since no vectors have year > 1990");
+        }
+
+        [Test]
+        public void VSIMWithAdvancedFiltering()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete("movies");
+
+            // Add vectors with rich attributes to test advanced filtering
+            var res1 = db.Execute("VADD", ["movies", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"tags\":[\"classic\",\"popular\"]}"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VADD", ["movies", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960,\"rating\":3.8,\"genre\":\"drama\",\"tags\":[\"classic\"]}"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            var res3 = db.Execute("VADD", ["movies", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":2010,\"rating\":4.2,\"genre\":\"action\",\"tags\":[\"modern\"]}"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            // Test logical AND
+            var res4 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".year > 1970 and .rating > 4.0", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res4.Length, "Logical AND: year > 1970 AND rating > 4.0");
+
+            // Test logical OR
+            var res5 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".year < 1970 or .year > 2000", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res5.Length, "Logical OR: year < 1970 OR year > 2000");
+
+            // Test string equality
+            var res6 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".genre == \"action\"", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res6.Length, "String equality: genre == 'action'");
+
+            // Test arithmetic expression
+            var res7 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".year / 10 >= 200", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(2, res7.Length, "Arithmetic: year / 10 >= 200");
+
+            // Test parentheses grouping
+            var res8 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", "(.year > 2000 or .year < 1970) and .rating >= 4.0", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(2, res8.Length, "Parentheses grouping");
+
+            // Test containment operator (in)
+            var res9 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", "\"classic\" in .tags", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res9.Length, "Containment: 'classic' in tags");
+
+            // Test NOT operator
+            var res10 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", "not (.genre == \"drama\")", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res10.Length, "NOT operator: not (genre == 'drama')");
+
+            // Test complex expression with multiple operators
+            var res11 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
+                "FILTER", ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags)", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res11.Length, "Complex: rating*2 > 8 AND (year>=1980 OR 'modern' in tags)");
+        }
+
+        [Test]
         public void DeleteVectorSet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
