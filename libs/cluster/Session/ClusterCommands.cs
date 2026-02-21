@@ -120,7 +120,7 @@ namespace Garnet.cluster
             {
                 RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
-                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(out invalidParameters),
+                RespCommand.CLUSTER_ADVANCE_TIME => NetworkClusterAdvanceTime(out invalidParameters),
                 RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
                 RespCommand.CLUSTER_ATTACH_SYNC => NetworkClusterAttachSync(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
@@ -161,6 +161,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
+                RespCommand.CLUSTER_MLOG_KEY_TIME => NetworkClusterMlogKeyTime(out invalidParameters),
                 RespCommand.CLUSTER_SYNC => NetworkClusterSync(out invalidParameters),
                 _ => throw new Exception($"Unexpected cluster subcommand: {command}")
             };

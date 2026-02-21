@@ -116,63 +116,17 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Implements CLUSTER aofsync command (only for internode use)
-        /// </summary>
-        /// <param name="invalidParameters"></param>
-        /// <returns></returns>
-        private bool NetworkClusterAOFSync(out bool invalidParameters)
-        {
-            invalidParameters = false;
-
-            if (parseState.Count != 2)
-            {
-                invalidParameters = true;
-                return true;
-            }
-
-            var nodeId = parseState.GetString(0);
-
-            if (!parseState.TryGetLong(1, out var nextAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            if (clusterProvider.serverOptions.EnableAOF)
-            {
-                _ = clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
-                if (!clusterProvider.replicationManager.TryConnectToReplica(nodeId, nextAddress, aofSyncTaskInfo, out var errorMessage))
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Implements CLUSTER appendlog command (only for internode use)
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAppendLog"/>
         private bool NetworkClusterAppendLog(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 5 arguments (5-th argument is AOF page parsed later)
-            if (parseState.Count != 5)
+            // Expecting exactly 6 arguments (6-th argument is AOF page parsed later)
+            if (parseState.Count != 6)
             {
                 invalidParameters = true;
                 return true;
@@ -180,16 +134,26 @@ namespace Garnet.cluster
 
             var nodeId = parseState.GetString(0);
 
-            if (!parseState.TryGetLong(1, out var previousAddress) ||
-                !parseState.TryGetLong(2, out var currentAddress) ||
-                !parseState.TryGetLong(3, out var nextAddress))
+            if (!parseState.TryGetInt(1, out var physicalSublogIdx) ||
+                !parseState.TryGetLong(2, out var previousAddress) ||
+                !parseState.TryGetLong(3, out var currentAddress) ||
+                !parseState.TryGetLong(4, out var nextAddress))
             {
                 logger?.LogError("{str}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER));
                 return true;
             }
 
-            var sbRecord = parseState.GetArgSliceByRef(4);
+            // This is an initialization message
+            if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
+            {
+                if (clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender))
+                    replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
+                else
+                    throw new GarnetException($"[physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Warning, clientResponse: false);
+                return true;
+            }
 
+            var sbRecord = parseState.GetArgSliceByRef(5);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             var localRole = currentConfig.LocalNodeRole;
             var primaryId = currentConfig.LocalNodePrimaryId;
@@ -205,7 +169,7 @@ namespace Garnet.cluster
             {
                 IsReplicating = true;
 
-                clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
+                ProcessPrimaryStream(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
 
@@ -217,6 +181,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterInitiateReplicaSync"/>
         private bool NetworkClusterInitiateReplicaSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -232,17 +197,12 @@ namespace Garnet.cluster
             var replicaAssignedPrimaryId = parseState.GetString(1);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(2).ToArray();
 
-            if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
-                !parseState.TryGetLong(4, out var replicaAofTailAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            var replicaAofBeginAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(3).ToArray());
+            var replicaAofTailAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(4).ToArray());
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            if (!clusterProvider.replicationManager.TryBeginPrimarySync(
+            if (!clusterProvider.replicationManager.TryBeginDiskbasedSync(
                 replicaNodeId,
                 replicaAssignedPrimaryId,
                 replicaCheckpointEntry,
@@ -267,6 +227,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointMetadata"/>
         private bool NetworkClusterSendCheckpointMetadata(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -303,6 +264,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
         private bool NetworkClusterSendCheckpointFileSegment(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -343,19 +305,19 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterBeginReplicaRecover"/>
         private bool NetworkClusterBeginReplicaRecover(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 7 arguments
+            // Expecting exactly 6 arguments
             if (parseState.Count != 6)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) ||
-                !parseState.TryGetBool(1, out var replayAOF))
+            if (!parseState.TryGetBool(0, out var recoverStoreFromToken) || !parseState.TryGetLong(1, out var replayAOFMap))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
                     SendAndReset();
@@ -365,27 +327,22 @@ namespace Garnet.cluster
             var primaryReplicaId = parseState.GetString(2);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(3).ToArray();
 
-            if (!parseState.TryGetLong(4, out var beginAddress) ||
-                !parseState.TryGetLong(5, out var tailAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            var beginAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(4).ToArray());
+            var tailAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(5).ToArray());
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
-            var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
-                recoverMainStoreFromToken,
-                replayAOF,
+            var replicationOffset = clusterProvider.replicationManager.TryReplicaDiskbasedRecovery(
+                recoverStoreFromToken,
+                (ulong)replayAOFMap,
                 primaryReplicaId,
                 entry,
                 beginAddress,
-                tailAddress,
+                ref tailAddress,
                 out var errorMessage);
 
             if (errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(replicationOffset.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -402,6 +359,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAttachSync"/>
         private bool NetworkClusterAttachSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -416,21 +374,21 @@ namespace Garnet.cluster
             var checkpointEntryBytes = parseState.GetArgSliceByRef(0).ToArray();
             var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
 
-            ReadOnlySpan<byte> errorMessage = default;
-            long replicationOffset = -1;
+            ReadOnlySpan<byte> errorMessage;
+            var replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
-                _ = clusterProvider.replicationManager.TryAttachSync(syncMetadata, out errorMessage);
+                _ = clusterProvider.replicationManager.TryBeginDisklessSync(syncMetadata, out errorMessage);
             else
-                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata, out errorMessage);
+                replicationOffset = clusterProvider.replicationManager.TryReplicaDisklessRecovery(syncMetadata, out errorMessage);
 
-            if (!errorMessage.IsEmpty)
+            if (errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(replicationOffset.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -442,6 +400,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.SnapshotIteratorManager"/>
+        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.TryWriteRecordSpan"/>        
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.SetClusterSyncHeader"/>
         private bool NetworkClusterSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -497,6 +458,7 @@ namespace Garnet.cluster
         /// Implements CLUSTER FLUSHALL
         /// </summary>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.IssueFlushAllAsync"/>
         private bool NetworkClusterFlushAll(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -513,6 +475,80 @@ namespace Garnet.cluster
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER_ADVANCE_TIME
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAdvanceTime"/>
+        private bool NetworkClusterAdvanceTime(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 2
+            if (parseState.Count != 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var sequenceNumber = parseState.GetLong(0);
+            var tailAddressSpan = parseState.GetArgSliceByRef(1).Span;
+            clusterProvider.replicationManager.AdvanceTime(sequenceNumber, AofAddress.FromSpan(tailAddressSpan));
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER SLOG_KEY_TIME command.
+        /// If node is replica, it returns key sequence number otherwise the latest sequence number as generated by the sequence number generator.
+        /// For nodes configured with single log it returns an error.
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterMlogKeyTime(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting 1 or 2 arguments (key and optional FRONTIER)
+            if (parseState.Count < 1 || parseState.Count > 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            // Check if multi-log is enabled
+            if (!clusterProvider.serverOptions.MultiLogEnabled)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_MULTI_LOG_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).Span;
+
+            long sequenceNumber;
+            // Return sequence number for the specific key
+            // Check if this node is a replica
+            if (!clusterProvider.clusterManager.CurrentConfig.IsPrimary)
+            {
+                var getFrontier = parseState.Count == 2 ? parseState.GetBool(1) : false;
+                // Get sequence number from the replay state
+                var sn = clusterProvider.storeWrapper.appendOnlyFile.readConsistencyManager?.GetKeySequenceNumber(sbKey, getFrontier);
+                sequenceNumber = sn.GetValueOrDefault(-1);
+            }
+            else
+            {
+                // Get sequence number from the primary's sequence number generator
+                sequenceNumber = clusterProvider.storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber();
+            }
+            while (!RespWriteUtils.TryWriteInt64(sequenceNumber, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
     }

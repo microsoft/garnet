@@ -6,18 +6,30 @@ using System.Collections.Generic;
 namespace Garnet.server
 {
     /// <summary>
-    /// Transaction group contains list of operations associated with a given transaction
+    /// Transaction group contains logAccessMap and list of operations associated with this Txn
     /// </summary>
-    public class TransactionGroup
+    /// <param name="sublogIdx"></param>
+    /// <param name="logAccessMap"></param>
+    public class TransactionGroup(int sublogIdx, byte logAccessMap)
     {
         /// <summary>
-        /// Transaction operation buffer
+        /// Virtual sublog index associated with this transaction group.
         /// </summary>
-        public List<byte[]> operations = [];
+        public readonly int VirtualSublogIdx = sublogIdx;
 
         /// <summary>
-        /// Clear the underlying buffer that holds the individual transaction operations
+        /// Virtual sublog access count associated with this transaction group.
         /// </summary>
-        public void Clear() => operations.Clear();
+        public readonly byte LogAccessCount = logAccessMap;
+
+        /// <summary>
+        /// Operations associated with this transaction group.
+        /// </summary>
+        public List<byte[]> Operations = [];
+
+        /// <summary>
+        /// Clear the underlying buffer that holds the individual transaction operations.
+        /// </summary>
+        public void Clear() => Operations.Clear();
     }
 }

@@ -1,11 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Threading;
 using CommandLine;
 using Garnet.client;
 using Garnet.common;
@@ -94,6 +90,20 @@ namespace Resp.benchmark
             Console.WriteLine($"minWorkerThreads: {minWorkerThreads}");
             Console.WriteLine($"minCompletionPortThreads: {minCompletionPortThreads}");
             Console.WriteLine("----------------------------------");
+
+            if (opts.Client == ClientType.InProc)
+            {
+                Console.WriteLine("------EMBEDDED-SERVER-CONFIG------");
+                Console.WriteLine($"aof:{opts.EnableAOF || opts.AofBench}");
+                Console.WriteLine($"aof-null-device:{opts.UseAofNullDevice}");
+                Console.WriteLine($"aof-commit-freq:{opts.CommitFrequencyMs}");
+                Console.WriteLine($"aof-memory-size:{opts.AofMemorySize}");
+                Console.WriteLine($"aof-page-size:{opts.AofPageSize}");
+                Console.WriteLine($"cluster:{opts.EnableCluster}");
+                Console.WriteLine($"index:{opts.IndexSize}");
+                Console.WriteLine($"aof-sublog-count:{opts.AofPhysicalSublogCount}");
+                Console.WriteLine("----------------------------------");
+            }
         }
 
         static bool DisabledFeatures(Options opts)
@@ -173,7 +183,8 @@ namespace Resp.benchmark
 
             loggerFactory = CreateLoggerFactory(opts);
 
-            WaitForServer(opts);
+            if (opts.Client != ClientType.InProc)
+                WaitForServer(opts);
 
             if (opts.SaveFreqSecs > 0)
             {
@@ -254,6 +265,23 @@ namespace Resp.benchmark
                 bench.Run();
                 return;
             }
+            else if (opts.AofBench)
+            {
+                if (opts.AofBenchType == AofBenchType.Replay)
+                {
+                    var bench = new AofBench(opts);
+                    bench.GenerateData();
+                    bench.Run(opts.AofPhysicalSublogCount);
+                }
+                else
+                {
+                    var bench = new AofBench(opts);
+                    bench.GenerateData();
+
+                    foreach (var threadCount in opts.NumThreads)
+                        bench.Run(threadCount);
+                }
+            }
             else
             {
                 var bench = new RespPerfBench(opts, 0, redis);
@@ -261,7 +289,7 @@ namespace Resp.benchmark
                 if (!opts.SkipLoad)
                     bench.LoadData(keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
 
-                foreach (int BatchSize in opts.BatchSize)
+                foreach (var BatchSize in opts.BatchSize)
                     bench.Run(
                         opts.Op,
                         opts.TotalOps,

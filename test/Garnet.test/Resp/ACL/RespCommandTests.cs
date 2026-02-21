@@ -1000,35 +1000,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task ClusterAofSyncACLsAsync()
-        {
-            // All cluster command "success" is a thrown exception, because clustering is disabled
-
-            await CheckCommandsAsync(
-                "CLUSTER AOFSYNC",
-                [DoClusterAofSyncAsync]
-            );
-
-            static async Task DoClusterAofSyncAsync(GarnetClient client)
-            {
-                try
-                {
-                    await client.ExecuteForStringResultAsync("CLUSTER", ["AOFSYNC", "abc", "def"]);
-                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
-                }
-                catch (Exception e)
-                {
-                    if (e.Message == "ERR This instance has cluster support disabled")
-                    {
-                        return;
-                    }
-
-                    throw;
-                }
-            }
-        }
-
-        [Test]
         public async Task ClusterAppendLogACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -1892,6 +1863,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterAdvanceTimeACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER ADVANCE_TIME",
+                [DoClusterAdvanceTimeAsync]
+            );
+
+            static async Task DoClusterAdvanceTimeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ADVANCE_TIME"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterMyIdACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -2391,6 +2391,53 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("CLUSTER", ["SLOTSTATE"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterMlogKeyTimeACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER MLOG_KEY_TIME",
+                [DoClusterMlogKeyTimeAsync, DoClusterMlogKeyTimeFrontierAsync]
+            );
+
+            static async Task DoClusterMlogKeyTimeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MLOG_KEY_TIME", "key"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoClusterMlogKeyTimeFrontierAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MLOG_KEY_TIME", "key", "FRONTIER"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)

@@ -323,8 +323,33 @@ namespace Tsavorite.core
         /// Called by Tsavorite when the operation goes pending, so the app can signal to itself that any pinned
         /// buffer in the Output is no longer valid and a heap-based buffer must be created.
         /// </summary>
+        /// <param name="input"></param>
         /// <param name="output"></param>
         void ConvertOutputToHeap(ref TInput input, ref TOutput output);
+
+        /// <summary>
+        /// Called before reading a single key to verify key freshness and enforce prefix consistency.
+        /// </summary>
+        /// <param name="key">The key about to be read</param>
+        void BeforeConsistentReadCallback(PinnedSpanByte key);
+
+        /// <summary>
+        /// Called after a single key read to update the session timestamp.
+        /// </summary>
+        void AfterConsistentReadKeyCallback();
+
+        /// <summary>
+        /// Called before reading a batch of keys to verify their freshness and enforce prefix consistency.
+        /// </summary>
+        /// <typeparam name="TBatch"></typeparam>
+        /// <param name="batch"></param>
+        void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
+            where TBatch : IReadArgBatch<TInput, TOutput>;
+
+        /// <summary>
+        /// Called after reading a batch of keys to update the session timestamp.
+        /// </summary>
+        void AfterConsistentReadKeyBatchCallback();
         #endregion Utilities
     }
 

@@ -549,6 +549,127 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Header for Garnet Main Store inputs
+    /// </summary>
+    public struct UnifiedStoreInput : IStoreInput
+    {
+        /// <summary>
+        /// Common input header for Garnet
+        /// </summary>
+        public RespInputHeader header;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
+        public long arg1;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        public SessionParseState parseState;
+
+        /// <summary>
+        /// Create a new instance of UnifiedStoreInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public UnifiedStoreInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+        {
+            this.header = new RespInputHeader(cmd, flags);
+            this.arg1 = arg1;
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedStoreInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public UnifiedStoreInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
+
+        {
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedStoreInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public UnifiedStoreInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        {
+            this.parseState = parseState;
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedStoreInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="startIdx">First command argument index in parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public UnifiedStoreInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        {
+            this.parseState = parseState.Slice(startIdx);
+        }
+
+        /// <inheritdoc />
+        public int SerializedLength => header.SpanByte.TotalSize
+                                       + sizeof(long) // arg1
+                                       + parseState.GetSerializedLength();
+
+        /// <inheritdoc />
+        public unsafe int CopyTo(byte* dest, int length)
+        {
+            Debug.Assert(length >= this.SerializedLength);
+
+            var curr = dest;
+
+            // Serialize header
+            header.SpanByte.SerializeTo(curr);
+            curr += header.SpanByte.TotalSize;
+
+            // Serialize arg1
+            *(long*)curr = arg1;
+            curr += sizeof(long);
+
+            // Serialize parse state
+            var remainingLength = length - (int)(curr - dest);
+            var len = parseState.SerializeTo(curr, remainingLength);
+            curr += len;
+
+            // Serialize length
+            return (int)(curr - dest);
+        }
+
+        /// <inheritdoc />
+        public unsafe int DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            // Deserialize header
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
+
+            // Deserialize arg1
+            arg1 = *(long*)curr;
+            curr += sizeof(long);
+
+            // Deserialize parse state
+            var len = parseState.DeserializeFrom(curr);
+            curr += len;
+
+            return (int)(curr - src);
+        }
+    }
+
+    /// <summary>
     /// Header for Garnet CustomProcedure inputs
     /// </summary>
     public struct CustomProcedureInput : IStoreInput

@@ -30,6 +30,8 @@ namespace Tsavorite.core
         readonly TransactionalUnsafeContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
         readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
+        readonly ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
+        readonly TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tcrContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -84,12 +86,25 @@ namespace Tsavorite.core
             TsavoriteKV<TStoreFunctions, TAllocator> store,
             TsavoriteKV<TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TFunctions functions,
+            bool enableConsistentRead = false,
             ILoggerFactory loggerFactory = null)
         {
-            bContext = new(this);
-            uContext = new(this);
-            lContext = new(this);
-            luContext = new(this);
+            if (enableConsistentRead)
+            {
+                crContext = new(this);
+                tcrContext = new(this);
+                bContext = crContext.BasicContext;
+                uContext = new(this);
+                lContext = tcrContext.TransactionalContext;
+                luContext = new(this);
+            }
+            else
+            {
+                bContext = new(this);
+                uContext = new(this);
+                lContext = new(this);
+                luContext = new(this);
+            }
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -140,6 +155,16 @@ namespace Tsavorite.core
         /// Return a session wrapper struct that passes through to client session
         /// </summary>
         public BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
+
+        /// <summary>
+        /// Return the consistent read context;
+        /// </summary>
+        public ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> ConsistentReadContext => crContext;
+
+        /// <summary>
+        /// Return the transactional consistent read context
+        /// </summary>
+        public TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalConsistentReadContext => tcrContext;
 
         #region ITsavoriteContext
 

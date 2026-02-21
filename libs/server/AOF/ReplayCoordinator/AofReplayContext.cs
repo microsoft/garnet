@@ -9,17 +9,14 @@ using Garnet.networking;
 namespace Garnet.server
 {
     /// <summary>
-    /// AofReplayContext
+    /// Sublog replay buffer (one for each sublog)
     /// </summary>
-    public sealed class AofReplayContext
+    public class AofReplayContext
     {
         public readonly List<byte[]> fuzzyRegionOps = [];
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
-        public readonly StringInput storeInput;
-        public readonly ObjectInput objectInput;
-        public readonly UnifiedInput unifiedInput;
         public CustomProcedureInput customProcInput;
         public readonly SessionParseState parseState;
 
@@ -38,14 +35,11 @@ namespace Garnet.server
         public bool inFuzzyRegion = false;
 
         /// <summary>
-        /// AofReplayContext constructor
+        /// AOF replay context constructor
         /// </summary>
         public AofReplayContext()
         {
             parseState.Initialize();
-            storeInput.parseState = parseState;
-            objectInput.parseState = parseState;
-            unifiedInput.parseState = parseState;
             customProcInput.parseState = parseState;
             objectOutputBuffer = GC.AllocateArray<byte>(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), pinned: true);
         }
@@ -54,8 +48,10 @@ namespace Garnet.server
         /// Add transaction group to this replay buffer
         /// </summary>
         /// <param name="sessionID"></param>
-        public void AddTransactionGroup(int sessionID)
-            => activeTxns[sessionID] = new();
+        /// <param name="sublogIdx"></param>
+        /// <param name="logAccessBitmap"></param>
+        public void AddTransactionGroup(int sessionID, int sublogIdx, byte logAccessBitmap)
+            => activeTxns[sessionID] = new(sublogIdx, logAccessBitmap);
 
         /// <summary>
         /// Add transaction group to fuzzy region buffer

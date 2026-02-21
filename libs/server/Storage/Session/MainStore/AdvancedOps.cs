@@ -96,7 +96,6 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-
         public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
             where TBatch : IReadArgBatch<StringInput, StringOutput>
 #if NET9_0_OR_GREATER

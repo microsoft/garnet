@@ -59,7 +59,7 @@ namespace CommandInfoUpdater
             [
                 new("CLUSTER|ADDSLOTS", RespCommand.CLUSTER_ADDSLOTS),
                 new("CLUSTER|ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
-                new("CLUSTER|AOFSYNC", RespCommand.CLUSTER_AOFSYNC),
+                new("CLUSTER|ADVANCE_TIME", RespCommand.CLUSTER_ADVANCE_TIME),
                 new("CLUSTER|APPENDLOG", RespCommand.CLUSTER_APPENDLOG),
                 new("CLUSTER|ATTACH_SYNC", RespCommand.CLUSTER_ATTACH_SYNC),
                 new("CLUSTER|BANLIST", RespCommand.CLUSTER_BANLIST),
@@ -101,6 +101,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|SHARDS", RespCommand.CLUSTER_SHARDS),
                 new("CLUSTER|SLOTS", RespCommand.CLUSTER_SLOTS),
                 new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
+                new("CLUSTER|MLOG_KEY_TIME", RespCommand.CLUSTER_MLOG_KEY_TIME),
                 new("CLUSTER|SYNC", RespCommand.CLUSTER_SYNC),
             ]),
             new("COMMAND", RespCommand.COMMAND, StoreType.None,

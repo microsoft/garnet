@@ -20,7 +20,7 @@ namespace Garnet.server
         /// <param name="count">Key count if different than keys array length</param>
         /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
+            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking > 0, ref dcurr, ref dend, count);
 
         /// <summary>
         /// Validate if this command can be served based on the current slot assignment
@@ -49,6 +49,7 @@ namespace Garnet.server
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
+
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }

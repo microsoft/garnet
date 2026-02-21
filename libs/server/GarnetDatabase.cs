@@ -45,14 +45,9 @@ namespace Garnet.server
         public CacheSizeTracker SizeTracker { get; }
 
         /// <summary>
-        /// Device used for AOF logging
-        /// </summary>
-        public IDevice AofDevice { get; }
-
-        /// <summary>
         /// AOF log
         /// </summary>
-        public TsavoriteLog AppendOnlyFile { get; }
+        public GarnetAppendOnlyFile AppendOnlyFile { get; }
 
         /// <summary>
         /// Version map
@@ -95,9 +90,10 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabase(KVSettings kvSettings, int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, LightEpoch epoch, StateMachineDriver stateMachineDriver,
-                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut)
-            : this()
+        public GarnetDatabase(KVSettings kvSettings, int id, TsavoriteKV<StoreFunctions, StoreAllocator> store,
+            LightEpoch epoch, StateMachineDriver stateMachineDriver,
+            CacheSizeTracker sizeTracker, GarnetAppendOnlyFile appendOnlyFile,
+            bool storeIndexMaxedOut) : this()
         {
             this.kvSettings = kvSettings;
             Id = id;
@@ -105,7 +101,6 @@ namespace Garnet.server
             Epoch = epoch;
             StateMachineDriver = stateMachineDriver;
             SizeTracker = sizeTracker;
-            AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
             StoreIndexMaxedOut = storeIndexMaxedOut;
         }
@@ -118,7 +113,6 @@ namespace Garnet.server
             Epoch = srcDb.Epoch;
             StateMachineDriver = srcDb.StateMachineDriver;
             SizeTracker = srcDb.SizeTracker;
-            AofDevice = enableAof ? srcDb.AofDevice : null;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             StoreIndexMaxedOut = srcDb.StoreIndexMaxedOut;
 
@@ -149,7 +143,6 @@ namespace Garnet.server
             CheckpointingLock.CloseLock();
 
             Store?.Dispose();
-            AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
             StoreCollectionDbStorageSession?.Dispose();
             StoreExpiredKeyDeletionDbStorageSession?.Dispose();

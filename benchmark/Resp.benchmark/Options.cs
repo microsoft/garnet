@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using CommandLine;
 using Microsoft.Extensions.Logging;
 
@@ -113,5 +112,104 @@ namespace Resp.benchmark
 
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
+
+        [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
+        public bool AofBench { get; set; }
+
+        [Option("aof-bench-type", Required = false, Default = AofBenchType.Replay, HelpText = "Run AOF bench at replica.")]
+        public AofBenchType AofBenchType { get; set; }
+
+        /*
+         * InProc/AofBench server options
+         */
+        [Option("aof", Required = false, Default = false, HelpText = "Enable AOF")]
+        public bool EnableAOF { get; set; }
+
+        [Option("cluster", Required = false, Default = false, HelpText = "Enable Cluster")]
+        public bool EnableCluster { get; set; }
+
+        [Option('i', "index", Required = false, Default = "1g", HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
+        public string IndexSize { get; set; }
+
+        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        public bool UseAofNullDevice { get; set; }
+
+        [Option("aof-commit-freq", Required = false, Default = 0, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
+        public int CommitFrequencyMs { get; set; }
+
+        [Option("aof-physical-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
+        public int AofPhysicalSublogCount { get; set; }
+
+        [Option("aof-memory-size", Required = false, Default = "64m", HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.")]
+        public string AofMemorySize { get; set; }
+
+        [Option("aof-page-size", Required = false, Default = "4m", HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        public string AofPageSize { get; set; }
+
+        /// <summary>
+        /// Parse size from string specification
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="bytesRead"></param>
+        /// <returns></returns>
+        public static long ParseSize(string value, out int bytesRead)
+        {
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
+            long result = 0;
+            bytesRead = 0;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var c = value[i];
+                if (char.IsDigit(c))
+                {
+                    result = (result * 10) + (byte)c - '0';
+                    bytesRead++;
+                }
+                else
+                {
+                    for (var s = 0; s < suffix.Length; s++)
+                    {
+                        if (char.ToLower(c) == suffix[s])
+                        {
+                            result *= (long)Math.Pow(1024, s + 1);
+                            bytesRead++;
+
+                            if (i + 1 < value.Length && char.ToLower(value[i + 1]) == 'b')
+                                bytesRead++;
+
+                            return result;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Get AOF Page size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int AofPageSizeBits()
+        {
+            var size = ParseSize(AofPageSize, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Previous power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static long PreviousPowerOf2(long v)
+        {
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v - (v >> 1);
+        }
     }
 }

@@ -126,5 +126,11 @@ namespace Garnet.common
             // Return hash for byte sequence between brackets
             return (ushort)(Hash(startPtr + 1, (int)(endPtr - startPtr - 1)) & 16383);
         }
+
+        public static unsafe long Hash(Span<byte> key)
+        {
+            fixed (byte* keyPtr = key)
+                return (ushort)(Hash(keyPtr, key.Length) & 16383);
+        }
     }
 }

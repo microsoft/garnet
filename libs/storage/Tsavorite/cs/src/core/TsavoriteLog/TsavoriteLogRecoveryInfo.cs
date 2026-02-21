@@ -44,7 +44,7 @@ namespace Tsavorite.core
         public bool FastForwardAllowed;
 
         /// <summary>
-        /// callback to invoke when commit is presistent
+        /// callback to invoke when commit is persisted
         /// </summary>
         public Action Callback;
 

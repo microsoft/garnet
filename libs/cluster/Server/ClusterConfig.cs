@@ -251,6 +251,11 @@ namespace Garnet.cluster
         public long LocalNodeConfigEpoch => workers[LOCAL_WORKER_ID].ConfigEpoch;
 
         /// <summary>
+        /// Local endpoint string
+        /// </summary>
+        public string LocalNodeEndpoint => $"{workers[LOCAL_WORKER_ID].Address}:{workers[LOCAL_WORKER_ID].Port}";
+
+        /// <summary>
         /// Return endpoint of primary if this node is a replica.
         /// </summary>
         /// <returns>Returns primary endpoints if this node is a replica, otherwise (null,-1)</returns>

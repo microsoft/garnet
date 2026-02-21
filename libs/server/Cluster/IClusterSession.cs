@@ -78,7 +78,7 @@ namespace Garnet.server
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking);
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, bool SessionAsking);
 
         /// <summary>
         /// Write cached slot verification message to output
@@ -89,7 +89,14 @@ namespace Garnet.server
         /// <summary>
         /// Key array slot verify (write result to network)
         /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
+        /// <param name="keys"></param>
+        /// <param name="readOnly"></param>
+        /// <param name="SessionAsking"></param>
+        /// <param name="dcurr"></param>
+        /// <param name="dend"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        unsafe bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, bool SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
 
         /// <summary>
         /// Array slot verify (write result to network)
@@ -115,5 +122,16 @@ namespace Garnet.server
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        void UnsafeSetConfig(string replicaOf);
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        void Dispose();
     }
 }

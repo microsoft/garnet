@@ -40,12 +40,11 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            // Return if original value is true, hence already disposed
-            disposed.WriteLock();
             cts?.Cancel();
+            syncInProgress.WriteLock();
+            disposed.WriteLock();
             cts?.Dispose();
             cts = null;
-            syncInProgress.WriteLock();
         }
 
         /// <summary>
@@ -92,7 +91,14 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddReplicaSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, cts.Token, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(
+                ClusterProvider.storeWrapper,
+                ClusterProvider,
+                replicaAofBeginAddress: default,
+                replicaAofTailAddress: default,
+                replicaSyncMetadata,
+                cts.Token,
+                logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {
@@ -127,8 +133,10 @@ namespace Garnet.cluster
                 // This will be the task added first in the replica sync session array.
                 if (isLeader)
                 {
+                    using SemaphoreSlim signalCompletion = new(0);
                     // Launch a background task to sync the attached replicas using streaming snapshot
-                    _ = Task.Run(MainStreamingSnapshotDriver);
+                    _ = Task.Run(() => MainStreamingSnapshotDriver(signalCompletion));
+                    await signalCompletion.WaitAsync();
                 }
 
                 // Wait for main sync driver to complete
@@ -154,16 +162,22 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Streaming snapshot driver
+        /// Coordinates the main streaming snapshot synchronization process across replica sessions.
         /// </summary>
-        /// <returns></returns>
-        async Task MainStreamingSnapshotDriver()
+        /// <param name="signalCompletion">A semaphore used to signal completion of the main synchronization task. The method releases this semaphore
+        /// when the synchronization process finishes.</param>
+        /// <returns>A task that represents the asynchronous operation of the streaming snapshot synchronization driver.</returns>
+        /// <exception cref="GarnetException">Thrown if the streaming checkpoint operation fails during synchronization.</exception>
+        async Task MainStreamingSnapshotDriver(SemaphoreSlim signalCompletion)
         {
             // Parameters for sync operation
+            var syncInProgressAcquired = false;
             try
             {
                 // Lock to avoid the addition of new replica sync sessions while sync is in progress
-                syncInProgress.WriteLock();
+                syncInProgressAcquired = syncInProgress.TryWriteLock();
+                if (!syncInProgressAcquired)
+                    throw new GarnetException("Failed to acquire write syncInProgress lock!");
 
                 // Get sync session info
                 NumSessions = GetSessionStore.GetNumSessions();
@@ -210,7 +224,11 @@ namespace Garnet.cluster
                 ClusterProvider.storeWrapper.ResumeCheckpoints();
 
                 // Unlock sync session lock
-                syncInProgress.WriteUnlock();
+                if (syncInProgressAcquired)
+                    syncInProgress.WriteUnlock();
+
+                // Release to indicate completion of the main sync task
+                signalCompletion.Release();
             }
 
             // Acquire checkpoint and lock AOF if possible
@@ -221,12 +239,12 @@ namespace Garnet.cluster
                 while (true)
                 {
                     // Minimum address that we can serve assuming aof-locking and no aof-null-device
-                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
+                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.Log.BeginAddress;
 
                     // Lock AOF address for sync streaming
                     // If clusterProvider.allowDataLoss is set the addition never fails,
                     // otherwise failure occurs if AOF has been truncated beyond minServiceableAofAddress
-                    if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), minServiceableAofAddress))
+                    if (ClusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDrivers(GetSessionStore.GetSessions(), ref minServiceableAofAddress))
                         break;
 
                     // Retry if failed to lock AOF address because truncation occurred
@@ -256,7 +274,7 @@ namespace Garnet.cluster
                         else
                         {
                             // Reset replica database in preparation for full sync
-                            Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["CLUSTER", "FLUSHALL"]));
+                            Sessions[i].SetFlushTask(Sessions[i].IssueFlushAllAsync());
                             fullSync = true;
                         }
                     }

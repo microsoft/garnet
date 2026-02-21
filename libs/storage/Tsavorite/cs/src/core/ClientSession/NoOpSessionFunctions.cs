@@ -113,5 +113,15 @@ namespace Tsavorite.core
         public readonly void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
 
         public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
+
+        public void BeforeConsistentReadCallback(PinnedSpanByte key) { }
+
+        public void AfterConsistentReadKeyCallback() { }
+
+        public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
+            where TBatch : IReadArgBatch<TInput, TOutput>
+        { }
+
+        public void AfterConsistentReadKeyBatchCallback() { }
     }
 }

@@ -14,45 +14,28 @@ namespace Garnet.cluster
     {
         // Must be the same as the TsavoriteAof start address of allocator
         public static readonly long kFirstValidAofAddress = 64;
-        readonly AofTaskStore aofTaskStore;
+        readonly AofSyncDriverStore aofSyncDriverStore;
 
-        public int ConnectedReplicasCount => aofTaskStore.CountConnectedReplicas();
+        public AofSyncDriverStore AofSyncDriverStore => aofSyncDriverStore;
 
-        public List<RoleInfo> GetReplicaInfo() => aofTaskStore.GetReplicaInfo(ReplicationOffset);
+        public int ConnectedReplicasCount => aofSyncDriverStore.CountConnectedReplicas();
 
-        public bool TryAddReplicationTask(string nodeid, long startAddress, out AofSyncTaskInfo aofSyncTaskInfo)
-            => aofTaskStore.TryAddReplicationTask(nodeid, startAddress, out aofSyncTaskInfo);
-
-        public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, long startAddress)
-            => aofTaskStore.TryAddReplicationTasks(replicaSyncSessions, startAddress);
-
-        public long AofTruncatedUntil => aofTaskStore.AofTruncatedUntil;
-
-        public bool TryRemoveReplicationTask(AofSyncTaskInfo aofSyncTaskInfo)
-            => aofTaskStore.TryRemove(aofSyncTaskInfo);
-
-        /// <summary>
-        /// Safely truncate iterator
-        /// </summary>
-        /// <param name="CheckpointCoveredAofAddress"></param>
-        /// <returns></returns>
-        public long SafeTruncateAof(long CheckpointCoveredAofAddress)
-            => aofTaskStore.SafeTruncateAof(CheckpointCoveredAofAddress);
+        public List<RoleInfo> GetReplicaInfo() => aofSyncDriverStore.GetReplicaInfo(ReplicationOffset);
 
         /// <summary>
         /// Try to initiate connection from primary to replica in order to stream aof.
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="startAddress"></param>
-        /// <param name="aofSyncTaskInfo"></param>
+        /// <param name="aofSyncDriver"></param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryConnectToReplica(string nodeid, long startAddress, AofSyncTaskInfo aofSyncTaskInfo, out ReadOnlySpan<byte> errorMessage)
+        public bool TryConnectToReplica(string nodeid, ref AofAddress startAddress, AofSyncDriver aofSyncDriver, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             if (_disposed)
             {
-                aofTaskStore.TryRemove(aofSyncTaskInfo);
+                aofSyncDriverStore.TryRemove(aofSyncDriver);
 
                 errorMessage = "ERR Replication Manager Disposed"u8;
                 logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
@@ -64,15 +47,15 @@ namespace Garnet.cluster
             var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(nodeid);
             if (address == null)
             {
-                aofTaskStore.TryRemove(aofSyncTaskInfo);
+                aofSyncDriverStore.TryRemove(aofSyncDriver);
                 errorMessage = Encoding.ASCII.GetBytes($"ERR unknown endpoint for {nodeid}");
                 logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 return false;
             }
 
-            var tailAddress = storeWrapper.appendOnlyFile.TailAddress;
+            var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
             // Check if requested AOF address goes beyond the maximum available AOF address of this primary
-            if (startAddress > storeWrapper.appendOnlyFile.TailAddress)
+            if (startAddress.AnyGreater(tailAddress))
             {
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
@@ -80,14 +63,14 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    aofTaskStore.TryRemove(aofSyncTaskInfo);
+                    aofSyncDriverStore.TryRemove(aofSyncDriver);
                     logger?.LogError("AOF sync task failed to start. Requested address {startAddress} unavailable. Local primary tail address {tailAddress}", startAddress, tailAddress);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR requested AOF address: {startAddress} goes beyond, primary tail address: {tailAddress}");
                     return false;
                 }
             }
 
-            Task.Run(aofSyncTaskInfo.ReplicaSyncTask);
+            Task.Run(aofSyncDriver.Run);
             return true;
         }
     }

@@ -97,7 +97,7 @@ namespace Garnet.cluster
         /// <param name="dend"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
+        public bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, bool sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running)
