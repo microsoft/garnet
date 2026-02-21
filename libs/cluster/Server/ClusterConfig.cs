@@ -1027,6 +1027,25 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Get worker node-id from address (IP or hostname) and port.
+        /// This method checks both the IP address and hostname fields.
+        /// Skips the local worker (index 1) to prevent self-migration.
+        /// </summary>
+        /// <param name="address">IP address or hostname string.</param>
+        /// <param name="port">Port number.</param>
+        /// <returns>String representing node-id matching endpoint, or null if not found.</returns>
+        public string GetWorkerNodeIdFromAddressOrHostname(string address, int port)
+        {
+            for (ushort i = 2; i <= NumWorkers; i++)
+            {
+                var w = workers[i];
+                if (w.Port == port && (w.Address == address || w.hostname == address))
+                    return w.Nodeid;
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Update replication offset lazily.
         /// </summary>
         /// <param name="newReplicationOffset">Long of new replication offset.</param>
