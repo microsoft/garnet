@@ -121,7 +121,7 @@ namespace Garnet.cluster
                     // targetAddress is not a valid IP, try to resolve it as hostname
                     try
                     {
-                        var hostEntry = Dns.GetHostEntryAsync(targetAddress).GetAwaiter().GetResult();
+                        var hostEntry = Dns.GetHostEntryAsync(targetAddress).ConfigureAwait(false).GetAwaiter().GetResult();
                         if (hostEntry.AddressList.Length > 0)
                         {
                             // Try each resolved IP address to find one that matches cluster config
