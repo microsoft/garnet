@@ -20,7 +20,7 @@ namespace Garnet.test.Resp.ETag
 
         static readonly string[] StringData = ["1", "2", "3"];
 
-        static readonly string[] BitmapData = ["\x00", "\xF0", "\x0F"];
+        static readonly byte[][] BitmapData = [[0x00], [0xF0], [0x0F]];
 
         [Test]
         public async Task AppendETagAdvancedTestAsync()
