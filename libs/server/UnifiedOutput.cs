@@ -17,6 +17,11 @@ namespace Garnet.server
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
 
+        /// <summary>
+        /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
+        /// </summary>
+        public long ETag;
+
         public UnifiedOutput() => SpanByteAndMemory = new(null);
 
         public UnifiedOutput(SpanByteAndMemory sbam) => SpanByteAndMemory = sbam;

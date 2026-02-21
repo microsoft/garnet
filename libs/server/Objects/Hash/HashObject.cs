@@ -198,10 +198,9 @@ namespace Garnet.server
             switch (input.header.HashOp)
             {
                 case HashOperation.HSET:
-                    HashSet(ref input, ref output);
-                    break;
+                case HashOperation.HSETNX:
                 case HashOperation.HMSET:
-                    HashSet(ref input, ref output);
+                    HashSet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HGET:
                     HashGet(ref input, ref output, respProtocolVersion);
@@ -213,16 +212,16 @@ namespace Garnet.server
                     HashGetAll(ref output, respProtocolVersion);
                     break;
                 case HashOperation.HDEL:
-                    HashDelete(ref input, ref output);
+                    HashDelete(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HLEN:
-                    HashLength(ref output);
+                    HashLength(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HSTRLEN:
-                    HashStrLength(ref input, ref output);
+                    HashStrLength(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HEXISTS:
-                    HashExists(ref input, ref output);
+                    HashExists(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HEXPIRE:
                     HashExpire(ref input, ref output, respProtocolVersion);
@@ -234,8 +233,6 @@ namespace Garnet.server
                     HashPersist(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HKEYS:
-                    HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
-                    break;
                 case HashOperation.HVALS:
                     HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
                     break;
@@ -244,9 +241,6 @@ namespace Garnet.server
                     break;
                 case HashOperation.HINCRBYFLOAT:
                     HashIncrementFloat(ref input, ref output, respProtocolVersion);
-                    break;
-                case HashOperation.HSETNX:
-                    HashSet(ref input, ref output);
                     break;
                 case HashOperation.HRANDFIELD:
                     HashRandomField(ref input, ref output, respProtocolVersion);
@@ -586,25 +580,25 @@ namespace Garnet.server
             return ExpireResult.ExpireUpdated;
         }
 
-        private int Persist(ByteSpan key)
+        private ExpireResult Persist(ByteSpan key)
         {
             if (!ContainsKey(key))
             {
-                return (int)ExpireResult.KeyNotFound;
+                return ExpireResult.KeyNotFound;
             }
 
 #if NET9_0_OR_GREATER
             if (HasExpirableItems && expirationTimeSpanLookup.Remove(key))
 #else
-            if (HasExpirableItems && expirationTimes.Remove(key, out var currentExpiration))
+            if (HasExpirableItems && expirationTimes.Remove(key, out _))
 #endif
             {
                 HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                 CleanupExpirationStructuresIfEmpty();
-                return (int)ExpireResult.ExpireUpdated;
+                return ExpireResult.ExpireUpdated;
             }
 
-            return -1;
+            return ExpireResult.ExpirationNotFound;
         }
 
         private long GetExpiration(ByteSpan key)
@@ -645,6 +639,7 @@ namespace Garnet.server
     enum ExpireResult : int
     {
         KeyNotFound = -2,
+        ExpirationNotFound = -1,
         ExpireConditionNotMet = 0,
         ExpireUpdated = 1,
         KeyAlreadyExpired = 2,

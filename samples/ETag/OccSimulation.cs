@@ -59,7 +59,7 @@ namespace ETag
             string serializedUserInfo = JsonSerializer.Serialize(userInfo);
 
             // Seed the item in the database
-            long initialEtag = (long)await db.ExecuteAsync("SET", userKey, serializedUserInfo, "WITHETAG");
+            long initialEtag = (long)await db.ExecuteAsync("EXECWITHETAG", "SET", userKey, serializedUserInfo);
 
             // Cancellation token is used to exit program on end of interactive repl
             var cts = new CancellationTokenSource();

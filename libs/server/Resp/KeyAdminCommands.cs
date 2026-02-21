@@ -105,11 +105,11 @@ namespace Garnet.server
             if (expiry > 0)
             {
                 var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
+                input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, arg1: inputArg);
             }
             else
             {
-                input = new StringInput(RespCommand.SETEXNX, ref parseState);
+                input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState);
             }
 
             var status = storageApi.SET_Conditional(key, ref input);
@@ -224,76 +224,39 @@ namespace Garnet.server
         /// <summary>
         /// TryRENAME
         /// </summary>
-        private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkRENAME<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
+            Debug.Assert(cmd == RespCommand.RENAME || cmd == RespCommand.RENAMENX);
 
-            var oldKeySlice = parseState.GetArgSliceByRef(0);
-            var newKeySlice = parseState.GetArgSliceByRef(1);
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
 
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
+            var key = parseState.GetArgSliceByRef(0);
 
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice, withEtag);
+            var input = new UnifiedInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1);
+
+            var isNx = cmd == RespCommand.RENAMENX;
+            var output = isNx ? UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr)) : default;
+
+            var status = storageApi.RENAME(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    if (isNx)
+                        ProcessOutput(output.SpanByteAndMemory);
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
-            return true;
-        }
-
-        /// <summary>
-        /// TryRENAMENX
-        /// </summary>
-        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
-
-            var oldKeySlice = parseState.GetArgSliceByRef(0);
-            var newKeySlice = parseState.GetArgSliceByRef(1);
-
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
-
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result, withEtag);
-
-            if (status == GarnetStatus.OK)
-            {
-                // Integer reply: 1 if key was renamed to newkey.
-                // Integer reply: 0 if newkey already exists.
-                while (!RespWriteUtils.TryWriteInt32(result, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
-                    SendAndReset();
-            }
-
             return true;
         }
 
@@ -346,7 +309,7 @@ namespace Garnet.server
             var exists = 0;
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.EXISTS);
+            var input = new UnifiedInput(RespCommand.EXISTS, ref metaCommandInfo, ref parseState);
 
             var output = new UnifiedOutput();
 
@@ -446,12 +409,13 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
+            var input = new UnifiedInput(RespCommand.EXPIRE, ref metaCommandInfo, ref parseState, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -483,12 +447,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.PERSIST);
+            var input = new UnifiedInput(RespCommand.PERSIST, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -520,7 +485,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(command);
+            var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
@@ -557,7 +522,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(command);
+            var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();

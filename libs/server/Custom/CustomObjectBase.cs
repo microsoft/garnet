@@ -47,7 +47,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override byte Type => type;
 
-        /// <summary>
+        /// <summary>  
         /// Serialize to giver writer
         /// </summary>
         public abstract void SerializeObject(BinaryWriter writer);

@@ -73,7 +73,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new StringInput(RespCommand.MSETNX, ref parseState);
+            var input = new StringInput(RespCommand.MSETNX, ref metaCommandInfo, ref parseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -85,16 +85,32 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int keysDeleted = 0;
+            var keysDeleted = 0;
 
-            for (int c = 0; c < parseState.Count; c++)
+            if (metaCommandInfo.MetaCommand.IsEtagCondExecCommand())
             {
-                var key = parseState.GetArgSliceByRef(c);
-                var status = storageApi.DELETE(key);
+                // todo: support more than one key with etag conditional delete
+                if (parseState.Count != 1)
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEL));
 
-                // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
+                var input = new UnifiedInput(RespCommand.DEL, ref metaCommandInfo, ref parseState);
+                var key = parseState.GetArgSliceByRef(0);
+                var status = storageApi.DEL_Conditional(key, ref input);
+
                 if (status == GarnetStatus.OK)
                     keysDeleted++;
+            }
+            else
+            {
+                for (var c = 0; c < parseState.Count; c++)
+                {
+                    var key = parseState.GetArgSliceByRef(c);
+                    var status = storageApi.DELETE(key);
+
+                    // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
+                    if (status == GarnetStatus.OK)
+                        keysDeleted++;
+                }
             }
 
             while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
@@ -332,7 +348,7 @@ namespace Garnet.server
             var keySlice = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.TYPE);
+            var input = new UnifiedInput(RespCommand.TYPE, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();

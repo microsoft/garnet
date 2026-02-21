@@ -379,6 +379,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Gets all the command info objects of sub-commands supported by Garnet
+        /// </summary>
+        /// <param name="simpleRespCommandsInfo">Mapping between sub-command name to command info</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
+        public static bool TryGetSimpleRespCommandsInfo(out SimpleRespCommandInfo[] simpleRespCommandsInfo, ILogger logger = null)
+        {
+            simpleRespCommandsInfo = default;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
+
+            simpleRespCommandsInfo = SimpleRespCommandsInfo;
+            return true;
+        }
+
+        /// <summary>
         /// Gets command's simplified info
         /// </summary>
         /// <param name="cmd">Resp command</param>

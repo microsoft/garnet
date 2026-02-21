@@ -3,7 +3,6 @@
 
 using System;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -82,12 +81,14 @@ namespace Garnet.server
             while (currTokenIdx < parseState.Count);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: memberStart,
+                arg1: (int)addOption)
+            { SortedSetOp = SortedSetOperation.GEOADD };
 
             var output = GetObjectOutput();
 
             var status = storageApi.GeoAdd(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -161,13 +162,12 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
 
             var output = GetObjectOutput();
 
             var status = storageApi.GeoCommands(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -253,11 +253,11 @@ namespace Garnet.server
             var sourceKey = parseState.GetArgSliceByRef(sourceIdx);
 
             // Prepare input and call the storage layer
-            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet)
-            {
-                SortedSetOp = SortedSetOperation.GEOSEARCH
-            }, ref parseState, startIdx: sourceIdx + 1, arg1: (int)command);
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
+                startIdx: sourceIdx + 1, arg1: (int)command)
+            { SortedSetOp = SortedSetOperation.GEOSEARCH };
+
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
@@ -268,26 +268,23 @@ namespace Garnet.server
             if (destIdx != -1)
             {
                 var destinationKey = parseState.GetArgSliceByRef(destIdx);
-                status = storageApi.GeoSearchStore(sourceKey, destinationKey,
-                                                   ref searchOpts, ref input, ref output);
+                status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref searchOpts, ref input, ref output);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-
+                    ProcessOutput(output.SpanByteAndMemory);
+                    etag = output.ETag;
                     return true;
                 }
             }
             else
             {
                 status = storageApi.GeoSearchReadOnly(sourceKey, ref searchOpts, ref input, ref output);
+                etag = output.ETag;
 
                 if (status == GarnetStatus.OK)
                 {
-                    ProcessOutput(output);
+                    ProcessOutput(output.SpanByteAndMemory);
                     return true;
                 }
             }

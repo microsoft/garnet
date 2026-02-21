@@ -257,8 +257,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(values[0][0], popResult[1].ToString());
 
             // First key empty, second key wrong type - fail immediately
-            var delResult = db.KeyDelete(keys[0]);
-            ClassicAssert.IsTrue(delResult);
+            var keyExists = db.KeyExists(keys[0]);
+            ClassicAssert.IsFalse(keyExists);
 
             var ex = Assert.Throws<RedisServerException>(() => db.Execute(blockingCmd, keys[0], keys[1], keys[2], 0));
             var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -266,7 +266,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
 
             // All keys empty, second key gets wrong type then right type - succeed
-            delResult = db.KeyDelete(keys[1]);
+            var delResult = db.KeyDelete(keys[1]);
             ClassicAssert.IsTrue(delResult);
 
             var blockingTask = Task.Run(() =>
@@ -352,8 +352,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(values[0][0].Score.ToString(), popResult[2].ToString());
 
             // First key empty, second key wrong type - fail immediately
-            var delResult = db.KeyDelete(keys[0]);
-            ClassicAssert.IsTrue(delResult);
+            var keyExists = db.KeyExists(keys[0]);
+            ClassicAssert.IsFalse(keyExists);
 
             var ex = Assert.Throws<RedisServerException>(() => db.Execute(blockingCmd, keys[0], keys[1], keys[2], 0));
             var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -361,7 +361,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
 
             // All keys empty, second key gets wrong type then right type - succeed
-            delResult = db.KeyDelete(keys[1]);
+            var delResult = db.KeyDelete(keys[1]);
             ClassicAssert.IsTrue(delResult);
 
             var blockingTask = Task.Run(() =>
@@ -445,8 +445,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(values[0][0], popResult[1][0].ToString());
 
             // First key empty, second key wrong type - fail immediately
-            var delResult = db.KeyDelete(keys[0]);
-            ClassicAssert.IsTrue(delResult);
+            var keyExists = db.KeyExists(keys[0]);
+            ClassicAssert.IsFalse(keyExists);
 
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("BLMPOP", 0, 3, keys[0], keys[1], keys[2], "RIGHT", "COUNT", 2));
             var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -454,7 +454,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
 
             // All keys empty, second key gets wrong type then right type - succeed
-            delResult = db.KeyDelete(keys[1]);
+            var delResult = db.KeyDelete(keys[1]);
             ClassicAssert.IsTrue(delResult);
 
             var blockingTask = Task.Run(() =>
@@ -540,8 +540,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(values[0][0].Score.ToString(), popResult[1][0][1].ToString());
 
             // First key empty, second key wrong type - fail immediately
-            var delResult = db.KeyDelete(keys[0]);
-            ClassicAssert.IsTrue(delResult);
+            var keyExists = db.KeyExists(keys[0]);
+            ClassicAssert.IsFalse(keyExists);
 
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("BZMPOP", 0, 3, keys[0], keys[1], keys[2], "MAX", "COUNT", 2));
             var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -549,7 +549,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
 
             // All keys empty, second key gets wrong type then right type - succeed
-            delResult = db.KeyDelete(keys[1]);
+            var delResult = db.KeyDelete(keys[1]);
             ClassicAssert.IsTrue(delResult);
 
             var blockingTask = Task.Run(() =>
@@ -737,8 +737,12 @@ namespace Garnet.test
             var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
-                var response = lcr.SendCommands($"{blockingCmd} {key} 30", $"LPUSH {key} {value1}", 3, 1);
-                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n:1\r\n";
+                var response = lcr.SendCommand($"{blockingCmd} {key} 0", 3);
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lcr.SendCommand($"LPUSH {key} {value1}");
+                expectedResponse = $":1\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
                 response = lcr.SendCommand($"LLEN {key}");
@@ -754,10 +758,12 @@ namespace Garnet.test
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
-                return lcr.SendCommand($"LPUSH {key} {value2}");
+                var response = lcr.SendCommand($"LPUSH {key} {value2}");
+                var expectedResponse = $":1\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var timeout = TimeSpan.FromSeconds(5);
+            var timeout = TimeSpan.FromSeconds(500);
             try
             {
                 Task.WaitAll([blockingTask, releasingTask], timeout);

@@ -26,14 +26,65 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("ZADD");
 
             // Get the key for SortedSet
-            var key = parseState.GetArgSliceByRef(0);
+            var currIdx = 0;
+            var key = parseState.GetArgSliceByRef(currIdx++);
+            ReadOnlySpan<byte> error = default;
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            // If the first argument is not a score field - parse and validate options
+            if (!parseState.TryGetDouble(currIdx, out _))
+            {
+                var options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep);
+
+                // No options were parsed - invalid Score encountered
+                if (nextIdxStep == 0)
+                {
+                    // Invalid Score encountered
+                    error = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                }
+                else
+                {
+                    currIdx += nextIdxStep;
+
+                    // Validate ZADD options combination
+
+                    // XX & NX are mutually exclusive
+                    if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX &&
+                        (options & SortedSetAddOption.NX) == SortedSetAddOption.NX)
+                        error = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
+
+                    // NX, GT & LT are mutually exclusive
+                    if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT &&
+                         (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) ||
+                        (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT ||
+                          (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
+                         (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
+                        error = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
+
+                    // INCR supports only one score-element pair
+                    if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
+                        (parseState.Count - currIdx > 2))
+                        error = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
+                }
+            }
+
+            // From here on we expect only score-element pairs
+            // Remaining token count should be positive and even
+            if (error.IsEmpty && (currIdx == parseState.Count || (parseState.Count - currIdx) % 2 != 0))
+                error = CmdStrings.RESP_SYNTAX_ERROR;
+
+            if (!error.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetAdd(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -67,17 +118,16 @@ namespace Garnet.server
             // Get the key for SortedSet
             var key = parseState.GetArgSliceByRef(0);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZREM };
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetRemove(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -108,18 +158,17 @@ namespace Garnet.server
             // Get the key for SortedSet
             var key = parseState.GetArgSliceByRef(0);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZCARD };
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetLength(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -149,43 +198,21 @@ namespace Garnet.server
             // ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             if (parseState.Count < 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGE));
+                return AbortWithWrongNumberOfArguments(nameof(command));
             }
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var rangeOpts = SortedSetRangeOpts.None;
+            // Try to parse command options and validate input
+            if (!parseState.TryGetSortedSetRangeOptions(3, command, out var rangeOpts, out _, out _, out var error) ||
+                !ValidateSortedSetRangeInput(1, rangeOpts, out error))
+                return AbortWithErrorMessage(error);
 
-            switch (command)
-            {
-                case RespCommand.ZRANGE:
-                    break;
-                case RespCommand.ZREVRANGE:
-                    rangeOpts = SortedSetRangeOpts.Reverse;
-                    break;
-                case RespCommand.ZRANGEBYLEX:
-                    rangeOpts = SortedSetRangeOpts.ByLex;
-                    break;
-                case RespCommand.ZRANGEBYSCORE:
-                    rangeOpts = SortedSetRangeOpts.ByScore;
-                    break;
-                case RespCommand.ZREVRANGEBYLEX:
-                    rangeOpts = SortedSetRangeOpts.ByLex | SortedSetRangeOpts.Reverse;
-                    break;
-                case RespCommand.ZREVRANGEBYSCORE:
-                    rangeOpts = SortedSetRangeOpts.ByScore | SortedSetRangeOpts.Reverse;
-                    break;
-                case RespCommand.ZRANGESTORE:
-                    rangeOpts = SortedSetRangeOpts.Store;
-                    break;
-            }
-
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts);
-
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts) { SortedSetOp = SortedSetOperation.ZRANGE };
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRange(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -217,8 +244,14 @@ namespace Garnet.server
             var dstKey = parseState.GetArgSliceByRef(0);
             var srcKey = parseState.GetArgSliceByRef(1);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion, arg2: (int)SortedSetRangeOpts.Store);
+            // Try to parse command options and validate input
+            if (!parseState.TryGetSortedSetRangeOptions(4, RespCommand.ZRANGESTORE, out var options, out _, out _, out var error) ||
+                !ValidateSortedSetRangeInput(2, options, out error))
+                return AbortWithErrorMessage(error);
+
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 2,
+                arg1: respProtocolVersion, arg2: (int)options)
+            { SortedSetOp = SortedSetOperation.ZRANGE };
 
             var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
 
@@ -257,13 +290,15 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZSCORE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
+                arg1: respProtocolVersion)
+            { SortedSetOp = SortedSetOperation.ZSCORE };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetScore(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -302,13 +337,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZMSCORE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZMSCORE };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetScores(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -371,13 +406,13 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, popCount);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, arg1: popCount) { SortedSetOp = op };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetPop(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -537,14 +572,19 @@ namespace Garnet.server
             // Get the key for the Sorted Set
             var key = parseState.GetArgSliceByRef(0);
 
+            // Validate min & max
+            if (!parseState.TryGetSortedSetMinMaxParameter(1, out _, out _) ||
+                !parseState.TryGetSortedSetMinMaxParameter(2, out _, out _))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
+
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZCOUNT };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetCount(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -594,30 +634,25 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
+            // Validate min & max
+            if (!parseState.TryGetSortedSetLexMinMaxParameter(1, out _, out _, out _) ||
+                !parseState.TryGetSortedSetLexMinMaxParameter(2, out _, out _, out _))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING);
+
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
             var output = new ObjectOutput();
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
                 storageApi.SortedSetRemoveRangeByLex(key, ref input, ref output) :
                 storageApi.SortedSetLengthByValue(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process response
-                    if (output.result1 == int.MaxValue)
-                    {
-                        // Error in arguments
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if (output.result1 == int.MinValue)  // command partially executed
-                        return false;
-                    else
-                        while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                            SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -651,14 +686,20 @@ namespace Garnet.server
             // Get the key for the Sorted Set
             var key = parseState.GetArgSliceByRef(0);
 
+            // Validate increment
+            if (!parseState.TryGetDouble(1, out _))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+            }
+
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZINCRBY };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetIncrement(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -717,13 +758,13 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0) { SortedSetOp = op };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRank(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -770,14 +811,29 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
+            // Validate input
+            if (op == SortedSetOperation.ZREMRANGEBYRANK)
+            {
+                if (!parseState.TryGetInt(1, out _) ||
+                    !parseState.TryGetInt(2, out _))
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+            else
+            {
+                if (!parseState.TryGetSortedSetMinMaxParameter(1, out _, out _) ||
+                    !parseState.TryGetSortedSetMinMaxParameter(2, out _, out _))
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
+            }
+
+
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRemoveRange(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -847,9 +903,8 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
             var inputArg = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
-            var input = new ObjectInput(header, inputArg, seed);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, arg1: inputArg, arg2: seed) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
 
             var status = GarnetStatus.NOTFOUND;
             ObjectOutput output = default;
@@ -860,6 +915,7 @@ namespace Garnet.server
                 // Prepare output
                 output = GetObjectOutput();
                 status = storageApi.SortedSetRandomMember(key, ref input, ref output);
+                etag = output.ETag;
             }
 
             switch (status)
@@ -1773,12 +1829,14 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, expirationWithOption.WordHead, expirationWithOption.WordTail);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: currIdx,
+                    arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail)
+            { SortedSetOp = SortedSetOperation.ZEXPIRE };
 
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetExpire(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -1863,12 +1921,14 @@ namespace Garnet.server
 
             var membersParseState = parseState.Slice(3, numMembers);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
-            var input = new ObjectInput(header, ref membersParseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref membersParseState,
+                arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0)
+            { SortedSetOp = SortedSetOperation.ZTTL };
 
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -1929,12 +1989,12 @@ namespace Garnet.server
 
             var membersParseState = parseState.Slice(3, numMembers);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
-            var input = new ObjectInput(header, ref membersParseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref membersParseState) { SortedSetOp = SortedSetOperation.ZPERSIST };
 
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetPersist(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -1954,6 +2014,40 @@ namespace Garnet.server
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
+            }
+
+            return true;
+        }
+
+        private bool ValidateSortedSetRangeInput(int startIdx, SortedSetRangeOptions options, out ReadOnlySpan<byte> error)
+        {
+            error = default;
+            if ((options & SortedSetRangeOptions.ByScore) == SortedSetRangeOptions.ByScore)
+            {
+                if (!parseState.TryGetSortedSetMinMaxParameter(startIdx, out _, out _) ||
+                    !parseState.TryGetSortedSetMinMaxParameter(startIdx + 1, out _, out _))
+                {
+                    error = CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT;
+                    return false;
+                }
+            }
+            else if ((options & SortedSetRangeOptions.ByLex) == SortedSetRangeOptions.ByLex)
+            {
+                if (!parseState.TryGetSortedSetLexMinMaxParameter(startIdx, out _, out _, out _) ||
+                    !parseState.TryGetSortedSetLexMinMaxParameter(startIdx + 1, out _, out _, out _))
+                {
+                    error = CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING;
+                    return false;
+                }
+            }
+            else
+            {
+                if (!parseState.TryGetInt(startIdx, out _) ||
+                    !parseState.TryGetInt(startIdx + 1, out _))
+                {
+                    error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                    return false;
+                }
             }
 
             return true;

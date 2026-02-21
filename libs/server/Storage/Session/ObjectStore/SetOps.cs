@@ -29,17 +29,18 @@ namespace Garnet.server
         {
             saddCount = 0;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            saddCount = output.result1;
+            saddCount = output.Result1;
             return status;
         }
 
@@ -62,17 +63,18 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
             var output = new ObjectOutput();
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            saddCount = output.result1;
+            saddCount = output.Result1;
 
             return status;
         }
@@ -92,16 +94,17 @@ namespace Garnet.server
         {
             sremCount = 0;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            sremCount = output.result1;
+            sremCount = output.Result1;
 
             return status;
         }
@@ -126,17 +129,18 @@ namespace Garnet.server
             if (key.Length == 0 || members.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            sremCount = output.result1;
+            sremCount = output.Result1;
             return status;
         }
 
@@ -157,13 +161,12 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SCARD };
             var output = new ObjectOutput();
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            count = output.result1;
+            count = output.Result1;
             return status;
         }
 
@@ -184,8 +187,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
 
             var output = new ObjectOutput();
 
@@ -234,8 +236,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(GarnetObjectType.Set, arg1: count) { SetOp = SetOperation.SPOP };
 
             var output = new ObjectOutput();
 
@@ -274,7 +275,6 @@ namespace Garnet.server
             }
 
             var objectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var unifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -313,24 +313,19 @@ namespace Garnet.server
 
                 srcSetObject.UpdateSize(arrMember, false);
 
-                if (srcSetObject.Set.Count == 0)
-                {
-                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedTransactionalContext);
-                }
+                _ = srcSetObject.Set.Count == 0
+                    ? DELETE_ObjectStore(sourceKey, ref objectTransactionalContext)
+                    : SET(sourceKey, in srcObject, ref objectTransactionalContext);
 
                 _ = dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
-                if (dstGetStatus == GarnetStatus.NOTFOUND)
-                {
-                    var setStatus = SET(destinationKey, dstSetObject, ref objectTransactionalContext);
-                    if (setStatus == GarnetStatus.OK)
-                        smoveResult = 1;
-                }
-                else
-                {
+                var setStatus = dstGetStatus == GarnetStatus.NOTFOUND ?
+                    SET(destinationKey, dstSetObject, ref objectTransactionalContext) :
+                    SET(destinationKey, in dstObject, ref objectTransactionalContext);
+
+                if (setStatus == GarnetStatus.OK)
                     smoveResult = 1;
-                }
             }
             finally
             {
@@ -414,7 +409,6 @@ namespace Garnet.server
 
             // SetObject
             var setObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var setUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -435,7 +429,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = DELETE_ObjectStore(key, ref setObjectTransactionalContext);
                     }
 
                     count = members.Count;
@@ -730,14 +724,12 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(new RespInputHeader
-            {
-                type = GarnetObjectType.Set,
-                SetOp = SetOperation.SMISMEMBER,
-            }, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = members.Length == 1 ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
@@ -847,7 +839,6 @@ namespace Garnet.server
 
             // SetObject
             var setObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var setUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -867,7 +858,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = DELETE_ObjectStore(key, ref setObjectTransactionalContext);
                     }
 
                     count = diffSet.Count;

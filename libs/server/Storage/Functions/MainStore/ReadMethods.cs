@@ -25,14 +25,15 @@ namespace Garnet.server
             if (LogRecordUtils.CheckExpiry(in srcLogRecord))
                 return false;
 
+            output.ETag = srcLogRecord.ETag;
+
+            if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+
             var cmd = input.header.cmd;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
-            if (cmd == RespCommand.GETIFNOTMATCH)
-            {
-                if (handleGetIfNotMatch(in srcLogRecord, ref input, ref output, ref readInfo))
-                    return true;
-            }
-            else if (cmd > RespCommandExtensions.LastValidCommand)
+
+            if (cmd > RespCommandExtensions.LastValidCommand)
             {
                 if (srcLogRecord.Info.HasETag)
                 {
@@ -56,47 +57,12 @@ namespace Garnet.server
                 }
             }
 
-            if (srcLogRecord.Info.HasETag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
-            {
-                CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
-                ETagState.ResetState(ref functionsState.etagState);
-                return true;
-            }
-
             if (cmd == RespCommand.NONE)
                 CopyRespTo(value, ref output);
             else
                 CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
 
-            if (srcLogRecord.Info.HasETag)
-                ETagState.ResetState(ref functionsState.etagState);
-
             return true;
-        }
-
-        private bool handleGetIfNotMatch<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput dst, ref ReadInfo readInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            // Any value without an etag is treated the same as a value with an etag
-            long etagToMatchAgainst = input.parseState.GetLong(0);
-
-            long existingEtag = srcLogRecord.ETag;
-
-            if (existingEtag == etagToMatchAgainst)
-            {
-                // write back array of the format [etag, nil]
-                var nilResp = functionsState.nilResp;
-                // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                var numDigitsInEtag = NumUtils.CountDigits(existingEtag);
-                WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
-                return true;
-            }
-
-            return false;
         }
     }
 }

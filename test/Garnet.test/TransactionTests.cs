@@ -244,6 +244,12 @@ namespace Garnet.test
                     RespCommand.SAVE,
                     RespCommand.SCRIPT,
 
+                    // Todo: implement
+                    RespCommand.EXECWITHETAG,
+                    RespCommand.EXECIFMATCH,
+                    RespCommand.EXECIFNOTMATCH,
+                    RespCommand.EXECIFGREATER,
+
                     // Not implemented
                     RespCommand.DUMP,
                     RespCommand.MIGRATE,
@@ -444,7 +450,7 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
 
             var expectedResponse = ":1\r\n";
-            var response = lightClientRequest.SendCommand("SET key1 value1 WITHETAG");
+            var response = lightClientRequest.SendCommand("EXECWITHETAG SET key1 value1");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             expectedResponse = "+OK\r\n";
@@ -464,7 +470,7 @@ namespace Garnet.test
             await Task.Run(() =>
             {
                 using var lightClientRequestCopy = TestUtils.CreateRequest();
-                string command = "SET key1 value1_updated WITHETAG";
+                string command = "EXECWITHETAG SET key1 value1_updated";
                 lightClientRequestCopy.SendCommand(command);
             });
 
@@ -478,21 +484,21 @@ namespace Garnet.test
             lightClientRequest.SendCommand("GET key1");
             lightClientRequest.SendCommand("SET key2 value2");
             // check that all the etag commands can be called inside a transaction
-            lightClientRequest.SendCommand("SET key3 value2 WITHETAG");
-            lightClientRequest.SendCommand("GETWITHETAG key3");
-            lightClientRequest.SendCommand("GETIFNOTMATCH key3 1");
-            lightClientRequest.SendCommand("SETIFMATCH key3 anotherVal 1");
-            lightClientRequest.SendCommand("SET key3 arandomval WITHETAG");
+            lightClientRequest.SendCommand("EXECWITHETAG SET key3 value2");
+            lightClientRequest.SendCommand("EXECWITHETAG GET key3");
+            lightClientRequest.SendCommand("EXECIFNOTMATCH 1 GET key3");
+            lightClientRequest.SendCommand("EXECIFMATCH 1 SET key3 anotherVal");
+            lightClientRequest.SendCommand("EXECWITHETAG SET key3 arandomval");
 
             response = lightClientRequest.SendCommand("EXEC");
 
-            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:1\r\n*2\r\n:1\r\n$6\r\nvalue2\r\n*2\r\n:1\r\n$-1\r\n*2\r\n:2\r\n$-1\r\n:3\r\n";
+            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:1\r\n*2\r\n$6\r\nvalue2\r\n:1\r\n*2\r\n$-1\r\n:1\r\n*2\r\n$-1\r\n:2\r\n:3\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // check if we still have the appropriate etag on the key we had set
             var otherLighClientRequest = TestUtils.CreateRequest();
-            response = otherLighClientRequest.SendCommand("GETWITHETAG key1");
-            expectedResponse = "*2\r\n:2\r\n$14\r\nvalue1_updated\r\n";
+            response = otherLighClientRequest.SendCommand("EXECWITHETAG GET key1");
+            expectedResponse = "*2\r\n$14\r\nvalue1_updated\r\n:2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 

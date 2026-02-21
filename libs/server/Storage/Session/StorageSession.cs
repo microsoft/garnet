@@ -29,6 +29,7 @@ namespace Garnet.server
         readonly int sectorAlignedMemoryPoolAlignment = 32;
 
         internal SessionParseState parseState;
+        internal MetaCommandInfo metaCommandInfo;
 
         /// <summary>
         /// Session Contexts for object store
@@ -69,6 +70,7 @@ namespace Garnet.server
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();
+            metaCommandInfo.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 

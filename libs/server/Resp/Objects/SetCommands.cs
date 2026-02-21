@@ -34,11 +34,12 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1) { SetOp = SetOperation.SADD };
             var output = new ObjectOutput();
 
+
             var status = storageApi.SetAdd(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -47,9 +48,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    // Write result to output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -321,18 +320,17 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1) { SetOp = SetOperation.SREM };
             var output = new ObjectOutput();
 
+
             var status = storageApi.SetRemove(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Write result to output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -365,18 +363,16 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = SetOperation.SCARD };
             var output = new ObjectOutput();
 
             var status = storageApi.SetLength(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -409,13 +405,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = SetOperation.SMEMBERS };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetMembers(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -460,8 +456,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             // Prepare output
             var output = GetObjectOutput();
@@ -538,13 +533,13 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
-            var input = new ObjectInput(header, countParameter);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, arg1: countParameter) { SetOp = SetOperation.SPOP };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetPop(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -651,13 +646,13 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SRANDMEMBER };
-            var input = new ObjectInput(header, countParameter, seed);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, arg1: countParameter, arg2: seed) { SetOp = SetOperation.SRANDMEMBER };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -749,11 +744,11 @@ namespace Garnet.server
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetDiffStore(key, keys, out var output);
+            var status = storageApi.SetDiffStore(key, keys, out var count);
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(count, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:

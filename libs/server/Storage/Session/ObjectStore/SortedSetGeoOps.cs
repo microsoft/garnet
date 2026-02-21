@@ -56,7 +56,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus GeoSearchReadOnly<TObjectContext>(PinnedSpanByte key, ref GeoSearchOptions opts,
                                                       ref ObjectInput input,
-                                                      ref SpanByteAndMemory output,
+                                                      ref ObjectOutput output,
                                                       ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -114,7 +114,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GeoSearchStore<TObjectContext>(PinnedSpanByte key, PinnedSpanByte destination,
                                                                   ref GeoSearchOptions opts,
                                                                   ref ObjectInput input,
-                                                                  ref SpanByteAndMemory output,
+                                                                  ref ObjectOutput output,
                                                                   ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -130,19 +130,18 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
             var geoObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var geoUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
-            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
-                SpanByteAndMemory searchOutMem = default;
+                var geoSearchOutput = new ObjectOutput();
 
                 var status = GET(key, out var firstObj, ref geoObjectTransactionalContext);
                 if (status == GarnetStatus.OK)
                 {
                     if (firstObj.GarnetObject is SortedSetObject firstSortedSet)
-                        firstSortedSet.GeoSearch(ref input, ref searchOutMem, functionsState.respProtocolVersion, ref opts, false);
+                        firstSortedSet.GeoSearch(ref input, ref geoSearchOutput, functionsState.respProtocolVersion, ref opts, false);
                     else
                         status = GarnetStatus.WRONGTYPE;
                 }
@@ -155,19 +154,19 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(destination, TimeSpan.Zero, out _, ExpireOption.None, ref geoUnifiedTransactionalContext);
+                    _ = DELETE_ObjectStore(destination, ref geoObjectTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
 
-                Debug.Assert(!searchOutMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
+                Debug.Assert(!geoSearchOutput.SpanByteAndMemory.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
 
-                var searchOutHandler = searchOutMem.Memory.Memory.Pin();
+                var searchOutHandler = geoSearchOutput.SpanByteAndMemory.Memory.Memory.Pin();
                 try
                 {
                     var searchOutPtr = (byte*)searchOutHandler.Pointer;
                     ref var currOutPtr = ref searchOutPtr;
-                    var endOutPtr = searchOutPtr + searchOutMem.Length;
+                    var endOutPtr = searchOutPtr + geoSearchOutput.SpanByteAndMemory.Length;
 
                     if (RespReadUtils.TryReadErrorAsSpan(out var error, ref currOutPtr, endOutPtr))
                     {
@@ -193,12 +192,10 @@ namespace Garnet.server
                         _ = parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                     }
 
+                    metaCommandInfo.Initialize();
+
                     // Prepare the input
-                    var zAddInput = new ObjectInput(new RespInputHeader
-                    {
-                        type = GarnetObjectType.SortedSet,
-                        SortedSetOp = SortedSetOperation.ZADD,
-                    }, ref parseState);
+                    var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
                     var zAddOutput = new ObjectOutput();
                     RMWObjectStoreOperation(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);
@@ -208,7 +205,7 @@ namespace Garnet.server
                 finally
                 {
                     searchOutHandler.Dispose();
-                    searchOutMem.Dispose();
+                    geoSearchOutput.Dispose();
                 }
 
                 return GarnetStatus.OK;

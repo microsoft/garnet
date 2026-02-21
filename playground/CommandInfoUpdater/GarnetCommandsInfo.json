@@ -423,28 +423,36 @@
     "SubCommands": null
   },
   {
-    "Command": "DELIFGREATER",
-    "Name": "DELIFGREATER",
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "IsInternal": false,
     "Arity": 2,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RM, Delete"
-      }
-    ]
+    "Flags": "Meta",
+    "KeySpecifications": null
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Meta",
+    "KeySpecifications": null
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Meta",
+    "KeySpecifications": null
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "IsInternal": false,
+    "Arity": 1,
+    "Flags": "Meta",
+    "KeySpecifications": null
   },
   {
     "Command": "FORCEGC",
@@ -630,41 +638,15 @@
     ]
   },
   {
-    "Command": "GETIFNOTMATCH",
-    "Name": "GETIFNOTMATCH",
-    "IsInternal": false,
-    "Arity": 3,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, String, Read",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
-      }
-    ]
-  },
-  {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
+    "Command": "GETETAG",
+    "Name": "GETETAG",
     "IsInternal": false,
     "Arity": 2,
     "Flags": "NONE",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, String, Read",
+    "AclCategories": "Fast, Read",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -684,10 +666,10 @@
   {
     "Command": "HCOLLECT",
     "Name": "HCOLLECT",
-    "Arity": 2,
+    "Arity": -2,
     "Flags": "Admin, Write",
     "FirstKey": 1,
-    "LastKey": 1,
+    "LastKey": -1,
     "Step": 1,
     "AclCategories": "Admin, Hash, Write, Garnet",
     "KeySpecifications": [
@@ -698,7 +680,7 @@
         },
         "FindKeys": {
           "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
+          "LastKey": -1,
           "KeyStep": 1,
           "Limit": 0
         },
@@ -1038,32 +1020,6 @@
     "AclCategories": "Admin, Dangerous, Slow"
   },
   {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "IsInternal": false,
-    "Arity": -4,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update, VariableFlags"
-      }
-    ]
-  },
-  {
     "Command": "SPUBLISH",
     "Name": "SPUBLISH",
     "Arity": 3,
@@ -1114,32 +1070,6 @@
     ]
   },
   {
-    "Command": "SETIFGREATER",
-    "Name": "SETIFGREATER",
-    "IsInternal": false,
-    "Arity": -4,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update, VariableFlags"
-      }
-    ]
-  },
-  {
     "Command": "WATCH",
     "Name": "WATCH",
     "Arity": -2,
@@ -1167,10 +1097,10 @@
   {
     "Command": "ZCOLLECT",
     "Name": "ZCOLLECT",
-    "Arity": 2,
+    "Arity": -2,
     "Flags": "Admin, Write",
     "FirstKey": 1,
-    "LastKey": 1,
+    "LastKey": -1,
     "Step": 1,
     "AclCategories": "SortedSet, Write, Admin, Garnet",
     "KeySpecifications": [
@@ -1181,7 +1111,7 @@
         },
         "FindKeys": {
           "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
+          "LastKey": -1,
           "KeyStep": 1,
           "Limit": 0
         },

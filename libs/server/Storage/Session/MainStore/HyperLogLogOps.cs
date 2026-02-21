@@ -17,9 +17,11 @@ namespace Garnet.server
         {
             updated = false;
 
+            metaCommandInfo.Initialize();
+
             parseState.Initialize(1);
 
-            var input = new StringInput(RespCommand.PFADD, ref parseState);
+            var input = new StringInput(RespCommand.PFADD, ref metaCommandInfo, ref parseState);
 
             byte output = 0;
             byte pfaddUpdated = 0;
@@ -64,13 +66,15 @@ namespace Garnet.server
         public unsafe GarnetStatus HyperLogLogLength<TStringContext>(Span<PinnedSpanByte> keys, out long count, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
+            metaCommandInfo.Initialize();
+
             parseState.Initialize(keys.Length);
             for (var i = 0; i < keys.Length; i++)
             {
                 parseState.SetArgument(i, keys[i]);
             }
 
-            var input = new StringInput(RespCommand.PFCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.PFCOUNT, ref metaCommandInfo, ref parseState);
 
             return HyperLogLogLength(ref input, out count, out _, ref context);
         }

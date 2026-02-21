@@ -107,5 +107,33 @@ namespace Garnet.server
                 *cc = (byte)'\n';
             }
         }
+
+        internal byte GetRespProtocolVersion(in ObjectInput input)
+        {
+            return input.header.type switch
+            {
+                GarnetObjectType.SortedSet =>
+                    input.header.SortedSetOp switch
+                    {
+                        SortedSetOperation.ZINCRBY or
+                            SortedSetOperation.ZPOPMIN or
+                            SortedSetOperation.ZPOPMAX => input.arg2 > 0 ? (byte)input.arg2 : respProtocolVersion,
+                        SortedSetOperation.ZRANGE => ((SortedSetRangeOptions)input.arg2 & SortedSetRangeOptions.Store) != 0 ? (byte)2 : respProtocolVersion,
+                        _ => respProtocolVersion
+                    },
+                _ => respProtocolVersion
+            };
+        }
+
+        internal bool HandleSkippedExecution(in RespInputHeader inputHeader, ref SpanByteAndMemory output)
+        {
+            if (inputHeader.CheckSkipRespOutputFlag())
+                return true;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            writer.WriteNull();
+
+            return true;
+        }
     }
 }

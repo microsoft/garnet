@@ -13,7 +13,10 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
-            => true;
+        {
+            logRecord.InfoRef.ClearHasETag();
+            return true;
+        }
 
         /// <inheritdoc />
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)

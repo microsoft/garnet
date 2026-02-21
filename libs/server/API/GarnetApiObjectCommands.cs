@@ -145,6 +145,7 @@ namespace Garnet.server
         public GarnetStatus SortedSetDifferenceStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, out int count)
             => storageSession.SortedSetDifferenceStore(destinationKey, keys, out count);
 
+        /// <inheritdoc />
         public GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
             => storageSession.SortedSetUnionStore(destinationKey, keys, weights, aggregateType, out count);
 
@@ -214,12 +215,12 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts,
-                                      ref ObjectInput input, ref SpanByteAndMemory output)
+                                      ref ObjectInput input, ref ObjectOutput output)
             => storageSession.GeoSearchReadOnly(key, ref opts, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchStore(PinnedSpanByte key, PinnedSpanByte destinationKey, ref GeoSearchOptions opts,
-                                           ref ObjectInput input, ref SpanByteAndMemory output)
+                                           ref ObjectInput input, ref ObjectOutput output)
             => storageSession.GeoSearchStore(key, destinationKey, ref opts, ref input, ref output, ref objectContext);
         #endregion
 
@@ -306,8 +307,8 @@ namespace Garnet.server
             => storageSession.ListTrim(key, start, stop, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input)
-            => storageSession.ListTrim(key, ref input, ref objectContext);
+        public GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.ListTrim(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListRange(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
@@ -545,8 +546,8 @@ namespace Garnet.server
             => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output)
-            => storageSession.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output, ref objectContext);
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashTimeToLive(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashCollect(ReadOnlySpan<PinnedSpanByte> keys, ref ObjectInput input)

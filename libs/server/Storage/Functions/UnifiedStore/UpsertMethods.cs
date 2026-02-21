@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -45,13 +44,6 @@ namespace Garnet.server
             if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
-            if (input.header.CheckWithETagFlag())
-            {
-                // If the old record had an ETag, we will replace it. Otherwise, we must have reserved space for it.
-                Debug.Assert(sizeInfo.FieldInfo.HasETag, "CheckWithETagFlag specified but SizeInfo.HasETag is false");
-                var newETag = functionsState.etagState.ETag + 1;
-                dstLogRecord.TrySetETag(newETag);
-            }
             return true;
         }
 
@@ -138,17 +130,7 @@ namespace Garnet.server
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
             {
-                if (input.header.CheckWithETagFlag())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                    {
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                    }
-                }
-                else
-                    ok = logRecord.RemoveETag();
+                ok = logRecord.RemoveETag();
             }
             if (ok)
             {
@@ -200,17 +182,7 @@ namespace Garnet.server
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
             {
-                if (input.header.CheckWithETagFlag())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                    {
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                    }
-                }
-                else
-                    ok = logRecord.RemoveETag();
+               ok = logRecord.RemoveETag();
             }
             if (ok)
             {

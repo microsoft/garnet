@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -85,6 +86,31 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"{nameof(EvaluateExpire)} exception when HasExpiration is false. optionType: {optionType}");
             }
+        }
+
+        /// <summary>
+        /// Determine whether a modified log record should have an etag
+        /// </summary>
+        /// <param name="currEtag">Source record etag</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
+        /// <returns>True if destination record should have an etag</returns>
+        internal static bool CheckModifiedRecordHasEtag(long currEtag, ref MetaCommandInfo metaCommandInfo)
+        {
+            var metaCmd = metaCommandInfo.MetaCommand;
+
+            // Source record has an etag or meta command is not a conditional execution etag command - destination record will have an etag
+            if (currEtag != LogRecord.NoETag || (metaCmd.IsETagCommand() && !metaCmd.IsEtagCondExecCommand()))
+                return true;
+
+            // Source record does not have an etag and the current meta command is not an etag command - the destination record will not have an etag
+            if (!metaCmd.IsETagCommand())
+                return false;
+
+            // Current meta command is a conditional execution etag command - check the condition to determine etag addition to the destination record
+            Debug.Assert(metaCmd.IsEtagCondExecCommand());
+            var inputEtag = metaCommandInfo.Arg1;
+
+            return metaCmd.CheckConditionalExecution(currEtag, inputEtag);
         }
     }
 }
