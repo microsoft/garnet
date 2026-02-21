@@ -140,6 +140,18 @@ namespace Garnet.cluster
                         logger?.LogWarning(ex, "Failed to resolve hostname {hostname}", targetAddress);
                         pstate = MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED;
                     }
+                    catch (ArgumentException ex)
+                    {
+                        // Hostname is invalid (e.g., too long or malformed)
+                        logger?.LogWarning(ex, "Failed to resolve hostname {hostname} due to invalid format", targetAddress);
+                        pstate = MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED;
+                    }
+                    catch (ArgumentOutOfRangeException ex)
+                    {
+                        // Hostname is invalid (e.g., contains out-of-range characters or length)
+                        logger?.LogWarning(ex, "Failed to resolve hostname {hostname} due to out-of-range value", targetAddress);
+                        pstate = MigrateCmdParseState.HOSTNAME_RESOLUTION_FAILED;
+                    }
                 }
 
                 if (targetNodeId == null && pstate == MigrateCmdParseState.SUCCESS)
