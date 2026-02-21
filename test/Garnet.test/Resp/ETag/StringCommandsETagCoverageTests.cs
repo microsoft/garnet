@@ -14,7 +14,13 @@ namespace Garnet.test.Resp.ETag
     {
         static readonly RedisKey[] StringKeys = [KeysWithEtag[0], "key2", "key3"];
 
+        static readonly RedisKey[] HllKeys = [KeysWithEtag[1], "hllKey2"];
+
+        static readonly RedisKey[] BitmapKeys = [KeysWithEtag[2], "bmKey2", "bmKey3"];
+
         static readonly string[] StringData = ["1", "2", "3"];
+
+        static readonly string[] BitmapData = ["\x00", "\xF0", "\x0F"];
 
         [Test]
         public async Task AppendETagAdvancedTestAsync()
@@ -26,6 +32,32 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(StringData[0].Length + StringData[1].Length, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task BitFieldETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { BitmapKeys[0], "SET", "u8", 0, 42 };
+
+            await CheckCommandAsync(RespCommand.BITFIELD, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(0, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task BitOpETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { "AND", BitmapKeys[0], BitmapKeys[1], BitmapKeys[2] };
+
+            await CheckCommandAsync(RespCommand.BITOP, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
             }
         }
 
@@ -134,6 +166,45 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task PFAddETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { HllKeys[0], StringData[1] };
+
+            await CheckCommandAsync(RespCommand.PFADD, cmdArgs, VerifyResult, [1]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task PFMergeETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { HllKeys[0], HllKeys[1] };
+
+            await CheckCommandAsync(RespCommand.PFMERGE, cmdArgs, VerifyResult, [1]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", (string)result);
+            }
+        }
+
+        [Test]
+        public async Task PSetExETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 2000, StringData[1] };
+
+            await CheckCommandAsync(RespCommand.PSETEX, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", (string)result);
+            }
+        }
+
+        [Test]
         public async Task SetETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
@@ -146,12 +217,53 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
+        [Test]
+        public async Task SetBitETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { BitmapKeys[0], 1, 1 };
+
+            await CheckCommandAsync(RespCommand.SETBIT, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(0, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task SetExETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 2, StringData[1] };
+
+            await CheckCommandAsync(RespCommand.SETEX, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", (string)result);
+            }
+        }
+
+        [Test]
+        public async Task SetRangeETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 0, StringData[1] };
+
+            await CheckCommandAsync(RespCommand.SETRANGE, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
         public override void DataSetUp()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.KeyDelete(StringKeys);
+            db.KeyDelete(HllKeys);
+            db.KeyDelete(BitmapKeys);
 
             var setCmdArgs = new object[] { "SET", StringKeys[0], StringData[0] };
             var results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
@@ -159,6 +271,28 @@ namespace Garnet.test.Resp.ETag
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual("OK", (string)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
+
+            var pfAddCmdArgs = new object[] { "PFADD", HllKeys[0], StringData[0] };
+            results = (RedisResult[])db.Execute("EXECWITHETAG", pfAddCmdArgs);
+
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
+
+            var success = db.HyperLogLogAdd(HllKeys[1], StringData[2]);
+            ClassicAssert.IsTrue(success);
+
+            setCmdArgs = ["SET", BitmapKeys[0], BitmapData[0]];
+            results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
+
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual("OK", (string)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
+
+            success = db.StringSet(BitmapKeys[1], BitmapData[1]);
+            ClassicAssert.IsTrue(success);
+            success = db.StringSet(BitmapKeys[2], BitmapData[2]);
+            ClassicAssert.IsTrue(success);
         }
     }
 }

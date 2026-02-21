@@ -208,10 +208,9 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
+        public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var output = new StringOutput();
             context.Upsert(key.ReadOnlySpan, ref input, value.ReadOnlySpan, ref output);
             return GarnetStatus.OK;
         }
@@ -375,9 +374,10 @@ namespace Garnet.server
         public GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
+            var output = new StringOutput();
             metaCommandInfo.Initialize();
             var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
-            return SET(key, ref input, value, ref context);
+            return SET(key, ref input, ref output, value, ref context);
         }
 
         /// <summary>
@@ -450,18 +450,13 @@ namespace Garnet.server
         /// <param name="output">The length of the updated string</param>
         /// <param name="context">Basic context for the main store</param>
         /// <returns></returns>
-        public unsafe GarnetStatus SETRANGE<TStringContext>(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output, ref TStringContext context)
+        public unsafe GarnetStatus SETRANGE<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            StringOutput sbmOut = new(new SpanByteAndMemory(output));
-
-            var status = context.RMW(key.ReadOnlySpan, ref input, ref sbmOut);
+            var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
             if (status.IsPending)
-                CompletePendingForSession(ref status, ref sbmOut, ref context);
-
-            Debug.Assert(sbmOut.SpanByteAndMemory.IsSpanByte);
-            output.Length = sbmOut.SpanByteAndMemory.Length;
-
+                CompletePendingForSession(ref status, ref output, ref context);
+            
             return GarnetStatus.OK;
         }
 

@@ -154,9 +154,12 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.StringSetBit(key, ref input, ref output);
+            etag = output.ETag;
 
-            if (status == GarnetStatus.OK)
-                dcurr += output.SpanByteAndMemory.Length;
+            if (output.IsOperationSkipped)
+                WriteNull();
+            else if (status == GarnetStatus.OK)
+                ProcessOutput(output.SpanByteAndMemory);
 
             return true;
         }

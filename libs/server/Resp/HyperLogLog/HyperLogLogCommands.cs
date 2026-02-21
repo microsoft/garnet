@@ -28,12 +28,19 @@ namespace Garnet.server
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0);
+            var stringOutput = StringOutput.FromPinnedPointer(output, 1);
 
             for (var i = 1; i < parseState.Count; i++)
             {
                 input.parseState = parseState.Slice(i, 1);
-                var o = StringOutput.FromPinnedPointer(output, 1);
-                storageApi.HyperLogLogAdd(key, ref input, ref o);
+                storageApi.HyperLogLogAdd(key, ref input, ref stringOutput);
+                etag = stringOutput.ETag;
+
+                if (stringOutput.IsOperationSkipped)
+                {
+                    WriteNull();
+                    return true;
+                }
 
                 // Invalid HLL Type
                 if (*output == 0xFF)

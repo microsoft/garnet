@@ -520,6 +520,9 @@ namespace Garnet.server
                     else
                         functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
 
+                    if (bitFieldArgs.secondaryCommand == RespCommand.GET)
+                        shouldUpdateETag = false;
+
                     break;
 
                 case RespCommand.PFADD:
@@ -1006,6 +1009,10 @@ namespace Garnet.server
                         functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
                     else
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+
+                    if (bitFieldArgs.secondaryCommand == RespCommand.GET)
+                        shouldUpdateETag = false;
+
                     break;
 
                 case RespCommand.PFADD:

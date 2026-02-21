@@ -90,8 +90,8 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value)
-            => storageSession.SET(key, ref input, value, ref stringContext);
+        public GarnetStatus SET(PinnedSpanByte key, ref StringInput input, ref StringOutput output, PinnedSpanByte value)
+            => storageSession.SET(key, ref input, ref output, value, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input)
@@ -135,7 +135,7 @@ namespace Garnet.server
         #region SETRANGE
 
         /// <inheritdoc />
-        public GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output)
+        public GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.SETRANGE(key, ref input, ref output, ref stringContext);
 
         #endregion

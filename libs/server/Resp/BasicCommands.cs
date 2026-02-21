@@ -305,11 +305,22 @@ namespace Garnet.server
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            _ = storageApi.SETRANGE(key, ref input, ref output);
+            _ = storageApi.SETRANGE(key, ref input, ref stringOutput);
+            output.Length = stringOutput.SpanByteAndMemory.Length;
+            etag = stringOutput.ETag;
 
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                SendAndReset();
+            if (!stringOutput.IsOperationSkipped)
+            {
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -366,6 +377,9 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
 
+            if (metaCommandInfo.MetaCommand.IsETagCommand())
+                return NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue: false, highPrecision: false, ref storageApi);
+
             var valMetadata = DateTimeOffset.UtcNow.Ticks +
                               (highPrecision
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
@@ -373,8 +387,11 @@ namespace Garnet.server
 
             var value = parseState.GetArgSliceByRef(2);
 
+            var output = GetStringOutput();
             var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, ref parseState, arg1: valMetadata);
-            _ = storageApi.SET(key, ref input, value);
+            _ = storageApi.SET(key, ref input, ref output, value);
+
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -564,11 +581,14 @@ namespace Garnet.server
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
             var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, arg1: valMetadata);
+            var output = GetStringOutput();
 
-            storageApi.SET(key, ref input, val);
+            storageApi.SET(key, ref input, ref output, val);
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
 

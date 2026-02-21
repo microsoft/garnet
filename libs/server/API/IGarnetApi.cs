@@ -31,7 +31,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value);
+        GarnetStatus SET(PinnedSpanByte key, ref StringInput input, ref StringOutput output, PinnedSpanByte value);
 
         /// <summary>
         /// SET Conditional
@@ -99,7 +99,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output">The output of the operation</param>
         /// <returns></returns>
-        GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output);
+        GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
 
         #endregion
