@@ -180,8 +180,12 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
         {
-            // TODO: implement
-            throw new NotImplementedException();
+            do
+            {
+                Thread.Yield();
+                Session.functions.BeforeConsistentReadKeyBatchCallback(ref batch);
+                TransactionalContext.ReadWithPrefetch(ref batch, userContext);
+            } while (!Session.functions.AfterConsistentReadKeyBatchCallback(batch.Count));
         }
 
         #endregion Read Methods (To be overridden with custom logic)

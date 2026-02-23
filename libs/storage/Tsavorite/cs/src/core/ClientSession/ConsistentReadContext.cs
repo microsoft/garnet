@@ -112,8 +112,12 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
         {
-            // TODO: implement
-            throw new NotImplementedException();
+            do
+            {
+                Thread.Yield();
+                Session.functions.BeforeConsistentReadKeyBatchCallback(ref batch);
+                BasicContext.ReadWithPrefetch(ref batch, userContext);
+            } while (!Session.functions.AfterConsistentReadKeyBatchCallback(batch.Count));
         }
 
         #endregion

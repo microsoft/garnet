@@ -344,12 +344,17 @@ namespace Tsavorite.core
         /// <typeparam name="TBatch"></typeparam>
         /// <param name="batch"></param>
         void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
-            where TBatch : IReadArgBatch<TInput, TOutput>;
+            where TBatch : IReadArgBatch<TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
 
         /// <summary>
         /// Called after reading a batch of keys to update the session timestamp.
         /// </summary>
-        void AfterConsistentReadKeyBatchCallback();
+        bool AfterConsistentReadKeyBatchCallback(int keyCount);
         #endregion Utilities
     }
 

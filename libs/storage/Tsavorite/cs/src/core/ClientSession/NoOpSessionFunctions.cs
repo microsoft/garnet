@@ -120,8 +120,11 @@ namespace Tsavorite.core
 
         public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
             where TBatch : IReadArgBatch<TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         { }
 
-        public void AfterConsistentReadKeyBatchCallback() { }
+        public bool AfterConsistentReadKeyBatchCallback(int keyCount) => true;
     }
 }

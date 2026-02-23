@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -56,6 +57,11 @@ namespace Garnet.server
         ReplicaReadSessionContext replicaReadContext;
 
         /// <summary>
+        /// Read context for batch reads. Used to track max sequence number of all keys involved in the read.
+        /// </summary>
+        ReplicaReadSessionContext batchReadContext;
+
+        /// <summary>
         /// A cancellation token source used to signal cancellation for consistent read operations.
         /// </summary>
         readonly CancellationTokenSource consistentReadCts;
@@ -69,6 +75,27 @@ namespace Garnet.server
         /// Consistent read in progress lock
         /// </summary>
         SingleWriterMultiReaderLock inProgress;
+
+        /// <summary>
+        /// Array of key hashes used for consistent read key batch.
+        /// </summary>
+        long[] keyHashCache = null;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static int GetPowerOfTwoSize(int value)
+            => value <= 1 ? 1 : (int)BitOperations.RoundUpToPowerOf2((uint)value);
+
+        void ExpandKeyHashCache(int keyCount)
+        {
+            var newSize = GetPowerOfTwoSize(keyCount);
+            keyHashCache = GC.AllocateArray<long>(newSize, pinned: true);
+        }
+
+        void ShrinkKeyHashCache(int keyCount)
+        {
+            var newSize = GetPowerOfTwoSize(keyCount);
+            keyHashCache = GC.AllocateArray<long>(newSize, pinned: true);
+        }
 
         /// <summary>
         /// Read session state constructor
@@ -132,14 +159,60 @@ namespace Garnet.server
         public void AfterConsistentReadKeyCallback()
             => appendOnlyFile.readConsistencyManager.AfterConsistentReadKey(ref replicaReadContext);
 
-        public void InitializeForBatch(int keyCount)
+        /// <summary>
+        /// Initialize context for read key batch.
+        /// </summary>
+        /// <param name="parameters"></param>
+        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<PinnedSpanByte> parameters)
         {
+            if (!inProgress.TryReadLock())
+                throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
+            try
+            {
+                var keyCount = parameters.Length;
+                var consistencyManager = appendOnlyFile.readConsistencyManager;
+                // First check if version of consistency mananger has changed
+                appendOnlyFile.readConsistencyManager.CheckConsistencyManagerVersion(ref replicaReadContext);
 
+                // Allocate array to cache key hashes for batch read
+                if (keyHashCache == null || keyCount > keyHashCache.Length)
+                    ExpandKeyHashCache(keyCount);
+                else if ((keyCount << 2) < keyHashCache.Length)
+                    ShrinkKeyHashCache(keyCount);
+
+                // NOTE: this context is a copy used to emulate standalone reads.
+                // The actual update of the session max will happen after the read succeeds.
+                batchReadContext = replicaReadContext;
+                for (var i = 0; i < parameters.Length; i++)
+                {
+                    var key = parameters[i];
+                    ResetTimeoutCts();
+                    consistencyManager.BeforeConsistentReadKeyBatch(key.ReadOnlySpan, ref batchReadContext, timeoutCts.Token, out var hash);
+                    keyHashCache[i] = hash;
+                }
+            }
+            finally
+            {
+                inProgress.ReadUnlock();
+            }
         }
 
-        public void BeforeConsistentReadKeyBatchCallback()
+        /// <summary>
+        /// Validate keys have not changed after reading a key batch.
+        /// </summary>
+        /// <param name="keyCount"></param>
+        /// <returns></returns>
+        public bool AfterConsistentReadKeyBatch(int keyCount)
         {
+            var consistencyManager = appendOnlyFile.readConsistencyManager;
+            for (var i = 0; i < keyCount; i++)
+            {
+                var hash = keyHashCache[i];
+                if (!consistencyManager.AfterConsistentReadKeyBatch(hash, ref batchReadContext))
+                    return false;
+            }
 
+            return true;
         }
     }
 }

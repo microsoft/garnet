@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -14,6 +16,11 @@ namespace Tsavorite.core
         /// Count of keys/args/outputs.
         /// </summary>
         int Count { get; }
+
+        /// <summary>
+        /// Raw parameters for the batch.
+        /// </summary>
+        ReadOnlySpan<PinnedSpanByte> Parameters { get; }
 
         /// <summary>
         /// Get <paramref name="i"/>th key.

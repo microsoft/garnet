@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Garnet.server
@@ -126,20 +127,12 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This method implements part of the consistent read protocol for a single key when shared AOF is enabled.
-        /// NOTE:
-        ///     This method waits until the log sequence number of the associated key is lesser or equal than the maximum session log sequence number.
-        ///     It executes before store.Read is processed to ensure that the log sequence number of the associated key is ahead of the last read in accordance to the consistent read protocol
-        ///     The replica read context is updated (<seealso cref="T:Garnet.server.ReplicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate"/>) after the actual store.Read call to ensure that we don't underestimate the true log sequence number.
+        /// Ensures that the specified replica read session context is synchronized with the current session version.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="ct"></param>
-        public void BeforeConsistentReadKey(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        /// <param name="replicaReadSessionContext">A reference to the session context to check and update.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CheckConsistencyManagerVersion(ref ReplicaReadSessionContext replicaReadSessionContext)
         {
-            var hash = GarnetLog.HASH(key);
-            var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
-
             // If first time calling or version has been bumped reset read context
             // NOTE: Version changes every time replica is reset and a attached to a new primary.
             // When a batch of read commands executes, it all happens under epoch protection, hence version change will not affect read prefix consistency
@@ -149,14 +142,22 @@ namespace Garnet.server
                 replicaReadSessionContext.lastVirtualSublogIdx = -1;
                 replicaReadSessionContext.maximumSessionSequenceNumber = 0;
             }
+        }
 
-            // If first read initialize context
-            if (replicaReadSessionContext.lastVirtualSublogIdx == -1)
-                goto updateContext;
+        /// <summary>
+        /// Verify key freshness before allowing reads.
+        /// </summary>
+        /// <param name="hash"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="ct"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void VerifyKeyFreshness(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        {
+            var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx)
+            if (replicaReadSessionContext.lastVirtualSublogIdx != -1 && replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx)
             {
                 // Optimistic check without lock
                 while (replicaReadSessionContext.maximumSessionSequenceNumber >= GetSublogFrontierSequenceNumber(hash))
@@ -168,10 +169,29 @@ namespace Garnet.server
                 }
             }
 
-        updateContext:
             // Store for future update
             replicaReadSessionContext.lastVirtualSublogIdx = virtualSublogIdx;
             replicaReadSessionContext.lastHash = hash;
+        }
+
+        /// <summary>
+        /// This method implements part of the consistent read protocol for a single key when shared AOF is enabled.
+        /// NOTE:
+        ///     This method waits until the log sequence number of the associated key is lesser or equal than the maximum session log sequence number.
+        ///     It executes before store.Read is processed to ensure that the log sequence number of the associated key is ahead of the last read in accordance to the consistent read protocol
+        ///     The replica read context is updated (<seealso cref="T:Garnet.server.ReplicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate"/>) after the actual store.Read call to ensure that we don't underestimate the true log sequence number.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="ct"></param>
+        public void BeforeConsistentReadKey(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        {
+            // Check version
+            CheckConsistencyManagerVersion(ref replicaReadSessionContext);
+
+            // Verify key freshness
+            var hash = GarnetLog.HASH(key);
+            VerifyKeyFreshness(hash, ref replicaReadSessionContext, ct);
         }
 
         /// <summary>
@@ -186,6 +206,41 @@ namespace Garnet.server
         {
             replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(
                 replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(replicaReadSessionContext.lastHash));
+        }
+
+        /// <summary>
+        /// Verify key freshness and keep track hash and maximum session sequence number to check for updates after batch read.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="batchReadContext"></param>
+        /// <param name="ct"></param>
+        /// <param name="hash"></param>
+        public void BeforeConsistentReadKeyBatch(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext batchReadContext, CancellationToken ct, out long hash)
+        {
+            // Verify key freshness
+            hash = GarnetLog.HASH(key);
+            VerifyKeyFreshness(hash, ref batchReadContext, ct);
+
+            // Keep track of max sequence number to check for updates after batch read.
+            batchReadContext.maximumSessionSequenceNumber = Math.Max(
+                batchReadContext.maximumSessionSequenceNumber, GetKeySequenceNumber(batchReadContext.lastHash));
+        }
+
+        /// <summary>
+        /// Validate that key sequence number has not progressed beyond the snapshot used for batch key read.
+        /// </summary>
+        /// <param name="hash"></param>
+        /// <param name="batchReadContext"></param>
+        /// <returns></returns>
+        public bool AfterConsistentReadKeyBatch(long hash, ref ReplicaReadSessionContext batchReadContext)
+        {
+            var keySequenceNumber = GetKeySequenceNumber(hash);
+            var mSSN = batchReadContext.maximumSessionSequenceNumber;
+            // NOTE: Read key batch is prefix consistent at boundary because maximumSessionSequenceNumber (mSSN) == maxof(batch key sequence numbers)
+            // and freshness check would have prevented boundary read of the corresponding key.
+            // In other words, T_k (timestamp of key k) < T_f (frontier timestamp where read was allowed to proceed) and because mSSN == max of all T_k in the batch
+            // mSSN < T_f, hence time has advanced beyond the point where it is safe to read.
+            return keySequenceNumber <= mSSN;
         }
     }
 }

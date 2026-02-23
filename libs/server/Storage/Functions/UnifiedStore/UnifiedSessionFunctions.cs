@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -40,18 +39,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
             where TBatch : IReadArgBatch<UnifiedInput, UnifiedOutput>
-        {
-            for(var i = 0; i < batch.Count; i++)
-            {
-                batch.GetKey(i, out var key);
-            }
-            throw new NotImplementedException();
-        }
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => readSessionState.BeforeConsistentReadKeyBatch(batch.Parameters);
 
         /// <inheritdoc />
-        public void AfterConsistentReadKeyBatchCallback()
-        {
-            throw new NotImplementedException();
-        }
+        public bool AfterConsistentReadKeyBatchCallback(int keyCount)
+            => readSessionState.AfterConsistentReadKeyBatch(keyCount);
     }
 }
