@@ -91,6 +91,14 @@ namespace Garnet.server
         {
             int idx = (int)cmd;
             metrics[idx].RecordValue(Version, value);
+            if (cmd == LatencyMetricsType.NET_RS_BYTES)
+            {
+                GarnetOpenTelemetryLatencyMetrics.Instance?.RecordBytesProcessed(value);
+            }
+            else if (cmd == LatencyMetricsType.NET_RS_OPS)
+            {
+                GarnetOpenTelemetryLatencyMetrics.Instance?.RecordOperationsProcessed(value);
+            }
         }
 
         public void ResetAll()

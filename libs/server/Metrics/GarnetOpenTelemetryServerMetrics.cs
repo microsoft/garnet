@@ -4,8 +4,9 @@ using System.Diagnostics.Metrics;
 namespace Garnet.server.Metrics
 {
     /// <summary>
-    /// Provides OpenTelemetry-compatible metrics for Garnet server using <see cref="System.Diagnostics.Metrics.Meter"/>.
+    /// Provides OpenTelemetry-compatible metrics for Garnet server using <see cref="Meter"/>.
     /// Consumers can subscribe to these metrics using the OpenTelemetry SDK or any other <see cref="MeterListener"/>.
+    /// The command-rate and network rates are not exposed as metrics as they can be calculated based on the other exposed metrics.
     /// </summary>
     internal sealed class GarnetOpenTelemetryServerMetrics : IDisposable
     {
@@ -16,6 +17,14 @@ namespace Garnet.server.Metrics
 
         private readonly Meter meter;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="GarnetOpenTelemetryServerMetrics"/> class,
+        /// creating observable instruments that expose server connection metrics via a <see cref="Meter"/>.
+        /// </summary>
+        /// <param name="serverMetrics">
+        /// The <see cref="GarnetServerMetrics"/> instance whose connection counters
+        /// (active, received, and disposed) are observed by the created instruments.
+        /// </param>
         internal GarnetOpenTelemetryServerMetrics(GarnetServerMetrics serverMetrics)
         {
             meter = new Meter(MeterName);
@@ -37,24 +46,6 @@ namespace Garnet.server.Metrics
                 () => serverMetrics.total_connections_disposed,
                 unit: "{connection}",
                 description: "Total number of client connections disposed.");
-
-            meter.CreateObservableGauge(
-                "garnet.server.ops_per_sec",
-                () => serverMetrics.instantaneous_cmd_per_sec,
-                unit: "{operation}/s",
-                description: "Instantaneous operations per second.");
-
-            meter.CreateObservableGauge(
-                "garnet.server.network.input.rate",
-                () => serverMetrics.instantaneous_net_input_tpt,
-                unit: "KBy/s",
-                description: "Instantaneous network input throughput in KB/s.");
-
-            meter.CreateObservableGauge(
-                "garnet.server.network.output.rate",
-                () => serverMetrics.instantaneous_net_output_tpt,
-                unit: "KBy/s",
-                description: "Instantaneous network output throughput in KB/s.");
         }
 
         /// <inheritdoc />
