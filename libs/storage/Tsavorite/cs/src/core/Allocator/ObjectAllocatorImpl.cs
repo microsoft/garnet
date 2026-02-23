@@ -351,37 +351,6 @@ namespace Tsavorite.core
             return objectLogSegment;
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
-
-        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int possiblyPartialPageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
-        {
-            VerifyCompatibleSectorSize(device);
-            VerifyCompatibleSectorSize(objectLogDevice);
-
-            var epochTaken = epoch.ResumeIfNotProtected();
-            try
-            {
-                if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage) + possiblyPartialPageSize)
-                {
-                    // Requested page is unavailable in memory, ignore
-                    callback(0, 0, asyncResult);
-                }
-                else
-                {
-                    // We are writing to a separate device which starts at "startPage" (this is probably from checkpointing)
-                    WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)possiblyPartialPageSize,
-                               callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
-                }
-            }
-            finally
-            {
-                if (epochTaken)
-                    epoch.Suspend();
-            }
-        }
-
         internal void FreePage(long page)
         {
             objectPages[page % BufferSize].objectIdMap.Clear();
@@ -424,6 +393,84 @@ namespace Tsavorite.core
         /// <summary>Object log segment size</summary>
         public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
 
+        /// <summary>
+        /// This is the last "until address" for which <see cref="AsyncFlushPagesForReadOnly(long, long, bool)"/> was called; we need to track this to linearize
+        /// multiple calls to AsyncFlushPagesForReadOnly, to ensure that object log indexes are consistent in the main log records that reference them.
+        /// </summary>
+        long lastROIssuedFlushUntilAddress = PageHeader.Size;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal override void AsyncFlushPagesForReadOnly(long fromAddress, long untilAddress, bool noFlush = false)
+        {
+            // TODO: Wait for any executing AsyncFlushPagesForReadOnly to complete, to linearize object log file updates and their addresses in the main-log records.
+            // If we have concurrent AsyncFlushPagesForReadOnly calls executing we would have to manage CircularDiskWriteBuffer's block writes (such as by chaining)
+            // which would be difficult and inefficient. Multiple AsyncFlushPagesForReadOnly calls should be rare.
+            while (lastROIssuedFlushUntilAddress < fromAddress)
+            {
+                // We don't need to worry about the epoch because flush writes occur outside the epoch.
+                _ = Thread.Yield(); // TODO replace with a .Wait()
+            }
+
+            // We do not need to ensure page alignment of the ReadOnlyAddres for correctness, and in fact that is impossible since we support setting it to whatever
+            // the current TailAddress is, but for normal flush operations we do set it to page alignment to eliminate concerns about rewriting partial sectors.
+            GetFLushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
+
+            // Create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
+            var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
+
+            // Write each page (or partial page) in the range.
+            for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
+            {
+                // The result from PrepareFlushAsyncResult indicates whether we are to perform an actual flush--but asyncResult will be set anyway.
+                if (PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
+                {
+                    asyncResult.flushBuffers = flushBuffers;
+
+                    // TsavoriteKV using ObjectAllocator always moves ReadOnlyAddress in page alignment, so if we have a partial first page, it can be written
+                    // in the same loop as full pages, because there are no adjacent fragments. Write the entire page up to asyncResult.untilAddress.
+                    Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
+                        $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
+
+                    // Once we have issued this write we can update lastROIssuedFlushUntilAddress; the flush write completes in the background as we move to the next page.
+                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                }
+                lastROIssuedFlushUntilAddress = asyncResult.untilAddress;
+            }
+        }
+
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+            => WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
+
+        protected override void WriteAsyncToDeviceForSnapshot<TContext>(long startPage, long flushPage, int pageFlushSize, DeviceIOCompletionCallback callback,
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
+        {
+            VerifyCompatibleSectorSize(device);
+            VerifyCompatibleSectorSize(objectLogDevice);
+
+            var epochTaken = epoch.ResumeIfNotProtected();
+            try
+            {
+                // The pageFlushSize may be partial if we are writing the final partial page.
+                if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage) + pageFlushSize)
+                {
+                    // Requested page is unavailable in memory, ignore
+                    callback(0, 0, asyncResult);
+                }
+                else
+                {
+                    // We are writing to a separate device which starts at "startPage"
+                    WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageFlushSize,
+                               callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
+                }
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
+            }
+        }
+
         private void WriteAsync<TContext>(long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)
@@ -440,7 +487,7 @@ namespace Tsavorite.core
             // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes).
             if (asyncResult.flushBuffers is null)
             {
-                if (!asyncResult.isForRecovery)
+                if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                 {
                     WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                     return;
@@ -486,15 +533,20 @@ namespace Tsavorite.core
                 }
             }
             else
-                Debug.Assert(!asyncResult.isForRecovery, "asyncResult.isForRecovery should always be done an entire page at a time");
+                Debug.Assert(asyncResult.flushRequestState != FlushRequestState.Recovery, "FlushRequestState.IsForRecovery should always be done an entire page at a time");
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
 
-            // We suspend epoch during the time-consuming actual flush. Note: The ShiftHeadAddress check to always remain below FlushedUntilAddress
-            // means the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush.
-            var epochWasProtected = epoch.SuspendIfProtected();
+            // If we are in snapshot checkpoint we will need to acquire the epoch whenever we access the log record or oidMap; we will not have the epoch
+            // when we enter here. If we are in recovery, we will not have the epoch either, but we don't need to acquire it as there are no other operations
+            // happening. Otherwise, we are here because we are moving the read-only address (FoldOver checkpoint is a special case of this). In that case
+            // we will have the epoch on entry, but we will not need to remain protected because ShiftHeadAddress always remains below FlushedUntilAddress
+            // so the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush. So we release the epoch if we have it;
+            // we don't need it and don't want to hold it during the time-consuming actual flush.
+            var pulseEpoch = asyncResult.flushRequestState == FlushRequestState.Snapshot;
+            var protectEpochWhenDone = epoch.SuspendIfProtected();
 
             // Overflow Keys and Values are written to, and Object values are serialized to, this Stream, if we have flushBuffers.
             ObjectLogWriter<TStoreFunctions> logWriter = null;
@@ -523,10 +575,21 @@ namespace Tsavorite.core
                     result.DisposeHandle();
                 }
 
-                // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
-                var allocatorPageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
-                allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
-                srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
+                try
+                {
+                    if (pulseEpoch)
+                        epoch.Resume();
+
+                    // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
+                    var allocatorPageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
+                    allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
+                    srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
+                }
+                finally
+                {
+                    if (pulseEpoch)
+                        epoch.Suspend();
+                }
 
                 if (asyncResult.flushBuffers is not null)
                 {
@@ -543,15 +606,18 @@ namespace Tsavorite.core
                 // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
                 // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
                 ref var pageHeader = ref *(PageHeader*)srcBuffer.GetValidPointer();
-                var recoveryOngoingPageHeader = asyncResult.isForRecovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
+                var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
+                var endLogicalAddress = logicalAddress + (endPhysicalAddress - physicalAddress);
                 while (physicalAddress < endPhysicalAddress)
                 {
                     // LogRecord is in the *copy of* the log buffer. We will update it (for objectIds) without affecting the actual record in the log.
                     // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
                     var logRecordSize = logRecord.AllocatedSize;
+                    var extraRecordOffset = 0;
 
-                    // Do not write Invalid records. This includes IsNull records.
+                    // Do not write Invalid records. This includes IsNull records. By the time we get here, ReadOnlyAddress has been advanced, so the
+                    // record's state (IsValid, IsInNewVersion, inline data, etc.) will not change.
                     if (logRecord.Info.Valid)
                     {
                         // Do not write v+1 records (e.g. during a checkpoint)
@@ -561,7 +627,7 @@ namespace Tsavorite.core
                             // which would be the case where we were created to be used for inline string records only.
                             if (logRecord.Info.RecordHasObjects)
                             {
-                                if (!asyncResult.isForRecovery)
+                                if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                                 {
                                     var recordStartPosition = logWriter.GetNextRecordStartPosition();
                                     if (isFirstRecordOnPage)
@@ -569,13 +635,44 @@ namespace Tsavorite.core
 
                                     OverflowByteArray keyOverflow = default, valueOverflow = default;
                                     IHeapObject valueObject = default;
-                                    if (logRecord.Info.KeyIsOverflow)
-                                        keyOverflow = logRecord.KeyOverflow;
+                                    try
+                                    {
+                                        if (pulseEpoch)
+                                        {
+                                            epoch.Resume();
 
-                                    if (logRecord.Info.ValueIsOverflow)
-                                        valueOverflow = logRecord.ValueOverflow;
-                                    else if (logRecord.Info.ValueIsObject)
-                                        valueObject = logRecord.ValueObject;
+                                            // Check to see if HeadAddress (which can change while we're here) has moved past this record.
+                                            var headAddress = HeadAddress;
+                                            if (headAddress > logicalAddress)
+                                            {
+                                                if (headAddress <= endLogicalAddress)
+                                                {
+                                                    // Jump ahead to HeadAddress. Recover() will start recovery at the last FlushedUntilAddress of the main log,
+                                                    // which will never be less than HeadAddress. So we do not need to worry about whatever values are in the inline
+                                                    // record space between the current logicalAddress and HeadAddress.
+                                                    extraRecordOffset = (int)(headAddress - (logicalAddress + logRecordSize));
+                                                }
+                                                else
+                                                {
+                                                    asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
+                                                    goto WritePage;
+                                                }
+                                            }
+                                        }
+
+                                        if (logRecord.Info.KeyIsOverflow)
+                                            keyOverflow = logRecord.KeyOverflow;
+
+                                        if (logRecord.Info.ValueIsOverflow)
+                                            valueOverflow = logRecord.ValueOverflow;
+                                        else if (logRecord.Info.ValueIsObject)
+                                            valueObject = logRecord.ValueObject;
+                                    }
+                                    finally
+                                    {
+                                        if (pulseEpoch)
+                                            epoch.Suspend();
+                                    }
 
                                     var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                     logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
@@ -597,31 +694,35 @@ namespace Tsavorite.core
                             // Mark v+1 records as invalid to avoid deserializing them on recovery
                             logRecord.InfoRef.SetInvalid();
                         }
-                    }
+                    } // endif record id Valid
 
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
 
+            WritePage:
                 // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
-                // to the main log file.
-                if (asyncResult.partial)
+                // to the main log file unless we are to skip it because HeadAddress advanced.
+                if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
                 {
-                    // We're writing only a subset of the page, so update our count of bytes to write.
-                    var aligned_end = (int)RoundUp(asyncResult.untilAddress - alignedStartOffset, (int)device.SectorSize);
-                    numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
-                }
+                    if (asyncResult.partial)
+                    {
+                        // We're writing only a subset of the page, so update our count of bytes to write.
+                        var aligned_end = (int)RoundUp(asyncResult.untilAddress - alignedStartOffset, (int)device.SectorSize);
+                        numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
+                    }
 
-                // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
-                // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
-                if (logWriter is not null)
-                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
-                else
-                    device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+                    // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
+                    // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
+                    if (logWriter is not null)
+                        logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
+                    else
+                        device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
+                }
             }
             finally
             {
-                if (epochWasProtected)
+                if (protectEpochWhenDone)
                     epoch.Resume();
                 logWriter?.Dispose();
             }

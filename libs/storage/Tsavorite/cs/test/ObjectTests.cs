@@ -4,11 +4,14 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.core.Utility;
 
 namespace Tsavorite.test.Objects
 {
@@ -23,6 +26,8 @@ namespace Tsavorite.test.Objects
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
+        const long LogMemorySize = 1L << 15;
+        const long PageSize = 1L << 10;
 
         [SetUp]
         public void Setup()
@@ -30,7 +35,7 @@ namespace Tsavorite.test.Objects
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.obj.log"), deleteOnClose: true);
-            var storeFunctions = TestContext.CurrentContext.Test.MethodName.StartsWith("ObjectDiskWriteReadLarge")
+            var storeFunctions = TestContext.CurrentContext.Test.MethodName.StartsWith("LargeObject")
                 ? StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 : StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance);
 
@@ -39,9 +44,9 @@ namespace Tsavorite.test.Objects
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
-                MutableFraction = 0.1,
-                LogMemorySize = 1L << 15,
-                PageSize = 1L << 10
+                MutableFraction = TestContext.CurrentContext.Test.MethodName.Equals(nameof(LargeObjectLinearizeFlushedPages)) ? 1.0 : 0.1,
+                LogMemorySize = LogMemorySize,
+                PageSize = PageSize
             }, storeFunctions
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -232,7 +237,7 @@ namespace Tsavorite.test.Objects
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
-        public void ObjectDiskWriteReadLargeValueSmallKey([Values] SerializeKeyValueSize serializeValueSize)
+        public void LargeObjectDiskWriteReadSmallKeyBigValue([Values] SerializeKeyValueSize serializeValueSize)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -268,6 +273,7 @@ namespace Tsavorite.test.Objects
                     var key = SpanByte.FromPinnedVariable(ref keyStruct);
 
                     var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"IsPending ({status.IsPending}) != onDisk");
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult();
 
@@ -276,6 +282,218 @@ namespace Tsavorite.test.Objects
                     var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
                     if (badIndex != -1)
                         Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
+                }
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        //[Repeat(300)]
+        public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
+        {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
+            // Ensure our size calculations are correct by validating the test parameters are what we expect
+            Assert.That(LogMemorySize, Is.EqualTo(1L << 15));
+            Assert.That(PageSize, Is.EqualTo(1L << 10));
+            Assert.That(store.hlogBase.BufferSize, Is.EqualTo(32));     // LogMemorySize is PageSize << 5
+            Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo(32));
+            const int RecordLength = 32;                                // LogRecord allocated size
+            const int ObjectsPerPage = (int)((PageSize - PageHeader.Size) / RecordLength);
+            Assert.That(ObjectsPerPage, Is.EqualTo(30));                // Make debugging easier by verifying the length we'll see in the IDE
+
+            var functions = new TestLargeObjectFunctions { expectedRecordLength = RecordLength }; // ExpectedRecordLength controls how many objects per page
+            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
+            var bContext = session.BasicContext;
+
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            var valueSize = (int)serializeValueSize;
+
+            // Start with a full buffer plus two pages to overflow
+            int numRec = ObjectsPerPage * (store.hlogBase.BufferSize + 2);
+            int lastKey = 0;
+            for (; lastKey < numRec; lastKey++)
+            {
+                var key1Struct = new TestObjectKey { key = lastKey };
+                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var value = new TestLargeObjectValue(valueSize);
+                new Span<byte>(value.value).Fill((byte)key1Struct.key);
+                _ = bContext.Upsert(key, ref input, value, ref output);
+            }
+
+            // Test that the expected number of pages were flushed and that we get the right results back. We've flushed in a multiple of full pages,
+            // so ReadOnlyAddress will be aligned to page size. We have 0.1 mutable fraction, so we should have closed 2 pages and have 3 mutable,
+            // leaving 27 immutable, totaling FUA 29 * PageSize. (That's why we verified 32 above.. easier to verify numbers here).
+            // Note: This test does NOT use SizeTracker; therefore it does not evict except when page count is exceeded.
+            Assert.That(IsAligned(store.hlogBase.ReadOnlyAddress, store.hlogBase.PageSize), $"ReadOnlyAddress ({store.hlogBase.ReadOnlyAddress}) should be page-aligned");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.PageSize * 29), $"FUA ({store.hlogBase.FlushedUntilAddress}) != PageSize * 29");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.ReadOnlyAddress), $"FUA ({store.hlogBase.FlushedUntilAddress}) == ROA");
+            DoRead(0, 2 * ObjectsPerPage - 1, onDisk: true);
+            DoRead(2 * ObjectsPerPage, lastKey, onDisk: false);
+
+            // Now make ReadOnlyAddress be no longer aligned to page: add half a page, the SetReadOnlyToTail. 
+            const int ObjectsPerHalfPage = ObjectsPerPage / 2;
+            for (var ii = 0; ii < ObjectsPerHalfPage; ii++)
+            {
+                var key1Struct = new TestObjectKey { key = lastKey + ii };
+                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var value = new TestLargeObjectValue(valueSize);
+                new Span<byte>(value.value).Fill((byte)key1Struct.key);
+                _ = bContext.Upsert(key, ref input, value, ref output);
+            }
+
+            store.epoch.Resume();
+            try
+            {
+                Assert.That(store.hlogBase.ShiftReadOnlyToTail(out _, out var sroSemaphore), Is.True);
+                sroSemaphore.Wait();
+            }
+            finally
+            {
+                store.epoch.Suspend();
+            }
+
+            // This should have flushed 2.5 more pages and Closed one more.
+            Assert.That(!IsAligned(store.hlogBase.ReadOnlyAddress, store.hlogBase.PageSize), $"ReadOnlyAddress ({store.hlogBase.ReadOnlyAddress}) should not be page-aligned");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.PageSize * 34 + PageHeader.Size + ObjectsPerHalfPage * RecordLength), $"FUA ({store.hlogBase.FlushedUntilAddress}) != PageSize * 34 + ObjectsPerHalfPage");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.ReadOnlyAddress), $"FUA ({store.hlogBase.FlushedUntilAddress}) == ROA");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.GetTailAddress()), $"FUA ({store.hlogBase.FlushedUntilAddress}) == TA");
+            DoRead(0, ObjectsPerPage * 3 - 1, onDisk: true);
+            DoRead(ObjectsPerPage * 3, lastKey + ObjectsPerHalfPage, onDisk: false);
+
+            void DoRead(int firstKey, int lastKey, bool onDisk)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                for (int ii = firstKey; ii < lastKey; ii++)
+                {
+                    var output = new TestLargeObjectOutput();
+                    var keyStruct = new TestObjectKey { key = ii };
+                    var key = SpanByte.FromPinnedVariable(ref keyStruct);
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"status.IsPending ({status}) != onDisk for key {ii}");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize));
+                    var numLongs = output.valueObject.value.Length % 8;
+                    var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)ii);
+                    if (badIndex != -1)
+                        Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
+                }
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        //[Repeat(300)]
+        // Note: This test name keys the mutableFraction
+        public async Task LargeObjectLinearizeFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
+        {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
+            // Ensure our size calculations are correct by validating the test parameters are what we expect
+            Assert.That(LogMemorySize, Is.EqualTo(1L << 15));
+            Assert.That(PageSize, Is.EqualTo(1L << 10));
+            Assert.That(store.hlogBase.BufferSize, Is.EqualTo(32));     // LogMemorySize is PageSize << 5
+            Assert.That(store.hlogBase.MaxAllocatedPageCount, Is.EqualTo(32));
+            const int RecordLength = 32;                                // LogRecord allocated size
+            const int ObjectsPerPage = (int)((PageSize - PageHeader.Size) / RecordLength);
+            Assert.That(ObjectsPerPage, Is.EqualTo(30));                // Make debugging easier by verifying the length we'll see in the IDE
+
+            var functions = new TestLargeObjectFunctions { expectedRecordLength = RecordLength }; // ExpectedRecordLength controls how many objects per page
+            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
+            var bContext = session.BasicContext;
+
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            var valueSize = (int)serializeValueSize;
+
+            // Verify initial conditions
+            Assert.That(store.hlogBase.GetTailAddress(), Is.EqualTo(PageHeader.Size));
+            Assert.That(store.hlogBase.HeadAddress, Is.EqualTo(PageHeader.Size));
+            Assert.That(store.hlogBase.ReadOnlyAddress, Is.EqualTo(PageHeader.Size));
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(PageHeader.Size));
+
+            int numRec = ObjectsPerPage * store.hlogBase.BufferSize;
+            int lastKey = 0;
+            for (; lastKey < numRec; lastKey++)
+            {
+                var key1Struct = new TestObjectKey { key = lastKey };
+                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var value = new TestLargeObjectValue(valueSize);
+                new Span<byte>(value.value).Fill((byte)key1Struct.key);
+                _ = bContext.Upsert(key, ref input, value, ref output);
+            }
+
+            // Verify post-insert conditions.
+            Assert.That(store.hlogBase.GetTailAddress(), Is.EqualTo(store.hlogBase.PageSize * store.hlogBase.BufferSize));
+            Assert.That(store.hlogBase.HeadAddress, Is.EqualTo(PageHeader.Size));
+            Assert.That(store.hlogBase.ReadOnlyAddress, Is.EqualTo(PageHeader.Size));
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(PageHeader.Size));
+
+            // Now test flushing in sequence so the second call has to wait to linearize. Use a semaphore to make sure we've
+            // launched the first one before calling the second, else the second call may be run first.
+            ManualResetEventSlim gate = new(false);
+            var task = Task.Run(() => DoFlush((store.hlogBase.BufferSize - 20) * store.hlogBase.PageSize, gate));
+
+            // We have to wait for this outside the epoch to avoid deadlock.
+            gate.Wait();
+
+            SemaphoreSlim sroSemaphore;
+            store.epoch.Resume();
+            try
+            {
+                Assert.That(store.hlogBase.ShiftReadOnlyToTail(out _, out sroSemaphore), Is.True);
+            }
+            finally
+            {
+                store.epoch.Suspend();
+            }
+            gate.Dispose();
+            await Task.WhenAll(task, sroSemaphore.WaitAsync());
+
+            // Test that the FlushedUntilAddress is correct and that we get the right results back; nothing has been evicted yet, so all records are in memory.
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.GetTailAddress()));
+            Assert.That(store.hlogBase.ReadOnlyAddress, Is.EqualTo(store.hlogBase.FlushedUntilAddress), $"FUA ({store.hlogBase.FlushedUntilAddress}) == ROA");
+            DoRead(0, ObjectsPerPage * store.hlogBase.BufferSize, onDisk: false);
+
+            void DoRead(int firstKey, int lastKey, bool onDisk)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                for (int ii = firstKey; ii < lastKey; ii++)
+                {
+                    var output = new TestLargeObjectOutput();
+                    var keyStruct = new TestObjectKey { key = ii };
+                    var key = SpanByte.FromPinnedVariable(ref keyStruct);
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk), $"status.IsPending ({status}) != onDisk for key {ii}");
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize));
+                    var numLongs = output.valueObject.value.Length % 8;
+                    var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)ii);
+                    if (badIndex != -1)
+                        Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
+                }
+            }
+
+            void DoFlush(long newReadOnlyAddress, ManualResetEventSlim gate)
+            {
+                store.epoch.Resume();
+                try
+                {
+                    // Do this in two pieces so we signal the gate in between to give the second call above a chance to launch.
+                    Assert.That(store.hlogBase.ShiftReadOnlyAddress(newReadOnlyAddress - store.hlogBase.PageSize * 10), Is.True);
+                    gate?.Set();
+                    Assert.That(store.hlogBase.ShiftReadOnlyAddress(newReadOnlyAddress), Is.True);
+                }
+                finally
+                {
+                    store.epoch.Suspend();
                 }
             }
         }
@@ -321,7 +539,7 @@ namespace Tsavorite.test.Objects
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
-        public void ObjectDiskWriteReadLargeKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeKeyValueSize serializeValueSize)
+        public void LargeObjectDiskWriteReadBigKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeKeyValueSize serializeValueSize)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");

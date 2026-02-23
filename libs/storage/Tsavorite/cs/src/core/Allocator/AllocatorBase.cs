@@ -211,7 +211,7 @@ namespace Tsavorite.core
         #endregion
 
         #region Abstract and virtual methods
-        /// <summary>Write async to device</summary>
+        /// <summary>Write async to device for snapshot checkpoint</summary>
         /// <typeparam name="TContext"></typeparam>
         /// <param name="startPage"></param>
         /// <param name="flushPage"></param>
@@ -221,7 +221,7 @@ namespace Tsavorite.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+        protected abstract void WriteAsyncToDeviceForSnapshot<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress);
 
         /// <summary>Read page from device (async)</summary>
@@ -233,7 +233,7 @@ namespace Tsavorite.core
 
         /// <summary>Flush checkpoint Delta to the Device</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal virtual unsafe void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
+        internal virtual void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
             out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
@@ -1259,10 +1259,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
-            // Snap ReadOnlyAddress to the end of the page that this calculation on logMutableFraction ends up in. This will be at
-            // least the end of the HeadAddress page. And the HeadAddress page is always calculated to be below the TailAddress page.
-            var readOnlyAddress = RoundUp(headAddress + (long)((1.0 - logMutableFraction) * (tailAddress - headAddress)), PageSize);
-            Debug.Assert(readOnlyAddress >= headAddress, $"ReadOnlyAddress {readOnlyAddress} must be at least HeadAddress {headAddress}");
+            // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in. If this is below HeadAddress,
+            // then make it HeadAddress; doing it this way instead of at the end of the HeadAddress page allows the first entered records to remain
+            // mutable even with a low mutableFraction. And the HeadAddress page is always calculated to be below the TailAddress page, so we know we
+            // will not exceed TailAddress.
+            var readOnlyAddress = RoundDown(headAddress + (long)((1.0 - logMutableFraction) * (tailAddress - headAddress)), PageSize);
+            if (readOnlyAddress < headAddress)
+                readOnlyAddress = headAddress;
             Debug.Assert(readOnlyAddress <= tailAddress, $"ReadOnlyAddress {readOnlyAddress} must not exceed TailAddress {tailAddress}");
             return readOnlyAddress;
         }
@@ -1490,15 +1493,12 @@ namespace Tsavorite.core
             // Obtain local values of variables that can change
             var currentFlushedUntilAddress = FlushedUntilAddress;
 
-            // If the new head address would be higher than the last flushed address, cap it at the start of the last flushed address' page start.
+            // Cap the new head address at the last flushed address.
             var newHeadAddress = desiredHeadAddress;
             if (newHeadAddress > currentFlushedUntilAddress)
                 newHeadAddress = currentFlushedUntilAddress;
 
-            if (GetOffsetOnPage(newHeadAddress) != 0)
-            {
-                ; // TODO: HeadAddress advancement at a finer grain than page-level; currently nothing needs to be done
-            }
+            // Note: Currently nothing needs to be done if HeadAddress advancement is at a finer grain than page-level.
             if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
@@ -1701,117 +1701,115 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Flush page range to disk
-        /// Called when all threads have agreed that a page range is sealed.
+        /// Flush page range to disk. Called when all threads have agreed that a page range is sealed.
         /// </summary>
-        /// <param name="fromAddress"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="noFlush"></param>
+        /// <remarks>
+        /// This is called synchronously from OnPagesMarkedReadOnly to kick off a flush sequence of (possibly multiple and/or partial) pages.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public void AsyncFlushPagesForReadOnly(long fromAddress, long untilAddress, bool noFlush = false)
+        internal virtual void AsyncFlushPagesForReadOnly(long fromAddress, long untilAddress, bool noFlush = false)
         {
-            long startPage = GetPage(fromAddress);
-            long endPage = GetPage(untilAddress);
-            var numPages = (int)(endPage - startPage);
+            // This is the base implementation, used by TsavoriteLog and SpanByteAllocator; it is overridden by ObjectAllocatorImpl to handle object log flushes.
+            GetFLushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
 
-            long offsetInEndPage = GetOffsetOnPage(untilAddress);
-
-            // Extra (partial) page being flushed
-            if (offsetInEndPage > 0)
-                numPages++;
-
-            // Note: This is called synchronously from OnPagesMarkedReadOnly to kick off a flush sequence of (possibly multiple and/or partial) pages.
-            // That call is gated by MonotonicUpdate, so the page indexes will increased monotonically; therefore we don't need to check the PendingFlush
-            // queue for previous pages indexes. Also, flush callbacks will attempt to dequeue from PendingFlushes for FlushedUntilAddress, which again
-            // increases monotonically.
-
-            // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
-            var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
-
-            // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
-            for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
+            // Write each page (or partial page) in the range.
+            for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
             {
-                // Default to writing the full page.
-                long pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
-                long pageEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
-
-                var asyncResult = new PageAsyncFlushResult<Empty>
-                {
-                    page = flushPage,
-                    count = 1,
-                    partial = false,
-                    fromAddress = pageStartAddress,
-                    untilAddress = pageEndAddress,
-                    flushBuffers = flushBuffers
-                };
-
-                // If either fromAddress or untilAddress is in the middle of the page, this will be a partial page flush.
-                // We'll enqueue into PendingFlush to ensure ordering of the partial-page writes.
-                if (((fromAddress > pageStartAddress) && (fromAddress < pageEndAddress)) ||
-                    ((untilAddress > pageStartAddress) && (untilAddress < pageEndAddress)))
-                {
-                    asyncResult.partial = true;
-
-                    if (untilAddress < pageEndAddress)
-                        asyncResult.untilAddress = untilAddress;
-
-                    if (fromAddress > pageStartAddress)
-                        asyncResult.fromAddress = fromAddress;
-                }
-
-                var skip = false;
-                if (asyncResult.untilAddress <= BeginAddress)
-                {
-                    // Short circuit as no flush needed
-                    _ = MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
-                    ShiftFlushedUntilAddress();
-                    skip = true;
-                }
-
-                if (IsNullDevice || noFlush)
-                {
-                    // Short circuit as no flush needed
-                    _ = MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
-                    ShiftFlushedUntilAddress();
-                    skip = true;
-                }
-
-                if (skip)
+                if (!PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
                     continue;
 
-                // If there is a partial page starting point, we need to wait until the ongoing adjacent flush is completed to ensure correctness
+                // If there are partial pages, we need to wait until the ongoing prior adjacent flush is completed to ensure correctness; otherwise, given
+                // that we write in multiples of sector size, if the adjacent fragments do not end/start on sector alignment there may be a race where the
+                // final sector in the prior fragment (which is incomplete) overwrites the same sector (which was completed) in the next adjacent fragment.
+                // To accomplish this we use PendingFlush and AsyncFlushPageCallback chains to the next fragment in the sequence. TsavoriteLog in particular
+                // does fine-grained flushing and this is critical for its performance and correctness.
                 var index = GetPageIndexForAddress(asyncResult.fromAddress);
                 if (GetOffsetOnPage(asyncResult.fromAddress) > 0)
                 {
-                    // Try to merge request with existing adjacent (earlier) pending requests (these have not yet begun or they
-                    // would not be in the queue).
+                    // Try to merge request with existing adjacent (earlier) pending requests (these have not yet begun or they would not be in the queue).
                     while (PendingFlush[index].RemovePreviousAdjacent(asyncResult.fromAddress, out var existingRequest))
                         asyncResult.fromAddress = existingRequest.fromAddress;
 
                     // Enqueue the (possibly merged) new work item into the queue.
                     PendingFlush[index].Add(asyncResult);
 
-                    // Perform work from shared queue if possible: When a flush completes it updates FlushedUntilAddress. If there
-                    // is an item in the shared queue that starts at FlushedUntilAddress, it can now be flushed. Flush callbacks
-                    // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
-                    // This will issue a write that completes in the background as we move to the next adjacent chunk (or page if
-                    // this is the last chunk on the current page).
+                    // Perform work from shared queue if possible: When a flush completes it updates FlushedUntilAddress. If there is an item in the shared
+                    // queue that starts at FlushedUntilAddress, it can now be flushed. Flush callbacks will RemoveNextAdjacent(FlushedUntilAddress, ...)
+                    // to continue the chain of flushes until the queue is empty. This will issue a write that completes in the background as we move to the
+                    // next adjacent chunk (or page if this is the last chunk on the current page).
                     if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                         WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
+                    continue;
                 }
-                else
-                {
-                    // Write the entire page up to asyncResult.untilAddress (there can be no previous items in the queue).
-                    Debug.Assert(PendingFlush[index].list.Count == 0, $"Expected PendingFlush count {PendingFlush[index].list.Count} to be 0");
 
-                    // This will issue a write that completes in the background as we move to the next page.
-                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class
-                }
+                // Write the entire page up to asyncResult.untilAddress.
+                Debug.Assert(PendingFlush[index].list.Count == 0, $"Expected PendingFlush count {PendingFlush[index].list.Count} to be 0 when writing full pages");
+
+                // This will issue a write that completes in the background as we move to the next page.
+                WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class
             }
         }
 
+        private protected void GetFLushPageRange(long fromAddress, long untilAddress, out long startPage, out long numPages)
+        {
+            startPage = GetPage(fromAddress);
+            var endPage = GetPage(untilAddress);
+            numPages = (int)(endPage - startPage);
+
+            // Extra (partial) page being flushed
+            if (GetOffsetOnPage(untilAddress) > 0)
+                numPages++;
+        }
+
+        private protected bool PrepareFlushAsyncResult(long fromAddress, long untilAddress, bool noFlush, long flushPage, out PageAsyncFlushResult<Empty> asyncResult)
+        {
+            // Default to writing the full page.
+            var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+            var pageEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
+
+            asyncResult = new PageAsyncFlushResult<Empty>
+            {
+                page = flushPage,
+                count = 1,
+                partial = false,
+                fromAddress = pageStartAddress,
+                untilAddress = pageEndAddress
+            };
+
+            // If either fromAddress or untilAddress is in the middle of the page, this will be a partial page flush.
+            asyncResult.partial = ((fromAddress > pageStartAddress) && (fromAddress < pageEndAddress))
+                                || ((untilAddress > pageStartAddress) && (untilAddress < pageEndAddress));
+            if (asyncResult.partial)
+            {
+                if (untilAddress < pageEndAddress)
+                    asyncResult.untilAddress = untilAddress;
+                if (fromAddress > pageStartAddress)
+                    asyncResult.fromAddress = fromAddress;
+            }
+
+            // We skip if either of the following, and need to check both.
+            var skip = false;
+            if (asyncResult.untilAddress <= BeginAddress)
+            {
+                // Short circuit as no flush needed; just advance the flushed until address to BeginAddress.
+                _ = MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
+                ShiftFlushedUntilAddress();
+                skip = true;
+            }
+
+            if (IsNullDevice || noFlush)
+            {
+                // Short circuit as no flush needed; just advance the flushed until address to untilAddress.
+                _ = MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
+                ShiftFlushedUntilAddress();
+                skip = true;
+            }
+
+            return !skip;
+        }
+
         /// <summary>
-        /// Flush pages asynchronously
+        /// Flush pages asynchronously for recovery (such as when we have invalidated v+1 records).
         /// </summary>
         /// <typeparam name="TContext"></typeparam>
         /// <param name="flushPageStart"></param>
@@ -1830,7 +1828,7 @@ namespace Tsavorite.core
                     partial = false,
                     fromAddress = GetLogicalAddressOfStartOfPage(flushPage),
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
-                    isForRecovery = true
+                    flushRequestState = FlushRequestState.Recovery
                 };
 
                 // For OA, we do not use FlushBuffers here; we set isForRecovery to reuse the stored lengths rather than re-serializing objects,
@@ -1840,20 +1838,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Flush pages from startPage (inclusive) to endPage (exclusive)
-        /// to specified log device and obj device
+        /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
-        /// <param name="device"></param>
+        /// <param name="logDevice"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress,
-            IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long startLogicalAddress, long endLogicalAddress,
+            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
@@ -1875,29 +1872,44 @@ namespace Tsavorite.core
                 // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator). This calls our callback when the last write of a partial flush completes.
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
-                    long flushPageAddress = GetLogicalAddressOfStartOfPage(flushPage);
-                    var pageSize = PageSize;
-                    if (flushPage == endPage - 1)
-                        pageSize = (int)(endLogicalAddress - flushPageAddress);
+                    // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
+                    // for middle pages, we flush the entire page.
+                    var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                    if (startLogicalAddress > flushStartAddress)
+                        flushStartAddress = startLogicalAddress;
+                    var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
+                    if (endLogicalAddress < flushEndAddress)
+                        flushEndAddress = endLogicalAddress;
+                    var flushSize = flushEndAddress - flushStartAddress;
+                    if (flushSize <= 0)
+                        continue;
 
                     var asyncResult = new PageAsyncFlushResult<Empty>
                     {
                         flushCompletionTracker = flushCompletionTracker,
                         page = flushPage,
-                        fromAddress = flushPageAddress,
-                        untilAddress = flushPageAddress + pageSize,
+                        fromAddress = flushStartAddress,
+                        untilAddress = flushEndAddress,
                         count = 1,
+                        flushRequestState = FlushRequestState.Snapshot,
                         flushBuffers = flushBuffers
                     };
 
                     // Intended destination is flushPage
-                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
+                    WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
 
-                    if (throttleCheckpointFlushDelayMs >= 0)
+                    // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
+                    // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
+                    if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
                     {
-                        flushCompletionTracker.WaitOneFlush();
-                        Thread.Sleep(throttleCheckpointFlushDelayMs);
+                        if (throttleCheckpointFlushDelayMs >= 0)
+                        {
+                            flushCompletionTracker.WaitOneFlush();
+                            Thread.Sleep(throttleCheckpointFlushDelayMs);
+                        }
                     }
+                    else
+                        _ = asyncResult.Release();
                 }
             }
         }
@@ -2108,7 +2120,7 @@ namespace Tsavorite.core
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
+        private protected void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {
@@ -2164,12 +2176,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// IOCompletion callback for page flush
+        /// IOCompletion callback for page flush for snapshot checkpoint
         /// </summary>
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
-        protected void AsyncFlushPageToDeviceCallback(uint errorCode, uint numBytes, object context)
+        protected void AsyncFlushPageForSnapshotCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {

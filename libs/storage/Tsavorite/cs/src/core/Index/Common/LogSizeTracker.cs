@@ -370,8 +370,8 @@ namespace Tsavorite.core
                 logAccessor.allocatorBase.epoch.Suspend();
             }
 
-            // Release the epoch because ShiftAddresses will wait for the ROA shift to complete so we don't evict pages before they're flushed.
-            // Wait until the SHA has completed eviction to avoid going further over budget.
+            // Release the epoch before calling this because ShiftAddresses will wait for the ROA flush to complete. We need that wait because
+            // ShiftHeadAddress caps the new HeadAddress at FlushedUntilAddress. Wait until the SHA eviction is complete to avoid going further over budget.
             logAccessor.ShiftAddresses(readOnlyAddress, headAddress, waitForEviction: true);
 
             // Now subtract what we were able to trim from heapSize. Inline page total size is tracked separately in logAccessor.MemorySizeBytes.

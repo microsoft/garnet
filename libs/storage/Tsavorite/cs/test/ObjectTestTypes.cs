@@ -235,9 +235,7 @@ namespace Tsavorite.test
     public struct TestLargeObjectInput
     {
         public int value;
-
         public TestValueStyle wantValueStyle;
-
         public int expectedSpanLength;
 
         public override readonly string ToString() => $"value {value}, wantValStyle {wantValueStyle}";
@@ -251,6 +249,8 @@ namespace Tsavorite.test
 
     public class TestLargeObjectFunctions : SessionFunctionsBase<TestLargeObjectInput, TestLargeObjectOutput, Empty>
     {
+        public int expectedRecordLength = -1;
+
         public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestLargeObjectInput input, ref TestLargeObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.That(status.Found, Is.True);
@@ -258,6 +258,7 @@ namespace Tsavorite.test
 
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestLargeObjectInput input, ref TestLargeObjectOutput output, ref ReadInfo readInfo)
         {
+            Assert.That(expectedRecordLength < 0 || srcLogRecord.AllocatedSize == expectedRecordLength);
             switch (input.wantValueStyle)
             {
                 case TestValueStyle.None:
@@ -283,6 +284,7 @@ namespace Tsavorite.test
 
         public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestLargeObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
+            Assert.That(expectedRecordLength < 0 || logRecord.AllocatedSize == expectedRecordLength);
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
             output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
@@ -291,6 +293,7 @@ namespace Tsavorite.test
 
         public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestLargeObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
+            Assert.That(expectedRecordLength < 0 || logRecord.AllocatedSize == expectedRecordLength);
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
             if (output is not null)

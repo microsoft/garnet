@@ -122,6 +122,24 @@ namespace Tsavorite.core
         public void WaitOneFlush() => flushSemaphore?.Wait();
     }
 
+    internal enum FlushRequestState : byte
+    {
+        /// <summary>The default; we are here for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForReadOnly"/> flush. This
+        /// includes FoldOver checkpoints</summary>
+        ReadOnly = 0,
+
+        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForRecovery"/>, so the object log files have
+        /// already been written; we must reuse the deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
+        Recovery,
+
+        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForSnapshot"/>, so we do not hold the epoch
+        /// initially and thus must check to handle the case where HeadAddress increases out of the range of the flush</summary>
+        Snapshot,
+
+        /// <summary>The flush operation did not issue a write, likely because <see cref="Snapshot"/> is true and HeadAddress advanced beyond the page</summary>
+        WriteNotIssued
+    }
+
     /// <summary>
     /// Page async flush result
     /// </summary>
@@ -146,9 +164,11 @@ namespace Tsavorite.core
         internal long fromAddress;
         internal long untilAddress;
 
-        /// <summary>If true, we are called from recovery via AsyncFlushPagesForRecovery, so the object log files have already been written; we must reuse the
+        internal FlushRequestState flushRequestState;
+
+        /// <summary>If true, we are called from Checkpoint via FlushPagesForSnapshot, so the object log files have already been written; we must reuse the
         /// deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
-        internal bool isForRecovery;
+        internal bool isForSnapshot;
 
         /// <summary>The record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.</summary>
         internal SectorAlignedMemory freeBuffer1;
@@ -165,7 +185,8 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
+            return $"page {page}, isFor {flushRequestState}, ctx {context}, count {count}, partial {bstr(partial)},"
+                 + $" fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
                  + $" flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
         }
 
