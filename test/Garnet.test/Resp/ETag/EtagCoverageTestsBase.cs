@@ -50,7 +50,7 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        public abstract void DataSetUp();
+        public abstract void DataSetUp(bool nxKey = false);
 
         [TearDown]
         public void TearDown()
@@ -59,37 +59,40 @@ namespace Garnet.test.Resp.ETag
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        protected async Task CheckCommandAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int[] checkKeysWithEtag = null)
+        protected async Task CheckCommandAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int[] checkKeysWithEtag = null, bool nxKey = false)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            DataSetUp();
+            DataSetUp(nxKey);
 
-            checkKeysWithEtag ??= [0];
-
-            // Verify all keys set-up with ETags have an ETag of 1
-            foreach (var i in checkKeysWithEtag)
+            if (!nxKey)
             {
-                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
-                ClassicAssert.AreEqual(1, etag);
-            }
+                checkKeysWithEtag ??= [0];
 
-            // Check running the command without a meta-command
-            await CheckCommandWithoutMetaCommand(db, command, commandArgs, verifyResult, checkKeysWithEtag);
+                // Verify all keys set-up with ETags have an ETag of 1
+                foreach (var i in checkKeysWithEtag)
+                {
+                    var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
+                    ClassicAssert.AreEqual(1, etag);
+                }
+
+                // Check running the command without a meta-command
+                await CheckCommandWithoutMetaCommand(db, command, commandArgs, verifyResult, checkKeysWithEtag);
+            }
 
             // Check running the command with different meta-commands
             // Note: Multi-key commands do not support meta-commands yet
             if (!command.IsMultiKeyCommand())
             {
                 // Check running the command with EXECWITHETAG meta-command
-                await CheckCommandWithExecWithEtag(db, command, commandArgs, verifyResult);
+                await CheckCommandWithExecWithEtag(db, command, commandArgs, verifyResult, nxKey);
 
                 // Check running the command with EXECIFMATCH meta-command
-                await CheckCommandWithExecIfMatch(db, command, commandArgs, verifyResult);
+                await CheckCommandWithExecIfMatch(db, command, commandArgs, verifyResult, nxKey);
 
                 // Check running the command with EXECIFGREATER meta-command
-                await CheckCommandWithExecIfGreater(db, command, commandArgs, verifyResult);
+                await CheckCommandWithExecIfGreater(db, command, commandArgs, verifyResult, nxKey);
             }
         }
 
@@ -120,68 +123,82 @@ namespace Garnet.test.Resp.ETag
         }
 
         private async Task CheckCommandWithExecWithEtag(IDatabase db, RespCommand command, object[] commandArgs,
-            Action<RedisResult> verifyResult)
+            Action<RedisResult> verifyResult, bool nxKey = false)
         {
             // Reset the data
-            DataSetUp();
+            DataSetUp(nxKey);
 
             // Add the EXECWITHETAG meta-command
             var args = new object[] { command.ToString() }.Concat(commandArgs).ToArray();
             var result = await db.ExecuteAsync("EXECWITHETAG", args);
 
             // Verify result & expected ETag
-            var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = nxKey || command.IsMetadataCommand() ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
         }
 
         private async Task CheckCommandWithExecIfMatch(IDatabase db, RespCommand command, object[] commandArgs,
-            Action<RedisResult> verifyResult)
+            Action<RedisResult> verifyResult, bool nxKey = false)
         {
             // Reset the data
-            DataSetUp();
+            DataSetUp(nxKey);
 
-            // Add the EXECIFMATCH meta-command with ETag 1 (should succeed)
-            var args = new object[] { 1, command.ToString() }.Concat(commandArgs).ToArray();
+            // Add the EXECIFMATCH meta-command with existing ETag (should succeed)
+            var args = new object[] { nxKey ? 0 : 1, command.ToString() }.Concat(commandArgs).ToArray();
             var result = await db.ExecuteAsync("EXECIFMATCH", args);
 
             // Verify result & expected ETag
-            var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = nxKey || command.IsMetadataCommand() ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data
-            DataSetUp();
+            DataSetUp(nxKey);
 
-            // Add the EXECIFMATCH meta-command with ETag 3 (should fail)
+            // Add the EXECIFMATCH meta-command with ETag 3 (should fail if key does not exist)
             args = new object[] { 3, command.ToString() }.Concat(commandArgs).ToArray();
             result = await db.ExecuteAsync("EXECIFMATCH", args);
 
-            // Verify null result & expected ETag unchanged
-            VerifyNullResultAndETag(result, 1);
+            if (!nxKey)
+            {
+                // Verify null result & expected ETag unchanged
+                VerifyNullResultAndETag(result, 1);
+            }
+            else
+            {
+                VerifyResultAndETag(result, verifyResult, 4);
+            }
         }
 
         private async Task CheckCommandWithExecIfGreater(IDatabase db, RespCommand command, object[] commandArgs,
-            Action<RedisResult> verifyResult)
+            Action<RedisResult> verifyResult, bool nxKey = false)
         {
             // Reset the data
-            DataSetUp();
+            DataSetUp(nxKey);
 
             // Add the EXECIFGREATER meta-command with ETag 3 (should succeed)
             var args = new object[] { 3, command.ToString() }.Concat(commandArgs).ToArray();
             var result = await db.ExecuteAsync("EXECIFGREATER", args);
 
             // Verify result & expected ETag
-            var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = command.IsMetadataCommand() ? 1 : nxKey ? 3 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data
-            DataSetUp();
+            DataSetUp(nxKey);
 
             // Add the EXECIFGREATER meta-command with ETag 1 (should fail)
             args = new object[] { 1, command.ToString() }.Concat(commandArgs).ToArray();
             result = await db.ExecuteAsync("EXECIFGREATER", args);
 
-            // Verify null result & expected ETag unchanged
-            VerifyNullResultAndETag(result, 1);
+            if (!nxKey)
+            {
+                // Verify null result & expected ETag unchanged
+                VerifyNullResultAndETag(result, 1);
+            }
+            else
+            {
+                VerifyResultAndETag(result, verifyResult, 1);
+            }
         }
 
         private void VerifyResultAndETag(RedisResult result, Action<RedisResult> verifyResult, long expectedETag)

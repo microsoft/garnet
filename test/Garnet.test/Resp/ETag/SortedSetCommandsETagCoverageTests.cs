@@ -25,12 +25,12 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task ZAddETagAdvancedTestAsync()
+        public async Task ZAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { SortedSetKeys[0] }.Union(SortedSetData[1]
                     .SelectMany(e => new[] { e.Score.ToString(), e.Element.ToString() })).ToArray();
 
-            await CheckCommandAsync(RespCommand.ZADD, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.ZADD, cmdArgs, VerifyResult, nxKey: nxKey);
 
             static void VerifyResult(RedisResult result)
             {
@@ -339,12 +339,13 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        public override void DataSetUp()
+        public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.KeyDelete(SortedSetKeys);
+            if (nxKey) return;
 
             var zaddCmdArgs = new object[] { "ZADD", SortedSetKeys[0] }.Union(SortedSetData[0]
                 .SelectMany(e => new[] { e.Score.ToString(), e.Element.ToString() })).ToArray();

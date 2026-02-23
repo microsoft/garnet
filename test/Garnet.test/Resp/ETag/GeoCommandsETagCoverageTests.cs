@@ -23,10 +23,10 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task GeoAddETagAdvancedTestAsync()
+        public async Task GeoAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { GeoKeys[0], GeoData[1][0].Longitude, GeoData[1][0].Latitude, GeoData[1][0].Member };
-            await CheckCommandAsync(RespCommand.GEOADD, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.GEOADD, cmdArgs, VerifyResult, nxKey: nxKey);
 
             static void VerifyResult(RedisResult result)
             {
@@ -70,12 +70,13 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        public override void DataSetUp()
+        public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.KeyDelete(GeoKeys);
+            if (nxKey) return;
 
             var geoAddCmdArgs = new object[] { "GEOADD", GeoKeys[0] }.Union(GeoData[0]
                 .SelectMany(e => new[] { e.Longitude.ToString(), e.Latitude.ToString(), e.Member.ToString() })).ToArray();

@@ -24,11 +24,11 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task SAddETagAdvancedTestAsync()
+        public async Task SAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { SetKeys[0] }.Union(SetData[1].Select(d => d.ToString())).ToArray();
 
-            await CheckCommandAsync(RespCommand.SADD, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.SADD, cmdArgs, VerifyResult, nxKey: nxKey);
 
             static void VerifyResult(RedisResult result)
             {
@@ -109,12 +109,13 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        public override void DataSetUp()
+        public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            
+
             db.KeyDelete(SetKeys);
+            if (nxKey) return;
 
             for (var i = 0; i < 2; i++)
             {

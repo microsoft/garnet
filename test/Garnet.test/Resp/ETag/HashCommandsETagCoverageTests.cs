@@ -24,10 +24,10 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task HCollectETagAdvancedTestAsync()
+        public async Task HCollectETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { HashKeys[0] };
-            await CheckCommandAsync(RespCommand.HCOLLECT, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HCOLLECT, cmdArgs, VerifyResult, nxKey: nxKey);
 
             static void VerifyResult(RedisResult result)
             {
@@ -156,10 +156,10 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task HSetETagAdvancedTestAsync()
+        public async Task HSetETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
-            await CheckCommandAsync(RespCommand.HSET, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HSET, cmdArgs, VerifyResult, nxKey: nxKey);
 
             static void VerifyResult(RedisResult result)
             {
@@ -168,10 +168,10 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task HSetNxETagAdvancedTestAsync()
+        public async Task HSetNxETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
-            await CheckCommandAsync(RespCommand.HSETNX, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HSETNX, cmdArgs, VerifyResult, nxKey: nxKey);
             
             static void VerifyResult(RedisResult result)
             {
@@ -179,12 +179,13 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        public override void DataSetUp()
+        public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.KeyDelete(HashKeys);
+            if (nxKey) return;
 
             var hSetCmdArgs = new object[] { "HSET", HashKeys[0] }.Union(HashData[0]
                 .SelectMany(e => new[] { e.Name.ToString(), e.Value.ToString() })).ToArray();

@@ -14,7 +14,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class GeneralEtagCoverageTests : EtagCoverageTestsBase
     {
-        public override void DataSetUp() { }
+        public override void DataSetUp(bool nxKey = false) { }
 
         [Test]
         public void AllCommandsCovered()

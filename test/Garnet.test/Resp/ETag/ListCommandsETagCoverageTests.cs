@@ -81,15 +81,15 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LPushETagAdvancedTestAsync()
+        public async Task LPushETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
-            await CheckCommandAsync(RespCommand.LPUSH, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LPUSH, cmdArgs, VerifyResult, nxKey: nxKey);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(ListData[0].Length + 1, (long)result);
+                ClassicAssert.AreEqual(nxKey ? 1 : ListData[0].Length + 1, (long)result);
             }
         }
 
@@ -146,15 +146,15 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RPushETagAdvancedTestAsync()
+        public async Task RPushETagAdvancedTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
-            await CheckCommandAsync(RespCommand.RPUSH, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.RPUSH, cmdArgs, VerifyResult, nxKey: nxKey);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(ListData[0].Length + 1, (long)result);
+                ClassicAssert.AreEqual(nxKey ? 1 :  ListData[0].Length + 1, (long)result);
             }
         }
 
@@ -279,12 +279,13 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        public override void DataSetUp()
+        public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.KeyDelete(ListKeys);
+            if (nxKey) return;
 
             for (var i = 0; i < 2; i++)
             {

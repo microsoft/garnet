@@ -112,10 +112,18 @@ namespace Garnet.server
                 input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState);
             }
 
-            var status = storageApi.SET_Conditional(key, ref input);
+            var output = new StringOutput();
+            var status = storageApi.SET_Conditional(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status is GarnetStatus.NOTFOUND)
             {
+                if (output.IsOperationSkipped)
+                {
+                    WriteNull();
+                    return true;
+                }
+
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
                 return true;
