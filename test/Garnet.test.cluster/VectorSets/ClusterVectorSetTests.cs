@@ -1786,7 +1786,7 @@ namespace Garnet.test.cluster
                                     {
                                         // Migration might make this temporarily unavailable due to connection state
                                         //
-                                        // Because we check for presense of all data at the end of test, we can safely ignore this for now
+                                        // Because we check for presence of all data at the end of test, we can safely ignore this for now
                                         continue;
                                     }
 
