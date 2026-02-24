@@ -280,7 +280,7 @@ namespace Garnet.client
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "Client set info returned error");
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }

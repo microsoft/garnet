@@ -183,7 +183,6 @@ namespace Garnet.client
 
             try
             {
-
                 if (clientName != null)
                 {
                     _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
