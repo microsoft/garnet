@@ -95,7 +95,7 @@ namespace Garnet.server.Metrics
 
             meter.CreateObservableCounter(
                 "garnet.server.cache.lookups",
-                () => Convert.ToInt64(globalSessionMetrics.get_total_found())  + Convert.ToInt64(globalSessionMetrics.get_total_notfound()),
+                () => Convert.ToInt64(globalSessionMetrics.get_total_found()) + Convert.ToInt64(globalSessionMetrics.get_total_notfound()),
                 unit: "{lookup}",
                 description: "Total number of cache lookups.");
 
