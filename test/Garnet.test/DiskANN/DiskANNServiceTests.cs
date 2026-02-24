@@ -238,7 +238,7 @@ namespace Garnet.test
             var res1 = db.Execute("VADD", ["foo", "VALUES", "4", "1.0", "1.0", "1.0", "1.0", new byte[] { 1, 0, 0, 0 }, "NOQUANT", "EF", "128", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "VALUES", "4", "2.0", "2.0", "2.0", "2.0", new byte[] { 2, 0, 0, 0 }, "NOQUANT","EF", "128", "M", "32"]);
+            var res2 = db.Execute("VADD", ["foo", "VALUES", "4", "2.0", "2.0", "2.0", "2.0", new byte[] { 2, 0, 0, 0 }, "NOQUANT", "EF", "128", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             var res3 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "4", "0.0", "0.0", "0.0", "0.0", "COUNT", "5", "EF", "128"]);
