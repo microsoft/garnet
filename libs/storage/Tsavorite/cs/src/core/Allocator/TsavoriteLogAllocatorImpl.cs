@@ -35,6 +35,27 @@ namespace Tsavorite.core
             Initialize();
         }
 
+        /// <summary>
+        /// Allocate memory page, pinned in memory
+        /// </summary>
+        /// <param name="index"></param>
+        internal void AllocatePage(int index)
+        {
+            IncrementAllocatedPageCount();
+
+            if (freePagePool.TryGet(out var item))
+            {
+                pageArrays[index] = item.array;
+                pagePointers[index] = item.pointer;
+            }
+            else
+            {
+                // No free pages are available so allocate new
+                AllocatePinnedPageArray(index);
+            }
+            PageHeader.Initialize(pagePointers[index]);
+        }
+
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
@@ -42,9 +63,11 @@ namespace Tsavorite.core
             {
                 _ = freePagePool.TryAdd(new()
                 {
+                    array = pageArrays[index],
                     pointer = pagePointers[index],
                     value = Empty.Default
                 });
+                pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
@@ -57,24 +80,6 @@ namespace Tsavorite.core
         {
             base.Dispose();
             freePagePool.Dispose();
-        }
-
-        /// <summary>
-        /// Allocate memory page, pinned in memory
-        /// </summary>
-        /// <param name="index"></param>
-        internal void AllocatePage(int index)
-        {
-            IncrementAllocatedPageCount();
-
-            if (freePagePool.TryGet(out var item))
-                pagePointers[index] = item.pointer;
-            else
-            {
-                // No free pages are available so allocate new
-                AllocatePinnedPageArray(index);
-            }
-            PageHeader.Initialize(pagePointers[index]);
         }
 
         internal int OverflowPageCount => freePagePool.Count;

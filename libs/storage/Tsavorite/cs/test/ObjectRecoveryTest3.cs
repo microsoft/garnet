@@ -40,7 +40,7 @@ namespace Tsavorite.test.recovery.objects
         public async ValueTask ObjectRecoveryTest3(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1000)] int iterations,
-            [Values] bool isAsync)
+            [Values] CompletionSyncMode syncMode)
         {
             this.iterations = iterations;
             Prepare(out IDevice log, out IDevice objlog, out var store);
@@ -59,7 +59,7 @@ namespace Tsavorite.test.recovery.objects
             {
                 Prepare(out log, out objlog, out store);
 
-                if (isAsync)
+                if (syncMode == CompletionSyncMode.Async)
                     _ = await store.RecoverAsync(default, item.Item2);
                 else
                     _ = store.Recover(default, item.Item2);
@@ -128,17 +128,17 @@ namespace Tsavorite.test.recovery.objects
             {
                 var key = new TestObjectKey { key = i };
                 TestObjectInput input = default;
-                TestObjectOutput g1 = new();
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref g1);
+                TestObjectOutput output = new();
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
 
                 if (status.IsPending)
                 {
                     Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
-                    (status, g1) = GetSinglePendingResult(completedOutputs);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
 
-                ClassicAssert.IsTrue(status.Found);
-                ClassicAssert.AreEqual(i, g1.value.value);
+                ClassicAssert.IsTrue(status.Found, $"key: {key}");
+                ClassicAssert.AreEqual(i, output.value.value, $"key: {key}");
             }
 
             if (delete)
@@ -155,7 +155,7 @@ namespace Tsavorite.test.recovery.objects
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
 
-                ClassicAssert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found, $"key: {key}");
             }
         }
     }

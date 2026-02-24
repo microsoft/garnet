@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -97,9 +96,10 @@ namespace Tsavorite.core
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         protected long* pagePointers;
 
-        /// <summary>
-        /// Array of pages kept to ensure the pinned pages are not garbage collected.
-        /// </summary>
+        /// <summary>Array of longs which are actually the byte* of the parallel index in <see cref="pageArrays"/></summary>
+        private long[] pagePointersArray;
+
+        /// <summary>Array of pages kept to ensure the pinned pages are not garbage collected.</summary>
         protected readonly byte[][] pageArrays;
 
         #endregion
@@ -391,12 +391,6 @@ namespace Tsavorite.core
         {
             disposed = true;
 
-            if (pagePointers is not null)
-            {
-                NativeMemory.AlignedFree((void*)pagePointers);
-                pagePointers = null;
-            }
-
             if (ownedEpoch)
                 epoch.Dispose();
             bufferPool.Free();
@@ -660,9 +654,8 @@ namespace Tsavorite.core
             if (BufferSize > 0)
             {
                 pageArrays = new byte[BufferSize][];
-                var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
-                pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
-                NativeMemory.Clear(pagePointers, bufferSizeInBytes);
+                pagePointersArray = GC.AllocateArray<long>(BufferSize, pinned: true);
+                pagePointers = (long*)Unsafe.AsPointer(ref pagePointersArray[0]);
             }
         }
 
@@ -677,10 +670,18 @@ namespace Tsavorite.core
             var offset = GetOffsetOnPage(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
-        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
+        internal bool IsAllocated(int pageIndex) => pageArrays[pageIndex] is not null;
 
         internal void ClearPage(long page, int offset = 0)
-            => NativeMemory.Clear((byte*)pagePointers[page % BufferSize] + offset, (nuint)(PageSize - offset));
+        {
+            var pageArray = pageArrays[page % BufferSize];
+
+            // If the offset is 0, we can clear everything in the array including the cache-alignment padding.
+            // Otherwise, we have to adjust the offset for the initial cache alignment.
+            if (offset != 0)
+                offset += (int)(pagePointers[page % BufferSize] - (long)Unsafe.AsPointer(ref pageArray[0]));
+            Array.Clear(pageArray, offset, pageArray.Length - offset);
+        }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
@@ -745,9 +746,9 @@ namespace Tsavorite.core
         protected void AllocatePinnedPageArray(int index)
         {
             var adjustedSize = PageSize + 2 * sectorSize;
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pagePointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            var tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            var p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pagePointersArray[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             pageArrays[index] = tmp;
         }
 
@@ -1568,7 +1569,7 @@ namespace Tsavorite.core
 
         /// <summary>Reset for recovery</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
+        public virtual void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             long tailPage = GetPage(tailAddress);
             long offsetInPage = GetOffsetOnPage(tailAddress);
@@ -1621,7 +1622,7 @@ namespace Tsavorite.core
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
 
-        /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/>> - simple read context version. Used by TsavoriteLog.</summary>
+        /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/> - simple read context version. Used by TsavoriteLog.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
@@ -1869,7 +1870,7 @@ namespace Tsavorite.core
 
                 var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
 
-                // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator). This calls our callback when the last write of a partial flush completes.
+                // Flush each page in sequence
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
                     // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
@@ -2081,10 +2082,10 @@ namespace Tsavorite.core
                 // InitialIOSize request can be fulfilled.
                 ctx.record.available_bytes = (int)numBytes;
 
+                Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}");
+
                 if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
                 {
-                    Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}");
-
                     // Either we had an incomplete record and we're re-reading the current record, or the record Key didn't match and we're reading the previous record
                     // in the chain. If the record to read is in the range to resolve then issue the read, else fall through to signal "IO complete".
                     ctx.logicalAddress = prevAddressToRead;

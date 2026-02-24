@@ -159,8 +159,8 @@ namespace Tsavorite.core
 
             // Issue the last ObjectLog write for this partial flush.
             var buffer = GetCurrentBuffer();
-            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
-            Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");
+            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
+            Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilPosition {buffer.flushedUntilPosition} is not sector-aligned");
             Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
             if (buffer.currentPosition > buffer.flushedUntilPosition)

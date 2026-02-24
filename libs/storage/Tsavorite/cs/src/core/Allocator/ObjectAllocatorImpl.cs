@@ -52,6 +52,12 @@ namespace Tsavorite.core
         /// <summary>Segment size</summary>
         private long ObjectLogSegmentSize;
 
+        /// <summary>
+        /// This is the last "until address" for which <see cref="AsyncFlushPagesForReadOnly(long, long, bool)"/> was called; we need to track this to linearize
+        /// multiple calls to AsyncFlushPagesForReadOnly, to ensure that object log indexes are consistent in the main log records that reference them.
+        /// </summary>
+        long lastROIssuedFlushedUntilAddress = PageHeader.Size;
+
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
@@ -102,6 +108,7 @@ namespace Tsavorite.core
 
             if (freePagePool.TryGet(out var item))
             {
+                pageArrays[index] = item.array;
                 pagePointers[index] = item.pointer;
                 objectPages[index] = item.value;
             }
@@ -121,10 +128,13 @@ namespace Tsavorite.core
             {
                 _ = freePagePool.TryAdd(new()
                 {
+                    array = pageArrays[index],
                     pointer = pagePointers[index],
                     value = objectPages[index]
                 });
+                pageArrays[index] = default;
                 pagePointers[index] = default;
+                objectPages[index].Clear();
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
@@ -354,7 +364,6 @@ namespace Tsavorite.core
         internal void FreePage(long page)
         {
             objectPages[page % BufferSize].objectIdMap.Clear();
-
             ClearPage(page, 0);
 
             // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
@@ -393,11 +402,13 @@ namespace Tsavorite.core
         /// <summary>Object log segment size</summary>
         public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
 
-        /// <summary>
-        /// This is the last "until address" for which <see cref="AsyncFlushPagesForReadOnly(long, long, bool)"/> was called; we need to track this to linearize
-        /// multiple calls to AsyncFlushPagesForReadOnly, to ensure that object log indexes are consistent in the main log records that reference them.
-        /// </summary>
-        long lastROIssuedFlushUntilAddress = PageHeader.Size;
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public override void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
+        {
+            base.RecoveryReset(tailAddress, headAddress, beginAddress, readonlyAddress);
+            lastROIssuedFlushedUntilAddress = FlushedUntilAddress;
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -406,7 +417,7 @@ namespace Tsavorite.core
             // TODO: Wait for any executing AsyncFlushPagesForReadOnly to complete, to linearize object log file updates and their addresses in the main-log records.
             // If we have concurrent AsyncFlushPagesForReadOnly calls executing we would have to manage CircularDiskWriteBuffer's block writes (such as by chaining)
             // which would be difficult and inefficient. Multiple AsyncFlushPagesForReadOnly calls should be rare.
-            while (lastROIssuedFlushUntilAddress < fromAddress)
+            while (lastROIssuedFlushedUntilAddress < fromAddress)
             {
                 // We don't need to worry about the epoch because flush writes occur outside the epoch.
                 _ = Thread.Yield(); // TODO replace with a .Wait()
@@ -435,7 +446,7 @@ namespace Tsavorite.core
                     // Once we have issued this write we can update lastROIssuedFlushUntilAddress; the flush write completes in the background as we move to the next page.
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
                 }
-                lastROIssuedFlushUntilAddress = asyncResult.untilAddress;
+                lastROIssuedFlushedUntilAddress = asyncResult.untilAddress;
             }
         }
 
@@ -451,18 +462,22 @@ namespace Tsavorite.core
             var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
-                // The pageFlushSize may be partial if we are writing the final partial page.
-                if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage) + pageFlushSize)
+                if (HeadAddress >= asyncResult.untilAddress)
                 {
-                    // Requested page is unavailable in memory, ignore
+                    // Requested span on page is entirely unavailable in memory; ignore it and call the callback directly.
                     callback(0, 0, asyncResult);
+                    return;
                 }
-                else
-                {
-                    // We are writing to a separate device which starts at "startPage"
-                    WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageFlushSize,
-                               callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
-                }
+
+                // If requested page span is only partly available in memory, adjust the start position. WriteAsync will handle it if HeadAddress is lower,
+                // but this is faster.
+                if (HeadAddress > asyncResult.fromAddress)
+                    asyncResult.fromAddress = HeadAddress;
+
+                // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
+                // HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress, which is the page starting at offset 0 of the snapshot file.
+                WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageFlushSize,
+                            callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
             }
             finally
             {
@@ -496,7 +511,6 @@ namespace Tsavorite.core
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
-            var allocatorPage = objectPages[flushPage % BufferSize];
 
             // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries),
             // in the allocator page (including the objectId space for Overflow and Heap Objects). Note: "Aligned" in this discussion refers to sector (as opposed to record) alignment.

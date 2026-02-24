@@ -18,7 +18,9 @@ namespace Tsavorite.core
     {
         /// <summary>Main log recovery device, obtained from CheckpointManager.</summary>
         public IDevice recoveryDevice;
-        /// <summary>The first page to recover; this is the page index of the snapshotStartAddress.</summary>
+        /// <summary>The first page to recover; this is the page index of the snapshotStartAddress and is the page-offset into
+        /// the address range of the snapshot file (i.e. the page at the snapshot file's offset 0). This field is populated
+        /// from <see cref="HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress"/>.</summary>
         public long recoveryDevicePageOffset;
         /// <summary>Object log recovery device, obtained from CheckpointManager.</summary>
         public IDevice objectLogRecoveryDevice;
@@ -774,7 +776,7 @@ namespace Tsavorite.core
 
                 // Ensure that page slots that will be read into, have been flushed from previous reads. Due to the use of a single read semaphore,
                 // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
-                // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
+                // we are not using the full BufferSize (and thus the page-read index is not equal to the page-flush index).
                 WaitUntilAllPagesHaveBeenFlushed(page, readEndPage, recoveryStatus);
                 return (readEndPage, ReadPagesWithMemoryConstraint(untilAddress, recoveryStatus, page, readEndPage, numPagesToRead));
             }

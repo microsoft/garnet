@@ -334,9 +334,7 @@ namespace Garnet.server
             if (serverOptions.EnableCluster)
             {
                 if (serverOptions.Recover)
-                {
                     clusterProvider.Recover();
-                }
             }
             else
             {

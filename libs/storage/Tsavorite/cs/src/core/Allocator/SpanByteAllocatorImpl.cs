@@ -40,7 +40,10 @@ namespace Tsavorite.core
             IncrementAllocatedPageCount();
 
             if (freePagePool.TryGet(out var item))
+            {
+                pageArrays[index] = item.array;
                 pagePointers[index] = item.pointer;
+            }
             else
             {
                 // No free pages are available so allocate new
@@ -56,9 +59,11 @@ namespace Tsavorite.core
             {
                 _ = freePagePool.TryAdd(new()
                 {
+                    array = pageArrays[index],
                     pointer = pagePointers[index],
                     value = Empty.Default
                 });
+                pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
