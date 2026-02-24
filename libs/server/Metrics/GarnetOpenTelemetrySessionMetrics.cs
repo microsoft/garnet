@@ -60,7 +60,7 @@ namespace Garnet.server.Metrics
             meter.CreateObservableCounter(
                 "garnet.server.transaction.commands.failed",
                 () => Convert.ToInt64(globalSessionMetrics.get_total_transaction_commands_execution_failed()),
-                unit: "{commands}",
+                unit: "{command}",
                 description: "Total number of transaction command executions that failed.");
 
             meter.CreateObservableCounter(
