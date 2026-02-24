@@ -16,20 +16,18 @@ namespace Garnet.test
     [TestFixture]
     public class VectorFilterTests : AllureTestBase
     {
-        /// <summary>
-        /// Supported vector filter syntax includes:
-        /// - Literals: numbers (42, 3.14, -5), strings ("x", 'x'), booleans (true/false)
-        /// - Member access: .field, .nested.field, _identifier
-        /// - Arithmetic: +, -, *, /, %, ** (power)
-        /// - Comparison: &gt;, &lt;, &gt;=, &lt;=, ==, !=
-        /// - Logical: and/or/not and aliases &amp;&amp;, ||, !
-        /// - Containment: in (for example, "classic" in .tags)
-        /// - Grouping: parentheses ( )
-        ///
-        /// Operator precedence (high to low):
-        /// primary/parentheses, unary, power, multiplicative, additive, in,
-        /// comparison, equality, and, or.
-        /// </summary>
+        // Supported vector filter syntax includes:
+        // - Literals: numbers (42, 3.14, -5), strings ("x", 'x'), booleans (true/false)
+        // - Member access: .field, .nested.field, _identifier
+        // - Arithmetic: +, -, *, /, %, ** (power)
+        // - Comparison: >, <, >=, <=, ==, !=
+        // - Logical: and/or/not and aliases &&, ||, !
+        // - Containment: in (for example, "classic" in .tags)
+        // - Grouping: parentheses ( )
+        //
+        // Operator precedence (high to low):
+        // primary/parentheses, unary, power, multiplicative, additive, in,
+        // comparison, equality, and, or.
 
         #region Helper Methods
 
