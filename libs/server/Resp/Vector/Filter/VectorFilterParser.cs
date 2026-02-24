@@ -28,7 +28,7 @@ namespace Garnet.server.Vector.Filter
             {
                 end++;
                 var right = ParseLogicalAnd(tokens, end, out end);
-                left = new BinaryExpr { Left = left, Operator = "or", Right = right };
+                left = new BinaryExpr { Left = left, Operator = OperatorKind.Or, Right = right };
             }
 
             return left;
@@ -44,7 +44,7 @@ namespace Garnet.server.Vector.Filter
             {
                 end++;
                 var right = ParseEquality(tokens, end, out end);
-                left = new BinaryExpr { Left = left, Operator = "and", Right = right };
+                left = new BinaryExpr { Left = left, Operator = OperatorKind.And, Right = right };
             }
 
             return left;
@@ -57,7 +57,7 @@ namespace Garnet.server.Vector.Filter
             while (end < tokens.Count && tokens[end].Type == TokenType.Operator &&
                    (tokens[end].Value == "==" || tokens[end].Value == "!="))
             {
-                var op = tokens[end].Value;
+                var op = tokens[end].Value == "==" ? OperatorKind.Equal : OperatorKind.NotEqual;
                 end++;
                 var right = ParseComparison(tokens, end, out end);
                 left = new BinaryExpr { Left = left, Operator = op, Right = right };
@@ -74,13 +74,21 @@ namespace Garnet.server.Vector.Filter
                    (tokens[end].Value == ">" || tokens[end].Value == "<" ||
                     tokens[end].Value == ">=" || tokens[end].Value == "<="))
             {
-                var op = tokens[end].Value;
+                var op = ParseComparisonOperator(tokens[end].Value);
                 end++;
                 var right = ParseContainment(tokens, end, out end);
                 left = new BinaryExpr { Left = left, Operator = op, Right = right };
             }
 
             return left;
+        }
+
+        private static OperatorKind ParseComparisonOperator(string value)
+        {
+            // Length check first for fast disambiguation
+            if (value.Length == 1)
+                return value[0] == '>' ? OperatorKind.GreaterThan : OperatorKind.LessThan;
+            return value[0] == '>' ? OperatorKind.GreaterEqual : OperatorKind.LessEqual;
         }
 
         private static Expr ParseContainment(List<Token> tokens, int start, out int end)
@@ -91,7 +99,7 @@ namespace Garnet.server.Vector.Filter
             {
                 end++;
                 var right = ParseAdditive(tokens, end, out end);
-                left = new BinaryExpr { Left = left, Operator = "in", Right = right };
+                left = new BinaryExpr { Left = left, Operator = OperatorKind.In, Right = right };
             }
 
             return left;
@@ -104,7 +112,7 @@ namespace Garnet.server.Vector.Filter
             while (end < tokens.Count && tokens[end].Type == TokenType.Operator &&
                    (tokens[end].Value == "+" || tokens[end].Value == "-"))
             {
-                var op = tokens[end].Value;
+                var op = tokens[end].Value == "+" ? OperatorKind.Add : OperatorKind.Subtract;
                 end++;
                 var right = ParseMultiplicative(tokens, end, out end);
                 left = new BinaryExpr { Left = left, Operator = op, Right = right };
@@ -120,7 +128,12 @@ namespace Garnet.server.Vector.Filter
             while (end < tokens.Count && tokens[end].Type == TokenType.Operator &&
                    (tokens[end].Value == "*" || tokens[end].Value == "/" || tokens[end].Value == "%"))
             {
-                var op = tokens[end].Value;
+                var op = tokens[end].Value[0] switch
+                {
+                    '*' => OperatorKind.Multiply,
+                    '/' => OperatorKind.Divide,
+                    _ => OperatorKind.Modulo
+                };
                 end++;
                 var right = ParseExponentiation(tokens, end, out end);
                 left = new BinaryExpr { Left = left, Operator = op, Right = right };
@@ -137,7 +150,7 @@ namespace Garnet.server.Vector.Filter
             {
                 end++;
                 var right = ParseExponentiation(tokens, end, out end); // Right associative
-                left = new BinaryExpr { Left = left, Operator = "**", Right = right };
+                left = new BinaryExpr { Left = left, Operator = OperatorKind.Power, Right = right };
             }
 
             return left;
@@ -152,14 +165,14 @@ namespace Garnet.server.Vector.Filter
                 {
                     start++;
                     var operand = ParseUnary(tokens, start, out end);
-                    return new UnaryExpr { Operator = "not", Operand = operand };
+                    return new UnaryExpr { Operator = OperatorKind.Not, Operand = operand };
                 }
 
                 if (tokens[start].Type == TokenType.Operator && tokens[start].Value == "-")
                 {
                     start++;
                     var operand = ParseUnary(tokens, start, out end);
-                    return new UnaryExpr { Operator = "-", Operand = operand };
+                    return new UnaryExpr { Operator = OperatorKind.Negate, Operand = operand };
                 }
             }
 
@@ -183,23 +196,23 @@ namespace Garnet.server.Vector.Filter
                 return expr;
             }
 
-            // Literals
+            // Literals — use FilterValue to avoid boxing doubles
             if (token.Type == TokenType.Number)
             {
                 end = start + 1;
-                return new LiteralExpr { Value = double.Parse(token.Value, CultureInfo.InvariantCulture) };
+                return new LiteralExpr { Value = FilterValue.FromNumber(double.Parse(token.Value, CultureInfo.InvariantCulture)) };
             }
 
             if (token.Type == TokenType.String)
             {
                 end = start + 1;
-                return new LiteralExpr { Value = token.Value };
+                return new LiteralExpr { Value = FilterValue.FromString(token.Value) };
             }
 
             if (token.Type == TokenType.Boolean)
             {
                 end = start + 1;
-                return new LiteralExpr { Value = token.Value == "true" ? 1.0 : 0.0 };
+                return new LiteralExpr { Value = token.Value == "true" ? FilterValue.True : FilterValue.False };
             }
 
             // Identifier (field access)

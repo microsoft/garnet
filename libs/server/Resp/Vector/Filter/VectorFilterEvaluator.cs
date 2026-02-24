@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 namespace Garnet.server.Vector.Filter
@@ -9,95 +10,133 @@ namespace Garnet.server.Vector.Filter
     /// <summary>
     /// Evaluator for vector filter expressions.
     /// Evaluates parsed expression trees against JSON attribute data.
+    /// Returns FilterValue (a struct) to avoid boxing allocations on every evaluation.
     /// </summary>
     internal static class VectorFilterEvaluator
     {
-        public static object EvaluateExpression(Expr expr, JsonElement root)
+        /// <summary>
+        /// Evaluate a filter expression against a JSON element.
+        /// Returns a FilterValue (struct) — no boxing occurs for numeric results.
+        /// </summary>
+        public static FilterValue EvaluateExpression(Expr expr, JsonElement root)
         {
             if (expr is LiteralExpr lit)
                 return lit.Value;
 
             if (expr is MemberExpr member)
-            {
-                if (root.TryGetProperty(member.Property, out var value))
-                {
-                    return value.ValueKind switch
-                    {
-                        JsonValueKind.Number => value.GetDouble(),
-                        JsonValueKind.String => value.GetString(),
-                        JsonValueKind.True => 1.0,
-                        JsonValueKind.False => 0.0,
-                        JsonValueKind.Array => value,
-                        _ => null
-                    };
-                }
-                return null;
-            }
+                return EvaluateMember(member, root);
 
             if (expr is UnaryExpr unary)
-            {
-                var operand = EvaluateExpression(unary.Operand, root);
-                if (unary.Operator == "not" || unary.Operator == "!")
-                    return IsTruthy(operand) ? 0.0 : 1.0;
-                if (unary.Operator == "-")
-                    return -(ToNumber(operand));
-                throw new InvalidOperationException($"Unknown unary operator: {unary.Operator}");
-            }
+                return EvaluateUnary(unary, root);
 
             if (expr is BinaryExpr binary)
+                return EvaluateBinary(binary, root);
+
+            return FilterValue.Null;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static FilterValue EvaluateMember(MemberExpr member, JsonElement root)
+        {
+            if (root.TryGetProperty(member.Property, out var value))
             {
-                // Short-circuit logical operators
-                if (binary.Operator is "and" or "&&")
+                return value.ValueKind switch
                 {
-                    var left = EvaluateExpression(binary.Left, root);
-                    if (!IsTruthy(left)) return 0.0;
-                    var right = EvaluateExpression(binary.Right, root);
-                    return IsTruthy(right) ? 1.0 : 0.0;
-                }
+                    JsonValueKind.Number => FilterValue.FromNumber(value.GetDouble()),
+                    JsonValueKind.String => FilterValue.FromString(value.GetString()),
+                    JsonValueKind.True => FilterValue.True,
+                    JsonValueKind.False => FilterValue.False,
+                    JsonValueKind.Array => FilterValue.FromJsonElement(value),
+                    _ => FilterValue.Null
+                };
+            }
+            return FilterValue.Null;
+        }
 
-                if (binary.Operator is "or" or "||")
-                {
-                    var left = EvaluateExpression(binary.Left, root);
-                    if (IsTruthy(left)) return 1.0;
-                    var right = EvaluateExpression(binary.Right, root);
-                    return IsTruthy(right) ? 1.0 : 0.0;
-                }
+        private static FilterValue EvaluateUnary(UnaryExpr unary, JsonElement root)
+        {
+            var operand = EvaluateExpression(unary.Operand, root);
+            return unary.Operator switch
+            {
+                OperatorKind.Not => IsTruthy(operand) ? FilterValue.False : FilterValue.True,
+                OperatorKind.Negate => FilterValue.FromNumber(-ToNumber(operand)),
+                _ => throw new InvalidOperationException($"Unknown unary operator: {unary.Operator}")
+            };
+        }
 
-                {
-                    var left = EvaluateExpression(binary.Left, root);
-                    var right = EvaluateExpression(binary.Right, root);
-
-                    return binary.Operator switch
-                    {
-                        "+" => ToNumber(left) + ToNumber(right),
-                        "-" => ToNumber(left) - ToNumber(right),
-                        "*" => ToNumber(left) * ToNumber(right),
-                        "/" => ToNumber(left) / ToNumber(right),
-                        "%" => ToNumber(left) % ToNumber(right),
-                        "**" => Math.Pow(ToNumber(left), ToNumber(right)),
-                        ">" => ToNumber(left) > ToNumber(right) ? 1.0 : 0.0,
-                        "<" => ToNumber(left) < ToNumber(right) ? 1.0 : 0.0,
-                        ">=" => ToNumber(left) >= ToNumber(right) ? 1.0 : 0.0,
-                        "<=" => ToNumber(left) <= ToNumber(right) ? 1.0 : 0.0,
-                        "==" => AreEqual(left, right) ? 1.0 : 0.0,
-                        "!=" => !AreEqual(left, right) ? 1.0 : 0.0,
-                        "in" => IsIn(left, right) ? 1.0 : 0.0,
-                        _ => throw new InvalidOperationException($"Unknown operator: {binary.Operator}")
-                    };
-                }
+        private static FilterValue EvaluateBinary(BinaryExpr binary, JsonElement root)
+        {
+            // Short-circuit logical operators
+            if (binary.Operator == OperatorKind.And)
+            {
+                var left = EvaluateExpression(binary.Left, root);
+                if (!IsTruthy(left)) return FilterValue.False;
+                var right = EvaluateExpression(binary.Right, root);
+                return IsTruthy(right) ? FilterValue.True : FilterValue.False;
             }
 
-            return null;
+            if (binary.Operator == OperatorKind.Or)
+            {
+                var left = EvaluateExpression(binary.Left, root);
+                if (IsTruthy(left)) return FilterValue.True;
+                var right = EvaluateExpression(binary.Right, root);
+                return IsTruthy(right) ? FilterValue.True : FilterValue.False;
+            }
+
+            {
+                var left = EvaluateExpression(binary.Left, root);
+                var right = EvaluateExpression(binary.Right, root);
+
+                return binary.Operator switch
+                {
+                    OperatorKind.Add => FilterValue.FromNumber(ToNumber(left) + ToNumber(right)),
+                    OperatorKind.Subtract => FilterValue.FromNumber(ToNumber(left) - ToNumber(right)),
+                    OperatorKind.Multiply => FilterValue.FromNumber(ToNumber(left) * ToNumber(right)),
+                    OperatorKind.Divide => FilterValue.FromNumber(ToNumber(left) / ToNumber(right)),
+                    OperatorKind.Modulo => FilterValue.FromNumber(ToNumber(left) % ToNumber(right)),
+                    OperatorKind.Power => FilterValue.FromNumber(Math.Pow(ToNumber(left), ToNumber(right))),
+                    OperatorKind.GreaterThan => FilterValue.FromBool(ToNumber(left) > ToNumber(right)),
+                    OperatorKind.LessThan => FilterValue.FromBool(ToNumber(left) < ToNumber(right)),
+                    OperatorKind.GreaterEqual => FilterValue.FromBool(ToNumber(left) >= ToNumber(right)),
+                    OperatorKind.LessEqual => FilterValue.FromBool(ToNumber(left) <= ToNumber(right)),
+                    OperatorKind.Equal => FilterValue.FromBool(AreEqual(left, right)),
+                    OperatorKind.NotEqual => FilterValue.FromBool(!AreEqual(left, right)),
+                    OperatorKind.In => FilterValue.FromBool(IsIn(left, right)),
+                    _ => throw new InvalidOperationException($"Unknown operator: {binary.Operator}")
+                };
+            }
         }
 
-        private static double ToNumber(object value)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static double ToNumber(FilterValue value)
         {
-            if (value is double d) return d;
-            if (value is int i) return i;
-            if (value is string s && double.TryParse(s, out var result)) return result;
-            return 0;
+            return value.Kind switch
+            {
+                FilterValueKind.Number => value.AsNumber(),
+                FilterValueKind.String => double.TryParse(value.AsString(), out var result) ? result : 0,
+                _ => 0
+            };
         }
 
+        /// <summary>
+        /// Determine if a FilterValue is truthy.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsTruthy(FilterValue value)
+        {
+            return value.Kind switch
+            {
+                FilterValueKind.Number => value.AsNumber() != 0,
+                FilterValueKind.String => !string.IsNullOrEmpty(value.AsString()),
+                FilterValueKind.Null => false,
+                _ => true  // JsonArray etc. are truthy
+            };
+        }
+
+        /// <summary>
+        /// Overload accepting object for backward compatibility with tests that pass
+        /// boxed int, bool, string, double, or null directly.
+        /// </summary>
         public static bool IsTruthy(object value)
         {
             if (value == null) return false;
@@ -105,40 +144,51 @@ namespace Garnet.server.Vector.Filter
             if (value is int i) return i != 0;
             if (value is string s) return !string.IsNullOrEmpty(s);
             if (value is bool b) return b;
+            if (value is FilterValue fv) return IsTruthy(fv);
             return true;
         }
 
-        private static bool AreEqual(object left, object right)
+        private static bool AreEqual(FilterValue left, FilterValue right)
         {
-            if (left == null && right == null) return true;
-            if (left == null || right == null) return false;
+            if (left.IsNull && right.IsNull) return true;
+            if (left.IsNull || right.IsNull) return false;
 
-            if (left is double || right is double)
+            // Both are numbers — fast numeric comparison
+            if (left.Kind == FilterValueKind.Number && right.Kind == FilterValueKind.Number)
+                return Math.Abs(left.AsNumber() - right.AsNumber()) < 0.0001;
+
+            // If either is a number and the other might be convertible
+            if (left.Kind == FilterValueKind.Number || right.Kind == FilterValueKind.Number)
                 return Math.Abs(ToNumber(left) - ToNumber(right)) < 0.0001;
 
-            if (left is string ls && right is string rs)
-                return ls == rs;
+            // Both are strings
+            if (left.Kind == FilterValueKind.String && right.Kind == FilterValueKind.String)
+                return left.AsString() == right.AsString();
 
-            return left.Equals(right);
+            return false;
         }
 
-        private static bool IsIn(object needle, object haystack)
+        private static bool IsIn(FilterValue needle, FilterValue haystack)
         {
-            if (haystack is JsonElement elem && elem.ValueKind == JsonValueKind.Array)
+            if (haystack.Kind == FilterValueKind.JsonArray)
             {
-                foreach (var item in elem.EnumerateArray())
+                var elem = haystack.AsJsonElement();
+                if (elem.ValueKind == JsonValueKind.Array)
                 {
-                    var itemValue = item.ValueKind switch
+                    foreach (var item in elem.EnumerateArray())
                     {
-                        JsonValueKind.Number => (object)item.GetDouble(),
-                        JsonValueKind.String => item.GetString(),
-                        JsonValueKind.True => 1.0,
-                        JsonValueKind.False => 0.0,
-                        _ => null
-                    };
+                        var itemValue = item.ValueKind switch
+                        {
+                            JsonValueKind.Number => FilterValue.FromNumber(item.GetDouble()),
+                            JsonValueKind.String => FilterValue.FromString(item.GetString()),
+                            JsonValueKind.True => FilterValue.True,
+                            JsonValueKind.False => FilterValue.False,
+                            _ => FilterValue.Null
+                        };
 
-                    if (AreEqual(needle, itemValue))
-                        return true;
+                        if (AreEqual(needle, itemValue))
+                            return true;
+                    }
                 }
             }
             return false;
