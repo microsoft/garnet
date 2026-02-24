@@ -93,7 +93,7 @@ namespace Garnet.client
         /// <summary>
         /// Client name to send to server for identification.
         /// </summary>
-        readonly Memory<byte>[] SETNAME = null;
+        readonly Memory<byte>[] clientName = null;
 
         /// <summary>
         /// Exception to throw to ongoing tasks when disposed
@@ -127,7 +127,9 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
+        /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
         /// <param name="sendPageSize">Size of pages where requests are written to be sent, determines max request size (rounds down to previous power of 2)</param>
+        /// <param name="bufferSize">Network writer buffer size</param>
         /// <param name="maxOutstandingTasks">Maximum outstanding tasks before client throttles new requests (rounds down to previous power of 2), default 32K</param>
         /// <param name="timeoutMilliseconds">Timeout (in milliseconds) after which client disposes itself and throws exception on all active tasks</param>
         /// <param name="memoryPool">Pool for Memory based response buffers</param>
@@ -156,7 +158,7 @@ namespace Garnet.client
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
-            this.SETNAME = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
+            this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
             if (maxOutstandingTasks > PageOffset.kTaskMask + 1)
             {
@@ -224,10 +226,10 @@ namespace Garnet.client
 
             try
             {
-                if (SETNAME != null)
+                if (clientName != null)
                 {
                     _ = ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false).GetAwaiter().GetResult();
-                    _ = ExecuteForStringResultAsync(CLIENT, SETNAME).ConfigureAwait(false).GetAwaiter().GetResult();
+                    _ = ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
             catch (Exception e)
@@ -270,10 +272,10 @@ namespace Garnet.client
 
             try
             {
-                if (SETNAME != null)
+                if (clientName != null)
                 {
                     _ = await ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false);
-                    _ = await ExecuteForStringResultAsync(CLIENT, SETNAME).ConfigureAwait(false);
+                    _ = await ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false);
                 }
             }
             catch (Exception e)

@@ -105,9 +105,11 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
+        /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
         /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="rawResult">Flag if raw result from response will be processed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
