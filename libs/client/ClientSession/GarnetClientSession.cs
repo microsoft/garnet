@@ -79,6 +79,11 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Set client name on the server for easier identification in monitoring and debugging.
+        /// </summary>
+        readonly string clientName = null;
+
+        /// <summary>
         /// Indicating whether this instance is using its own network pool or one that was provided
         /// </summary>
         readonly bool usingManagedNetworkPool = false;
@@ -100,9 +105,11 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
+        /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
         /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="rawResult">Flag if raw result from response will be processed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -111,6 +118,7 @@ namespace Garnet.client
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
+            string clientName = null,
             int networkSendThrottleMax = 8,
             bool rawResult = false,
             ILogger logger = null)
@@ -128,6 +136,7 @@ namespace Garnet.client
             this.disposed = 0;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.clientName = clientName;
             this.RawResult = rawResult;
         }
 
@@ -169,6 +178,21 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+
+                if (clientName != null)
+                {
+                    _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
+                    _ = ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }
