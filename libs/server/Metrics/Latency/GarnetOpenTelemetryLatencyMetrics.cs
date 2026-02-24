@@ -89,7 +89,7 @@ namespace Garnet.server.Metrics.Latency
         /// <param name="bytes">The number of bytes processed.</param>
         public void RecordBytesProcessed(long bytes)
         {
-            bytesPerCallHistogram.Record(Convert.ToInt32(bytes));
+            bytesPerCallHistogram.Record(Convert.ToInt32(Math.Clamp(bytes, 0, int.MaxValue)));
         }
 
         /// <summary>
@@ -98,7 +98,7 @@ namespace Garnet.server.Metrics.Latency
         /// <param name="operations">The number of operations processed.</param>
         public void RecordOperationsProcessed(long operations)
         {
-            operationsPerCallHistogram.Record(Convert.ToInt32(operations));
+            operationsPerCallHistogram.Record(Convert.ToInt32(Math.Clamp(operations, 0, int.MaxValue)));
         }
 
         /// <summary>
