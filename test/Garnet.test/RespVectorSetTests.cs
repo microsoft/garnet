@@ -1728,7 +1728,7 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(14, vinfoRes.Length);
                                 var values = BuildDictionaryFromResponse(vinfoRes);
                                 ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
-                                ClassicAssert.AreEqual(values["distance-metric"], "l2");
+                                ClassicAssert.AreEqual(values["distance-metric"], "cosine");
                                 ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
@@ -1746,7 +1746,7 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(14, vinfoRes.Length);
                                 values = BuildDictionaryFromResponse(vinfoRes);
                                 ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
-                                ClassicAssert.AreEqual(values["distance-metric"], "l2");
+                                ClassicAssert.AreEqual(values["distance-metric"], "cosine");
                                 ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
