@@ -107,7 +107,7 @@ namespace Garnet.server
         /// <summary>
         /// Normalized Cosine Similarity
         /// </summary>
-        CosineNormalized,
+        XCosine_Normalized,
     }
 
     /// <summary>
