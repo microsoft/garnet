@@ -259,8 +259,8 @@ namespace Garnet.test.Resp.ETag
             var args = new object[] { command.ToString() }.Concat(commandArgs).ToArray();
             result = await db.ExecuteAsync("EXECWITHETAG", args);
 
-            // Verify result & expected ETag - 2 (RENAME with EXECWITHETAG advances the etag)
-            VerifyResultAndETag(result, verifyResult, 2);
+            // Verify result & expected ETag (RENAME with EXECWITHETAG advances the etag)
+            VerifyResultAndETag(result, verifyResult, dstKeyNx ? 1 : 2);
         }
     }
 }
