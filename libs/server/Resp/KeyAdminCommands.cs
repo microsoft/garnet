@@ -283,11 +283,20 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
+
+            var input = new StringInput(RespCommand.GETDEL, ref metaCommandInfo);
             var output = GetStringOutput();
-            var status = garnetApi.GETDEL(sbKey, ref output);
+            var status = garnetApi.GETDEL(sbKey, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
+                if (output.IsOperationSkipped)
+                {
+                    WriteNull();
+                    return true;
+                }
+
                 ProcessOutput(output.SpanByteAndMemory);
             }
             else

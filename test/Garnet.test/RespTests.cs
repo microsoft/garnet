@@ -2033,6 +2033,39 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameObjectStoreWithExpiryAndNewKeyAlreadyExists()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var origList2 = new RedisValue[] { "x", "y", "z" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+            db.ListRightPush(key1, origList);
+            db.ListRightPush(key2, origList2);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            ClassicAssert.IsTrue(expirySet);
+
+            var rb = db.KeyRename(key1, key2);
+            ClassicAssert.IsTrue(rb);
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive("lkey2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
         public void SingleRenameWithOldKeyAndNewKeyAsSame()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

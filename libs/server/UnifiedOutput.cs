@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -12,6 +13,11 @@ namespace Garnet.server
     /// </summary>
     public struct UnifiedOutput
     {
+        /// <summary>
+        /// Output flags
+        /// </summary>
+        public UnifiedOutputFlags OutputFlags;
+
         /// <summary>
         /// Span byte and memory
         /// </summary>
@@ -38,5 +44,15 @@ namespace Garnet.server
         {
             SpanByteAndMemory.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Output flags for <see cref="UnifiedOutput"/>."/>
+    /// </summary>
+    [Flags]
+    public enum UnifiedOutputFlags : byte
+    {
+        None = 0,
+        OperationSkipped = 1 << 0,
     }
 }

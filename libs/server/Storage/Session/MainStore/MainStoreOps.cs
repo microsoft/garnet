@@ -160,14 +160,13 @@ namespace Garnet.server
         /// GETDEL command - Gets the value corresponding to the given key and deletes the key.
         /// </summary>
         /// <param name="key">The key to get the value for.</param>
+        /// <param name="input"></param>
         /// <param name="output">Span to allocate the output of the operation</param>
         /// <param name="context">Basic Context of the store</param>
         /// <returns> Operation status </returns>
-        public unsafe GarnetStatus GETDEL<TStringContext>(PinnedSpanByte key, ref StringOutput output, ref TStringContext context)
+        public unsafe GarnetStatus GETDEL<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var input = new StringInput(RespCommand.GETDEL);
-
             var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
 

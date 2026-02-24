@@ -412,8 +412,17 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
+            var output = new StringOutput();
             var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, startIdx: 1);
-            var status = storageApi.SET_Conditional(key, ref input);
+            var status = storageApi.SET_Conditional(key, ref input, ref output);
+
+            etag = output.ETag;
+
+            if (output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
+            }
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
             var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;

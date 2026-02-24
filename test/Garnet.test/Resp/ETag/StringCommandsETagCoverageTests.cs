@@ -90,6 +90,19 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task GetDelETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.GETDEL, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
+            }
+        }
+
+        [Test]
         public async Task GetExETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], "EX", 2 };
@@ -164,6 +177,19 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual("OK", (string)result);
+            }
+        }
+
+        [Test]
+        public async Task MSetNxETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringData[1], StringKeys[1], StringData[0] };
+
+            await CheckCommandAsync(RespCommand.MSETNX, cmdArgs, VerifyResult, nxKey: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, (string)result);
             }
         }
 
@@ -255,6 +281,19 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual("OK", (string)result);
+            }
+        }
+
+        [Test]
+        public async Task SetNxETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringData[1] };
+
+            await CheckCommandAsync(RespCommand.SETNX, cmdArgs, VerifyResult, nxKey: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
             }
         }
 

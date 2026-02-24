@@ -298,13 +298,15 @@ namespace Garnet.server
         #endregion
 
         #region GETDEL
+
         /// <summary>
         /// GETDEL
         /// </summary>
         /// <param name="key"> Key to get and delete </param>
+        /// <param name="input"></param>
         /// <param name="output"> Current value of key </param>
         /// <returns> Operation status </returns>
-        GarnetStatus GETDEL(PinnedSpanByte key, ref StringOutput output);
+        GarnetStatus GETDEL(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
         #endregion
 
         #region TYPE

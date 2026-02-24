@@ -179,12 +179,7 @@ namespace Garnet.server
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
-            if (ok)
-            {
-               ok = logRecord.RemoveETag();
-            }
-            if (ok)
+            if (logRecord.Info.HasETag && logRecord.TrySetETag(logRecord.ETag + 1))
             {
                 sizeInfo.AssertOptionals(logRecord.Info);
 

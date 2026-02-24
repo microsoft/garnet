@@ -201,8 +201,8 @@ namespace Garnet.server
 
         #region GETDEL
         /// <inheritdoc />
-        public GarnetStatus GETDEL(PinnedSpanByte key, ref StringOutput output)
-            => storageSession.GETDEL(key, ref output, ref stringContext);
+        public GarnetStatus GETDEL(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.GETDEL(key, ref input, ref output, ref stringContext);
         #endregion
 
         #region Advanced ops

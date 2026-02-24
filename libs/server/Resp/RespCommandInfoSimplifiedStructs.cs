@@ -291,5 +291,16 @@ namespace Garnet.server
             return simpleCommandInfo.KeySpecs.Length > 0 && simpleCommandInfo.KeySpecs.Any(ks =>
                 (ks.Flags & KeySpecificationFlags.OW) == KeySpecificationFlags.OW);
         }
+
+        /// <summary>
+        /// Determines if a simplified key spec represents a delete command
+        /// </summary>
+        /// <param name="simpleCommandInfo">The simplified key spec</param>
+        /// <returns>True if successful</returns>
+        public static bool IsDeleteCommand(this SimpleRespCommandInfo simpleCommandInfo)
+        {
+            return simpleCommandInfo.KeySpecs.Length > 0 && simpleCommandInfo.KeySpecs.Any(ks =>
+                (ks.Flags & KeySpecificationFlags.Delete) == KeySpecificationFlags.Delete);
+        }
     }
 }
