@@ -360,7 +360,7 @@ namespace Bitmap
             #endregion
 
             #region fillDstTail
-        fillTail:
+            fillTail:
             if (dstLen > srcLen)
             {
                 batchSize = 8 * 4;
@@ -530,7 +530,7 @@ namespace Bitmap
             #endregion
 
             #region fillDstTail
-        fillTail:
+            fillTail:
             if (dstLen > srcLen)
             {
                 batchSize = 8 * 4;
@@ -729,7 +729,7 @@ namespace Bitmap
             #endregion
 
             #region fillDstTail
-        fillTail:
+            fillTail:
             if (dstLen > srcLen)
             {
                 batchSize = 8 * 4;
@@ -828,7 +828,7 @@ namespace Bitmap
                 *(long*)dstCurr = d00;
                 dstCurr += batchSize;
             }
-            #endregion
+        #endregion
 
         fillTail:
             #region scalar_1x1    
@@ -1046,7 +1046,7 @@ namespace Bitmap
                 *(long*)dstCurr = d00;
                 dstCurr += batchSize;
             }
-            #endregion
+        #endregion
 
         fillTail:
             #region scalar_1x1    
@@ -1266,7 +1266,7 @@ namespace Bitmap
                 *(long*)dstCurr = d00;
                 dstCurr += batchSize;
             }
-            #endregion
+        #endregion
 
         fillTail:
             #region scalar_1x1    
