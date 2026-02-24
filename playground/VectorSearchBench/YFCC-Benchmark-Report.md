@@ -74,14 +74,22 @@ The benchmark runs 6 query phases with varying filter selectivity. Query vectors
           {"year": {"$eq": "2006"}}]}  →  .camera == "NIKON" && .year == "2006"
 ```
 
-| Phase | Filter | Selectivity | Description |
-|-------|--------|-------------|-------------|
-| **unfiltered** | (none) | 100% | Pure ANN search, no filtering |
-| **single-high** | e.g. `.year == "2012"` | ~8-10% | Single equality predicate on a high-cardinality attribute |
-| **single-medium** | e.g. `.camera == "Canon..."` | ~2-5% | Single equality on a medium-cardinality attribute |
-| **single-low** | e.g. `.country == "Japan"` | ~0.5-2% | Single equality on a low-frequency attribute value |
-| **multi-medium** | e.g. `.year == "2010" && .month == "June"` | ~0.5-1% | AND of two predicates, medium combined selectivity |
-| **multi-low** | e.g. `.camera == "..." && .year == "..."` | ~0.1-0.5% | AND of two predicates, low combined selectivity |
+| Phase | Filter example | Avg selectivity | Avg passing | Range | Description |
+|-------|----------------|-----------------|-------------|-------|-------------|
+| **unfiltered** | (none) | 100% | 100,000 | -- | Pure ANN search, no filtering |
+| **single-high** | `.year == "2012"` | 15.45% | 15,448 | 5.5%–33.9% | Single equality on year or country (high-frequency values) |
+| **single-medium** | `.country == "ES"` | 1.28% | 1,281 | 0.16%–3.3% | Single equality on country or camera (medium-frequency values) |
+| **single-low** | `.camera == "EPSON"` | 0.02% | 16 | 0%–0.10% | Single equality on rare camera or country values |
+| **multi-medium** | `.camera == "NIKON" && .year == "2006"` | 1.48% | 1,483 | 0.19%–4.8% | AND of two predicates (camera+year or country+year) |
+| **multi-low** | `.country == "CA" && .year == "2005"` | 0.02% | 24 | 0%–0.11% | AND of two predicates with rare attribute values |
+
+### How selectivity is calculated
+
+**Selectivity** is the fraction of the base dataset that passes a given filter expression. It is computed empirically: for each of the 200 query filters in a phase, we count how many of the 100,000 base records satisfy the filter predicate, then divide by 100,000. The table above shows the average across all 200 queries per phase.
+
+For example, in the `single-high` phase, the filter `.year == "2012"` matches 8,627 out of 100,000 records (8.6% selectivity), while `.country == "US"` matches 33,924 records (33.9%). Averaged across the 200 queries (which use different attribute values), the mean selectivity is 15.45%.
+
+Low-selectivity phases are particularly challenging for ANN+filter because the filter eliminates the vast majority of nearest-neighbor candidates returned by the graph search.
 
 ### Query Command
 
@@ -137,7 +145,7 @@ Both Garnet and Redis results are measured against this same brute-force ground 
 
 **Garnet is 1.05x faster. Garnet recall is 16.4 percentage points higher.**
 
-### 6.2 single-high (~8-10% selectivity)
+### 6.2 single-high (15.45% avg selectivity)
 
 | Target | Mean (us) | p50 (us) | p95 (us) | p99 (us) | Recall@10 |
 |--------|-----------|----------|----------|----------|-----------|
@@ -147,7 +155,7 @@ Both Garnet and Redis results are measured against this same brute-force ground 
 
 **Garnet is 1.90x faster. Recall is essentially identical (~86.6%).**
 
-### 6.3 single-medium (~2-5% selectivity)
+### 6.3 single-medium (1.28% avg selectivity)
 
 | Target | Mean (us) | p50 (us) | p95 (us) | p99 (us) | Recall@10 |
 |--------|-----------|----------|----------|----------|-----------|
@@ -157,7 +165,7 @@ Both Garnet and Redis results are measured against this same brute-force ground 
 
 **Garnet is 1.79x faster but recall drops to 13.15% vs Redis's 85.50%.**
 
-### 6.4 single-low (~0.5-2% selectivity)
+### 6.4 single-low (0.02% avg selectivity)
 
 | Target | Mean (us) | p50 (us) | p95 (us) | p99 (us) | Recall@10 |
 |--------|-----------|----------|----------|----------|-----------|
@@ -167,7 +175,7 @@ Both Garnet and Redis results are measured against this same brute-force ground 
 
 **Garnet is 1.73x faster. Both have low recall; Redis is significantly better (18.93% vs 1.12%).**
 
-### 6.5 multi-medium (~0.5-1% selectivity)
+### 6.5 multi-medium (1.48% avg selectivity)
 
 | Target | Mean (us) | p50 (us) | p95 (us) | p99 (us) | Recall@10 |
 |--------|-----------|----------|----------|----------|-----------|
@@ -177,7 +185,7 @@ Both Garnet and Redis results are measured against this same brute-force ground 
 
 **Garnet is 1.85x faster. Redis recall is 87.25% vs Garnet's 15.10%.**
 
-### 6.6 multi-low (~0.1-0.5% selectivity)
+### 6.6 multi-low (0.02% avg selectivity)
 
 | Target | Mean (us) | p50 (us) | p95 (us) | p99 (us) | Recall@10 |
 |--------|-----------|----------|----------|----------|-----------|
@@ -193,27 +201,40 @@ Both Garnet and Redis results are measured against this same brute-force ground 
 
 ### Latency
 
-| Phase | Garnet Mean (us) | Redis Mean (us) | Speedup |
-|-------|------------------|-----------------|---------|
-| unfiltered | 3,690 | 3,876 | 1.05x |
-| single-high | 7,126 | 13,573 | 1.90x |
-| single-medium | 9,007 | 16,086 | 1.79x |
-| single-low | 8,352 | 14,455 | 1.73x |
-| multi-medium | 8,604 | 15,935 | 1.85x |
-| multi-low | 8,376 | 15,440 | 1.84x |
+| Phase | Selectivity | Garnet Mean (us) | Redis Mean (us) | Speedup |
+|-------|-------------|------------------|-----------------|---------|
+| unfiltered | 100% | 3,690 | 3,876 | 1.05x |
+| single-high | 15.45% | 7,126 | 13,573 | 1.90x |
+| single-medium | 1.28% | 9,007 | 16,086 | 1.79x |
+| single-low | 0.02% | 8,352 | 14,455 | 1.73x |
+| multi-medium | 1.48% | 8,604 | 15,935 | 1.85x |
+| multi-low | 0.02% | 8,376 | 15,440 | 1.84x |
 
 **Garnet is consistently 1.7-1.9x faster than Redis on filtered queries**, and roughly on par for unfiltered.
 
 ### Recall@10
 
-| Phase | Garnet | Redis | Delta |
-|-------|--------|-------|-------|
-| unfiltered | **98.65%** | 82.25% | Garnet +16.4 pp |
-| single-high | 86.60% | **86.70%** | Tied |
-| single-medium | 13.15% | **85.50%** | Redis +72.4 pp |
-| single-low | 1.12% | **18.93%** | Redis +17.8 pp |
-| multi-medium | 15.10% | **87.25%** | Redis +72.2 pp |
-| multi-low | 1.20% | **22.19%** | Redis +21.0 pp |
+| Phase | Selectivity | Garnet | Redis | Delta |
+|-------|-------------|--------|-------|-------|
+| unfiltered | 100% | **98.65%** | 82.25% | Garnet +16.4 pp |
+| single-high | 15.45% | 86.60% | **86.70%** | Tied |
+| single-medium | 1.28% | 13.15% | **85.50%** | Redis +72.4 pp |
+| single-low | 0.02% | 1.12% | **18.93%** | Redis +17.8 pp |
+| multi-medium | 1.48% | 15.10% | **87.25%** | Redis +72.2 pp |
+| multi-low | 0.02% | 1.20% | **22.19%** | Redis +21.0 pp |
+
+### Selectivity vs Recall (key observation)
+
+The recall results show a clear pattern tied to filter selectivity:
+
+| Selectivity range | Garnet recall | Redis recall | Assessment |
+|-------------------|---------------|--------------|------------|
+| 100% (unfiltered) | 98.65% | 82.25% | Garnet dominates |
+| ~15% (single-high) | 86.60% | 86.70% | Parity |
+| ~1-1.5% (single-medium, multi-medium) | 13-15% | 85-87% | Redis dominates |
+| ~0.02% (single-low, multi-low) | ~1% | 19-22% | Both low, Redis better |
+
+The **inflection point** is around 1-2% selectivity. Above ~15%, Garnet's 5x over-fetch is sufficient to find enough qualifying candidates. Below ~1%, the post-filter approach fundamentally cannot retrieve enough matching results from a blind graph traversal, regardless of retry/paging strategy.
 
 ---
 
@@ -242,10 +263,11 @@ Garnet currently uses a **pure post-filter** approach for `VSIM ... FILTER`:
 
 The post-filter approach searches the DiskANN graph **without awareness of the filter**. The graph traversal returns candidates that are nearest neighbors in vector space, but many of those candidates fail the filter. With narrow filters (low selectivity), the vast majority of ANN candidates are discarded, and the over-fetch multiplier (5x or 10x) is insufficient to find enough qualifying results.
 
-For example, with `single-low` (~1% selectivity) and top-K=10:
-- First attempt fetches 50 candidates (5 × 10), expects ~0.5 to pass → insufficient
-- Retry fetches 100 candidates (10 × 10), expects ~1 to pass → still insufficient
+For example, with `single-low` (0.02% selectivity, ~16 matching records) and top-K=10:
+- First attempt fetches 50 candidates (5 × 10), expects ~0.01 to pass → insufficient
+- Retry fetches 100 candidates (10 × 10), expects ~0.02 to pass → still insufficient
 - Paged fallback iterates more but the DiskANN graph locality means it keeps visiting the same region of the index
+- The 16 matching records are scattered across the 100K-element graph — finding them requires essentially a full scan
 
 Redis 8 likely uses a different strategy (integrated filter-aware search or more aggressive candidate generation), which explains its better recall on narrow filters despite higher latency.
 
