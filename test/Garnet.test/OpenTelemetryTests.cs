@@ -34,7 +34,7 @@ namespace Garnet.test
         public void OpenTelemetryMetricsDisabled_WhenNoOpenTelemetryEndpointConfigured()
         {
             // Arrange:
-            var meterListener = new MeterListener();
+            using var meterListener = new MeterListener();
             var publishedInstruments = new HashSet<string>();
             meterListener.InstrumentPublished = (instrument, listener) => publishedInstruments.Add(instrument.Name);
             meterListener.Start();
@@ -66,7 +66,7 @@ namespace Garnet.test
         public void OpenTelemetryMetricsRecorded_WhenOpenTelemetryEndpointConfigured(bool enableLatencyMonitor)
         {
             // Arrange:
-            var meterListener = new MeterListener();
+            using var meterListener = new MeterListener();
             var publishedInstruments = new HashSet<string>();
             meterListener.InstrumentPublished = (instrument, listener) => publishedInstruments.Add(instrument.Name);
             meterListener.Start();
