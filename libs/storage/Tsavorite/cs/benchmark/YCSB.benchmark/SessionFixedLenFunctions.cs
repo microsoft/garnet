@@ -140,7 +140,18 @@ namespace Tsavorite.benchmark
 
         public readonly void ConvertOutputToHeap(ref Input input, ref Output output) { }
 
-        ConsistentReadContextCallbacks ISessionFunctions<Input, Output, Empty>.GetContextCallbacks() => null;
+        public void BeforeConsistentReadCallback(PinnedSpanByte key) { }
+
+        public void AfterConsistentReadKeyCallback() { }
+
+        public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
+            where TBatch : IReadArgBatch<Input, Output>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        { }
+
+        public bool AfterConsistentReadKeyBatchCallback(int keyCount) => true;
     }
 
     static class StaticUtilities
