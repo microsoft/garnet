@@ -721,7 +721,7 @@ namespace Garnet.test.cluster
                                 var val = vectors[r.Next(vectors.Length)];
 
                                 var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
-                                if (readRes.Length > 0)
+                                if ((readRes?.Length ?? 0) > 0)
                                 {
                                     nonZeroReturns++;
                                 }
