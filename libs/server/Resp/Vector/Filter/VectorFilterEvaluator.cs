@@ -133,21 +133,6 @@ namespace Garnet.server.Vector.Filter
             };
         }
 
-        /// <summary>
-        /// Overload accepting object for backward compatibility with tests that pass
-        /// boxed int, bool, string, double, or null directly.
-        /// </summary>
-        public static bool IsTruthy(object value)
-        {
-            if (value == null) return false;
-            if (value is double d) return d != 0;
-            if (value is int i) return i != 0;
-            if (value is string s) return !string.IsNullOrEmpty(s);
-            if (value is bool b) return b;
-            if (value is FilterValue fv) return IsTruthy(fv);
-            return true;
-        }
-
         private static bool AreEqual(FilterValue left, FilterValue right)
         {
             if (left.IsNull && right.IsNull) return true;

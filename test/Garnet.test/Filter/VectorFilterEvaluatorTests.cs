@@ -119,22 +119,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void Evaluator_IsTruthy()
-        {
-            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(null));
-            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(0.0));
-            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(0));
-            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(""));
-            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(false));
-
-            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(1.0));
-            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(-1.0));
-            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(42));
-            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy("hello"));
-            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(true));
-        }
-
-        [Test]
         public void Evaluator_IsTruthy_FilterValue()
         {
             ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(FilterValue.Null));
