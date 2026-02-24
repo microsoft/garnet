@@ -805,7 +805,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)
@@ -847,12 +847,25 @@ namespace Garnet.server
                     return false;
                 }
 
-                var from = asBytes.AsReadOnlySpan();
                 var into = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
 
-                for (var i = 0; i < asBytes.Length; i++)
+                var from = asBytes.AsReadOnlySpan();
+                if (quantType == VectorQuantType.NoQuant)
                 {
-                    into[i] = from[i];
+                    var fromFloat = MemoryMarshal.Cast<byte, float>(from);
+                    fromFloat.CopyTo(into);
+                }
+                else if (quantType == VectorQuantType.XPreQ8)
+                {
+                    for (var i = 0; i < asBytes.Length; i++)
+                    {
+                        into[i] = from[i];
+                    }
+                }
+                else
+                {
+                    // TODO: Handle Q8 and BIN as they are implemented
+                    throw new NotImplementedException($"Unexpected quantization: {quantType}");
                 }
 
                 // Vector might have been deleted, so check that after getting data
