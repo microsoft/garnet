@@ -16,6 +16,21 @@ namespace Garnet.test
     [TestFixture]
     public class VectorFilterTests : AllureTestBase
     {
+        /// <summary>
+        /// Supported vector filter syntax includes:
+        /// - Literals: numbers (42, 3.14, -5), strings ("x", 'x'), booleans (true/false)
+        /// - Member access: .field, .nested.field, _identifier
+        /// - Arithmetic: +, -, *, /, %, ** (power)
+        /// - Comparison: &gt;, &lt;, &gt;=, &lt;=, ==, !=
+        /// - Logical: and/or/not and aliases &amp;&amp;, ||, !
+        /// - Containment: in (for example, "classic" in .tags)
+        /// - Grouping: parentheses ( )
+        ///
+        /// Operator precedence (high to low):
+        /// primary/parentheses, unary, power, multiplicative, additive, in,
+        /// comparison, equality, and, or.
+        /// </summary>
+
         #region Helper Methods
 
         /// <summary>
@@ -28,13 +43,23 @@ namespace Garnet.test
 
         /// <summary>
         /// Helper to tokenize, parse, and evaluate a filter expression against JSON.
+        /// Returns object for test backward compatibility.
         /// </summary>
         private static object EvaluateFilter(string expression, string json)
         {
             var tokens = VectorFilterTokenizer.Tokenize(expression);
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             using var doc = JsonDocument.Parse(json);
-            return VectorFilterEvaluator.EvaluateExpression(expr, doc.RootElement);
+            var result = VectorFilterEvaluator.EvaluateExpression(expr, doc.RootElement);
+
+            // Convert FilterValue back to object for test assertions
+            return result.Kind switch
+            {
+                FilterValueKind.Number => (object)result.AsNumber(),
+                FilterValueKind.String => result.AsString(),
+                FilterValueKind.Null => null,
+                _ => result.AsNumber() // fallback
+            };
         }
 
         /// <summary>
@@ -42,7 +67,11 @@ namespace Garnet.test
         /// </summary>
         private static bool EvaluateFilterTruthy(string expression, string json)
         {
-            return VectorFilterEvaluator.IsTruthy(EvaluateFilter(expression, json));
+            var tokens = VectorFilterTokenizer.Tokenize(expression);
+            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            using var doc = JsonDocument.Parse(json);
+            var result = VectorFilterEvaluator.EvaluateExpression(expr, doc.RootElement);
+            return VectorFilterEvaluator.IsTruthy(result);
         }
 
         #endregion
@@ -230,7 +259,9 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out var end);
             ClassicAssert.AreEqual(1, end);
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
-            ClassicAssert.AreEqual(42.0, ((LiteralExpr)expr).Value);
+            var lit = (LiteralExpr)expr;
+            ClassicAssert.AreEqual(FilterValueKind.Number, lit.Value.Kind);
+            ClassicAssert.AreEqual(42.0, lit.Value.AsNumber());
         }
 
         [Test]
@@ -239,7 +270,9 @@ namespace Garnet.test
             var tokens = VectorFilterTokenizer.Tokenize("\"hello\"");
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
-            ClassicAssert.AreEqual("hello", ((LiteralExpr)expr).Value);
+            var lit = (LiteralExpr)expr;
+            ClassicAssert.AreEqual(FilterValueKind.String, lit.Value.Kind);
+            ClassicAssert.AreEqual("hello", lit.Value.AsString());
         }
 
         [Test]
@@ -248,12 +281,16 @@ namespace Garnet.test
             var tokens = VectorFilterTokenizer.Tokenize("true");
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
-            ClassicAssert.AreEqual(1.0, ((LiteralExpr)expr).Value);
+            var lit = (LiteralExpr)expr;
+            ClassicAssert.AreEqual(FilterValueKind.Number, lit.Value.Kind);
+            ClassicAssert.AreEqual(1.0, lit.Value.AsNumber());
 
             tokens = VectorFilterTokenizer.Tokenize("false");
             expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
-            ClassicAssert.AreEqual(0.0, ((LiteralExpr)expr).Value);
+            lit = (LiteralExpr)expr;
+            ClassicAssert.AreEqual(FilterValueKind.Number, lit.Value.Kind);
+            ClassicAssert.AreEqual(0.0, lit.Value.AsNumber());
         }
 
         [Test]
@@ -272,7 +309,7 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<UnaryExpr>(expr);
             var unary = (UnaryExpr)expr;
-            ClassicAssert.AreEqual("not", unary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.Not, unary.Operator);
             ClassicAssert.IsInstanceOf<LiteralExpr>(unary.Operand);
         }
 
@@ -283,9 +320,9 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
-            ClassicAssert.AreEqual("+", binary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.Add, binary.Operator);
             ClassicAssert.IsInstanceOf<UnaryExpr>(binary.Right);
-            ClassicAssert.AreEqual("-", ((UnaryExpr)binary.Right).Operator);
+            ClassicAssert.AreEqual(OperatorKind.Negate, ((UnaryExpr)binary.Right).Operator);
         }
 
         [Test]
@@ -296,10 +333,10 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
-            ClassicAssert.AreEqual("+", binary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.Add, binary.Operator);
             ClassicAssert.IsInstanceOf<LiteralExpr>(binary.Left);
             ClassicAssert.IsInstanceOf<BinaryExpr>(binary.Right);
-            ClassicAssert.AreEqual("*", ((BinaryExpr)binary.Right).Operator);
+            ClassicAssert.AreEqual(OperatorKind.Multiply, ((BinaryExpr)binary.Right).Operator);
         }
 
         [Test]
@@ -310,10 +347,10 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
-            ClassicAssert.AreEqual("or", binary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.Or, binary.Operator);
             ClassicAssert.IsInstanceOf<LiteralExpr>(binary.Left);
             ClassicAssert.IsInstanceOf<BinaryExpr>(binary.Right);
-            ClassicAssert.AreEqual("and", ((BinaryExpr)binary.Right).Operator);
+            ClassicAssert.AreEqual(OperatorKind.And, ((BinaryExpr)binary.Right).Operator);
         }
 
         [Test]
@@ -324,9 +361,9 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
-            ClassicAssert.AreEqual("*", binary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.Multiply, binary.Operator);
             ClassicAssert.IsInstanceOf<BinaryExpr>(binary.Left);
-            ClassicAssert.AreEqual("+", ((BinaryExpr)binary.Left).Operator);
+            ClassicAssert.AreEqual(OperatorKind.Add, ((BinaryExpr)binary.Left).Operator);
         }
 
         [Test]
@@ -336,7 +373,7 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
-            ClassicAssert.AreEqual("in", binary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.In, binary.Operator);
             ClassicAssert.IsInstanceOf<LiteralExpr>(binary.Left);
             ClassicAssert.IsInstanceOf<MemberExpr>(binary.Right);
         }
@@ -349,10 +386,10 @@ namespace Garnet.test
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
-            ClassicAssert.AreEqual("**", binary.Operator);
+            ClassicAssert.AreEqual(OperatorKind.Power, binary.Operator);
             ClassicAssert.IsInstanceOf<LiteralExpr>(binary.Left);
             ClassicAssert.IsInstanceOf<BinaryExpr>(binary.Right);
-            ClassicAssert.AreEqual("**", ((BinaryExpr)binary.Right).Operator);
+            ClassicAssert.AreEqual(OperatorKind.Power, ((BinaryExpr)binary.Right).Operator);
         }
 
         [Test]
@@ -486,6 +523,7 @@ namespace Garnet.test
         [Test]
         public void Evaluator_IsTruthy()
         {
+            // Test the object-accepting overload for backward compatibility
             ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(null));
             ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(0.0));
             ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(0));
@@ -497,6 +535,21 @@ namespace Garnet.test
             ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(42));
             ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy("hello"));
             ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(true));
+        }
+
+        [Test]
+        public void Evaluator_IsTruthy_FilterValue()
+        {
+            // Test the FilterValue-accepting overload (the hot-path version)
+            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(FilterValue.Null));
+            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(FilterValue.False));
+            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(FilterValue.FromNumber(0.0)));
+            ClassicAssert.IsFalse(VectorFilterEvaluator.IsTruthy(FilterValue.FromString("")));
+
+            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(FilterValue.True));
+            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(FilterValue.FromNumber(1.0)));
+            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(FilterValue.FromNumber(-1.0)));
+            ClassicAssert.IsTrue(VectorFilterEvaluator.IsTruthy(FilterValue.FromString("hello")));
         }
 
         [Test]
