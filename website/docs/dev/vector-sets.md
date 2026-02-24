@@ -415,6 +415,61 @@ Garnet calls into the following DiskANN functions:
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
   - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
 
+## Vector Filter Expressions (`VSIM ... FILTER`)
+
+`VSIM` supports `FILTER <expression>` for attribute-based post filtering.
+
+### Expression syntax
+
+- Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
+- Comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- Logical: `and`, `or`, `not` (also `&&`, `||`, `!`)
+- Containment: `in`
+- Grouping: parentheses `()`
+
+Field access uses dot notation (for example, `.year`, `.rating`, `.genre`).
+
+### Supported values
+
+- Numbers
+- Strings
+- Booleans (`true` / `false`, evaluated as `1` / `0`)
+- Arrays (for `in` when the right side is an attribute array)
+
+### Operator precedence (high to low)
+
+1. primary / parentheses
+2. unary (`not`, `!`, unary `-`)
+3. power (`**`, right-associative)
+4. multiplicative (`*`, `/`, `%`)
+5. additive (`+`, `-`)
+6. containment (`in`)
+7. comparison (`>`, `<`, `>=`, `<=`)
+8. equality (`==`, `!=`)
+9. logical and (`and`, `&&`)
+10. logical or (`or`, `||`)
+
+### Notes
+
+- Keywords are lowercase (`and`, `or`, `not`, `in`, `true`, `false`)
+- Missing attributes are treated as non-matching (null/falsy)
+- Array literals inside expressions (for example, `.director in ["a","b"]`) are not currently supported
+
+### Examples
+
+```text
+VSIM movies ELE dune FILTER '.year >= 1980 and .rating > 7'
+VSIM movies ELE dune FILTER '.genre == "action" && .rating > 8.0'
+VSIM movies ELE dune FILTER '"classic" in .tags'
+VSIM movies ELE dune FILTER '(.year - 2000) ** 2 < 100 and .rating / 2 > 4'
+```
+
+### Reference
+
+- Redis `VSIM`: https://redis.io/docs/latest/commands/vsim/
+- Redis vector sets: https://redis.io/docs/latest/develop/data-types/vector-sets/
+- Redis filter expressions: https://redis.io/docs/latest/develop/data-types/vector-sets/filtered-search/
+
 > [!IMPORTANT]
 > These p/invoke definitions are all a little rough and should be cleaned up.
 >
