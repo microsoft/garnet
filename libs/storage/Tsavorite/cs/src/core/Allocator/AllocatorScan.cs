@@ -252,7 +252,7 @@ namespace Tsavorite.core
             if (numPending > 0)
                 _ = bContext.CompletePending(wait: true);
 
-            IterationComplete:
+        IterationComplete:
             if (resetCursor)
                 cursor = 0;
             scanFunctions.OnStop(false, scanCursorState.acceptedCount);
