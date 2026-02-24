@@ -130,25 +130,9 @@ TODO:
 
 NOTES:
 ## Prefix Consistent Single Key Read Protocol
-The read protocol leverages timestamp-based sequence numbers associated with every write operation to delay reads as necessary to ensure prefix consistency per session.
-Every session maintains a read session state which contains the maximum sequence number ($T_ms$) it observed across all previous reads.
-The read occurs through the following steps
-1. (Key Freshness Verification) Determine the frontier sequence number T_k (max of (key sequence number, sublog max sequence number)) for a given key K and wait until T_ms < T_k.
-This ensures that any updates that have happened to K until T_ms are visible.
-2. Perform actual read
-3. (Read Session Time Advance) Update T_ms by retrieving the latest key sequence number for K. This happens after the actual read because verification happens outside epoch protection and the value read might be associated with a later timestamp.
-Note that this is still safe since the timestamp cannot be less that T_k since the timestamps are monotonically generated.
-In addition, note that the key freshness check allows reads to proceed only after T_ms has passed (no reads of keys at the boundary timestamp) since we cannot order writes with the same sequence number.
-
+- Each session tracks the maximum observed sequence number $T_ms$ and only proceeds when the key frontier $T_k$ (max of key and sublog sequence numbers) exceeds that value, guaranteeing visibility of earlier writes.
+- After the read, refresh $T_ms$ with the key's latest sequence number; timestamps are strictly increasing, so doing this post-read remains safe even though freshness validation occurred beforehand, and boundary reads never slip through.
 
 ## Prefix Consistent Batch Read
-Reading a batch of keys relies on the same principles as reading a single key.
-It is basically an extension of the single key read case, with the addition of performing a re-read operation if the state of the world has changed after the freshness verification step.
-The algorithm goes as follows:
-
-1. For every key K_i in a given batch, ensure their associated frontier timestamp  T_ms < T_ki before proceeding to the next step. Calculate T_max = max (T_k1, ... Tkn)
-2. Perform the actual batch read.
-3. For every key read, check that their timestamp after the read has not moved beyond T_max ((a.) i.e. T_ki <= T_max).
-This works because freshness verification does not allow reads to proceed at the boundary.
-Hence, if any key gets updated its timestamp will be greater than T_max.
-For this reason we can detect updates by only caching the T_max value.
+- For every key $K_i$ in the batch, ensure $T_ms < T_{k_i}$, then compute $T_max = max(T_{k_1}..T_{k_n})$ before issuing the batched read.
+- Once the batch returns, verify each key still satisfies $T_{k_i} \leq T_max$; if any key advanced beyond $T_max$, redo the batch since a concurrent update happened. Because freshness gating blocks boundary reads, caching just $T_max$ is sufficient to detect drift.

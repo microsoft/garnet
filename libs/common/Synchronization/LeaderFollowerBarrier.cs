@@ -82,6 +82,4 @@ namespace Garnet.common
             await resetReady.WaitAsync(cancellationToken);
         }
     }
-
-
 }

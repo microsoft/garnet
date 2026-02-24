@@ -580,55 +580,113 @@ namespace Garnet.cluster
             }
         }
 
-        /// <summary>
-        /// Process message from primary related to observing a specific tail address snapshot at a given sequence number (timestamp)
-        /// </summary>
-        /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
-        /// <param name="tailAddress">Tail address snapshot</param>
-        /// <returns></returns>
-        public void AdvanceTime(long sequenceNumber, AofAddress tailAddress)
+        object advanceTimeSignalLock = new();
+        TaskCompletionSource<bool> advanceTimeSignal;
+        ManualResetEventSlim advanceTimeConsumerStarted = new(false);
+        AdvanceTimeEvent latestAdvanceTimeEvent;
+
+        struct AdvanceTimeEvent
         {
-            lock (observationLock)
-            {
-                observedTailAddress.MonotonicUpdate(ref tailAddress);
-                _ = Utility.MonotonicUpdate(ref observationSequenceNumber, sequenceNumber, out _);
-            }
+            public long sequenceNumber;
+            public AofAddress tailAddress;
         }
 
-        object observationLock = new();
-        AofAddress observedTailAddress;
-        long observationSequenceNumber;
+        /// <summary>
+        /// Process message from primary related to observing a specific tail address snapshot at a given sequence number (timestamp).
+        /// </summary>
+        /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
+        /// <param name="tailAddress">Tail address snapshot.</param>
+        /// <returns></returns>
+        public void SignalAdvanceTime(long sequenceNumber, AofAddress tailAddress)
+        {
+            // Wait for background cosumer to start
+            _ = advanceTimeConsumerStarted.Wait(clusterProvider.serverOptions.ReplicaSyncTimeout);
+
+            // Assert that advanceTimeSignal has been initialized
+            Debug.Assert(advanceTimeSignal != null);
+
+            // Store the latest event and signal the consumer
+            TaskCompletionSource<bool> release;
+            lock (advanceTimeSignalLock)
+            {
+                latestAdvanceTimeEvent = new() { sequenceNumber = sequenceNumber, tailAddress = tailAddress };
+                release = advanceTimeSignal;
+                advanceTimeSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            if (!release.TrySetResult(true))
+                throw new GarnetException("Failed to signal consumer!");
+        }
 
         /// <summary>
-        /// Starts a background task that advances the replica time if multiple AOF physical sublogs are configured.
+        /// Start replica background task to process advance time signals from the primary.
         /// </summary>
+        /// <exception cref="GarnetException"></exception>
         public void StartAdvanceTimeBackgroundTask()
         {
-            if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
+            if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1 &&
+                !clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeBackgroundTask(token)))
             {
-                if (!clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeBackground(token)))
-                {
-                    logger?.LogError("Failed to register AdvanceTime task at the replica");
-                    throw new GarnetException("Failed to register AdvanceTime task at the replica");
-                }
-                observedTailAddress = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
+                logger?.LogError("Failed to register AdvanceTime task at the replica");
+                throw new GarnetException("Failed to register AdvanceTime task at the replica");
             }
 
-            async Task AdvanceTimeBackground(CancellationToken token)
+            async Task AdvanceTimeBackgroundTask(CancellationToken token)
             {
-                while (!token.IsCancellationRequested)
+                var appendOnlyFile = storeWrapper.appendOnlyFile;
+                try
                 {
-                    await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, token);
-                    lock (observationLock)
+                    TaskCompletionSource<bool> signal;
+                    lock (advanceTimeSignalLock)
                     {
-                        for (var i = 0; i < observedTailAddress.Length; i++)
+                        signal = advanceTimeSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                    }
+
+                    // Signal that consumer has started
+                    advanceTimeConsumerStarted.Set();
+
+                    while (true)
+                    {
+                        await signal.Task.WaitAsync(token).ConfigureAwait(false);
+
+                        // Read the latest event and grab the next signal atomically
+                        AdvanceTimeEvent result;
+                        lock (advanceTimeSignalLock)
                         {
-                            // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
-                            if (observedTailAddress[i] <= replicationOffset[i])
-                            {
-                                storeWrapper.appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
-                            }
+                            result = latestAdvanceTimeEvent;
+                            signal = advanceTimeSignal;
                         }
+                        var observationSequenceNumber = result.sequenceNumber;
+                        var observedTailAddress = result.tailAddress;
+                        var converged = false;
+                        while (!converged)
+                        {
+                            converged = true;
+                            for (var i = 0; i < observedTailAddress.Length; i++)
+                            {
+                                // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
+                                if (observedTailAddress[i] <= replicationOffset[i])
+                                    appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
+                                else
+                                    converged = false;
+                            }
+                            await Task.Delay(storeWrapper.serverOptions.AofReplicationRefreshFrequencyMs, token);
+                        }
+                    }
+                }
+                catch (TaskCanceledException) when (token.IsCancellationRequested)
+                {
+                    // Suppress the exception if the task was cancelled because of store wrapper disposal
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Failed at {method}", nameof(AdvanceTimeBackgroundTask));
+                }
+                finally
+                {
+                    lock (advanceTimeSignalLock)
+                    {
+                        advanceTimeConsumerStarted.Reset();
+                        advanceTimeSignal = null;
                     }
                 }
             }
