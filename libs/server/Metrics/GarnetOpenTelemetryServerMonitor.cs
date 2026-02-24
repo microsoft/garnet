@@ -79,7 +79,7 @@ namespace Garnet.server.Metrics
             if (this.options.OpenTelemetryEndpoint != null)
             {
                 Sdk.CreateMeterProviderBuilder()
-                    .ConfigureResource(rb => rb.AddService("Microsoft.Garnet", serviceVersion: Assembly.GetEntryAssembly().GetName().Version.ToString()))
+                    .ConfigureResource(rb => rb.AddService("Microsoft.Garnet", serviceVersion: Assembly.GetEntryAssembly()?.GetName()?.Version?.ToString() ?? "unknown"))
                     .AddMeter(GarnetOpenTelemetryServerMetrics.MeterName, GarnetOpenTelemetrySessionMetrics.MeterName, GarnetOpenTelemetryLatencyMetrics.MeterName)
                     .AddOtlpExporter(opts =>
                     {
