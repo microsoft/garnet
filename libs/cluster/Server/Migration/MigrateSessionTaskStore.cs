@@ -39,8 +39,16 @@ namespace Garnet.cluster
 
             for (var i = 0; i < sessions.Length; i++)
             {
-                sessions[i]?.Dispose();
+                try
+                {
+                    sessions[i]?.Dispose();
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "Exception disposing MigrateSession instance during MigrateSessionTaskStore.Dispose");
+                }
             }
+
             Array.Clear(sessions);
         }
 
