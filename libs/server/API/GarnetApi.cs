@@ -115,9 +115,9 @@ namespace Garnet.server
             => storageSession.SET(in srcLogRecord, ref unifiedContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord)
+        public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(key, ref input, in srcLogRecord, ref unifiedContext);
+            => storageSession.SET(key, ref input, ref output, in srcLogRecord, ref unifiedContext);
 
         #endregion
 

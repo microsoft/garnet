@@ -240,19 +240,26 @@ namespace Garnet.server
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(cmd.ToString());
 
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None &&
+                metaCommandInfo.MetaCommand != RespMetaCommand.ExecWithEtag)
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_ETAG_META_CMD_RENAME_UNSUPPORTED);
+
             var key = parseState.GetArgSliceByRef(0);
 
             var input = new UnifiedInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var isNx = cmd == RespCommand.RENAMENX;
-            var output = isNx ? UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr)) : default;
+            var output = isNx ? GetUnifiedOutput() : default;
 
             var status = storageApi.RENAME(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (isNx)
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else if (isNx)
                         ProcessOutput(output.SpanByteAndMemory);
                     else
                     {

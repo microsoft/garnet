@@ -66,7 +66,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+        GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
 
         #endregion
 

@@ -28,6 +28,8 @@ namespace Garnet.server
         /// </summary>
         public long ETag;
 
+        public readonly bool IsOperationSkipped => (OutputFlags & UnifiedOutputFlags.OperationSkipped) != 0;
+
         public UnifiedOutput() => SpanByteAndMemory = new(null);
 
         public UnifiedOutput(SpanByteAndMemory sbam) => SpanByteAndMemory = sbam;

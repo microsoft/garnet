@@ -207,7 +207,7 @@ namespace Garnet.test.Resp.ETag
             ClassicAssert.AreEqual(expectedETag, (long)result[1]);
         }
 
-        private void VerifyNullResultAndETag(RedisResult result, long expectedETag)
+        internal void VerifyNullResultAndETag(RedisResult result, long expectedETag)
             => VerifyResultAndETag(result, r => ClassicAssert.IsNull((string)r), expectedETag);
 
         protected async Task CheckBlockingCommandAsync(RespCommand command, object[] commandArgs, Action<byte[]> verifyResult, int[] checkKeysWithEtag = null)

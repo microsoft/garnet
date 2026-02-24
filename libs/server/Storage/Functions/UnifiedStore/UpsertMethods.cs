@@ -45,6 +45,20 @@ namespace Garnet.server
             if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithEtag);
+
+            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
+            {
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(dstLogRecord.ETag, out var updatedEtag);
+                Debug.Assert(execOp);
+                if (!dstLogRecord.TrySetETag(updatedEtag))
+                    return false;
+
+                output.ETag = updatedEtag;
+            }
+            else if (!dstLogRecord.RemoveETag())
+                return false;
+
             return true;
         }
 
@@ -178,7 +192,8 @@ namespace Garnet.server
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
-            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+            if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
+                return false;
 
             Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithEtag);
 
@@ -188,6 +203,8 @@ namespace Garnet.server
                 Debug.Assert(execOp);
                 if (!logRecord.TrySetETag(updatedEtag))
                     return false;
+
+                output.ETag = updatedEtag;
             }
             else if (!logRecord.RemoveETag()) 
                     return false;

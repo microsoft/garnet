@@ -65,14 +65,16 @@ namespace Garnet.server
         /// <typeparam name="TSourceLogRecord"></typeparam>
         /// <param name="key">The key to override the one in <paramref name="srcLogRecord"/>, e.g. if from RENAME.</param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="srcLogRecord">The log record</param>
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
-        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
+        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(key, ref input, in srcLogRecord);
+            UpsertOptions upsertOptions = default;
+            _ = unifiedContext.Upsert(key, ref input, in srcLogRecord, ref output, ref upsertOptions);
             return GarnetStatus.OK;
         }
 
@@ -320,7 +322,7 @@ namespace Garnet.server
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
 
-                    status = SET(newKey, ref input, in logRecord, ref context);
+                    status = SET(newKey, ref input, ref output, in logRecord, ref context);
                     if (status == GarnetStatus.OK)
                     {
                         if (isNx)
