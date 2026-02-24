@@ -1,15 +1,17 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System.Text;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+
+    [AllureNUnit]
     [TestFixture]
-    public class ObjectTestsForOutput
+    public class ObjectTestsForOutput : AllureTestBase
     {
         protected GarnetServer server;
 
@@ -123,7 +125,6 @@ namespace Garnet.test
         #endregion
 
         #region hashmaps
-
         [Test]
         [TestCase(100)]
         [TestCase(131042)]
@@ -163,6 +164,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("field1value", t4Result[0]);
             ClassicAssert.AreEqual("field2value", t4Result[1]);
         }
+
 
         [Test]
         [TestCase(100)]
@@ -210,11 +212,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("field3", t4Result[2]);
             ClassicAssert.AreEqual("field4", t4Result[3]);
         }
-
-
-
-
-
 
         #endregion
 

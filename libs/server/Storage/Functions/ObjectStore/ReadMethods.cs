@@ -43,7 +43,7 @@ namespace Garnet.server
 
                 if (IncorrectObjectType(ref input, garnetObject, ref output.SpanByteAndMemory))
                 {
-                    output.OutputFlags |= OutputFlags.WrongType;
+                    output.OutputFlags |= ObjectOutputFlags.WrongType;
                     return true;
                 }
 

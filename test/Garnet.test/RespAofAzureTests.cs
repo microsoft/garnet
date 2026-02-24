@@ -3,14 +3,16 @@
 
 using System;
 using System.Threading;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespAofAzureTests
+    public class RespAofAzureTests : AllureTestBase
     {
         GarnetServer server;
         static readonly SortedSetEntry[] entries =

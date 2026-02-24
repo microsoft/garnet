@@ -25,6 +25,17 @@ namespace Garnet.server
         public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
+        /// Cluster announce Hostname
+        /// </summary>
+        public string ClusterAnnounceHostname { get; set; }
+
+        /// <summary>
+        /// Cluster Preferred Endpoint Type
+        /// Used in cluster redirection messages, cluster slots 
+        /// </summary>
+        public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
+
+        /// <summary>
         /// Total log memory used in bytes (rounds down to power of 2).
         /// </summary>
         public string MemorySize = "16g";

@@ -3,12 +3,14 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class ClusterTLSMT
+    public class ClusterTLSMT : AllureTestBase
     {
         ClusterMigrateTests tests;
 

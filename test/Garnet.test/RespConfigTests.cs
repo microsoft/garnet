@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -16,9 +17,10 @@ namespace Garnet.test
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigTests
+    public class RespConfigTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "17g";
@@ -271,12 +273,15 @@ namespace Garnet.test
         }
     }
 
+
+
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigUtilizationTests
+    public class RespConfigUtilizationTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "3m";
@@ -527,9 +532,10 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigIndexUtilizationTests
+    public class RespConfigIndexUtilizationTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "3m";
@@ -639,9 +645,10 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigHeapUtilizationTests
+    public class RespConfigHeapUtilizationTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "3m";

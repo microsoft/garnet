@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -24,20 +23,17 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETWITHETAG);
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.IsSpanByte);
+                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
                 default:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -55,20 +51,17 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.IsSpanByte);
+                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                     WriteNull();
                     break;
                 default:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 

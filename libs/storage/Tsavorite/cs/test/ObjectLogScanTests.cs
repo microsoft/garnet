@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -33,8 +35,9 @@ namespace Tsavorite.test
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectValueComparerModulo, DefaultRecordDisposer>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectValueComparerModulo, DefaultRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class ObjectLogScanTests
+    internal class ObjectLogScanTests : AllureTestBase
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;

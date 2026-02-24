@@ -18,7 +18,7 @@ namespace Garnet.server
         /// <summary>
         /// GETEX
         /// </summary>
-        GarnetStatus GETEX(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus GETEX(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         #endregion
 
@@ -46,7 +46,7 @@ namespace Garnet.server
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// SET
@@ -122,7 +122,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus APPEND(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// APPEND command
@@ -250,7 +250,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output);
+        GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Increment (INCR, INCRBY)
@@ -277,7 +277,7 @@ namespace Garnet.server
         /// <param name="val"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref PinnedSpanByte output, double val);
+        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)
@@ -312,7 +312,7 @@ namespace Garnet.server
         /// <param name="key"> Key to get and delete </param>
         /// <param name="output"> Current value of key </param>
         /// <returns> Operation status </returns>
-        GarnetStatus GETDEL(PinnedSpanByte key, ref SpanByteAndMemory output);
+        GarnetStatus GETDEL(PinnedSpanByte key, ref StringOutput output);
         #endregion
 
         #region TYPE
@@ -407,7 +407,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes all elements in the sorted set between the
@@ -417,7 +417,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes and returns the first element from the sorted set stored at key,
@@ -658,7 +658,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes the specified member from the set.
@@ -691,7 +691,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes and returns one random member from the set at key.
@@ -790,13 +790,13 @@ namespace Garnet.server
         GarnetStatus ListPosition(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
-        /// ListLeftPush ArgSlice version with OutputHeader output
+        /// ListLeftPush ArgSlice version with ObjectOutputHeader output
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// ListLeftPush ArgSlice version, one element
@@ -819,13 +819,13 @@ namespace Garnet.server
         GarnetStatus ListLeftPush(PinnedSpanByte key, PinnedSpanByte[] elements, out int count, bool whenExists = false);
 
         /// <summary>
-        /// ListRightPush ArgSlice version with OutputHeader output
+        /// ListRightPush ArgSlice version with ObjectOutputHeader output
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// ListRightPush ArgSlice version, one element
@@ -962,7 +962,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes the first count occurrences of elements equal to element from the list.
@@ -971,7 +971,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Sets the list element at index to element.
@@ -1016,7 +1016,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created.
@@ -1055,16 +1055,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
-
-        /// <summary>
-        /// Increments the number stored at field in the hash key by increment parameter.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <returns></returns>
-        GarnetStatus HashIncrement(PinnedSpanByte key, PinnedSpanByte input, out OutputHeader output);
+        GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Increments the number stored at field representing a floating point value
@@ -1125,7 +1116,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringSetBit(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus StringSetBit(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Performs a bitwise operations on multiple keys
@@ -1155,7 +1146,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="secondaryCommand"></param>
         /// <returns></returns>
-        GarnetStatus StringBitField(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitField(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output);
 
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
@@ -1172,7 +1163,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogAdd(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus HyperLogLogAdd(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
@@ -1204,7 +1195,7 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// GET
@@ -1241,7 +1232,7 @@ namespace Garnet.server
         /// <param name="withMatchLen">If true, the length of each match is returned.</param>
         /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
+        GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
         #endregion
 
         #region GETRANGE
@@ -1253,7 +1244,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GETRANGE(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus GETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
         #endregion
 
         #region TTL
@@ -1299,7 +1290,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.
@@ -1360,7 +1351,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1524,7 +1515,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -1563,7 +1554,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// SMEMBERS key
@@ -1719,7 +1710,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns the number of fields contained in the hash Key.
@@ -1728,7 +1719,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns if field is an existing field in the hash stored at key.
@@ -1746,7 +1737,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns count random fields from the hash value.
@@ -1827,7 +1818,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringGetBit(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus StringGetBit(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Returns the bit value at offset in the key stored.
@@ -1846,7 +1837,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitCount(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus StringBitCount(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Count the number of set bits in a string.
@@ -1867,7 +1858,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitPosition(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
+        GarnetStatus StringBitPosition(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Read-only variant of the StringBitField method.
@@ -1877,7 +1868,7 @@ namespace Garnet.server
         /// <param name="secondaryCommand"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus StringBitFieldReadOnly(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output);
+        GarnetStatus StringBitFieldReadOnly(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output);
 
         #endregion
 

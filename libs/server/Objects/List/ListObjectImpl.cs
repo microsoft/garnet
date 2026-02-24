@@ -18,13 +18,13 @@ namespace Garnet.server
             var count = input.arg1;
 
             //indicates partial execution
-            output.Header.result1 = int.MinValue;
+            output.result1 = int.MinValue;
 
             // get the source string to remove
             var itemSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var removedCount = 0;
-            output.Header.result1 = 0;
+            output.result1 = 0;
 
             //remove all equals to item
             if (count == 0)
@@ -64,13 +64,13 @@ namespace Garnet.server
                     currentNode = nextNode;
                 }
             }
-            output.Header.result1 = removedCount;
+            output.result1 = removedCount;
         }
 
         private void ListInsert(ref ObjectInput input, ref ObjectOutput output)
         {
             //indicates partial execution
-            output.Header.result1 = int.MinValue;
+            output.result1 = int.MinValue;
 
             if (list.Count > 0)
             {
@@ -85,7 +85,7 @@ namespace Garnet.server
 
                 var insertBefore = position.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BEFORE);
 
-                output.Header.result1 = -1;
+                output.result1 = -1;
 
                 // find the first ocurrence of the pivot element
                 var currentNode = list.First;
@@ -99,7 +99,7 @@ namespace Garnet.server
                             list.AddAfter(currentNode, item);
 
                         UpdateSize(item);
-                        output.Header.result1 = list.Count;
+                        output.result1 = list.Count;
                         break;
                     }
                 }
@@ -112,14 +112,14 @@ namespace Garnet.server
             var index = input.arg1;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            output.Header.result1 = -1;
+            output.result1 = -1;
 
             index = index < 0 ? list.Count + index : index;
             var item = list.ElementAtOrDefault(index);
             if (item != default)
             {
                 writer.WriteBulkString(item);
-                output.Header.result1 = 1;
+                output.result1 = 1;
             }
         }
 
@@ -164,7 +164,7 @@ namespace Garnet.server
                         writer.WriteBulkString(bytes);
                     }
 
-                    output.Header.result1 = count;
+                    output.result1 = count;
                 }
             }
         }
@@ -198,7 +198,7 @@ namespace Garnet.server
                             list.RemoveLast();
                             this.UpdateSize(value, false);
                         }
-                        output.Header.result1 = numDeletes;
+                        output.result1 = numDeletes;
                     }
                     else
                     {
@@ -213,7 +213,7 @@ namespace Garnet.server
                             }
                             i++;
                         }
-                        output.Header.result1 = i;
+                        output.result1 = i;
                     }
                 }
             }
@@ -221,12 +221,12 @@ namespace Garnet.server
 
         private void ListLength(ref ObjectOutput output)
         {
-            output.Header.result1 = list.Count;
+            output.result1 = list.Count;
         }
 
         private void ListPush(ref ObjectInput input, ref ObjectOutput output, bool fAddAtHead)
         {
-            output.Header.result1 = 0;
+            output.result1 = 0;
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var value = input.parseState.GetArgSliceByRef(i).ToArray();
@@ -239,7 +239,7 @@ namespace Garnet.server
 
                 UpdateSize(value);
             }
-            output.Header.result1 = list.Count;
+            output.result1 = list.Count;
         }
 
         private void ListPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool fDelAtHead)
@@ -279,7 +279,7 @@ namespace Garnet.server
                 writer.WriteBulkString(node.Value);
 
                 count--;
-                output.Header.result1++;
+                output.result1++;
             }
         }
 
@@ -320,7 +320,7 @@ namespace Garnet.server
             UpdateSize(targetNode.Value);
 
             writer.WriteDirect(CmdStrings.RESP_OK);
-            output.Header.result1 = 1;
+            output.result1 = 1;
         }
 
         private void ListPosition(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -444,7 +444,7 @@ namespace Garnet.server
                 writer.DecreaseArrayLength(noOfFoundItem, totalArrayHeaderLen);
             }
 
-            output.Header.result1 = noOfFoundItem;
+            output.result1 = noOfFoundItem;
         }
 
         private static bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)

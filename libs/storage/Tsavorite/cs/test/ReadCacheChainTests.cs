@@ -7,6 +7,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -28,7 +30,9 @@ namespace Tsavorite.test.ReadCacheTests
         internal const int PendingMod = 16;
     }
 
-    class ChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class ChainTests : AllureTestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
@@ -675,7 +679,9 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 
-    class LongStressChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class LongStressChainTests : AllureTestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
@@ -891,7 +897,9 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 
-    class SpanByteStressChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class SpanByteStressChainTests : AllureTestBase
     {
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;

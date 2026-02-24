@@ -60,6 +60,13 @@ namespace Tsavorite.core
             return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
         }
 
+        public virtual void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
+        public virtual void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
+
         /// <inheritdoc/>
         public virtual void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }
         /// <inheritdoc/>
@@ -80,6 +87,12 @@ namespace Tsavorite.core
         public virtual bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
             => true;
+
+        /// <inheritdoc/>
+        public virtual void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
+
         /// <inheritdoc/>
         public virtual bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -99,6 +112,12 @@ namespace Tsavorite.core
         }
         public virtual void PostInitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo) { }
         public virtual bool InPlaceDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo) => true;
+
+        /// <inheritdoc/>
+        public virtual void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
+
 
         public virtual void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>

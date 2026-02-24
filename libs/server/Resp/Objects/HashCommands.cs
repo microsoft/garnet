@@ -46,8 +46,9 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = hop };
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var status = storageApi.HashSet(key, ref input, out var output);
+            var status = storageApi.HashSet(key, ref input, ref output);
 
             switch (status)
             {
@@ -92,7 +93,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGet(key, ref input, ref output);
 
@@ -134,7 +135,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, respProtocolVersion);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGetAll(key, ref input, ref output);
 
@@ -177,7 +178,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashGetMultiple(key, ref input, ref output);
 
@@ -255,7 +256,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countWithMetadata, seed);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = GarnetStatus.NOTFOUND;
 
@@ -263,7 +264,7 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare output
-                output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                output = GetObjectOutput();
                 status = storageApi.HashRandomField(key, ref input, ref output);
             }
 
@@ -312,8 +313,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
             var input = new ObjectInput(header);
+            var output = new ObjectOutput();
 
-            var status = storageApi.HashLength(key, ref input, out var output);
+            var status = storageApi.HashLength(key, ref input, ref output);
 
             switch (status)
             {
@@ -354,8 +356,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var status = storageApi.HashStrLength(key, ref input, out var output);
+            var status = storageApi.HashStrLength(key, ref input, ref output);
 
             switch (status)
             {
@@ -396,8 +399,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var status = storageApi.HashDelete(key, ref input, out var output);
+            var status = storageApi.HashDelete(key, ref input, ref output);
 
             switch (status)
             {
@@ -436,8 +440,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var status = storageApi.HashExists(key, ref input, out var output);
+            var status = storageApi.HashExists(key, ref input, ref output);
 
             switch (status)
             {
@@ -489,7 +494,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = command == RespCommand.HKEYS
                 ? storageApi.HashKeys(key, ref input, ref output)
@@ -546,7 +551,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashIncrement(key, ref input, ref output);
 
@@ -628,7 +633,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: currIdx, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashExpire(key, ref input, ref output);
 
@@ -715,7 +720,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
 
@@ -774,7 +779,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.HashPersist(key, ref input, ref output);
 

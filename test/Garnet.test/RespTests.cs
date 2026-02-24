@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
@@ -19,8 +20,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespTests
+    public class RespTests : AllureTestBase
     {
         GarnetServer server;
         Random r;

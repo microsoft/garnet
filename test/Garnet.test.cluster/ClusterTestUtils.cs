@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -50,10 +51,11 @@ namespace Garnet.test.cluster
 
     public struct NodeNetInfo
     {
-        public string address;
+        public string endpoint;
         public int port;
         public string nodeid;
         public string hostname;
+        public string ip;
         public bool isPrimary;
     }
 
@@ -1644,9 +1646,23 @@ namespace Garnet.test.cluster
             slot = int.Parse(data[1]);
 
             var endpointSplit = data[2].Split(':');
-            endpoint = new IPEndPoint(
-                IPAddress.Parse(endpointSplit[0]),
-                int.Parse(endpointSplit[1].Split('\r')[0]));
+
+            IPAddress ip;
+            try
+            {
+                var hostAddresses = Dns.GetHostAddresses(endpointSplit[0]);
+                ip = hostAddresses.FirstOrDefault(x => x.AddressFamily == AddressFamily.InterNetwork);
+                if (ip == null)
+                {
+                    ip = IPAddress.Parse(endpointSplit[0]);
+                }
+            }
+            catch (Exception)
+            {
+                ip = IPAddress.Parse(endpointSplit[0]);
+            }
+
+            endpoint = new IPEndPoint(ip, int.Parse(endpointSplit[1].Split('\r')[0]));
         }
 
         public string AddDelSlots(int nodeIndex, List<int> slots, bool addslot, ILogger logger = null)
@@ -1920,16 +1936,33 @@ namespace Garnet.test.cluster
                     for (int i = 2; i < info.Length; i++)
                     {
                         var nodeInfo = (RedisResult[])info[i];
-                        var address = (string)nodeInfo[0];
+                        var endpoint = (string)nodeInfo[0];
                         var port = (int)nodeInfo[1];
                         var nodeid = (string)nodeInfo[2];
-                        var hostNameInfo = ((RedisResult[])nodeInfo[3]);
-                        var hostname = (string)hostNameInfo[1];
 
-                        slotItem.nnInfo[i - 2].address = address;
+                        var metadataInfo = ((RedisResult[])nodeInfo[3]);
+                        string hostname = null;
+                        string ip = null;
+
+                        for (var j = 0; j < metadataInfo.Length; j += 2)
+                        {
+                            var key = (string)metadataInfo[j];
+                            var value = (string)metadataInfo[j + 1];
+                            if (key.Equals("hostname"))
+                            {
+                                hostname = value;
+                            }
+                            else if (key.Equals("ip"))
+                            {
+                                ip = value;
+                            }
+                        }
+
+                        slotItem.nnInfo[i - 2].endpoint = endpoint;
                         slotItem.nnInfo[i - 2].port = port;
                         slotItem.nnInfo[i - 2].nodeid = nodeid;
                         slotItem.nnInfo[i - 2].hostname = hostname;
+                        slotItem.nnInfo[i - 2].ip = ip;
                         slotItem.nnInfo[i - 2].isPrimary = (i == 2);
                     }
                     slotItems.Add(slotItem);

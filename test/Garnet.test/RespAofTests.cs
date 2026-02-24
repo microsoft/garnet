@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,8 +13,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespAofTests
+    public class RespAofTests : AllureTestBase
     {
         GarnetServer server;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;

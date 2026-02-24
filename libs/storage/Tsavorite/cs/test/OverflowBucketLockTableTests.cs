@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -25,8 +27,9 @@ namespace Tsavorite.test.LockTable
     // Used to signal Setup to use the SingleBucketComparer
     public enum UseSingleBucketComparer { UseSingleBucket }
 
+    [AllureNUnit]
     [TestFixture]
-    internal class OverflowBucketLockTableTests
+    internal class OverflowBucketLockTableTests : AllureTestBase
     {
         IKeyComparer comparer = new LongKeyComparer();
         long singleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily

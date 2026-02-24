@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -14,8 +16,9 @@ namespace Tsavorite.test.Cancellation
     using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>>;
     using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    class CancellationTests
+    class CancellationTests : AllureTestBase
     {
         internal enum CancelLocation
         {

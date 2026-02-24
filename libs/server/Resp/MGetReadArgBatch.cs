@@ -4,7 +4,9 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+#if DEBUG
 using System.Runtime.CompilerServices;
+#endif
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -23,7 +25,7 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
         ref
 #endif
-        struct MGetReadArgBatch<TGarnetApi>(ref TGarnetApi storageApi, RespServerSession session) : IReadArgBatch<StringInput, SpanByteAndMemory>
+        struct MGetReadArgBatch<TGarnetApi>(ref TGarnetApi storageApi, RespServerSession session) : IReadArgBatch<StringInput, StringOutput>
         where TGarnetApi : IGarnetAdvancedApi
     {
         private Status currentStatus;
@@ -51,15 +53,15 @@ namespace Garnet.server
         => key = session.parseState.GetArgSliceByRef(i);
 
         /// <inheritdoc/>
-        public readonly unsafe void GetOutput(int i, out SpanByteAndMemory output)
-        => output = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>(session.dcurr), (int)(session.dend - session.dcurr)));
+        public readonly unsafe void GetOutput(int i, out StringOutput output)
+        => output = StringOutput.FromPinnedPointer(session.dcurr, (int)(session.dend - session.dcurr));
 
         /// <inheritdoc/>
         public void SetStatus(int i, Status status)
         => currentStatus = status;
 
         /// <inheritdoc/>
-        public readonly unsafe void SetOutput(int i, SpanByteAndMemory output)
+        public readonly unsafe void SetOutput(int i, StringOutput output)
         {
             var finalStatus = currentStatus;
             if (finalStatus.IsPending)
@@ -89,15 +91,15 @@ namespace Garnet.server
 
                 // Got a result, write it out
 
-                if (output.IsSpanByte)
+                if (output.SpanByteAndMemory.IsSpanByte)
                 {
                     // Place result directly into buffer, just advance session points
-                    session.dcurr += output.Length;
+                    session.dcurr += output.SpanByteAndMemory.Length;
                 }
                 else
                 {
                     // Didn't fit inline, copy result over
-                    session.SendAndReset(output.Memory, output.Length);
+                    session.SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                 }
             }
             else
@@ -117,10 +119,10 @@ namespace Garnet.server
     /// For commands that are served entirely out of memory, writes results directly into the output buffer if possible.
     /// If operation would complete asynchronously, moves onto the next one and buffers results for later writing.
     /// </summary>
-    internal struct MGetReadArgBatch_SG(RespServerSession session) : IReadArgBatch<StringInput, SpanByteAndMemory>
+    internal struct MGetReadArgBatch_SG(RespServerSession session) : IReadArgBatch<StringInput, StringOutput>
     {
         private bool pendingNullWrite;
-        private Memory<(Status Status, SpanByteAndMemory Output)> runningStatus;
+        private Memory<(Status Status, StringOutput Output)> runningStatus;
 
         /// <inheritdoc/>
         public readonly int Count
@@ -143,14 +145,14 @@ namespace Garnet.server
         => key = session.parseState.GetArgSliceByRef(i);
 
         /// <inheritdoc/>
-        public readonly void GetOutput(int i, out SpanByteAndMemory output)
+        public readonly void GetOutput(int i, out StringOutput output)
         {
             if (!HasGoneAsync)
             {
                 // Attempt to write directly into output buffer
                 unsafe
                 {
-                    output = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>(session.dcurr), (int)(session.dend - session.dcurr)));
+                    output = StringOutput.FromPinnedPointer(session.dcurr, (int)(session.dend - session.dcurr));
                 }
             }
             else
@@ -161,7 +163,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly unsafe void SetOutput(int i, SpanByteAndMemory output)
+        public readonly unsafe void SetOutput(int i, StringOutput output)
         {
             if (!HasGoneAsync)
             {
@@ -172,15 +174,15 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (output.IsSpanByte)
+                    if (output.SpanByteAndMemory.IsSpanByte)
                     {
                         // We place directly into the output buffer, nothing else needed
-                        session.dcurr += output.Length;
+                        session.dcurr += output.SpanByteAndMemory.Length;
                     }
                     else
                     {
                         // Got it synchronously, but it was too big for the buffer
-                        session.SendAndReset(output.Memory, output.Length);
+                        session.SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                     }
                 }
             }
@@ -204,7 +206,7 @@ namespace Garnet.server
                 {
 
                     var bufferSize = session.parseState.Count - i;
-                    var arr = ArrayPool<(Status, SpanByteAndMemory)>.Shared.Rent(bufferSize);
+                    var arr = ArrayPool<(Status, StringOutput)>.Shared.Rent(bufferSize);
                     runningStatus = arr.AsMemory()[..bufferSize];
 
 #if DEBUG
@@ -310,15 +312,15 @@ namespace Garnet.server
                         {
                             // Found it, either synchronously or async
 
-                            if (output.IsSpanByte)
+                            if (output.SpanByteAndMemory.IsSpanByte)
                             {
                                 // We place directly into the output buffer, nothing else needed
-                                session.dcurr += output.Length;
+                                session.dcurr += output.SpanByteAndMemory.Length;
                             }
                             else
                             {
                                 // Got it synchronously, but it was too big for the buffer
-                                session.SendAndReset(output.Memory, output.Length);
+                                session.SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                             }
                         }
                         else
@@ -332,9 +334,9 @@ namespace Garnet.server
             }
             finally
             {
-                if (MemoryMarshal.TryGetArray<(Status, SpanByteAndMemory)>(runningStatus, out var arrSeg))
+                if (MemoryMarshal.TryGetArray<(Status, StringOutput)>(runningStatus, out var arrSeg))
                 {
-                    ArrayPool<(Status, SpanByteAndMemory)>.Shared.Return(arrSeg.Array);
+                    ArrayPool<(Status, StringOutput)>.Shared.Return(arrSeg.Array);
                 }
             }
         }
