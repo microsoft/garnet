@@ -25,4 +25,25 @@
 	  <PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
+  <!-- When DiskANNGarnetLocal=true, copy the locally built native DLL to the output directory,
+       overriding the one provided by the NuGet package. -->
+  <ItemGroup Condition="'$(DiskANNGarnetLocal)' == 'true'">
+    <None Include="..\..\diskann-garnet\target\release\diskann_garnet.dll"
+          Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="diskann_garnet.dll" />
+    <None Include="..\..\diskann-garnet\target\release\diskann_garnet.dll"
+          Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes\win-x64\native\diskann_garnet.dll" />
+    <None Include="..\..\diskann-garnet\target\release\libdiskann_garnet.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux'))"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libdiskann_garnet.so" />
+    <None Include="..\..\diskann-garnet\target\release\libdiskann_garnet.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux'))"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes\linux-x64\native\libdiskann_garnet.so" />
+  </ItemGroup>
+
 </Project>

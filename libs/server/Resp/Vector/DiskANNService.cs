@@ -293,6 +293,102 @@ namespace Garnet.server
 
             return NativeDiskANNMethods.check_internal_id_valid(context, index, (nint)internal_id_data, (nuint)internal_id_len) == 1;
         }
+
+        public nint StartPagedSearchVector(ulong context, nint index, VectorValueType vectorType, ReadOnlySpan<byte> vector, int searchExplorationFactor)
+        {
+            var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
+            int vector_len;
+
+            if (vectorType == VectorValueType.FP32)
+            {
+                vector_len = vector.Length / sizeof(float);
+            }
+            else if (vectorType == VectorValueType.XB8)
+            {
+                vector_len = vector.Length;
+            }
+            else
+            {
+                throw new NotImplementedException($"{vectorType}");
+            }
+
+            return NativeDiskANNMethods.start_paged_search_vector(context, index, vectorType, (nint)vector_data, (nuint)vector_len, (uint)searchExplorationFactor);
+        }
+
+        public nint StartPagedSearchElement(ulong context, nint index, ReadOnlySpan<byte> id, int searchExplorationFactor)
+        {
+            var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
+            var id_len = id.Length;
+
+            return NativeDiskANNMethods.start_paged_search_element(context, index, (nint)id_data, (nuint)id_len, (uint)searchExplorationFactor);
+        }
+
+        public int NextPagedSearchResults(ulong context, nint index, nint searchState, int k, SpanByteAndMemory outputIds, SpanByteAndMemory outputDistances)
+        {
+            void* output_ids;
+            void* output_distances;
+
+            GCHandle? outputIdsHandle = null;
+            GCHandle? outputDistancesHandle = null;
+            try
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputIds.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputIdsHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputIdsHandle = null;
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.AsSpan()));
+                }
+
+                var output_ids_len = outputIds.Length;
+
+                if (!outputDistances.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputDistances.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputDistancesHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputDistancesHandle = null;
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.AsSpan()));
+                }
+
+                var output_distances_len = outputDistances.Length / sizeof(float);
+
+                return NativeDiskANNMethods.next_paged_search_results(
+                    context,
+                    index,
+                    searchState,
+                    (nuint)k,
+                    (nint)output_ids,
+                    (nuint)output_ids_len,
+                    (nint)output_distances,
+                    (nuint)output_distances_len
+                );
+            }
+            finally
+            {
+                outputIdsHandle?.Free();
+                outputDistancesHandle?.Free();
+            }
+        }
+
+        public void DropPagedSearchState(nint searchState)
+        {
+            if (searchState != 0)
+            {
+                NativeDiskANNMethods.drop_paged_search_state(searchState);
+            }
+        }
     }
 
     public static partial class NativeDiskANNMethods
@@ -411,6 +507,42 @@ namespace Garnet.server
             nint index,
             nint internal_id,
             nuint internal_id_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial nint start_paged_search_vector(
+            ulong context,
+            nint index,
+            VectorValueType vector_value_type,
+            nint vector_data,
+            nuint vector_len,
+            uint search_exploration_factor
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial nint start_paged_search_element(
+            ulong context,
+            nint index,
+            nint id_data,
+            nuint id_len,
+            uint search_exploration_factor
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial int next_paged_search_results(
+            ulong context,
+            nint index,
+            nint state,
+            nuint k,
+            nint output_ids,
+            nuint output_ids_len,
+            nint output_distances,
+            nuint output_distances_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial void drop_paged_search_state(
+            nint state
         );
     }
 }

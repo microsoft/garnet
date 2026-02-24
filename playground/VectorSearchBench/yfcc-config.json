@@ -1,0 +1,34 @@
+{
+  "base": {
+    "vectors": "base.1M.u8bin",
+    "labels": "base.1M.label.jsonl"
+  },
+  "unfilteredQueryVectors": "single_high_query_10k.u8bin",
+  "phases": [
+    {
+      "name": "single-high",
+      "vectors": "single_high_query_10k.u8bin",
+      "filters": "single_high_query_10k.label.jsonl"
+    },
+    {
+      "name": "single-medium",
+      "vectors": "single_medium_query_10k.u8bin",
+      "filters": "single_medium_query_10k.label.jsonl"
+    },
+    {
+      "name": "single-low",
+      "vectors": "single_low_query_10k.u8bin",
+      "filters": "single_low_query_10k.label.jsonl"
+    },
+    {
+      "name": "multi-medium",
+      "vectors": "multiple_medium_query_10k.u8bin",
+      "filters": "multiple_medium_query_10k.label.jsonl"
+    },
+    {
+      "name": "multi-low",
+      "vectors": "query.10k.u8bin",
+      "filters": "multiple_low_query_10k.label.jsonl"
+    }
+  ]
+}

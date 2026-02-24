@@ -55,6 +55,7 @@
     <Project Path="playground/MigrateBench/MigrateBench.csproj" />
     <Project Path="playground/SampleModule/SampleModule.csproj" />
     <Project Path="playground/TstRunner/TstRunner.csproj" />
+    <Project Path="playground/VectorSearchBench/VectorSearchBench.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/ETag/ETag.csproj" />
