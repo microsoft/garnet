@@ -700,20 +700,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            _ = db.KeyDelete("movies");
-
-            // Add vectors with rich attributes to test advanced filtering
-            var res1 = db.Execute("VADD", ["movies", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"tags\":[\"classic\",\"popular\"]}"]);
-            ClassicAssert.AreEqual(1, (int)res1);
-
-            var res2 = db.Execute("VADD", ["movies", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960,\"rating\":3.8,\"genre\":\"drama\",\"tags\":[\"classic\"]}"]);
-            ClassicAssert.AreEqual(1, (int)res2);
-
-            var res3 = db.Execute("VADD", ["movies", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":2010,\"rating\":4.2,\"genre\":\"action\",\"tags\":[\"modern\"]}"]);
-            ClassicAssert.AreEqual(1, (int)res3);
+            _ = SeedMoviesForAdvancedFiltering(db);
 
             // Test logical AND
             var res4 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
@@ -754,6 +741,68 @@ namespace Garnet.test
             var res11 = (byte[][])db.Execute("VSIM", ["movies", "VALUES", "3", "0.0", "0.0", "0.0",
                 "FILTER", ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags)", "COUNT", "3", "WITHATTRIBS"]);
             ClassicAssert.AreEqual(4, res11.Length, "Complex: rating*2 > 8 AND (year>=1980 OR 'modern' in tags)");
+        }
+
+        [Test]
+        public void VSIMWithAdvancedFilteringELEWithAttribs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var queryElementId = SeedMoviesForAdvancedFiltering(db);
+
+            var res1 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
+                "FILTER", ".genre == \"action\"", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res1.Length, "ELE + FILTER + WITHATTRIBS: genre == 'action'");
+
+            var res2 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
+                "FILTER", "\"classic\" in .tags", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res2.Length, "ELE + FILTER + WITHATTRIBS: 'classic' in tags");
+
+            var res3 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
+                "FILTER", ".rating / 2 > 2 and .year >= 1980", "COUNT", "3", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(4, res3.Length, "ELE + FILTER + WITHATTRIBS: arithmetic and comparison");
+        }
+
+        [Test]
+        public void VSIMWithAdvancedFilteringELEWithoutWithAttribs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var queryElementId = SeedMoviesForAdvancedFiltering(db);
+
+            var res1 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
+                "FILTER", ".genre == \"action\"", "COUNT", "3"]);
+            ClassicAssert.AreEqual(2, res1.Length, "ELE + FILTER without WITHATTRIBS: genre == 'action'");
+
+            var res2 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
+                "FILTER", "\"classic\" in .tags", "COUNT", "3"]);
+            ClassicAssert.AreEqual(2, res2.Length, "ELE + FILTER without WITHATTRIBS: 'classic' in tags");
+
+            var res3 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
+                "FILTER", ".rating / 2 > 2 and .year >= 1980", "COUNT", "3"]);
+            ClassicAssert.AreEqual(2, res3.Length, "ELE + FILTER without WITHATTRIBS: arithmetic and comparison");
+        }
+
+        private static byte[] SeedMoviesForAdvancedFiltering(IDatabase db)
+        {
+            _ = db.KeyDelete("movies");
+
+            var queryElementId = new byte[] { 0, 0, 0, 0 };
+            var res1 = db.Execute("VADD", ["movies", "VALUES", "3", "1.0", "2.0", "3.0", queryElementId,
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"tags\":[\"classic\",\"popular\"]}"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VADD", ["movies", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960,\"rating\":3.8,\"genre\":\"drama\",\"tags\":[\"classic\"]}"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            var res3 = db.Execute("VADD", ["movies", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
+                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":2010,\"rating\":4.2,\"genre\":\"action\",\"tags\":[\"modern\"]}"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            return queryElementId;
         }
 
         [Test]

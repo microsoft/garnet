@@ -454,6 +454,7 @@ Field access uses dot notation (for example, `.year`, `.rating`, `.genre`).
 - Keywords are lowercase (`and`, `or`, `not`, `in`, `true`, `false`)
 - Missing attributes are treated as non-matching (null/falsy)
 - Array literals inside expressions (for example, `.director in ["a","b"]`) are not currently supported
+- `VSIM` query source can be either `ELE <element-id>` or `VALUES <dimensions> <v1> ... <vN>`
 
 ### Examples
 
@@ -462,6 +463,7 @@ VSIM movies ELE dune FILTER '.year >= 1980 and .rating > 7'
 VSIM movies ELE dune FILTER '.genre == "action" && .rating > 8.0'
 VSIM movies ELE dune FILTER '"classic" in .tags'
 VSIM movies ELE dune FILTER '(.year - 2000) ** 2 < 100 and .rating / 2 > 4'
+VSIM movies VALUES 3 0.12 0.34 0.56 FILTER '.year >= 1980 and .rating > 7'
 ```
 
 ### Reference
