@@ -23,20 +23,33 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
-            try
+            _lock.WriteLock();
+            var skipDispose = _disposed;
+
+            _disposed = true;
+            _lock.WriteUnlock();
+
+            if (skipDispose)
             {
-                _lock.WriteLock();
-                _disposed = true;
-                for (var i = 0; i < sessions.Length; i++)
+                return;
+            }
+
+            for (var i = 0; i < sessions.Length; i++)
+            {
+                try
+                {
                     sessions[i]?.Dispose();
-                Array.Clear(sessions);
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "Exception disposing MigrateSession instance during MigrateSessionTaskStore.Dispose");
+                }
             }
-            finally
-            {
-                _lock.WriteUnlock();
-            }
+
+            Array.Clear(sessions);
         }
 
         /// <summary>

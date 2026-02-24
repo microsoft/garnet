@@ -333,27 +333,26 @@ namespace Garnet.server
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
-                    // Allocate session outside of task so we fail "nicely" if something goes wrong with acquiring them
-                    var allocatedSession = obtainServerSession();
-                    if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
-                    {
-                        allocatedSession.Dispose();
-                        throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
-                    }
-
                     self.replicationReplayTasks[i] = Task.Factory.StartNew(
                         async () =>
                         {
                             try
                             {
-                                using (allocatedSession)
+                                var reader = self.replicationReplayChannel.Reader;
+
+                                SessionParseState reusableParseState = default;
+                                reusableParseState.Initialize(11);
+
+                                while (await reader.WaitToReadAsync(self.replicationReplayCancellation))
                                 {
-                                    var reader = self.replicationReplayChannel.Reader;
+                                    // Allocate session for current batch, now so we stay on same managed thread
+                                    using var allocatedSession = obtainServerSession();
+                                    if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
+                                    {
+                                        throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
+                                    }
 
-                                    SessionParseState reusableParseState = default;
-                                    reusableParseState.Initialize(11);
-
-                                    await foreach (var entry in reader.ReadAllAsync(self.replicationReplayCancellation))
+                                    while (reader.TryRead(out var entry))
                                     {
                                         try
                                         {
