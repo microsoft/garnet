@@ -77,5 +77,9 @@ namespace Garnet.common
         /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
         /// </summary>
         VectorSet_Interrupt_Delete_2,
+        /// <summary>
+        /// Force CreateIndex to simulate a null return, testing the defensive guard.
+        /// </summary>
+        VectorSet_CreateIndex_NullReturn,
     }
 }

@@ -905,6 +905,44 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CreateIndexNullReturnIsHandledGracefully()
+        {
+#if !DEBUG
+            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disabled in non-DEBUG");
+#endif
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Enable fault injection so that CreateIndex simulates a null (0) return
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_CreateIndex_NullReturn);
+            try
+            {
+                // VADD should return an error rather than crashing the server
+                var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.Execute("VADD", ["foo", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "Q8", "EF", "16", "M", "32"]));
+                ClassicAssert.IsTrue(exc.Message.Contains("partially deleted state"), $"Unexpected error: {exc.Message}");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_CreateIndex_NullReturn);
+            }
+
+            // After the failed creation, the key should not exist - verify with VDIM
+            var vdimExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", ["foo"]));
+            ClassicAssert.IsTrue(vdimExc.Message.Contains("Key not found"),
+                $"Expected key to not exist after failed CreateIndex, got: {vdimExc.Message}");
+
+            // Verify the server is still healthy - a subsequent VADD (without injection) should succeed
+            var res = (int)db.Execute("VADD", ["foo", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, res);
+
+            // Verify the index is usable
+            var dim = (int)db.Execute("VDIM", ["foo"]);
+            ClassicAssert.AreEqual(4, dim);
+        }
+
+        [Test]
         public void RepeatedVectorSetDeletes()
         {
             var bytes1 = new byte[75];

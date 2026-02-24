@@ -348,6 +348,16 @@ namespace Garnet.server
                             newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                         }
 
+                        // Allow test injection to simulate CreateIndex failure
+                        if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.VectorSet_CreateIndex_NullReturn))
+                        {
+                            if (newlyAllocatedIndex != 0)
+                            {
+                                Service.DropIndex(indexContext, newlyAllocatedIndex);
+                            }
+                            newlyAllocatedIndex = 0;
+                        }
+
                         if (newlyAllocatedIndex == 0)
                         {
                             if (!needsRecreate)
