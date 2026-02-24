@@ -1,16 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using Embedded.server;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using StackExchange.Redis;
 
 namespace Resp.benchmark
@@ -21,10 +18,33 @@ namespace Resp.benchmark
     /// </summary>
     public partial class RespPerfBench
     {
+        public static GarnetServerOptions GetServerOptions(Options options)
+        {
+            var serverOptions = new GarnetServerOptions
+            {
+                ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, 6379),
+                QuietMode = true,
+                EnableAOF = options.EnableAOF,
+                EnableCluster = options.EnableCluster,
+                IndexSize = options.IndexSize,
+                ClusterConfigFlushFrequencyMs = -1,
+                FastAofTruncate = options.EnableCluster && options.UseAofNullDevice,
+                UseAofNullDevice = options.UseAofNullDevice,
+                AofMemorySize = options.AofMemorySize,
+                AofPageSize = options.AofPageSize,
+                CommitFrequencyMs = options.CommitFrequencyMs,
+                ReplicationOffsetMaxLag = 0,
+                CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null
+            };
+            return serverOptions;
+        }
+
         readonly int Start;
         readonly ManualResetEventSlim waiter = new();
         readonly Options opts;
         readonly IConnectionMultiplexer redis;
+        internal EmbeddedRespServer server;
+        internal RespServerSession[] sessions;
 
         KeyValuePair<RedisKey, RedisValue>[] database;
 
@@ -33,7 +53,7 @@ namespace Resp.benchmark
 
         volatile bool done = false;
         long total_ops_done = 0;
-
+        long total_bytes_consumed = 0;
 
         public RespPerfBench(Options opts, int Start, IConnectionMultiplexer redis)
         {
@@ -41,6 +61,32 @@ namespace Resp.benchmark
             this.Start = Start;
             if (opts.Client == ClientType.SERedis)
                 this.redis = redis;
+
+            if (opts.Client == ClientType.InProc)
+            {
+                if (opts.EnableCluster && !opts.SkipLoad && !opts.LSet)
+                    throw new Exception("Use --lset when running InProc and with cluster enabled to load data!");
+
+                var serverOptions = GetServerOptions(opts);
+                server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
+                sessions = server.GetRespSessions(opts.NumThreads.Max());
+
+                if (opts.EnableCluster)
+                {
+                    AddSlotRange([(0, 16383)]);
+                    unsafe void AddSlotRange(List<(int, int)> slotRanges)
+                    {
+                        foreach (var slotRange in slotRanges)
+                        {
+                            var clusterAddSlotsRange = Encoding.ASCII.GetBytes($"*4\r\n$7\r\nCLUSTER\r\n$13\r\nADDSLOTSRANGE\r\n" +
+                                $"${Garnet.common.NumUtils.CountDigits(slotRange.Item1)}\r\n{slotRange.Item1}\r\n" +
+                                $"${Garnet.common.NumUtils.CountDigits(slotRange.Item2)}\r\n{slotRange.Item2}\r\n");
+                            fixed (byte* req = clusterAddSlotsRange)
+                                _ = sessions[0].TryConsumeMessages(req, clusterAddSlotsRange.Length);
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -59,6 +105,13 @@ namespace Resp.benchmark
             int valueLen = default,
             bool numericValue = false)
         {
+            if (opts.Client == ClientType.InProc && loadDbThreads > sessions.Length)
+            {
+                foreach (var session in sessions)
+                    session.Dispose();
+                sessions = server.GetRespSessions(loadDbThreads);
+            }
+
             if (load_rg != null)
                 opts.DbSize = load_rg.DbSize;
 
@@ -76,7 +129,8 @@ namespace Resp.benchmark
                 LightOperate(OpType.SET, opts.DbSize, loadBatchSize, loadDbThreads, opts.DbSize / loadDbThreads, default, load_rg, false, false, keyLen, valueLen, numericValue: numericValue);
             load_rg = null;
 
-            GetDBSIZE(loadDbThreads);
+            if (opts.Client != ClientType.InProc)
+                GetDBSIZE(loadDbThreads);
         }
 
         private unsafe void GetDBSIZE(int loadDbThreads)
@@ -320,24 +374,29 @@ namespace Resp.benchmark
             }
 
             // Query database
-            Thread[] workers = new Thread[NumThreads];
+            var workers = new Thread[NumThreads];
 
             // Run the experiment.
-            for (int idx = 0; idx < NumThreads; idx++)
+            for (var idx = 0; idx < NumThreads; idx++)
             {
-                int x = idx;
+                var x = idx;
                 workers[idx] = opts.Client switch
                 {
 
-                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(OpsPerThread, opType, rg)),
+                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(x, OpsPerThread, opType, rg)),
                     ClientType.GarnetClientSession => new Thread(() => GarnetClientSessionOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.SERedis => new Thread(() => SERedisOperateThreadRunner(OpsPerThread, opType, rg)),
+                    ClientType.InProc => new Thread(() => InProcOperateThreadRunner(x, OpsPerThread, opType, rg)),
                     _ => throw new Exception($"ClientType {opts.Client} not supported"),
                 };
             }
 
+            long beginAddress = 0;
+            if (opts.Client == ClientType.InProc && server.StoreWrapper.appendOnlyFile != null)
+                beginAddress = server.StoreWrapper.appendOnlyFile.TailAddress;
+
             // Start threads.
-            foreach (Thread worker in workers)
+            foreach (var worker in workers)
                 worker.Start();
 
             waiter.Set();
@@ -350,28 +409,44 @@ namespace Resp.benchmark
                 Thread.Sleep(runTime);
                 done = true;
             }
-            foreach (Thread worker in workers)
+            foreach (var worker in workers)
                 worker.Join();
 
             swatch.Stop();
 
-            double seconds = swatch.ElapsedMilliseconds / 1000.0;
-            double opsPerSecond = total_ops_done / seconds;
+            var seconds = swatch.ElapsedMilliseconds / 1000.0;
+            var opsPerSecond = total_ops_done / seconds;
+            var byteConsumerPerSecond = (total_bytes_consumed / seconds) / (double)1_000_000_000;
 
             if (verbose)
             {
-                Console.WriteLine($"Total time: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
-                Console.WriteLine($"Throughput: {opsPerSecond:N2} ops/sec");
+                Console.WriteLine($"[Total time]: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
+                Console.WriteLine($"[Throughput]: {opsPerSecond:N2} ops/sec");
+                if (ClientType.InProc == opts.Client)
+                {
+                    Console.WriteLine($"[BytesConsumed]: {total_bytes_consumed:N0} bytes");
+                    Console.WriteLine($"[BytesConsumedPerSecond]: {byteConsumerPerSecond:N2} GiB/sec");
+                    if (server.StoreWrapper.appendOnlyFile != null)
+                    {
+                        var tailAddress = server.StoreWrapper.appendOnlyFile.TailAddress;
+                        var aofSize = tailAddress - beginAddress;
+
+                        var tpt = (aofSize / seconds) / (double)1_000_000_000;
+                        Console.WriteLine($"[AOF Total Size]: {aofSize:N2} bytes");
+                        Console.WriteLine($"[AOF Append Tpt]: {tpt:N2} GiB/sec");
+                    }
+                }
             }
 
             done = false;
             total_ops_done = 0;
+            total_bytes_consumed = 0;
             waiter.Reset();
 
             return rg;
         }
 
-        private unsafe void LightOperateThreadRunner(int NumOps, OpType opType, ReqGen rg)
+        private unsafe void LightOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)
         {
             var lighClientOnResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
             using ClientBase client = new LightClient(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), (int)opType, lighClientOnResponseDelegate, rg.GetBufferSize(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -379,8 +454,8 @@ namespace Resp.benchmark
             client.Connect();
             client.Authenticate(opts.Auth);
 
-            int maxReqs = (NumOps / rg.BatchCount);
-            int numReqs = 0;
+            var maxReqs = (NumOps / rg.BatchCount);
+            var numReqs = 0;
 
             waiter.Wait();
 
@@ -388,7 +463,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                byte[] buf = rg.GetRequest(out int len);
+                byte[] buf = rg.GetRequest(out var len);
                 client.Send(buf, len, (opType == OpType.MSET || opType == OpType.MPFADD) ? 1 : rg.BatchCount);
                 client.CompletePendingRequests();
                 numReqs++;
@@ -416,8 +491,8 @@ namespace Resp.benchmark
                 c.CompletePending();
             }
 
-            int maxReqs = NumOps / rg.BatchCount;
-            int numReqs = 0;
+            var maxReqs = NumOps / rg.BatchCount;
+            var numReqs = 0;
 
             waiter.Wait();
 
@@ -448,8 +523,8 @@ namespace Resp.benchmark
             }
             var db = redis.GetDatabase(0);
 
-            int maxReqs = NumOps / rg.BatchCount;
-            int numReqs = 0;
+            var maxReqs = NumOps / rg.BatchCount;
+            var numReqs = 0;
 
             waiter.Wait();
 
@@ -458,7 +533,7 @@ namespace Resp.benchmark
             while (!done)
             {
                 var reqArgs = rg.GetRequestArgs();
-                for (int i = 0; i < reqArgs.Count; i += 2)
+                for (var i = 0; i < reqArgs.Count; i += 2)
                     db.StringSet(reqArgs[i], reqArgs[i + 1]);
                 numReqs++;
                 if (numReqs == maxReqs) break;
@@ -468,22 +543,48 @@ namespace Resp.benchmark
             Interlocked.Add(ref total_ops_done, numReqs * rg.BatchCount);
         }
 
+        private unsafe void InProcOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)
+        {
+            var maxReqs = NumOps / rg.BatchCount;
+            var numReqs = 0;
+
+            waiter.Wait();
+
+            Stopwatch sw = new();
+            var bytesConsumed = 0L;
+            sw.Start();
+            while (!done)
+            {
+                var buf = rg.GetRequest(out var len);
+                fixed (byte* ptr = buf)
+                    _ = sessions[threadId].TryConsumeMessages(ptr, len);
+
+                bytesConsumed += len;
+                numReqs++;
+                if (numReqs == maxReqs) break;
+            }
+            sw.Stop();
+
+            Interlocked.Add(ref total_ops_done, numReqs * rg.BatchCount);
+            Interlocked.Add(ref total_bytes_consumed, bytesConsumed);
+        }
+
         private void MGetThreadRunner(int threadid, int NumOps, int BatchSize = 1 << 12)
         {
-            bool checkResults = false;
-            int DbSize = database.Length;
+            var checkResults = false;
+            var DbSize = database.Length;
 
             using var redis = ConnectionMultiplexer.Connect($"{opts.Address}:{opts.Port},connectTimeout=999999,syncTimeout=999999");
-            IDatabase db = redis.GetDatabase(0);
+            var db = redis.GetDatabase(0);
 
             Random r = new(threadid);
             Random r2 = new(threadid);
 
             Stopwatch sw = new();
             sw.Start();
-            int idx = 0;
+            var idx = 0;
             var getBatch = new RedisKey[BatchSize];
-            for (int b = 0; b < NumOps; b++)
+            for (var b = 0; b < NumOps; b++)
             {
                 getBatch[idx++] = database[r.Next(DbSize)].Key;
                 if (idx == BatchSize)
@@ -491,7 +592,7 @@ namespace Resp.benchmark
                     var result = db.StringGet(getBatch);
                     if (checkResults)
                     {
-                        for (int k = 0; k < idx; k++)
+                        for (var k = 0; k < idx; k++)
                         {
                             if (database[r2.Next(DbSize)].Value != result[k])
                                 Console.WriteLine("OperateThreadRunner: Error");
@@ -505,7 +606,7 @@ namespace Resp.benchmark
                 var result = db.StringGet([.. getBatch.Take(idx)]);
                 if (checkResults)
                 {
-                    for (int k = 0; k < idx; k++)
+                    for (var k = 0; k < idx; k++)
                     {
                         if (database[r2.Next(DbSize)].Value != result[k])
                             Console.WriteLine("OperateThreadRunner: Error");
@@ -521,7 +622,7 @@ namespace Resp.benchmark
         {
             Console.WriteLine($"Creating database of size {opts.DbSize}");
             database = new KeyValuePair<RedisKey, RedisValue>[opts.DbSize];
-            for (int k = 0; k < opts.DbSize; k++)
+            for (var k = 0; k < opts.DbSize; k++)
             {
                 database[k] = new KeyValuePair<RedisKey, RedisValue>(new RedisKey(k.ToString()), new RedisValue(k.ToString()));
             }
@@ -533,16 +634,16 @@ namespace Resp.benchmark
             using var redis = ConnectionMultiplexer.Connect($"{opts.Address}:{opts.Port},connectTimeout=999999,syncTimeout=999999");
             var db = redis.GetDatabase(0);
 
-            int DbSize = database.Length;
+            var DbSize = database.Length;
 
             Console.WriteLine($"Loading database of size {database.Length}");
 
             Stopwatch sw = new();
             sw.Start();
-            bool MSet = true;
+            var MSet = true;
             if (MSet)
             {
-                for (int b = 0; b < DbSize; b += BatchSize)
+                for (var b = 0; b < DbSize; b += BatchSize)
                 {
                     db.StringSet([.. database.Skip(b).Take(BatchSize)]);
                     if (b > 0 && b % 1000000 == 0)
@@ -552,8 +653,8 @@ namespace Resp.benchmark
             else
             {
                 var tasks = new Task[BatchSize];
-                int idx = 0;
-                for (int b = 0; b < DbSize; b++)
+                var idx = 0;
+                for (var b = 0; b < DbSize; b++)
                 {
                     tasks[idx] = db.StringSetAsync(database[b].Key, database[b].Value);
                     idx++;

@@ -4,6 +4,10 @@
     <OutputType>Exe</OutputType>
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
     <ServerGarbageCollection>true</ServerGarbageCollection>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+		<DelaySign>false</DelaySign>
+		<ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,17 +16,27 @@
     </None>
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="CommandLineParser" />
+	<ItemGroup>
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkHandler.cs" Link="Embedded\EmbeddedNetworkHandler.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="Embedded\EmbeddedNetworkSender.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedRespServer.cs" Link="Embedded\EmbeddedRespServer.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\GarnetServerEmbedded.cs" Link="Embedded\GarnetServerEmbedded.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\Request.cs" Link="Embedded\Request.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+		<PackageReference Include="CommandLineParser" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
+    <ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
+		<ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />     
   </ItemGroup>
-
+	
 </Project>
