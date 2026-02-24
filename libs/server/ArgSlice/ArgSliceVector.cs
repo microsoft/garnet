@@ -15,6 +15,8 @@ namespace Garnet.server
     /// <param name="maxItemNum"></param>
     public unsafe class ArgSliceVector(int maxItemNum = 1 << 18) : IEnumerable<SpanByte>
     {
+        private bool enumerating;
+
         ScratchBufferBuilder bufferManager = new();
         readonly int maxCount = maxItemNum;
         public int Count => items.Count;
@@ -28,6 +30,8 @@ namespace Garnet.server
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
         public bool TryAddItem(Span<byte> item)
         {
+            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+
             if (Count + 1 >= maxCount)
                 return false;
 
@@ -47,6 +51,7 @@ namespace Garnet.server
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
         public bool TryAddItem(ulong ns, Span<byte> item)
         {
+            Debug.Assert(!enumerating, "Cannot modify while enumerating");
             Debug.Assert(ns <= byte.MaxValue, "Only byte-size namespaces supported currently");
 
             if (Count + 1 >= maxCount)
@@ -70,25 +75,37 @@ namespace Garnet.server
         /// </summary>
         public void Clear()
         {
+            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+
             items.Clear();
             bufferManager.Reset();
         }
 
         public IEnumerator<SpanByte> GetEnumerator()
         {
+            Debug.Assert(!enumerating, "Concurrent enumeration is not allwed");
+
             var full = bufferManager.ViewFullArgSlice();
 
-            foreach (var (offset, length, hasNamespace) in items)
+            enumerating = true;
+            try
             {
-                var span = full.ReadOnlySpan.Slice(offset, length);
-                var ret = SpanByte.FromPinnedSpan(span);
-
-                if (hasNamespace)
+                foreach (var (offset, length, hasNamespace) in items)
                 {
-                    ret.MarkNamespace();
-                }
+                    var span = full.ReadOnlySpan.Slice(offset, length);
+                    var ret = SpanByte.FromPinnedSpan(span);
 
-                yield return ret;
+                    if (hasNamespace)
+                    {
+                        ret.MarkNamespace();
+                    }
+
+                    yield return ret;
+                }
+            }
+            finally
+            {
+                enumerating = false;
             }
         }
 
