@@ -135,15 +135,6 @@ namespace Garnet.server.Vector.Filter
     internal sealed class LiteralExpr : Expr
     {
         public FilterValue Value { get; init; }
-
-        // Keep object-returning property for test compatibility
-        public object BoxedValue => Value.Kind switch
-        {
-            FilterValueKind.Number => Value.AsNumber(),
-            FilterValueKind.String => Value.AsString(),
-            FilterValueKind.Null => null,
-            _ => null
-        };
     }
 
     /// <summary>

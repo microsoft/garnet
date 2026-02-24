@@ -8,20 +8,12 @@ namespace Garnet.test
 {
     internal static class VectorFilterTestHelpers
     {
-        internal static object EvaluateFilter(string expression, string json)
+        internal static FilterValue EvaluateFilter(string expression, string json)
         {
             var tokens = VectorFilterTokenizer.Tokenize(expression);
             var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
             using var doc = JsonDocument.Parse(json);
-            var result = VectorFilterEvaluator.EvaluateExpression(expr, doc.RootElement);
-
-            return result.Kind switch
-            {
-                FilterValueKind.Number => (object)result.AsNumber(),
-                FilterValueKind.String => result.AsString(),
-                FilterValueKind.Null => null,
-                _ => result.AsNumber()
-            };
+            return VectorFilterEvaluator.EvaluateExpression(expr, doc.RootElement);
         }
 
         internal static bool EvaluateFilterTruthy(string expression, string json)

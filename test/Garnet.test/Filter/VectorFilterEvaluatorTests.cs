@@ -16,19 +16,19 @@ namespace Garnet.test
         public void Evaluator_Arithmetic()
         {
             var json = "{}";
-            ClassicAssert.AreEqual(5.0, VectorFilterTestHelpers.EvaluateFilter("2 + 3", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("3 - 2", json));
-            ClassicAssert.AreEqual(6.0, VectorFilterTestHelpers.EvaluateFilter("2 * 3", json));
-            ClassicAssert.AreEqual(2.5, VectorFilterTestHelpers.EvaluateFilter("5 / 2", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("7 % 3", json));
-            ClassicAssert.AreEqual(8.0, VectorFilterTestHelpers.EvaluateFilter("2 ** 3", json));
+            ClassicAssert.AreEqual(5.0, VectorFilterTestHelpers.EvaluateFilter("2 + 3", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("3 - 2", json).AsNumber());
+            ClassicAssert.AreEqual(6.0, VectorFilterTestHelpers.EvaluateFilter("2 * 3", json).AsNumber());
+            ClassicAssert.AreEqual(2.5, VectorFilterTestHelpers.EvaluateFilter("5 / 2", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("7 % 3", json).AsNumber());
+            ClassicAssert.AreEqual(8.0, VectorFilterTestHelpers.EvaluateFilter("2 ** 3", json).AsNumber());
         }
 
         [Test]
         public void Evaluator_SubtractionWithField()
         {
             var json = "{\"year\":1980}";
-            ClassicAssert.AreEqual(1975.0, VectorFilterTestHelpers.EvaluateFilter(".year - 5", json));
+            ClassicAssert.AreEqual(1975.0, VectorFilterTestHelpers.EvaluateFilter(".year - 5", json).AsNumber());
             ClassicAssert.IsTrue(VectorFilterTestHelpers.EvaluateFilterTruthy(".year - 5 > 0", json));
         }
 
@@ -36,15 +36,15 @@ namespace Garnet.test
         public void Evaluator_Comparison()
         {
             var json = "{}";
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 > 3", json));
-            ClassicAssert.AreEqual(0.0, VectorFilterTestHelpers.EvaluateFilter("3 > 5", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("3 < 5", json));
-            ClassicAssert.AreEqual(0.0, VectorFilterTestHelpers.EvaluateFilter("5 < 3", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 >= 5", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 <= 5", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 == 5", json));
-            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 != 3", json));
-            ClassicAssert.AreEqual(0.0, VectorFilterTestHelpers.EvaluateFilter("5 != 5", json));
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 > 3", json).AsNumber());
+            ClassicAssert.AreEqual(0.0, VectorFilterTestHelpers.EvaluateFilter("3 > 5", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("3 < 5", json).AsNumber());
+            ClassicAssert.AreEqual(0.0, VectorFilterTestHelpers.EvaluateFilter("5 < 3", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 >= 5", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 <= 5", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 == 5", json).AsNumber());
+            ClassicAssert.AreEqual(1.0, VectorFilterTestHelpers.EvaluateFilter("5 != 3", json).AsNumber());
+            ClassicAssert.AreEqual(0.0, VectorFilterTestHelpers.EvaluateFilter("5 != 5", json).AsNumber());
         }
 
         [Test]
@@ -88,8 +88,8 @@ namespace Garnet.test
         public void Evaluator_MemberAccess()
         {
             var json = "{\"year\":1980,\"rating\":4.5}";
-            ClassicAssert.AreEqual(1980.0, VectorFilterTestHelpers.EvaluateFilter(".year", json));
-            ClassicAssert.AreEqual(4.5, VectorFilterTestHelpers.EvaluateFilter(".rating", json));
+            ClassicAssert.AreEqual(1980.0, VectorFilterTestHelpers.EvaluateFilter(".year", json).AsNumber());
+            ClassicAssert.AreEqual(4.5, VectorFilterTestHelpers.EvaluateFilter(".rating", json).AsNumber());
         }
 
         [Test]
@@ -97,7 +97,7 @@ namespace Garnet.test
         {
             var json = "{\"year\":1980}";
             var result = VectorFilterTestHelpers.EvaluateFilter(".missing", json);
-            ClassicAssert.IsNull(result);
+            ClassicAssert.IsTrue(result.IsNull);
             ClassicAssert.IsFalse(VectorFilterTestHelpers.EvaluateFilterTruthy(".missing", json));
         }
 
@@ -167,8 +167,8 @@ namespace Garnet.test
         public void Evaluator_ArithmeticWithNonNumericString_CoercesToZero()
         {
             var json = "{\"genre\":\"action\"}";
-            ClassicAssert.AreEqual(2.0, VectorFilterTestHelpers.EvaluateFilter(".genre + 2", json));
-            ClassicAssert.AreEqual(-1.0, VectorFilterTestHelpers.EvaluateFilter(".genre - 1", json));
+            ClassicAssert.AreEqual(2.0, VectorFilterTestHelpers.EvaluateFilter(".genre + 2", json).AsNumber());
+            ClassicAssert.AreEqual(-1.0, VectorFilterTestHelpers.EvaluateFilter(".genre - 1", json).AsNumber());
         }
 
         [Test]
