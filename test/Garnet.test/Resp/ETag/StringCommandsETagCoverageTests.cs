@@ -25,7 +25,7 @@ namespace Garnet.test.Resp.ETag
         static readonly byte[] RestoreData = [0x00, 0x01, 0x32, 0x0B, 0x00, 0x08, 0xDA, 0x4A, 0x37, 0xF4, 0x34, 0xC1, 0x17];
 
         [Test]
-        public async Task AppendETagAdvancedTestAsync([Values(true, false)]bool nxKey)
+        public async Task AppendETagTestAsync([Values(true, false)]bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
@@ -38,7 +38,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BitFieldETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task BitFieldETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { BitmapKeys[0], "SET", "u8", 0, 42 };
 
@@ -51,7 +51,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BitOpETagAdvancedTestAsync()
+        public async Task BitOpETagTestAsync()
         {
             var cmdArgs = new object[] { "AND", BitmapKeys[0], BitmapKeys[1], BitmapKeys[2] };
 
@@ -64,7 +64,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task DecrETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task DecrETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -77,7 +77,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task DecrByETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task DecrByETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], 2 };
 
@@ -90,7 +90,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GetDelETagAdvancedTestAsync()
+        public async Task GetDelETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -103,7 +103,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GetExETagAdvancedTestAsync()
+        public async Task GetExETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], "EX", 2 };
 
@@ -116,7 +116,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GetSetETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task GetSetETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
@@ -129,7 +129,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task IncrETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task IncrETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -142,7 +142,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task IncrByETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task IncrByETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], 2 };
 
@@ -155,7 +155,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task IncrByFloatETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task IncrByFloatETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], 2.2 };
 
@@ -168,7 +168,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task MSetETagAdvancedTestAsync()
+        public async Task MSetETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1], StringKeys[1], StringData[0] };
 
@@ -181,7 +181,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task MSetNxETagAdvancedTestAsync()
+        public async Task MSetNxETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1], StringKeys[1], StringData[0] };
 
@@ -194,7 +194,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task PFAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task PFAddETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { HllKeys[0], StringData[1] };
 
@@ -207,7 +207,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task PFMergeETagAdvancedTestAsync()
+        public async Task PFMergeETagTestAsync()
         {
             var cmdArgs = new object[] { HllKeys[0], HllKeys[1] };
 
@@ -220,7 +220,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task PSetExETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task PSetExETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], 2000, StringData[1] };
 
@@ -233,7 +233,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RestoreETagAdvancedTestAsync()
+        public async Task RestoreETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], 0, RestoreData };
 
@@ -246,7 +246,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SetETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task SetETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
@@ -259,7 +259,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SetBitETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task SetBitETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { BitmapKeys[0], 1, 1 };
 
@@ -272,7 +272,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SetExETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task SetExETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], 2, StringData[1] };
 
@@ -285,7 +285,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SetNxETagAdvancedTestAsync()
+        public async Task SetNxETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
@@ -298,7 +298,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SetRangeETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task SetRangeETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], 0, StringData[1] };
 

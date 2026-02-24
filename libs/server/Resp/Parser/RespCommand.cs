@@ -613,8 +613,6 @@ namespace Garnet.server
                 RespCommand.MSET or
                 RespCommand.MSETNX or
                 RespCommand.PFMERGE or
-                RespCommand.RENAME or
-                RespCommand.RENAMENX or
                 RespCommand.RPOPLPUSH or
                 RespCommand.SDIFFSTORE or
                 RespCommand.SINTERSTORE or

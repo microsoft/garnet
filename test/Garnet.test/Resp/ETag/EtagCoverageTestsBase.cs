@@ -48,10 +48,9 @@ namespace Garnet.test.Resp.ETag
 
                 if (simpleRespCommandInfo.IsOverwriteCommand() || cmd == RespCommand.SET)
                     OverwriteCommands.Add(cmd);
-
-                if (simpleRespCommandInfo.IsDeleteCommand())
-                    DeleteCommands.Add(cmd);
             }
+
+            DeleteCommands = [RespCommand.DEL, RespCommand.GETDEL, RespCommand.UNLINK];
         }
 
         public abstract void DataSetUp(bool nxKey = false);
@@ -201,7 +200,7 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        private void VerifyResultAndETag(RedisResult result, Action<RedisResult> verifyResult, long expectedETag)
+        internal void VerifyResultAndETag(RedisResult result, Action<RedisResult> verifyResult, long expectedETag)
         {
             ClassicAssert.AreEqual(2, result!.Length);
             verifyResult(result[0]);

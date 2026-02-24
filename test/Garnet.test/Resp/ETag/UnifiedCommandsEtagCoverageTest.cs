@@ -28,7 +28,7 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task DelETagAdvancedTestAsync()
+        public async Task DelETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -45,7 +45,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ExpireETagAdvancedTestAsync()
+        public async Task ExpireETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], 100 };
 
@@ -62,7 +62,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ExpireAtETagAdvancedTestAsync()
+        public async Task ExpireAtETagTestAsync()
         {
             var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
 
@@ -81,7 +81,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task PExpireETagAdvancedTestAsync()
+        public async Task PExpireETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], 1000 };
 
@@ -98,7 +98,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task PExpireAtETagAdvancedTestAsync()
+        public async Task PExpireAtETagTestAsync()
         {
             var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds().ToString();
 
@@ -117,7 +117,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task PersistETagAdvancedTestAsync()
+        public async Task PersistETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -134,7 +134,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RenameETagAdvancedTestAsync()
+        public async Task RenameETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringKeys[1] };
 
@@ -151,7 +151,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RenameNxETagAdvancedTestAsync()
+        public async Task RenameNxETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringKeys[2] };
 
@@ -168,7 +168,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task UnlinkETagAdvancedTestAsync()
+        public async Task UnlinkETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -249,12 +249,18 @@ namespace Garnet.test.Resp.ETag
             // Verify dest key etag post-command
             etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[dstKeyWithEtag]);
 
-            // Verify expected ETag -
-            // 1. If command overwrites / deletes the value - ETag should be 0 
-            // 2. If command only changes the metadata of the record - ETag should remain 1
-            // 3. Otherwise, ETag should advance to 2
-            var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
-            ClassicAssert.AreEqual(expectedEtag, etag);
+            // Verify expected ETag - 0 (RENAME without EXECWITHETAG zeroes out the etag)
+            ClassicAssert.AreEqual(0, etag);
+
+            // Reset the data
+            DataSetUp(nxKey: false);
+
+            // Add the EXECWITHETAG meta-command
+            var args = new object[] { command.ToString() }.Concat(commandArgs).ToArray();
+            result = await db.ExecuteAsync("EXECWITHETAG", args);
+
+            // Verify result & expected ETag - 2 (RENAME with EXECWITHETAG advances the etag)
+            VerifyResultAndETag(result, verifyResult, 2);
         }
     }
 }

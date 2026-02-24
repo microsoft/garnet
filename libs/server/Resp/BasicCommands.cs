@@ -35,10 +35,17 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
+                    if (output.IsOperationSkipped)
+                    {
+                        WriteNull();
+                        break;
+                    }
+
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:

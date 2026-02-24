@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -179,25 +180,32 @@ namespace Garnet.server
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            if (logRecord.Info.HasETag && logRecord.TrySetETag(logRecord.ETag + 1))
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithEtag);
+
+            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
             {
-                sizeInfo.AssertOptionals(logRecord.Info);
-
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-
-                var newSize = logRecord.Info.ValueIsInline
-                    ? 0
-                    : (!logRecord.Info.ValueIsObject
-                        ? logRecord.ValueSpan.Length
-                        : logRecord.ValueObject.HeapMemorySize);
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
-                return true;
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag);
+                Debug.Assert(execOp);
+                if (!logRecord.TrySetETag(updatedEtag))
+                    return false;
             }
+            else if (!logRecord.RemoveETag()) 
+                    return false;
 
-            return false;
+            sizeInfo.AssertOptionals(logRecord.Info);
+
+            if (!logRecord.Info.Modified)
+                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+
+            var newSize = logRecord.Info.ValueIsInline
+                ? 0
+                : (!logRecord.Info.ValueIsObject
+                    ? logRecord.ValueSpan.Length
+                    : logRecord.ValueObject.HeapMemorySize);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+            return true;
         }
 
         /// <inheritdoc />

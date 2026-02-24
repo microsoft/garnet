@@ -1945,6 +1945,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameWithExpiryAndNewKeyAlreadyExists()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            var origValue2 = "test2";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+            db.StringSet("key2", origValue2);
+
+            db.KeyRename("key1", "key2");
+            string retValue = db.StringGet("key2");
+
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
         public void SingleRenameKeyEdgeCase([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)

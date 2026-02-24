@@ -17,7 +17,7 @@ namespace Garnet.test.Resp.ETag
         public override void DataSetUp(bool nxKey = false) { }
 
         [Test]
-        public void AllCommandsCovered()
+        public void AllWriteCommandsCovered()
         {
             var tests =
                 typeof(EtagCoverageTestsBase).Assembly.GetTypes()
@@ -30,12 +30,12 @@ namespace Garnet.test.Resp.ETag
 
             foreach (var test in tests)
             {
-                if (test.Name == nameof(AllCommandsCovered))
+                if (test.Name == nameof(AllWriteCommandsCovered))
                     continue;
 
-                ClassicAssert.IsTrue(test.Name.EndsWith("ETagAdvancedTestAsync"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllCommandsCovered)} to be per-command and end with ETagAdvancedTestAsync, unexpected test: {test.Name}");
+                ClassicAssert.IsTrue(test.Name.EndsWith("ETagTestAsync"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllWriteCommandsCovered)} to be per-command and end with ETagTestAsync, unexpected test: {test.Name}");
 
-                var command = test.Name[..^"ETagAdvancedTestAsync".Length];
+                var command = test.Name[..^"ETagTestAsync".Length];
                 covered.Add(command);
             }
 

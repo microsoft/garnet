@@ -1544,13 +1544,13 @@ namespace Garnet.test.Resp.ETag
 
             // Scenario: old key had etag and => new key zero'd etag when made without withetag (new key did not exists)
 
-            long etag = long.Parse(db.Execute("EXECWITHETAG", "SET", oldKey, origValue).ToString());
-            ClassicAssert.AreEqual(1, etag);
+            db.Execute("EXECWITHETAG", "SET", oldKey, origValue);
+            CheckEtagAndValue(db, oldKey, 1, origValue);
 
             db.KeyRename(oldKey, newKey);
 
             ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 0, origValue));
+            CheckEtagAndValue(db, newKey, 0, origValue);
             // old key has been deleted, and new key exists without etag at this point
 
             // Scenario: old key had etag => new key zero'd etag when made without withetag (new key exists without etag)
@@ -1559,25 +1559,25 @@ namespace Garnet.test.Resp.ETag
             db.KeyRename(oldKey, newKey);
 
             ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 0, origValue));
+            CheckEtagAndValue(db, newKey, 0, origValue);
             db.KeyDelete(newKey);
 
             // Scenario: old key had etag => new key has updated etag when made with withetag (new key exists withetag)
             // setup new key with updated etag
-            etag = long.Parse(db.Execute("EXECWITHETAG", "SET", newKey, origValue + "delta").ToString());
-            ClassicAssert.AreEqual(1, etag);
+            db.Execute("EXECWITHETAG", "SET", newKey, origValue + "delta");
+            CheckEtagAndValue(db, newKey, 1, origValue + "delta");
 
             db.Execute("EXECIFMATCH", 1, "SET", newKey, origValue); // updates etag to 2
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 2, origValue));
+            CheckEtagAndValue(db, newKey, 2, origValue);
 
             // old key with etag
-            etag = long.Parse(db.Execute("EXECWITHETAG", "SET", oldKey, origValue).ToString());
-            ClassicAssert.AreEqual(1, etag);
+            db.Execute("EXECWITHETAG", "SET", oldKey, origValue);
+            CheckEtagAndValue(db, oldKey, 1, origValue);
 
             db.Execute("EXECWITHETAG", "RENAME", oldKey, newKey); // should update etag to 3
 
             ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 3, origValue));
+            CheckEtagAndValue(db, newKey, 3, origValue);
             // at this point new key exists with etag, old key does not exist at all
 
             // Scenario: old key not have etag => new key made with updated etag when made withetag (new key did exist withetag)
@@ -1586,7 +1586,7 @@ namespace Garnet.test.Resp.ETag
             db.Execute("EXECWITHETAG", "RENAME", oldKey, newKey);
 
             ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 4, origValue));
+            CheckEtagAndValue(db, newKey, 4, origValue);
             db.KeyDelete(newKey);
 
             // Scenario: old key had etag => new key has initial etag when made with withetag (new key did not exists)
@@ -1595,7 +1595,7 @@ namespace Garnet.test.Resp.ETag
             db.Execute("EXECWITHETAG", "RENAME", oldKey, newKey);
 
             ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 1, origValue));
+            CheckEtagAndValue(db, newKey, 1, origValue);
             db.KeyDelete(newKey);
 
             // Scenario: old key not have etag => new key made with initial etag when made withetag (new key did not exist)
@@ -1604,16 +1604,19 @@ namespace Garnet.test.Resp.ETag
             db.Execute("EXECWITHETAG", "RENAME", oldKey, newKey);
 
             ClassicAssert.IsTrue(db.StringGet(oldKey).IsNull);
-            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 1, origValue));
+            CheckEtagAndValue(db, newKey, 1, origValue);
             db.KeyDelete(newKey);
         }
 
-        private bool EtagAndValMatches(IDatabase db, string key, long expectedEtag, string expectedValue)
+        private void CheckEtagAndValue(IDatabase db, string key, long expectedEtag, string expectedValue)
         {
-            var res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key);
-            var responseEtag = long.Parse(res[1].ToString());
-            var responseValue = res[0].ToString();
-            return responseValue == expectedValue && responseEtag == expectedEtag;
+            var response = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key);
+            ClassicAssert.IsNotNull(response);
+            ClassicAssert.AreEqual(2, response!.Length);
+            var responseValue = response[0].ToString();
+            var responseEtag = long.Parse(response[1].ToString());
+            ClassicAssert.AreEqual(expectedValue, responseValue);
+            ClassicAssert.AreEqual(expectedEtag, responseEtag);
         }
 
         #endregion

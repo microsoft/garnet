@@ -24,7 +24,7 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task LInsertETagAdvancedTestAsync()
+        public async Task LInsertETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], "AFTER", ListData[0][1], ListData[1][0] };
 
@@ -37,7 +37,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LMoveETagAdvancedTestAsync()
+        public async Task LMoveETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[1], ListKeys[0], "LEFT", "RIGHT" };
 
@@ -50,7 +50,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LMPopETagAdvancedTestAsync()
+        public async Task LMPopETagTestAsync()
         {
             var cmdArgs = new object[] { 1, ListKeys[0], "LEFT" };
 
@@ -68,7 +68,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LPopETagAdvancedTestAsync()
+        public async Task LPopETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0] };
 
@@ -81,7 +81,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LPushETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task LPushETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
@@ -94,7 +94,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LPushXETagAdvancedTestAsync()
+        public async Task LPushXETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
@@ -107,7 +107,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LRemETagAdvancedTestAsync()
+        public async Task LRemETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], 0, ListData[0][0] };
 
@@ -120,7 +120,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RPopETagAdvancedTestAsync()
+        public async Task RPopETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0] };
 
@@ -133,7 +133,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RPopLPushETagAdvancedTestAsync()
+        public async Task RPopLPushETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], ListKeys[1] };
 
@@ -146,7 +146,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RPushETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task RPushETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
@@ -159,7 +159,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task RPushXETagAdvancedTestAsync()
+        public async Task RPushXETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
@@ -172,7 +172,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LSetETagAdvancedTestAsync()
+        public async Task LSetETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], 0, ListData[1][0] };
 
@@ -185,7 +185,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task LTrimETagAdvancedTestAsync()
+        public async Task LTrimETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], 0, 1 };
 
@@ -198,7 +198,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BLMoveETagAdvancedTestAsync()
+        public async Task BLMoveETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[1], ListKeys[0], "LEFT", "RIGHT", 5 };
 
@@ -213,7 +213,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BLPopETagAdvancedTestAsync()
+        public async Task BLPopETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], ListKeys[1], 5 };
 
@@ -230,7 +230,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BLMPopETagAdvancedTestAsync()
+        public async Task BLMPopETagTestAsync()
         {
             var cmdArgs = new object[] { 5, 2, ListKeys[0], ListKeys[1], "LEFT", "COUNT", 2 };
 
@@ -248,7 +248,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BRPopETagAdvancedTestAsync()
+        public async Task BRPopETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], ListKeys[1], 5 };
 
@@ -265,7 +265,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BRPopLPushETagAdvancedTestAsync()
+        public async Task BRPopLPushETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[1], ListKeys[0], 5 };
 

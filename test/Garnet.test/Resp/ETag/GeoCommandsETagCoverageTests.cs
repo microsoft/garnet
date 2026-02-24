@@ -23,7 +23,7 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task GeoAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task GeoAddETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { GeoKeys[0], GeoData[1][0].Longitude, GeoData[1][0].Latitude, GeoData[1][0].Member };
             await CheckCommandAsync(RespCommand.GEOADD, cmdArgs, VerifyResult, nxKey: nxKey);
@@ -35,7 +35,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GeoRadiusETagAdvancedTestAsync()
+        public async Task GeoRadiusETagTestAsync()
         {
             var cmdArgs = new object[] { GeoKeys[1], GeoData[1][0].Longitude, GeoData[1][0].Latitude, 1000, "KM", "STORE", GeoKeys[0] };
             await CheckCommandAsync(RespCommand.GEORADIUS, cmdArgs, VerifyResult);
@@ -47,7 +47,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GeoRadiusByMemberETagAdvancedTestAsync()
+        public async Task GeoRadiusByMemberETagTestAsync()
         {
             var cmdArgs = new object[] { GeoKeys[1], GeoData[1][0].Member, 1000, "KM", "STORE", GeoKeys[0] };
             await CheckCommandAsync(RespCommand.GEORADIUSBYMEMBER, cmdArgs, VerifyResult);
@@ -59,7 +59,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GeoSearchStoreETagAdvancedTestAsync()
+        public async Task GeoSearchStoreETagTestAsync()
         {
             var cmdArgs = new object[] { GeoKeys[0], GeoKeys[1], "FROMMEMBER", GeoData[1][0].Member, "BYRADIUS", 1000, "KM" };
             await CheckCommandAsync(RespCommand.GEOSEARCHSTORE, cmdArgs, VerifyResult);

@@ -25,7 +25,7 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task ZAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task ZAddETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { SortedSetKeys[0] }.Union(SortedSetData[1]
                     .SelectMany(e => new[] { e.Score.ToString(), e.Element.ToString() })).ToArray();
@@ -39,7 +39,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZCollectETagAdvancedTestAsync()
+        public async Task ZCollectETagTestAsync()
         {
             // Wait for the expiration of one member in the sorted set
             Thread.Sleep(TimeSpan.FromSeconds(5));
@@ -54,7 +54,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZDiffStoreETagAdvancedTestAsync()
+        public async Task ZDiffStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetKeys[1], SortedSetKeys[2] };
             await CheckCommandAsync(RespCommand.ZDIFFSTORE, cmdArgs, VerifyResult);
@@ -66,7 +66,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZExpireETagAdvancedTestAsync()
+        public async Task ZExpireETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, "MEMBERS", 1, SortedSetData[0][0].Element };
             await CheckCommandAsync(RespCommand.ZEXPIRE, cmdArgs, VerifyResult);
@@ -80,7 +80,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZExpireAtETagAdvancedTestAsync()
+        public async Task ZExpireAtETagTestAsync()
         {
             var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds();
             var cmdArgs = new object[] { SortedSetKeys[0], expireAt, "MEMBERS", 1, SortedSetData[0][0].Element };
@@ -95,7 +95,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZIncrByETagAdvancedTestAsync()
+        public async Task ZIncrByETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetData[0][0].Element };
 
@@ -108,7 +108,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZInterStoreETagAdvancedTestAsync()
+        public async Task ZInterStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetKeys[1], SortedSetKeys[2] };
             await CheckCommandAsync(RespCommand.ZINTERSTORE, cmdArgs, VerifyResult);
@@ -120,7 +120,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZMPopETagAdvancedTestAsync()
+        public async Task ZMPopETagTestAsync()
         {
             var cmdArgs = new object[] { 1, SortedSetKeys[0], "MAX" };
 
@@ -141,7 +141,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZRemRangeByLexETagAdvancedTestAsync()
+        public async Task ZRemRangeByLexETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], "[a1", "(a3" };
             await CheckCommandAsync(RespCommand.ZREMRANGEBYLEX, cmdArgs, VerifyResult);
@@ -153,7 +153,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZRemRangeByRankETagAdvancedTestAsync()
+        public async Task ZRemRangeByRankETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 1, 2};
             await CheckCommandAsync(RespCommand.ZREMRANGEBYRANK, cmdArgs, VerifyResult);
@@ -165,7 +165,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZRemRangeByScoreETagAdvancedTestAsync()
+        public async Task ZRemRangeByScoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 0, 1.25 };
             await CheckCommandAsync(RespCommand.ZREMRANGEBYSCORE, cmdArgs, VerifyResult);
@@ -177,7 +177,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZPExpireETagAdvancedTestAsync()
+        public async Task ZPExpireETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2000, "MEMBERS", 1, SortedSetData[0][0].Element };
             await CheckCommandAsync(RespCommand.ZPEXPIRE, cmdArgs, VerifyResult);
@@ -191,7 +191,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZPExpireAtETagAdvancedTestAsync()
+        public async Task ZPExpireAtETagTestAsync()
         {
             var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds();
             var cmdArgs = new object[] { SortedSetKeys[0], expireAt, "MEMBERS", 1, SortedSetData[0][0].Element };
@@ -206,7 +206,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZPersistETagAdvancedTestAsync()
+        public async Task ZPersistETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], "MEMBERS", 1, SortedSetData[0][0].Element };
             await CheckCommandAsync(RespCommand.ZPERSIST, cmdArgs, VerifyResult);
@@ -220,7 +220,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZPopMaxETagAdvancedTestAsync()
+        public async Task ZPopMaxETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0] };
 
@@ -236,7 +236,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZPopMinETagAdvancedTestAsync()
+        public async Task ZPopMinETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0] };
 
@@ -252,7 +252,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZRangeStoreETagAdvancedTestAsync()
+        public async Task ZRangeStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[2], 0, 3, "BYSCORE" };
             await CheckCommandAsync(RespCommand.ZRANGESTORE, cmdArgs, VerifyResult);
@@ -264,7 +264,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZRemETagAdvancedTestAsync()
+        public async Task ZRemETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], SortedSetData[0][0].Element };
             await CheckCommandAsync(RespCommand.ZREM, cmdArgs, VerifyResult);
@@ -276,7 +276,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZUnionStoreETagAdvancedTestAsync()
+        public async Task ZUnionStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetKeys[1], SortedSetKeys[2] };
             await CheckCommandAsync(RespCommand.ZUNIONSTORE, cmdArgs, VerifyResult);
@@ -288,7 +288,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BZMPopETagAdvancedTestAsync()
+        public async Task BZMPopETagTestAsync()
         {
             var cmdArgs = new object[] { 5, 2, SortedSetKeys[0], SortedSetKeys[1], "MAX", "COUNT", 2 };
 
@@ -306,7 +306,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BZPopMaxETagAdvancedTestAsync()
+        public async Task BZPopMaxETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[1], 5 };
 
@@ -323,7 +323,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task BZPopMinETagAdvancedTestAsync()
+        public async Task BZPopMinETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[1], 5 };
 

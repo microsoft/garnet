@@ -24,7 +24,7 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task SAddETagAdvancedTestAsync([Values(true, false)] bool nxKey)
+        public async Task SAddETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { SetKeys[0] }.Union(SetData[1].Select(d => d.ToString())).ToArray();
 
@@ -37,7 +37,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SDiffStoreETagAdvancedTestAsync()
+        public async Task SDiffStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0], SetKeys[2], SetKeys[3] };
             await CheckCommandAsync(RespCommand.SDIFFSTORE, cmdArgs, VerifyResult);
@@ -49,7 +49,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SInterStoreETagAdvancedTestAsync()
+        public async Task SInterStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0], SetKeys[2], SetKeys[3] };
             await CheckCommandAsync(RespCommand.SINTERSTORE, cmdArgs, VerifyResult);
@@ -62,7 +62,7 @@ namespace Garnet.test.Resp.ETag
 
 
         [Test]
-        public async Task SMoveETagAdvancedTestAsync()
+        public async Task SMoveETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[1], SetKeys[0], SetData[1][0] };
             await CheckCommandAsync(RespCommand.SMOVE, cmdArgs, VerifyResult, [0, 1]);
@@ -74,7 +74,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SPopETagAdvancedTestAsync()
+        public async Task SPopETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0] };
             await CheckCommandAsync(RespCommand.SPOP, cmdArgs, VerifyResult);
@@ -86,7 +86,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SRemETagAdvancedTestAsync()
+        public async Task SRemETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0], SetData[0][0] };
             await CheckCommandAsync(RespCommand.SREM, cmdArgs, VerifyResult);
@@ -98,7 +98,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task SUnionStoreETagAdvancedTestAsync()
+        public async Task SUnionStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0], SetKeys[2], SetKeys[3] };
             await CheckCommandAsync(RespCommand.SUNIONSTORE, cmdArgs, VerifyResult);
