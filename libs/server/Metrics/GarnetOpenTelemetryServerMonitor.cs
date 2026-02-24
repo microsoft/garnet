@@ -39,6 +39,7 @@ namespace Garnet.server.Metrics
         private readonly GarnetServerOptions options;
         private readonly GarnetOpenTelemetryServerMetrics serverMetrics;
         private readonly GarnetOpenTelemetrySessionMetrics sessionMetrics;
+        private MeterProvider meterProvider;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GarnetOpenTelemetryServerMonitor"/> class,
@@ -78,7 +79,7 @@ namespace Garnet.server.Metrics
         {
             if (this.options.OpenTelemetryEndpoint != null)
             {
-                Sdk.CreateMeterProviderBuilder()
+                this.meterProvider = Sdk.CreateMeterProviderBuilder()
                     .ConfigureResource(rb => rb.AddService("Microsoft.Garnet", serviceVersion: Assembly.GetEntryAssembly()?.GetName()?.Version?.ToString() ?? "unknown"))
                     .AddMeter(GarnetOpenTelemetryServerMetrics.MeterName, GarnetOpenTelemetrySessionMetrics.MeterName, GarnetOpenTelemetryLatencyMetrics.MeterName)
                     .AddOtlpExporter(opts =>
@@ -110,6 +111,7 @@ namespace Garnet.server.Metrics
             this.serverMetrics.Dispose();
             this.sessionMetrics?.Dispose();
             GarnetOpenTelemetryLatencyMetrics.DisposeInstance();
+            this.meterProvider?.Dispose();
         }
     }
 }
