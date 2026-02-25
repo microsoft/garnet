@@ -1355,7 +1355,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
-        internal virtual void EvictPageForRecovery(long page)
+        internal void EvictPageForRecovery(long page)
         {
             if (logSizeTracker is not null)
             {

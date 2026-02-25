@@ -139,6 +139,18 @@ namespace Tsavorite.core
             }
         }
 
+        internal void FreePage(long page)
+        {
+            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
+            if (logSizeTracker is not null)
+                ReturnPage((int)(page % BufferSize));
+            else
+            {
+                objectPages[page % BufferSize].Clear();
+                ClearPage(page, 0);
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
@@ -359,16 +371,6 @@ namespace Tsavorite.core
             }
 
             return objectLogSegment;
-        }
-
-        internal void FreePage(long page)
-        {
-            objectPages[page % BufferSize].objectIdMap.Clear();
-            ClearPage(page, 0);
-
-            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
-            if (logSizeTracker is not null)
-                ReturnPage((int)(page % BufferSize));
         }
 
         /// <inheritdoc/>

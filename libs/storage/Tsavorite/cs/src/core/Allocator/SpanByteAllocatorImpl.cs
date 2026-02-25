@@ -69,6 +69,15 @@ namespace Tsavorite.core
             }
         }
 
+        internal void FreePage(long page)
+        {
+            ClearPage(page, 0);
+
+            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
+            if (logSizeTracker is not null)
+                ReturnPage((int)(page % BufferSize));
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
@@ -196,15 +205,6 @@ namespace Tsavorite.core
             VerifyCompatibleSectorSize(device);
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)AlignedPageSizeBytes, callback, asyncResult, device);
-        }
-
-        internal void FreePage(long page)
-        {
-            ClearPage(page, 0);
-
-            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
-            if (logSizeTracker is not null)
-                ReturnPage((int)(page % BufferSize));
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,

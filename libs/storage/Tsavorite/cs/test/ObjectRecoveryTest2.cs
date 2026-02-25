@@ -55,8 +55,8 @@ namespace Tsavorite.test.recovery.objects
                 Read(session, delete: false);
                 session.Dispose();
 
-                _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
-                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+                _ = store.TryInitiateFullCheckpoint(out var guid, checkpointType);  // guid is useful for debugging, but not otherwise used in this test
+                await store.CompleteCheckpointAsync();
 
                 Destroy(log, objlog, store);
             }
@@ -90,7 +90,7 @@ namespace Tsavorite.test.recovery.objects
                 SegmentSize = 1L << 12,
                 LogMemorySize = 1L << 12,
                 PageSize = 1L << 9,
-                CheckpointDir = Path.Combine(MethodTestDir, "check-points")
+                CheckpointDir = Path.Combine(MethodTestDir, "checkpoints")
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -114,7 +114,7 @@ namespace Tsavorite.test.recovery.objects
                 var _key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
                 _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), value);
-                if (i % 100 == 0)
+                if (i > 0 && i % 100 == 0)
                 {
                     _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
                     store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -132,18 +132,15 @@ namespace Tsavorite.test.recovery.objects
                 TestObjectInput input = default;
                 TestObjectOutput output = new();
 
-                if (i == 196)
-                { }
-
                 var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
-
-                if (status.IsPending)
+                bool wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
 
-                ClassicAssert.IsTrue(status.Found, $"key: {key.key}");
+                ClassicAssert.IsTrue(status.Found, $"key: {key.key}; status {status}; wasPending {wasPending}");
                 ClassicAssert.AreEqual(i, output.value.value);
             }
 
@@ -155,8 +152,8 @@ namespace Tsavorite.test.recovery.objects
                 _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
                 var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
 
-                ClassicAssert.IsFalse(status.IsPending, $"key: {key.key}");
-                ClassicAssert.IsFalse(status.Found, $"key: {key.key}");
+                ClassicAssert.IsFalse(status.IsPending, $"key: {key.key}; status {status}");
+                ClassicAssert.IsFalse(status.Found, $"key: {key.key}; status {status}");
             }
         }
     }
