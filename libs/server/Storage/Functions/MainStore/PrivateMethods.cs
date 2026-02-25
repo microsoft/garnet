@@ -338,7 +338,7 @@ namespace Garnet.server
         {
             if (start >= 0 && start <= len)//start in [0,len]
             {
-                if (end < 0 && (len + end) > 0)
+                if (end < 0 && (len + end) >= 0)
                     return (start, len + end + 1);
                 else if (end >= start)
                     return (start, end < len ? end + 1 : len);

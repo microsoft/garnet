@@ -20,9 +20,13 @@ namespace Garnet.test.Resp.ETag
 
         static readonly string[] StringData = ["1", "2", "3"];
 
-        static readonly byte[][] BitmapData = [[0x00], [0xF0], [0x0F]];
+        static readonly byte[][] BitmapData = [[0xFF, 0xF0, 0x00], [0xF0, 0x00, 0xFF], [0x0F, 0xF0, 0xFF]];
 
-        static readonly byte[] RestoreData = [0x00, 0x01, 0x32, 0x0B, 0x00, 0x08, 0xDA, 0x4A, 0x37, 0xF4, 0x34, 0xC1, 0x17];
+        static readonly byte[][] DumpData =
+        [
+            [0x00, 0x01, 0x31, 0x0B, 0x00, 0xA1, 0x00, 0x1D, 0x3D, 0xDD, 0xE1, 0xAE, 0x20],
+            [0x00, 0x01, 0x32, 0x0B, 0x00, 0x08, 0xDA, 0x4A, 0x37, 0xF4, 0x34, 0xC1, 0x17]
+        ];
 
         [Test]
         public async Task AppendETagTestAsync([Values(true, false)]bool nxKey)
@@ -38,15 +42,48 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task BitCountETagTestAsync()
+        {
+            var cmdArgs = new object[] { BitmapKeys[0], 0, -1, "BIT"};
+
+            await CheckCommandAsync(RespCommand.BITCOUNT, cmdArgs, VerifyResult, [2], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(8, (long)result);
+            }
+        }
+
+        [Test]
         public async Task BitFieldETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { BitmapKeys[0], "SET", "u8", 0, 42 };
 
             await CheckCommandAsync(RespCommand.BITFIELD, cmdArgs, VerifyResult, [2], nxKey: nxKey);
 
+            if (!nxKey)
+            {
+                cmdArgs = [BitmapKeys[0], "GET", "u8", 0];
+
+                await CheckCommandAsync(RespCommand.BITFIELD, cmdArgs, VerifyResult, [2], isReadOnly: true);
+            }
+
+            void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(nxKey ? 0 : 255, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task BitFieldROETagTestAsync()
+        {
+            var cmdArgs = new object[] { BitmapKeys[0], "GET", "u8", 0 };
+
+            await CheckCommandAsync(RespCommand.BITFIELD_RO, cmdArgs, VerifyResult, [2], isReadOnly: true);
+
             static void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(0, (long)result);
+                ClassicAssert.AreEqual(255, (long)result);
             }
         }
 
@@ -59,7 +96,20 @@ namespace Garnet.test.Resp.ETag
 
             static void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(1, (long)result);
+                ClassicAssert.AreEqual(3, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task BitPosETagTestAsync()
+        {
+            var cmdArgs = new object[] { BitmapKeys[0], 0 };
+
+            await CheckCommandAsync(RespCommand.BITPOS, cmdArgs, VerifyResult, [2], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(12, (long)result);
             }
         }
 
@@ -90,6 +140,45 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task DumpETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.DUMP, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.IsTrue(ByteArrayComparer.Instance.Equals(DumpData[0], (byte[])result));
+            }
+        }
+
+        [Test]
+        public async Task GetETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.GET, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
+            }
+        }
+
+        [Test]
+        public async Task GetBitETagTestAsync()
+        {
+            var cmdArgs = new object[] { BitmapKeys[0], 0 };
+
+            await CheckCommandAsync(RespCommand.GETBIT, cmdArgs, VerifyResult, [2], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
         public async Task GetDelETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
@@ -108,6 +197,19 @@ namespace Garnet.test.Resp.ETag
             var cmdArgs = new object[] { StringKeys[0], "EX", 2 };
 
             await CheckCommandAsync(RespCommand.GETEX, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
+            }
+        }
+
+        [Test]
+        public async Task GetRangeETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 0, -1 };
+
+            await CheckCommandAsync(RespCommand.GETRANGE, cmdArgs, VerifyResult, isReadOnly: true);
 
             static void VerifyResult(RedisResult result)
             {
@@ -168,6 +270,34 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task LCSETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringKeys[1] };
+
+            await CheckCommandAsync(RespCommand.LCS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(string.Empty, (string)result);
+            }
+        }
+
+        [Test]
+        public async Task MGetETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], StringKeys[1] };
+
+            await CheckCommandAsync(RespCommand.MGET, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual(StringData[0], (string)result[0]);
+                ClassicAssert.AreEqual(StringData[1], (string)result[1]);
+            }
+        }
+
+        [Test]
         public async Task MSetETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1], StringKeys[1], StringData[0] };
@@ -207,6 +337,19 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task PFCountETagTestAsync()
+        {
+            var cmdArgs = new object[] { HllKeys[0] };
+
+            await CheckCommandAsync(RespCommand.PFCOUNT, cmdArgs, VerifyResult, [1], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0].Length, (long)result);
+            }
+        }
+
+        [Test]
         public async Task PFMergeETagTestAsync()
         {
             var cmdArgs = new object[] { HllKeys[0], HllKeys[1] };
@@ -235,7 +378,7 @@ namespace Garnet.test.Resp.ETag
         [Test]
         public async Task RestoreETagTestAsync()
         {
-            var cmdArgs = new object[] { StringKeys[0], 0, RestoreData };
+            var cmdArgs = new object[] { StringKeys[0], 0, DumpData[1] };
 
             await CheckCommandAsync(RespCommand.RESTORE, cmdArgs, VerifyResult, nxKey: true);
 
@@ -265,9 +408,9 @@ namespace Garnet.test.Resp.ETag
 
             await CheckCommandAsync(RespCommand.SETBIT, cmdArgs, VerifyResult, [2], nxKey: nxKey);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(0, (long)result);
+                ClassicAssert.AreEqual(nxKey ? 0 :  1, (long)result);
             }
         }
 
@@ -307,6 +450,32 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task StrLenETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.STRLEN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0].Length, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task SubStrETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0], 0, -1 };
+
+            await CheckCommandAsync(RespCommand.SUBSTR, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
             }
         }
 

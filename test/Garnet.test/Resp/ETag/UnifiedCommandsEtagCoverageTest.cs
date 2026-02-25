@@ -45,6 +45,19 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task ExistsETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.EXISTS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.IsTrue((bool)result);
+            }
+        }
+
+        [Test]
         public async Task ExpireETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], 100 };
@@ -73,6 +86,39 @@ namespace Garnet.test.Resp.ETag
             cmdArgs = [ListKeys[0], expireTimestamp];
 
             await CheckCommandAsync(RespCommand.EXPIREAT, cmdArgs, VerifyResult, [3]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ExpireTimeETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.EXPIRETIME, cmdArgs, VerifyResult, isReadOnly: true);
+
+            cmdArgs = [ListKeys[1]];
+
+            await CheckCommandAsync(RespCommand.EXPIRETIME, cmdArgs, VerifyResult, [3], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(3).ToUnixTimeSeconds();
+
+                ClassicAssert.GreaterOrEqual(expireTimestamp, (long)result);
+                ClassicAssert.Less(0, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task GetEtagETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.GETETAG, cmdArgs, VerifyResult, isReadOnly: true);
 
             static void VerifyResult(RedisResult result)
             {
@@ -117,6 +163,26 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task PExpireTimeETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.PEXPIRETIME, cmdArgs, VerifyResult, isReadOnly: true);
+
+            cmdArgs = [ListKeys[1]];
+
+            await CheckCommandAsync(RespCommand.PEXPIRETIME, cmdArgs, VerifyResult, [3], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(3).ToUnixTimeMilliseconds();
+
+                ClassicAssert.GreaterOrEqual(expireTimestamp, (long)result);
+                ClassicAssert.Less(0, (long)result);
+            }
+        }
+
+        [Test]
         public async Task PersistETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
@@ -130,6 +196,26 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task PTTLETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.PTTL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            cmdArgs = [ListKeys[1]];
+
+            await CheckCommandAsync(RespCommand.PTTL, cmdArgs, VerifyResult, [3], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var ttl = TimeSpan.FromMinutes(3).TotalMilliseconds;
+
+                ClassicAssert.GreaterOrEqual(ttl, (long)result);
+                ClassicAssert.Less(0, (long)result);
             }
         }
 
@@ -164,6 +250,45 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task TTLETagTestAsync()
+        {
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.TTL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            cmdArgs = [ListKeys[1]];
+
+            await CheckCommandAsync(RespCommand.TTL, cmdArgs, VerifyResult, [3], isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var ttl = TimeSpan.FromMinutes(3).TotalSeconds;
+
+                ClassicAssert.GreaterOrEqual(ttl, (long)result);
+                ClassicAssert.Less(0, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task TypeETagTestAsync()
+        {
+            var isObj = false;
+            var cmdArgs = new object[] { StringKeys[0] };
+
+            await CheckCommandAsync(RespCommand.TYPE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            isObj = true;
+            cmdArgs = [ListKeys[1]];
+
+            await CheckCommandAsync(RespCommand.TYPE, cmdArgs, VerifyResult, [3], isReadOnly: true);
+
+            void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(isObj ? "list" : "string", (string)result);
             }
         }
 

@@ -515,10 +515,14 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.TTL(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
-                ProcessOutput(output.SpanByteAndMemory);
+                if (output.IsOperationSkipped)
+                    WriteNull();
+                else
+                    ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
@@ -552,10 +556,14 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
-                ProcessOutput(output.SpanByteAndMemory);
+                if (output.IsOperationSkipped)
+                    WriteNull();
+                else 
+                    ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

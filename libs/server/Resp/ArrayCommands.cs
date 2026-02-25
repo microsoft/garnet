@@ -354,10 +354,14 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
-                ProcessOutput(output.SpanByteAndMemory);
+                if (output.IsOperationSkipped)
+                    WriteNull();
+                else 
+                    ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
@@ -472,8 +476,12 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+            etag = output.ETag;
 
-            ProcessOutput(output.SpanByteAndMemory);
+            if (output.IsOperationSkipped)
+                WriteNull();
+            else
+                ProcessOutput(output.SpanByteAndMemory);
 
             return true;
         }

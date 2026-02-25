@@ -348,11 +348,16 @@ namespace Garnet.server
             var output = GetStringOutput();
 
             var status = storageApi.GETRANGE(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
                 sessionMetrics?.incr_total_found();
-                ProcessOutput(output.SpanByteAndMemory);
+
+                if (output.IsOperationSkipped)
+                    WriteNull();
+                else
+                    ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

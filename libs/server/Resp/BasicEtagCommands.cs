@@ -27,15 +27,12 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.GETETAG(key, ref input, ref output);
+            etag = output.ETag;
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
+            if (status != GarnetStatus.OK || output.IsOperationSkipped)
                 WriteNull();
-            }
+            else
+                ProcessOutput(output.SpanByteAndMemory);
 
             return true;
         }

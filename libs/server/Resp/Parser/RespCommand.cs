@@ -580,6 +580,7 @@ namespace Garnet.server
         {
             return cmd switch
             {
+                RespCommand.LCS or 
                 RespCommand.EXISTS or
                 RespCommand.MGET or
                 RespCommand.PFCOUNT or

@@ -17,7 +17,7 @@ namespace Garnet.test.Resp.ETag
         public override void DataSetUp(bool nxKey = false) { }
 
         [Test]
-        public void AllWriteCommandsCovered()
+        public void AllCommandsCovered()
         {
             var tests =
                 typeof(EtagCoverageTestsBase).Assembly.GetTypes()
@@ -30,19 +30,19 @@ namespace Garnet.test.Resp.ETag
 
             foreach (var test in tests)
             {
-                if (test.Name == nameof(AllWriteCommandsCovered))
+                if (test.Name == nameof(AllCommandsCovered))
                     continue;
 
-                ClassicAssert.IsTrue(test.Name.EndsWith("ETagTestAsync"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllWriteCommandsCovered)} to be per-command and end with ETagTestAsync, unexpected test: {test.Name}");
+                ClassicAssert.IsTrue(test.Name.EndsWith("ETagTestAsync"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllCommandsCovered)} to be per-command and end with ETagTestAsync, unexpected test: {test.Name}");
 
                 var command = test.Name[..^"ETagTestAsync".Length];
                 covered.Add(command);
             }
 
             // Check tests against RespCommand
-            var allWriteCommands = Enum.GetValues<RespCommand>().Where(c => c.IsDataCommand() && c.IsWriteOnly()).Except(NoKeyDataCommands)
+            var allDataCommands = Enum.GetValues<RespCommand>().Where(c => c.IsDataCommand()).Except(NoKeyDataCommands)
                 .Select(static x => x.NormalizeForACLs()).Distinct();
-            var notCovered = allWriteCommands.Where(cmd =>
+            var notCovered = allDataCommands.Where(cmd =>
                 !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
 
             ClassicAssert.IsEmpty(notCovered,
