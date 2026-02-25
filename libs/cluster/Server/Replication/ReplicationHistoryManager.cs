@@ -24,7 +24,7 @@ namespace Garnet.cluster
         public ReplicationHistory(int aofPhysicalSublogCount)
         {
             primary_replid = Generator.CreateHexId();
-            primary_replid2 = String.Empty;
+            primary_replid2 = string.Empty;
             replicationOffset = AofAddress.Create(aofPhysicalSublogCount, 0);
             replicationOffset2 = AofAddress.Create(aofPhysicalSublogCount, long.MaxValue);
         }

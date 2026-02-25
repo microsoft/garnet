@@ -143,6 +143,9 @@ namespace Garnet.cluster
                     storeWrapper.RecoverAOF();
                     logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
 
+                    var beginAddress = storeWrapper.appendOnlyFile.Log.BeginAddress;
+                    var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
+
                     // 1. Primary will signal checkpoint send complete
                     // 2. Replica will receive signal and recover checkpoint, initialize AOF
                     // 3. Replica signals recovery complete (here cluster replicate will return to caller)
@@ -153,8 +156,8 @@ namespace Garnet.cluster
                         nodeId,
                         PrimaryReplId,
                         cEntry.ToByteArray(),
-                        storeWrapper.appendOnlyFile.Log.BeginAddress.ToByteArray(),
-                        storeWrapper.appendOnlyFile.Log.TailAddress.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                        beginAddress.Span,
+                        beginAddress.Span).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {

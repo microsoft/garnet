@@ -199,8 +199,8 @@ namespace Garnet.cluster
                     replayAOFMap,
                     clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
-                    beginAddress.ToByteArray(),
-                    checkpointAofBeginAddress.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    beginAddress.Span,
+                    checkpointAofBeginAddress.Span).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 var syncFromAofAddress = AofAddress.FromString(resp);
 
                 // Assert that AOF address the replica will be requesting can be served, except in case of:

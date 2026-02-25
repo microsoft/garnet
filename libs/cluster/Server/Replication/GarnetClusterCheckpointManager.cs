@@ -113,39 +113,34 @@ namespace Garnet.cluster
         {
             var metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo);
             var hlri = ConvertMetadata(metadata);
-            GetCookieData(hlri, ref recoveredSafeAofAddress, out recoveredReplicationId);
 
-            unsafe void GetCookieData(HybridLogRecoveryInfo hlri, ref AofAddress checkpointCoveredAddress, out string primaryReplId)
+            recoveredReplicationId = null;
+            if (RecoveredSafeAofAddress.Length == 1)
             {
-                primaryReplId = null;
-
-                if (RecoveredSafeAofAddress.Length == 1)
+                // Legacy single log deserialization for backward compatibility
+                var bytesRead = sizeof(int);
+                fixed (byte* ptr = hlri.cookie)
                 {
-                    // Legacy single log deserialization for backward compatibility
-                    var bytesRead = sizeof(int);
-                    fixed (byte* ptr = hlri.cookie)
-                    {
-                        if (hlri.cookie.Length < 4) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 4");
-                        var cookieSize = *(int*)ptr;
-                        bytesRead += cookieSize;
+                    if (hlri.cookie.Length < 4) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 4");
+                    var cookieSize = *(int*)ptr;
+                    bytesRead += cookieSize;
 
-                        if (hlri.cookie.Length < 12) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 12");
-                        checkpointCoveredAddress[0] = *(long*)(ptr + 4);
+                    if (hlri.cookie.Length < 12) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 12");
+                    recoveredSafeAofAddress[0] = *(long*)(ptr + 4);
 
-                        if (hlri.cookie.Length < 52) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 52");
-                        primaryReplId = Encoding.ASCII.GetString(ptr + 12, 40);
-                    }
+                    if (hlri.cookie.Length < 52) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 52");
+                    recoveredReplicationId = Encoding.ASCII.GetString(ptr + 12, 40);
                 }
-                else
-                {
-                    // Multi-log cookie
-                    using var ms = new MemoryStream(hlri.cookie);
-                    using var reader = new BinaryReader(ms, Encoding.ASCII);
-                    primaryReplId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
-                    checkpointCoveredAddress.DeserializeInPlace(reader);
-                    reader.Dispose();
-                    ms.Dispose();
-                }
+            }
+            else
+            {
+                // Multi-log cookie
+                using var ms = new MemoryStream(hlri.cookie);
+                using var reader = new BinaryReader(ms, Encoding.ASCII);
+                recoveredReplicationId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
+                recoveredSafeAofAddress = AofAddress.Deserialize(reader);
+                reader.Dispose();
+                ms.Dispose();
             }
         }
 

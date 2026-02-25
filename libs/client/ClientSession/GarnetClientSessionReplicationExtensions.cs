@@ -33,7 +33,7 @@ namespace Garnet.client
         /// <param name="aofTailAddress"></param>
         /// <returns></returns>
         /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterInitiateReplicaSync"/>
-        public Task<string> ExecuteClusterInitiateReplicaSync(string nodeId, string primary_replid, byte[] checkpointEntryData, byte[] aofBeginAddress, byte[] aofTailAddress)
+        public Task<string> ExecuteClusterInitiateReplicaSync(string nodeId, string primary_replid, byte[] checkpointEntryData, Span<byte> aofBeginAddress, Span<byte> aofTailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
@@ -272,9 +272,9 @@ namespace Garnet.client
             bool sendStoreCheckpoint,
             ulong replayAOF,
             string primary_replid,
-            byte[] checkpointEntryData,
-            byte[] beginAddress,
-            byte[] tailAddress)
+            Span<byte> checkpointEntryData,
+            Span<byte> beginAddress,
+            Span<byte> tailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);

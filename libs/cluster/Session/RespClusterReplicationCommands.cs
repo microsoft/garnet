@@ -197,8 +197,8 @@ namespace Garnet.cluster
             var replicaAssignedPrimaryId = parseState.GetString(1);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(2).ToArray();
 
-            var replicaAofBeginAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(3).ToArray());
-            var replicaAofTailAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(4).ToArray());
+            var replicaAofBeginAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(3).Span);
+            var replicaAofTailAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(4).Span);
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
@@ -327,8 +327,8 @@ namespace Garnet.cluster
             var primaryReplicaId = parseState.GetString(2);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(3).ToArray();
 
-            var beginAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(4).ToArray());
-            var tailAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(5).ToArray());
+            var beginAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(4).Span);
+            var tailAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(5).Span);
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
             var replicationOffset = clusterProvider.replicationManager.TryReplicaDiskbasedRecovery(

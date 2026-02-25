@@ -33,6 +33,7 @@ namespace Garnet.cluster
 
     sealed class CheckpointEntry
     {
+        private const int GuidSize = 16;
         public CheckpointMetadata metadata;
         public SingleWriterMultiReaderLock _lock;
         public CheckpointEntry next;
@@ -96,16 +97,11 @@ namespace Garnet.cluster
         {
             var ms = new MemoryStream();
             var writer = new BinaryWriter(ms, Encoding.ASCII);
-            byte[] byteBuffer;
 
             // Write checkpoint entry data for main store
             writer.Write(metadata.storeVersion);
-            byteBuffer = metadata.storeHlogToken.ToByteArray();
-            writer.Write(byteBuffer.Length);
-            writer.Write(byteBuffer);
-            byteBuffer = metadata.storeIndexToken.ToByteArray();
-            writer.Write(byteBuffer.Length);
-            writer.Write(byteBuffer);
+            writer.Write(metadata.storeHlogToken.ToByteArray());
+            writer.Write(metadata.storeIndexToken.ToByteArray());
             metadata.storeCheckpointCoveredAofAddress.Serialize(writer);
             writer.Write(metadata.storePrimaryReplId == null ? 0 : 1);
             if (metadata.storePrimaryReplId != null) writer.Write(metadata.storePrimaryReplId);
@@ -131,8 +127,8 @@ namespace Garnet.cluster
                 metadata = new(0)
                 {
                     storeVersion = reader.ReadInt64(),
-                    storeHlogToken = new Guid(reader.ReadBytes(reader.ReadInt32())),
-                    storeIndexToken = new Guid(reader.ReadBytes(reader.ReadInt32())),
+                    storeHlogToken = new Guid(reader.ReadBytes(GuidSize)),
+                    storeIndexToken = new Guid(reader.ReadBytes(GuidSize)),
                     storeCheckpointCoveredAofAddress = AofAddress.Deserialize(reader),
                     storePrimaryReplId = reader.ReadInt32() > 0 ? reader.ReadString() : default
                 }

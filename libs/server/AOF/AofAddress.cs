@@ -55,6 +55,14 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Determines whether the current instance and the specified <see cref="AofAddress"/> instance represent the
+        /// same address sequence.
+        /// </summary>
+        /// <param name="other">The <see cref="AofAddress"/> instance to compare with the current instance. This parameter cannot be null
+        /// and must have the same length as the current instance.</param>
+        /// <returns><see langword="true"/> if the specified <see cref="AofAddress"/> is equal to the current instance;
+        /// otherwise, <see langword="false"/>.</returns>
         public bool Equals([NotNullWhen(true)] AofAddress other)
         {
             Debug.Assert(other.Length == Length);
@@ -202,18 +210,6 @@ namespace Garnet.server
             for (var i = 0; i < length; i++)
                 aofAddress[i] = reader.ReadInt64();
             return aofAddress;
-        }
-
-        /// <summary>
-        /// Deserialize contents in-place using provided BinaryReader
-        /// </summary>
-        /// <param name="reader"></param>
-        public void DeserializeInPlace(BinaryReader reader)
-        {
-            var length = reader.ReadByte();
-            Debug.Assert(length == Length);
-            for (var i = 0; i < length; i++)
-                addresses[i] = reader.ReadInt64();
         }
 
         /// <summary>

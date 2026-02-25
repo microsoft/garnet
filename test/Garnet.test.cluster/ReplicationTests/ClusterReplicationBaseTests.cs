@@ -1563,9 +1563,8 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
-            //while (sublogCount > 0) { }
-            IPEndPoint primary = (IPEndPoint)context.endpoints[0];
-            IPEndPoint replica = (IPEndPoint)context.endpoints[1];
+            var primary = (IPEndPoint)context.endpoints[0];
+            var replica = (IPEndPoint)context.endpoints[1];
 
             // Make sure role assignment is as expected
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);

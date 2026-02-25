@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -15,9 +14,6 @@ namespace Garnet.cluster
     {
         static readonly Memory<byte> GOSSIP = "GOSSIP"u8.ToArray();
         static readonly Memory<byte> WITHMEET = "WITHMEET"u8.ToArray();
-
-        static Memory<byte> PUBLISH => "PUBLISH"u8.ToArray();
-        static Memory<byte> SPUBLISH => "SPUBLISH"u8.ToArray();
 
         /// <summary>
         /// Send config
@@ -62,7 +58,7 @@ namespace Garnet.cluster
         {
             var args = new Memory<byte>[] {
                 CmdStrings.failreplicationoffset.ToArray(),
-                Encoding.ASCII.GetBytes(primaryReplicationOffset.ToString())
+                primaryReplicationOffset.ToByteArray()
             };
             return await client.ExecuteForStringResultWithCancellationAsync(GarnetClient.CLUSTER, args, cancellationToken).ConfigureAwait(false);
         }
