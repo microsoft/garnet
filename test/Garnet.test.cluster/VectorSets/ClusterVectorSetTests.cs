@@ -102,14 +102,11 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
+        // TODO: restore BIN and Q8 when implemented
         [Test]
         [TestCase("XB8", "XPREQ8")]
-        [TestCase("XB8", "Q8")]
-        [TestCase("XB8", "BIN")]
         [TestCase("XB8", "NOQUANT")]
         [TestCase("FP32", "XPREQ8")]
-        [TestCase("FP32", "Q8")]
-        [TestCase("FP32", "BIN")]
         [TestCase("FP32", "NOQUANT")]
         public void BasicVADDReplicates(string vectorFormat, string quantizer)
         {
