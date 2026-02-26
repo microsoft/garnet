@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -947,7 +947,6 @@ namespace Garnet.server
 
         /// <summary>
         /// Apply post-filtering to vector search results using a compiled filter expression.
-        /// Returns the number of results that passed the filter, or -1 if the filter expression is invalid.
         ///
         /// Architecture (modeled after Redis expr.c + fastjson.c):
         /// 1. The filter string is compiled ONCE into a flat postfix program (ExprCompiler).
@@ -955,9 +954,6 @@ namespace Garnet.server
         ///    using a stack-based VM (ExprRunner) with on-demand field extraction (AttributeExtractor).
         /// 3. No JsonDocument DOM is allocated — fields are extracted directly from the raw bytes.
         ///
-        /// TODO: A better approach would be to produce a bitmap of passing elements and let
-        /// NetworkVSIM handle skipping non-matching entries, avoiding the in-place compaction copies.
-        /// For now we compact in-place to minimize the scope of changes.
         /// </summary>
         private int ApplyPostFilter(
             ReadOnlySpan<byte> filter,
@@ -971,17 +967,12 @@ namespace Garnet.server
                 return numResults;
             }
 
-            // Convert filter bytes to string for compilation.
-            // NOTE: This allocation is required because the compiler operates on strings.
-            // A future optimization could make the compiler work directly on ReadOnlySpan<byte>.
-            var filterStr = Encoding.UTF8.GetString(filter);
-
-            // Compile the filter expression into a flat postfix program.
+            // Compile the filter expression (UTF-8 bytes) into a flat postfix program.
             // This is done once and reused for all candidate evaluations.
-            var program = ExprCompiler.TryCompile(filterStr, out _);
+            var program = ExprCompiler.TryCompile(filter, out _);
             if (program == null)
             {
-                return -1;
+                return 0; // If the filter doesn't compile, treat it as filtering out all results (matches Redis behavior)
             }
 
             var filteredCount = 0;

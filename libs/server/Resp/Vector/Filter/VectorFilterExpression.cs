@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
-
 namespace Garnet.server.Vector.Filter
 {
     /// <summary>
@@ -135,37 +133,31 @@ namespace Garnet.server.Vector.Filter
         /// <summary>Number of elements in the tuple.</summary>
         public int TupleLength;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ExprToken NewNum(double value)
         {
             return new ExprToken { TokenType = ExprTokenType.Num, Num = value };
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ExprToken NewStr(string value)
         {
             return new ExprToken { TokenType = ExprTokenType.Str, Str = value };
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ExprToken NewSelector(string fieldName)
         {
             return new ExprToken { TokenType = ExprTokenType.Selector, Str = fieldName };
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ExprToken NewOp(OpCode opCode)
         {
             return new ExprToken { TokenType = ExprTokenType.Op, OpCode = opCode };
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ExprToken NewNull()
         {
             return new ExprToken { TokenType = ExprTokenType.Null };
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ExprToken NewTuple(ExprToken[] elements, int length)
         {
             return new ExprToken { TokenType = ExprTokenType.Tuple, TupleElements = elements, TupleLength = length };
@@ -205,10 +197,8 @@ namespace Garnet.server.Vector.Filter
             Table[(int)OpCode.CParen] = (7, 0);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetPrecedence(OpCode code) => Table[(int)code].Precedence;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetArity(OpCode code) => Table[(int)code].Arity;
     }
 

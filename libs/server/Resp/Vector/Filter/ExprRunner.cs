@@ -3,8 +3,6 @@
 
 using System;
 using System.Globalization;
-using System.Runtime.CompilerServices;
-
 namespace Garnet.server.Vector.Filter
 {
     /// <summary>
@@ -137,7 +135,6 @@ namespace Garnet.server.Vector.Filter
         /// Strings are parsed as numbers; unparseable strings return 0.
         /// Matches Redis exprTokenToNum().
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static double ToNum(ExprToken t)
         {
             if (t == null) return 0;
@@ -154,7 +151,6 @@ namespace Garnet.server.Vector.Filter
         /// Convert a token to boolean (0 or 1).
         /// Matches Redis exprTokenToBool(): null=0, num!=0=1, empty string=0, else=1.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static double ToBool(ExprToken t)
         {
             if (t == null) return 0;

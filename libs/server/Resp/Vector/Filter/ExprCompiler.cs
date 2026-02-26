@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Globalization;
-using System.Runtime.CompilerServices;
+using System.Buffers.Text;
+using System.Text;
 
 namespace Garnet.server.Vector.Filter
 {
@@ -24,17 +24,15 @@ namespace Garnet.server.Vector.Filter
     {
         private const int MaxTokens = 1024;
         private const int MaxProgram = 256;
-        private const string SelectorSpecialChars = "_-";
-        private const string OperatorSpecialChars = "+-*%/!()<>=|&";
 
         /// <summary>
-        /// Compile a filter expression string into a flat postfix program.
+        /// Compile a filter expression (as UTF-8 bytes) into a flat postfix program.
         /// Returns null on syntax error; optionally reports the error position.
         /// </summary>
-        public static ExprProgram TryCompile(string expr, out int errpos)
+        public static ExprProgram TryCompile(ReadOnlySpan<byte> expr, out int errpos)
         {
             errpos = -1;
-            if (string.IsNullOrEmpty(expr))
+            if (expr.IsEmpty)
                 return null;
 
             // Phase 1: Tokenize into a flat list
@@ -56,7 +54,7 @@ namespace Garnet.server.Vector.Filter
 
                 // Determine if '-' should be a negative number sign or a subtraction operator
                 var minusIsNumber = false;
-                if (expr[p] == '-' && p + 1 < expr.Length && (char.IsDigit(expr[p + 1]) || expr[p + 1] == '.'))
+                if (expr[p] == (byte)'-' && p + 1 < expr.Length && (IsDigit(expr[p + 1]) || expr[p + 1] == (byte)'.'))
                 {
                     if (numTokens == 0)
                     {
@@ -71,7 +69,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // Number
-                if (char.IsDigit(expr[p]) || (minusIsNumber && expr[p] == '-'))
+                if (IsDigit(expr[p]) || (minusIsNumber && expr[p] == (byte)'-'))
                 {
                     var t = ParseNumber(expr, ref p);
                     if (t == null) { errpos = p; return null; }
@@ -80,7 +78,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // String literal
-                if (expr[p] == '"' || expr[p] == '\'')
+                if (expr[p] == (byte)'"' || expr[p] == (byte)'\'')
                 {
                     var t = ParseString(expr, ref p);
                     if (t == null) { errpos = p; return null; }
@@ -89,7 +87,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // Selector (field access starting with '.')
-                if (expr[p] == '.' && p + 1 < expr.Length && IsSelectorChar(expr[p + 1]))
+                if (expr[p] == (byte)'.' && p + 1 < expr.Length && IsSelectorChar(expr[p + 1]))
                 {
                     var t = ParseSelector(expr, ref p);
                     tokens[numTokens++] = t;
@@ -97,7 +95,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // Tuple literal [1, "foo", 42]
-                if (expr[p] == '[')
+                if (expr[p] == (byte)'[')
                 {
                     var t = ParseTuple(expr, ref p);
                     if (t == null) { errpos = p; return null; }
@@ -106,7 +104,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // Operator or literal keyword (null, true, false, not, and, or, in)
-                if (char.IsLetter(expr[p]) || OperatorSpecialChars.IndexOf(expr[p]) >= 0)
+                if (IsLetter(expr[p]) || IsOperatorSpecialChar(expr[p]))
                 {
                     var t = ParseOperatorOrLiteral(expr, ref p);
                     if (t == null) { errpos = p; return null; }
@@ -241,28 +239,42 @@ namespace Garnet.server.Vector.Filter
 
         // ======================== Tokenization helpers ========================
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void SkipSpaces(string s, ref int p)
+        private static bool IsDigit(byte b) => b >= (byte)'0' && b <= (byte)'9';
+
+        private static bool IsLetter(byte b) => (b >= (byte)'a' && b <= (byte)'z') || (b >= (byte)'A' && b <= (byte)'Z');
+
+        private static bool IsLetterOrDigit(byte b) => IsLetter(b) || IsDigit(b);
+
+        private static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
+
+        private static bool IsOperatorSpecialChar(byte b)
         {
-            while (p < s.Length && char.IsWhiteSpace(s[p])) p++;
+            return b == (byte)'+' || b == (byte)'-' || b == (byte)'*' || b == (byte)'%' ||
+                   b == (byte)'/' || b == (byte)'!' || b == (byte)'(' || b == (byte)')' ||
+                   b == (byte)'<' || b == (byte)'>' || b == (byte)'=' || b == (byte)'|' ||
+                   b == (byte)'&';
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool IsSelectorChar(char c)
+        private static void SkipSpaces(ReadOnlySpan<byte> s, ref int p)
         {
-            return char.IsLetterOrDigit(c) || SelectorSpecialChars.IndexOf(c) >= 0;
+            while (p < s.Length && IsWhiteSpace(s[p])) p++;
         }
 
-        private static ExprToken ParseNumber(string s, ref int p)
+        private static bool IsSelectorChar(byte c)
+        {
+            return IsLetterOrDigit(c) || c == (byte)'_' || c == (byte)'-';
+        }
+
+        private static ExprToken ParseNumber(ReadOnlySpan<byte> s, ref int p)
         {
             var start = p;
-            if (p < s.Length && s[p] == '-') p++;
+            if (p < s.Length && s[p] == (byte)'-') p++;
 
-            while (p < s.Length && (char.IsDigit(s[p]) || s[p] == '.' || s[p] == 'e' || s[p] == 'E'))
+            while (p < s.Length && (IsDigit(s[p]) || s[p] == (byte)'.' || s[p] == (byte)'e' || s[p] == (byte)'E'))
                 p++;
 
-            var numStr = s.Substring(start, p - start);
-            if (!double.TryParse(numStr, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
+            var numSpan = s.Slice(start, p - start);
+            if (!Utf8Parser.TryParse(numSpan, out double value, out var bytesConsumed) || bytesConsumed != numSpan.Length)
             {
                 p = start;
                 return null;
@@ -270,7 +282,7 @@ namespace Garnet.server.Vector.Filter
             return ExprToken.NewNum(value);
         }
 
-        private static ExprToken ParseString(string s, ref int p)
+        private static ExprToken ParseString(ReadOnlySpan<byte> s, ref int p)
         {
             var quote = s[p];
             p++; // Skip opening quote
@@ -279,7 +291,7 @@ namespace Garnet.server.Vector.Filter
 
             while (p < s.Length)
             {
-                if (s[p] == '\\' && p + 1 < s.Length)
+                if (s[p] == (byte)'\\' && p + 1 < s.Length)
                 {
                     hasEscape = true;
                     p += 2; // Skip escaped char
@@ -290,35 +302,35 @@ namespace Garnet.server.Vector.Filter
                     string value;
                     if (!hasEscape)
                     {
-                        value = s.Substring(start, p - start);
+                        value = Encoding.UTF8.GetString(s.Slice(start, p - start));
                     }
                     else
                     {
                         // Process escape sequences (matching Redis fastjson.c behavior)
-                        var chars = new char[p - start];
+                        var bytes = new byte[p - start];
                         var len = 0;
                         for (var i = start; i < p; i++)
                         {
-                            if (s[i] == '\\' && i + 1 < p)
+                            if (s[i] == (byte)'\\' && i + 1 < p)
                             {
                                 i++;
-                                chars[len++] = s[i] switch
+                                bytes[len++] = s[i] switch
                                 {
-                                    'n' => '\n',
-                                    'r' => '\r',
-                                    't' => '\t',
-                                    '\\' => '\\',
-                                    '"' => '"',
-                                    '\'' => '\'',
+                                    (byte)'n' => (byte)'\n',
+                                    (byte)'r' => (byte)'\r',
+                                    (byte)'t' => (byte)'\t',
+                                    (byte)'\\' => (byte)'\\',
+                                    (byte)'"' => (byte)'"',
+                                    (byte)'\'' => (byte)'\'',
                                     _ => s[i], // Unknown escape — copy verbatim
                                 };
                             }
                             else
                             {
-                                chars[len++] = s[i];
+                                bytes[len++] = s[i];
                             }
                         }
-                        value = new string(chars, 0, len);
+                        value = Encoding.UTF8.GetString(bytes, 0, len);
                     }
                     p++; // Skip closing quote
                     return ExprToken.NewStr(value);
@@ -328,16 +340,16 @@ namespace Garnet.server.Vector.Filter
             return null; // Unterminated string
         }
 
-        private static ExprToken ParseSelector(string s, ref int p)
+        private static ExprToken ParseSelector(ReadOnlySpan<byte> s, ref int p)
         {
             p++; // Skip the leading dot
             var start = p;
             while (p < s.Length && IsSelectorChar(s[p])) p++;
-            var name = s.Substring(start, p - start);
+            var name = Encoding.UTF8.GetString(s.Slice(start, p - start));
             return ExprToken.NewSelector(name);
         }
 
-        private static ExprToken ParseTuple(string s, ref int p)
+        private static ExprToken ParseTuple(ReadOnlySpan<byte> s, ref int p)
         {
             p++; // Skip '['
             var elements = new ExprToken[64]; // max 64 elements
@@ -346,7 +358,7 @@ namespace Garnet.server.Vector.Filter
             SkipSpaces(s, ref p);
 
             // Handle empty tuple []
-            if (p < s.Length && s[p] == ']')
+            if (p < s.Length && s[p] == (byte)']')
             {
                 p++;
                 return ExprToken.NewTuple([], 0);
@@ -360,11 +372,11 @@ namespace Garnet.server.Vector.Filter
 
                 // Parse element: number or string
                 ExprToken ele;
-                if (char.IsDigit(s[p]) || s[p] == '-')
+                if (IsDigit(s[p]) || s[p] == (byte)'-')
                 {
                     ele = ParseNumber(s, ref p);
                 }
-                else if (s[p] == '"' || s[p] == '\'')
+                else if (s[p] == (byte)'"' || s[p] == (byte)'\'')
                 {
                     ele = ParseString(s, ref p);
                 }
@@ -379,8 +391,8 @@ namespace Garnet.server.Vector.Filter
                 SkipSpaces(s, ref p);
                 if (p >= s.Length) return null;
 
-                if (s[p] == ']') { p++; break; }
-                if (s[p] != ',') return null;
+                if (s[p] == (byte)']') { p++; break; }
+                if (s[p] != (byte)',') return null;
                 p++; // Skip comma
             }
 
@@ -389,51 +401,52 @@ namespace Garnet.server.Vector.Filter
             return ExprToken.NewTuple(result, count);
         }
 
-        private static ExprToken ParseOperatorOrLiteral(string s, ref int p)
+        private static ExprToken ParseOperatorOrLiteral(ReadOnlySpan<byte> s, ref int p)
         {
             var start = p;
 
             // Consume alphabetic or operator-special characters
-            while (p < s.Length && (char.IsLetter(s[p]) || OperatorSpecialChars.IndexOf(s[p]) >= 0))
+            while (p < s.Length && (IsLetter(s[p]) || IsOperatorSpecialChar(s[p])))
                 p++;
 
             var matchLen = p - start;
             if (matchLen == 0) return null;
 
             // Check for literals
-            if (matchLen == 4 && string.Compare(s, start, "null", 0, 4, StringComparison.Ordinal) == 0)
+            if (matchLen == 4 && s.Slice(start, 4).SequenceEqual("null"u8))
                 return ExprToken.NewNull();
 
-            if (matchLen == 4 && string.Compare(s, start, "true", 0, 4, StringComparison.Ordinal) == 0)
+            if (matchLen == 4 && s.Slice(start, 4).SequenceEqual("true"u8))
                 return ExprToken.NewNum(1);
 
-            if (matchLen == 5 && string.Compare(s, start, "false", 0, 5, StringComparison.Ordinal) == 0)
+            if (matchLen == 5 && s.Slice(start, 5).SequenceEqual("false"u8))
                 return ExprToken.NewNum(0);
 
             // Find best matching operator (longest match)
             OpCode bestCode = default;
             var bestLen = 0;
-            TryMatchOp(s, start, matchLen, "||", OpCode.Or, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "or", OpCode.Or, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "&&", OpCode.And, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "and", OpCode.And, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "**", OpCode.Pow, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, ">=", OpCode.Gte, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "<=", OpCode.Lte, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "==", OpCode.Eq, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "!=", OpCode.Neq, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "not", OpCode.Not, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "in", OpCode.In, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "(", OpCode.OParen, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, ")", OpCode.CParen, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "+", OpCode.Add, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "-", OpCode.Sub, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "*", OpCode.Mul, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "/", OpCode.Div, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "%", OpCode.Mod, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, ">", OpCode.Gt, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "<", OpCode.Lt, ref bestCode, ref bestLen);
-            TryMatchOp(s, start, matchLen, "!", OpCode.Not, ref bestCode, ref bestLen);
+            var consumed = s.Slice(start, matchLen);
+            TryMatchOp(consumed, "||"u8, OpCode.Or, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "or"u8, OpCode.Or, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "&&"u8, OpCode.And, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "and"u8, OpCode.And, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "**"u8, OpCode.Pow, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, ">="u8, OpCode.Gte, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "<="u8, OpCode.Lte, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "=="u8, OpCode.Eq, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "!="u8, OpCode.Neq, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "not"u8, OpCode.Not, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "in"u8, OpCode.In, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "("u8, OpCode.OParen, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, ")"u8, OpCode.CParen, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "+"u8, OpCode.Add, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "-"u8, OpCode.Sub, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "*"u8, OpCode.Mul, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "/"u8, OpCode.Div, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "%"u8, OpCode.Mod, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, ">"u8, OpCode.Gt, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "<"u8, OpCode.Lt, ref bestCode, ref bestLen);
+            TryMatchOp(consumed, "!"u8, OpCode.Not, ref bestCode, ref bestLen);
 
             if (bestLen == 0)
             {
@@ -446,12 +459,11 @@ namespace Garnet.server.Vector.Filter
             return ExprToken.NewOp(bestCode);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void TryMatchOp(string s, int start, int matchLen, string opName, OpCode opCode, ref OpCode bestCode, ref int bestLen)
+        private static void TryMatchOp(ReadOnlySpan<byte> consumed, ReadOnlySpan<byte> opName, OpCode opCode, ref OpCode bestCode, ref int bestLen)
         {
             var opLen = opName.Length;
-            if (opLen > matchLen) return;
-            if (string.Compare(s, start, opName, 0, opLen, StringComparison.Ordinal) != 0) return;
+            if (opLen > consumed.Length) return;
+            if (!consumed.Slice(0, opLen).SequenceEqual(opName)) return;
             if (opLen > bestLen)
             {
                 bestCode = opCode;

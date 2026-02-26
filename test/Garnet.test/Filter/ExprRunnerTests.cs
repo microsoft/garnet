@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Text;
 using Allure.NUnit;
 using Garnet.server.Vector.Filter;
 using NUnit.Framework;
@@ -178,7 +179,7 @@ namespace Garnet.test
         [Test]
         public void Runner_NonJsonAttributesExcluded()
         {
-            var program = ExprCompiler.TryCompile(".year > 1950", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".year > 1950"), out _);
             ClassicAssert.IsNotNull(program);
 
             var nonJson = System.Text.Encoding.UTF8.GetBytes("this is not json");

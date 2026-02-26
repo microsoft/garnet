@@ -19,7 +19,7 @@ namespace Garnet.test
         /// </summary>
         internal static ExprToken EvaluateFilter(string expression, string json)
         {
-            var program = ExprCompiler.TryCompile(expression, out var errpos);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), out var errpos);
             if (program == null)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
@@ -34,7 +34,7 @@ namespace Garnet.test
         /// </summary>
         internal static bool EvaluateFilterTruthy(string expression, string json)
         {
-            var program = ExprCompiler.TryCompile(expression, out var errpos);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), out var errpos);
             if (program == null)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
@@ -47,7 +47,7 @@ namespace Garnet.test
         /// </summary>
         internal static bool TryCompile(string expression, out ExprProgram program)
         {
-            program = ExprCompiler.TryCompile(expression, out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), out _);
             return program != null;
         }
 

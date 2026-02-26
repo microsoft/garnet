@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Text;
 using Allure.NUnit;
 using Garnet.server.Vector.Filter;
 using NUnit.Framework;
@@ -19,7 +20,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_IntegerNumbers()
         {
-            var program = ExprCompiler.TryCompile("42", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("42"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
@@ -29,7 +30,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_DecimalNumbers()
         {
-            var program = ExprCompiler.TryCompile("3.14", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("3.14"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
@@ -39,7 +40,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_NegativeNumbers()
         {
-            var program = ExprCompiler.TryCompile("-5", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("-5"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
@@ -49,13 +50,13 @@ namespace Garnet.test
         [Test]
         public void Compiler_StringLiterals()
         {
-            var program = ExprCompiler.TryCompile("\"hello\"", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("\"hello\""), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
             ClassicAssert.AreEqual("hello", program.Instructions[0].Str);
 
-            program = ExprCompiler.TryCompile("'world'", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("'world'"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
@@ -65,7 +66,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_EscapedStringLiterals()
         {
-            var program = ExprCompiler.TryCompile("\"hello\\\"world\"", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("\"hello\\\"world\""), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
@@ -75,7 +76,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_UnterminatedStringReturnsFalse()
         {
-            var program = ExprCompiler.TryCompile("\"hello", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("\"hello"), out _);
             ClassicAssert.IsNull(program);
         }
 
@@ -83,7 +84,7 @@ namespace Garnet.test
         public void Compiler_SubtractionNotConfusedWithNegative()
         {
             // ".a - 5" → postfix: [SEL:a] [NUM:5] [OP:Sub]
-            var program = ExprCompiler.TryCompile(".a - 5", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".a - 5"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(3, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
@@ -96,7 +97,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_Selectors()
         {
-            var program = ExprCompiler.TryCompile(".year", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".year"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
@@ -107,7 +108,7 @@ namespace Garnet.test
         public void Compiler_Keywords()
         {
             // "true and false" → [NUM:1] [NUM:0] [OP:And]
-            var program = ExprCompiler.TryCompile("true and false", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("true and false"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(3, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
@@ -121,13 +122,13 @@ namespace Garnet.test
         [Test]
         public void Compiler_Booleans()
         {
-            var program = ExprCompiler.TryCompile("true", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("true"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
             ClassicAssert.AreEqual(1.0, program.Instructions[0].Num);
 
-            program = ExprCompiler.TryCompile("false", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("false"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
@@ -137,31 +138,31 @@ namespace Garnet.test
         [Test]
         public void Compiler_TwoCharOperators()
         {
-            var program = ExprCompiler.TryCompile("1 == 2", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 == 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Eq, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 != 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 != 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Neq, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 >= 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 >= 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Gte, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 <= 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 <= 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Lte, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("true && false", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("true && false"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.And, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("true || false", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("true || false"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Or, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("2 ** 3", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("2 ** 3"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Pow, program.Instructions[2].OpCode);
         }
@@ -169,27 +170,27 @@ namespace Garnet.test
         [Test]
         public void Compiler_SingleCharOperators()
         {
-            var program = ExprCompiler.TryCompile("1 > 2", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 > 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Gt, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 < 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 < 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Lt, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 + 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 + 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Add, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 * 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 * 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Mul, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 / 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 / 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Div, program.Instructions[2].OpCode);
 
-            program = ExprCompiler.TryCompile("1 % 2", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 % 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(OpCode.Mod, program.Instructions[2].OpCode);
         }
@@ -197,7 +198,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_Parentheses()
         {
-            var program = ExprCompiler.TryCompile("(.year > 10)", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("(.year > 10)"), out _);
             ClassicAssert.IsNotNull(program);
             // Postfix: [SEL:year] [NUM:10] [OP:Gt]
             ClassicAssert.AreEqual(3, program.Length);
@@ -206,7 +207,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_ComplexExpression()
         {
-            var program = ExprCompiler.TryCompile(".year > 1950 and .rating >= 4.0", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".year > 1950 and .rating >= 4.0"), out _);
             ClassicAssert.IsNotNull(program);
             // Postfix: [SEL:year] [NUM:1950] [OP:Gt] [SEL:rating] [NUM:4.0] [OP:Gte] [OP:And]
             ClassicAssert.AreEqual(7, program.Length);
@@ -215,24 +216,24 @@ namespace Garnet.test
         [Test]
         public void Compiler_EmptyInput()
         {
-            var program = ExprCompiler.TryCompile("", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(""), out _);
             ClassicAssert.IsNull(program);
 
-            program = ExprCompiler.TryCompile("   ", out _);
+            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("   "), out _);
             ClassicAssert.IsNull(program);
         }
 
         [Test]
         public void Compiler_UnexpectedCharacterReturnsFalse()
         {
-            var program = ExprCompiler.TryCompile("@", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("@"), out _);
             ClassicAssert.IsNull(program);
         }
 
         [Test]
         public void Compiler_NullLiteral()
         {
-            var program = ExprCompiler.TryCompile("null", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("null"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Null, program.Instructions[0].TokenType);
@@ -241,7 +242,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_TupleLiteral()
         {
-            var program = ExprCompiler.TryCompile("[1, \"foo\", 42]", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("[1, \"foo\", 42]"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Tuple, program.Instructions[0].TokenType);
@@ -251,7 +252,7 @@ namespace Garnet.test
         [Test]
         public void Compiler_HyphenInSelector()
         {
-            var program = ExprCompiler.TryCompile(".my-field", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".my-field"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
@@ -262,7 +263,7 @@ namespace Garnet.test
         public void Compiler_PrecedenceMultiplicationBeforeAddition()
         {
             // "1 + 2 * 3" → [1] [2] [3] [*] [+]
-            var program = ExprCompiler.TryCompile("1 + 2 * 3", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("1 + 2 * 3"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(5, program.Length);
             ClassicAssert.AreEqual(OpCode.Mul, program.Instructions[3].OpCode);
@@ -273,7 +274,7 @@ namespace Garnet.test
         public void Compiler_PrecedenceAndBeforeOr()
         {
             // "true or false and true" → [1] [0] [1] [and] [or]
-            var program = ExprCompiler.TryCompile("true or false and true", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("true or false and true"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(5, program.Length);
             ClassicAssert.AreEqual(OpCode.And, program.Instructions[3].OpCode);
@@ -284,7 +285,7 @@ namespace Garnet.test
         public void Compiler_ParenthesesOverridePrecedence()
         {
             // "(1 + 2) * 3" → [1] [2] [+] [3] [*]
-            var program = ExprCompiler.TryCompile("(1 + 2) * 3", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("(1 + 2) * 3"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(5, program.Length);
             ClassicAssert.AreEqual(OpCode.Add, program.Instructions[2].OpCode);
@@ -295,7 +296,7 @@ namespace Garnet.test
         public void Compiler_ContainmentOperator()
         {
             // '"action" in .tags' → [STR:action] [SEL:tags] [OP:In]
-            var program = ExprCompiler.TryCompile("\"action\" in .tags", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("\"action\" in .tags"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(3, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
@@ -307,7 +308,7 @@ namespace Garnet.test
         public void Compiler_ExponentiationRightAssociative()
         {
             // "2 ** 3 ** 2" → 2 ** (3 ** 2) = 512
-            var program = ExprCompiler.TryCompile("2 ** 3 ** 2", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("2 ** 3 ** 2"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(5, program.Length);
             ClassicAssert.AreEqual(OpCode.Pow, program.Instructions[3].OpCode);
@@ -321,7 +322,7 @@ namespace Garnet.test
         public void Compiler_UnaryNot()
         {
             // "not true" → [NUM:1] [OP:Not]
-            var program = ExprCompiler.TryCompile("not true", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("not true"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(2, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Num, program.Instructions[0].TokenType);
@@ -332,21 +333,21 @@ namespace Garnet.test
         [Test]
         public void Compiler_ErrorOnMissingClosingParen()
         {
-            var program = ExprCompiler.TryCompile("(1 + 2", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("(1 + 2"), out _);
             ClassicAssert.IsNull(program);
         }
 
         [Test]
         public void Compiler_ErrorOnUnexpectedToken()
         {
-            var program = ExprCompiler.TryCompile(")", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(")"), out _);
             ClassicAssert.IsNull(program);
         }
 
         [Test]
         public void Compiler_InWithTupleLiteral()
         {
-            var program = ExprCompiler.TryCompile(".director in [\"Spielberg\", \"Nolan\"]", out _);
+            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".director in [\"Spielberg\", \"Nolan\"]"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(3, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
