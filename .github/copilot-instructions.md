@@ -100,7 +100,7 @@ Full guide: https://microsoft.github.io/garnet/docs/dev/garnet-api
    - **String commands**: Add to `libs/server/Storage/Session/MainStore/MainStoreOps.cs`. Call Tsavorite's `Read` or `RMW` via the string context. For RMW, implement init/update logic in `libs/server/Storage/Functions/MainStore/RMWMethods.cs`.
    - **Object (collection) commands**: Add to `libs/server/Storage/Session/ObjectStore/[ObjectName]Ops.cs`. Call `ReadObjectStoreOperation` or `RMWObjectStoreOperation` via the object context, then implement the case in `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`.
    - **Type-agnostic commands** (EXISTS, DELETE, TTL, EXPIRE, TYPE, etc.): Add to `libs/server/Storage/Session/UnifiedStore/UnifiedStoreOps.cs`. Use the unified context. Implement callbacks in `libs/server/Storage/Functions/UnifiedStore/RMWMethods.cs`.
-7. **Transaction support**: For standard commands, define `KeySpecs` in the command's metadata — the framework automatically handles key locking via `TxnKeyManager.LockKeys()`. For custom multi-key operations, manually call `txnManager.SaveKeyEntryToLock(key, isObject, lockType)` in `libs/server/Transaction/TxnKeyManager.cs`.
+7. **Transaction support**: For standard commands, define `KeySpecs` in the command's metadata — the framework automatically handles key locking via `TxnKeyManager.LockKeys()`. For custom multi-key operations, manually call `txnManager.SaveKeyEntryToLock(key, lockType)` in `libs/server/Transaction/TxnKeyManager.cs`; the key is a `PinnedSpanByte` in the unified key-space, so object-vs-string handling is managed internally by the transaction layer.
 8. **Tests**: Add tests using both `StackExchange.Redis` and `LightClient` where applicable. Object command tests go in `test/Garnet.test/Resp[ObjectName]Tests.cs`, others in `test/Garnet.test/RespTests.cs` or similar.
 9. **Documentation**: Update the appropriate markdown file under `website/docs/commands/` and mark the command as supported in `website/docs/commands/api-compatibility.md`.
 10. **Command info metadata**: Add the command to `playground/CommandInfoUpdater/SupportedCommand.cs`, then run the updater tool:
@@ -139,7 +139,7 @@ This same header is used throughout the entire codebase, including Tsavorite fil
 
 - **Framework**: NUnit with `[TestFixture]`, `[Test]`, `[SetUp]`, `[TearDown]`
 - **Allure required**: All test fixtures must inherit from `AllureTestBase` and have the `[AllureNUnit]` attribute. CI enforces this via assembly reflection checks — builds will fail if any test fixture is missing either.
-- **Server lifecycle**: Create in `[SetUp]` via `TestUtils.CreateGarnetServer(TestUtils.MethodTestDir)`, call `.Start()`, then `.Dispose()` in `[TearDown]`. Common optional parameters: `enableAOF`, `lowMemory`, `enableTLS`, `disablePubSub`, `useAcl`, `defaultPassword`.. Common optional parameters include `enableAOF:`, `lowMemory:`, `enableTLS:`, `enableCluster:`, `tryRecover:`, `disableObjects:`, `useAcl:`, and `defaultPassword:`.
+- **Server lifecycle**: Create in `[SetUp]` via `TestUtils.CreateGarnetServer(TestUtils.MethodTestDir)`, call `.Start()`, then `.Dispose()` in `[TearDown]`. Common optional parameters include `enableAOF`, `lowMemory`, `enableTLS`, `enableCluster`, `tryRecover`, `disableObjects`, `useAcl`, and `defaultPassword`.
 - **Teardown**: Always call `TestUtils.OnTearDown()` (checks for leaked `LightEpoch` instances)
 - **Test directory cleanup**: `TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true)` at the start of `[SetUp]`
 - **Namespace**: Test files use `Garnet.test` namespace (even files in subdirectories like `DiskANN/`)
@@ -193,7 +193,7 @@ To add a new Garnet server setting:
 - Private/internal fields: camelCase; constants and statics: PascalCase
 - `TreatWarningsAsErrors` is enabled — all warnings must be resolved
 - Central package version management via `Directory.Packages.props`
-- XML doc comments (`/// <summary>`) required on public methods with `<param>` tags for each parameter
+- XML doc comments (`/// <summary>`) are strongly recommended on public methods, with `<param>` tags for each parameter; analyzer rules for missing docs are currently configured as suggestions (see `.editorconfig`)
 - Comment format: `// Comment starting with a capital letter` (one space after `//`)
 
 ### Performance Conventions
