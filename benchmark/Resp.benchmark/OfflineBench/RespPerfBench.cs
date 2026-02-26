@@ -371,8 +371,8 @@ namespace Resp.benchmark
             }
 
             AofAddress beginAddress = default;
-            if (opts.Client == ClientType.InProc && sessions[0].StoreWrapper.appendOnlyFile != null)
-                beginAddress = sessions[0].StoreWrapper.TailAddress;
+            if (opts.Client == ClientType.InProc && server.StoreWrapper.appendOnlyFile != null)
+                beginAddress = server.StoreWrapper.appendOnlyFile.Log.TailAddress;
 
             // Start threads.
             foreach (var worker in workers)
@@ -403,15 +403,12 @@ namespace Resp.benchmark
                 Console.WriteLine($"[Throughput]: {opsPerSecond:N2} ops/sec");
                 if (ClientType.InProc == opts.Client)
                 {
-                    var count = sessions[0].DbSize();
                     Console.WriteLine($"[BytesConsumed]: {total_bytes_consumed:N0} bytes");
                     Console.WriteLine($"[BytesConsumedPerSecond]: {byteConsumerPerSecond:N2} GiB/sec");
-                    Console.WriteLine($"[DB Size]: {count}");
-                    if (sessions[0].StoreWrapper.appendOnlyFile != null)
+                    if (server.StoreWrapper.appendOnlyFile != null)
                     {
                         var tailAddress = sessions[0].StoreWrapper.TailAddress;
                         var aofSize = tailAddress.AggregateDiff(beginAddress);
-
                         var tpt = (aofSize / seconds) / (double)1_000_000_000;
                         Console.WriteLine($"[AOF Total Size]: {aofSize:N2} bytes");
                         Console.WriteLine($"[AOF Append Tpt]: {tpt:N2} GiB/sec");
