@@ -7,10 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Resp.benchmark\BenchmarkLoggerProvider.cs" Link="BenchmarkLoggerProvider.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -86,6 +86,7 @@ namespace Garnet.cluster
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 epoch: epoch,
+                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 logger: logger);
             this.initialized = 0;
             this.logger = logger;

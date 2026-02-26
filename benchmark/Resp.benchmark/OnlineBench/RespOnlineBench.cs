@@ -1,13 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
-using System.Threading;
-using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using HdrHistogram;
@@ -64,7 +60,6 @@ namespace Resp.benchmark
 
         readonly CancellationTokenSource cts = new();
         volatile int workerCount = 0;
-
 
         public RespOnlineBench(Options opts, int resetInterval = 30, int runDuration = int.MaxValue, ILoggerFactory loggerFactory = null)
         {
