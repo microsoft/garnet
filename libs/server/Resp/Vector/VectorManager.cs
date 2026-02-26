@@ -7,7 +7,6 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -934,8 +933,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Apply post-filtering to vector search results based on JSON path filter expression.
+        /// Apply post-filtering to vector search results using a compiled filter expression.
         /// Returns the number of results that passed the filter, or -1 if the filter expression is invalid.
+        ///
+        /// Architecture (modeled after Redis expr.c + fastjson.c):
+        /// 1. The filter string is compiled ONCE into a flat postfix program (ExprCompiler).
+        /// 2. For each candidate, the program is executed against the raw JSON attribute bytes
+        ///    using a stack-based VM (ExprRunner) with on-demand field extraction (AttributeExtractor).
+        /// 3. No JsonDocument DOM is allocated — fields are extracted directly from the raw bytes.
         ///
         /// TODO: A better approach would be to produce a bitmap of passing elements and let
         /// NetworkVSIM handle skipping non-matching entries, avoiding the in-place compaction copies.
@@ -953,24 +958,15 @@ namespace Garnet.server
                 return numResults;
             }
 
-            // Convert filter bytes to string for tokenization.
-            // NOTE: This allocation is required because the tokenizer operates on strings.
-            // A future optimization could make the tokenizer work directly on ReadOnlySpan<byte>.
+            // Convert filter bytes to string for compilation.
+            // NOTE: This allocation is required because the compiler operates on strings.
+            // A future optimization could make the compiler work directly on ReadOnlySpan<byte>.
             var filterStr = Encoding.UTF8.GetString(filter);
 
-            // Tokenize and parse the filter expression. If this fails, we return -1 to indicate a bad filter expression.
-            if (!VectorFilterTokenizer.TryTokenize(filterStr, out var tokens, out _))
-            {
-                return -1;
-            }
-
-            if (!VectorFilterParser.TryParseExpression(tokens, 0, out var filterExpr, out var endIndex, out _))
-            {
-                return -1;
-            }
-
-            // Ensure the entire token stream was consumed by the parser
-            if (endIndex != tokens.Count)
+            // Compile the filter expression into a flat postfix program.
+            // This is done once and reused for all candidate evaluations.
+            var program = ExprCompiler.TryCompile(filterStr, out _);
+            if (program == null)
             {
                 return -1;
             }
@@ -997,8 +993,9 @@ namespace Garnet.server
                 var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
                 var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
 
-                // Evaluate filter
-                if (EvaluateFilter(filterExpr, attrData))
+                // Execute the compiled filter program against raw JSON bytes.
+                // No JsonDocument DOM allocation — AttributeExtractor extracts fields on demand.
+                if (ExprRunner.Run(program, attrData))
                 {
                     // Copy ID if not already in place
                     if (idReadPos != idWritePos)
@@ -1034,27 +1031,6 @@ namespace Garnet.server
             outputAttributes.Length = attrWritePos;
 
             return filteredCount;
-        }
-
-        /// <summary>
-        /// Evaluate a pre-parsed filter expression against attribute data.
-        /// Returns false if the JSON is malformed or the filter cannot be evaluated.
-        /// </summary>
-        private static bool EvaluateFilter(Expr filterExpr, ReadOnlySpan<byte> attributeJson)
-        {
-            try
-            {
-                var reader = new Utf8JsonReader(attributeJson);
-                using var jsonDoc = JsonDocument.ParseValue(ref reader);
-                var root = jsonDoc.RootElement;
-
-                return VectorFilterEvaluator.EvaluateFilterBool(filterExpr, root);
-            }
-            catch (JsonException)
-            {
-                // Malformed JSON in attribute data — exclude the result
-                return false;
-            }
         }
 
         [Conditional("DEBUG")]
