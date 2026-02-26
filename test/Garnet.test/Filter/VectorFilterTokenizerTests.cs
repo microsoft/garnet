@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Linq;
 using Allure.NUnit;
 using Garnet.server.Vector.Filter;
@@ -17,7 +16,7 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_IntegerNumbers()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("42");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("42", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Number, tokens[0].Type);
             ClassicAssert.AreEqual("42", tokens[0].Value);
@@ -26,7 +25,7 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_DecimalNumbers()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("3.14");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("3.14", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Number, tokens[0].Type);
             ClassicAssert.AreEqual("3.14", tokens[0].Value);
@@ -35,7 +34,7 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_NegativeNumbers()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("-5");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("-5", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Number, tokens[0].Type);
             ClassicAssert.AreEqual("-5", tokens[0].Value);
@@ -44,12 +43,12 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_StringLiterals()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("\"hello\"");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("\"hello\"", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.String, tokens[0].Type);
             ClassicAssert.AreEqual("hello", tokens[0].Value);
 
-            tokens = VectorFilterTokenizer.Tokenize("'world'");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("'world'", out tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.String, tokens[0].Type);
             ClassicAssert.AreEqual("world", tokens[0].Value);
@@ -58,23 +57,25 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_EscapedStringLiterals()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("\"hello\\\"world\"");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("\"hello\\\"world\"", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.String, tokens[0].Type);
             ClassicAssert.AreEqual("hello\\\"world", tokens[0].Value);
         }
 
         [Test]
-        public void Tokenizer_UnterminatedStringThrows()
+        public void Tokenizer_UnterminatedStringReturnsFalse()
         {
-            ClassicAssert.Throws<InvalidOperationException>(() =>
-                VectorFilterTokenizer.Tokenize("\"hello"));
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("\"hello", out var tokens, out var error));
+            ClassicAssert.IsNull(tokens);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("Unterminated string"));
         }
 
         [Test]
         public void Tokenizer_SubtractionNotConfusedWithNegative()
         {
-            var tokens = VectorFilterTokenizer.Tokenize(".a - 5");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(".a - 5", out var tokens, out _));
             ClassicAssert.AreEqual(3, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Identifier, tokens[0].Type);
             ClassicAssert.AreEqual(TokenType.Operator, tokens[1].Type);
@@ -86,12 +87,12 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_Identifiers()
         {
-            var tokens = VectorFilterTokenizer.Tokenize(".year");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(".year", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Identifier, tokens[0].Type);
             ClassicAssert.AreEqual(".year", tokens[0].Value);
 
-            tokens = VectorFilterTokenizer.Tokenize("_field");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("_field", out tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Identifier, tokens[0].Type);
             ClassicAssert.AreEqual("_field", tokens[0].Value);
@@ -103,7 +104,7 @@ namespace Garnet.test
             var keywords = new[] { "and", "or", "not", "in" };
             foreach (var kw in keywords)
             {
-                var tokens = VectorFilterTokenizer.Tokenize(kw);
+                ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(kw, out var tokens, out _));
                 ClassicAssert.AreEqual(1, tokens.Count);
                 ClassicAssert.AreEqual(TokenType.Keyword, tokens[0].Type);
                 ClassicAssert.AreEqual(kw, tokens[0].Value);
@@ -113,12 +114,12 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_Booleans()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("true");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("true", out var tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Boolean, tokens[0].Type);
             ClassicAssert.AreEqual("true", tokens[0].Value);
 
-            tokens = VectorFilterTokenizer.Tokenize("false");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("false", out tokens, out _));
             ClassicAssert.AreEqual(1, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Boolean, tokens[0].Type);
             ClassicAssert.AreEqual("false", tokens[0].Value);
@@ -130,7 +131,7 @@ namespace Garnet.test
             var ops = new[] { "==", "!=", ">=", "<=", "&&", "||", "**" };
             foreach (var op in ops)
             {
-                var tokens = VectorFilterTokenizer.Tokenize($"1 {op} 2");
+                ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize($"1 {op} 2", out var tokens, out _));
                 var opToken = tokens.First(t => t.Type == TokenType.Operator);
                 ClassicAssert.AreEqual(op, opToken.Value);
             }
@@ -142,7 +143,7 @@ namespace Garnet.test
             var ops = new[] { ">", "<", "+", "-", "*", "/", "%", "!" };
             foreach (var op in ops)
             {
-                var tokens = VectorFilterTokenizer.Tokenize($".a {op} .b");
+                ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize($".a {op} .b", out var tokens, out _));
                 var opToken = tokens.First(t => t.Type == TokenType.Operator);
                 ClassicAssert.AreEqual(op, opToken.Value);
             }
@@ -151,7 +152,7 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_Delimiters()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("(.year > 10)");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("(.year > 10)", out var tokens, out _));
             ClassicAssert.AreEqual(TokenType.Delimiter, tokens[0].Type);
             ClassicAssert.AreEqual("(", tokens[0].Value);
             ClassicAssert.AreEqual(TokenType.Delimiter, tokens[4].Type);
@@ -161,7 +162,7 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_ComplexExpression()
         {
-            var tokens = VectorFilterTokenizer.Tokenize(".year > 1950 and .rating >= 4.0");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(".year > 1950 and .rating >= 4.0", out var tokens, out _));
             ClassicAssert.AreEqual(7, tokens.Count);
             ClassicAssert.AreEqual(TokenType.Identifier, tokens[0].Type);
             ClassicAssert.AreEqual(TokenType.Operator, tokens[1].Type);
@@ -175,11 +176,47 @@ namespace Garnet.test
         [Test]
         public void Tokenizer_EmptyInput()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("", out var tokens, out _));
             ClassicAssert.AreEqual(0, tokens.Count);
 
-            tokens = VectorFilterTokenizer.Tokenize("   ");
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("   ", out tokens, out _));
             ClassicAssert.AreEqual(0, tokens.Count);
+        }
+
+        [Test]
+        public void Tokenizer_UnexpectedCharacterReturnsFalse()
+        {
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("@", out var tokens, out var error));
+            ClassicAssert.IsNull(tokens);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("Unexpected character"));
+        }
+
+        [Test]
+        public void Tokenizer_MultipleDotsInNumberReturnsFalse()
+        {
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("1.2.3", out var tokens, out var error));
+            ClassicAssert.IsNull(tokens);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("multiple decimal points"));
+        }
+
+        [Test]
+        public void Tokenizer_DoubleDotInNumberReturnsFalse()
+        {
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("1..023", out var tokens, out var error));
+            ClassicAssert.IsNull(tokens);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("multiple decimal points"));
+        }
+
+        [Test]
+        public void Tokenizer_ManyDotsInNumberReturnsFalse()
+        {
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("123.....23", out var tokens, out var error));
+            ClassicAssert.IsNull(tokens);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("multiple decimal points"));
         }
     }
 }

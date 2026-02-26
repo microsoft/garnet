@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -31,6 +30,7 @@ namespace Garnet.server.Vector.Filter
     /// <summary>
     /// Tokenizer for vector filter expressions.
     /// Converts filter strings into tokens for parsing.
+    /// Uses TryTokenize pattern to avoid exceptions in the hot path.
     /// </summary>
     internal static class VectorFilterTokenizer
     {
@@ -54,9 +54,18 @@ namespace Garnet.server.Vector.Filter
         private const string OpPipePipe = "||";
         private const string OpStarStar = "**";
 
-        public static List<Token> Tokenize(string input)
+        /// <summary>
+        /// Attempt to tokenize the input string into a list of tokens.
+        /// Returns false with an error message if the input is malformed.
+        /// </summary>
+        /// <param name="input">The filter expression string to tokenize.</param>
+        /// <param name="tokens">The resulting list of tokens, or null on failure.</param>
+        /// <param name="error">An error message describing the failure, or null on success.</param>
+        /// <returns>True if tokenization succeeded; false otherwise.</returns>
+        public static bool TryTokenize(string input, out List<Token> tokens, out string error)
         {
-            var tokens = new List<Token>();
+            tokens = new List<Token>();
+            error = null;
             var i = 0;
 
             while (i < input.Length)
@@ -80,8 +89,22 @@ namespace Garnet.server.Vector.Filter
                 {
                     var start = i;
                     if (input[i] == '-') i++;
+
+                    var dotCount = 0;
                     while (i < input.Length && (char.IsDigit(input[i]) || input[i] == '.'))
+                    {
+                        if (input[i] == '.')
+                        {
+                            dotCount++;
+                            if (dotCount > 1)
+                            {
+                                error = $"Invalid number literal with multiple decimal points at position {start}";
+                                tokens = null;
+                                return false;
+                            }
+                        }
                         i++;
+                    }
                     tokens.Add(new Token(TokenType.Number, input.Substring(start, i - start)));
                     continue;
                 }
@@ -115,7 +138,11 @@ namespace Garnet.server.Vector.Filter
                         i++;
                     }
                     if (i >= input.Length)
-                        throw new InvalidOperationException($"Unterminated string literal starting at position {start - 1}");
+                    {
+                        error = $"Unterminated string literal starting at position {start - 1}";
+                        tokens = null;
+                        return false;
+                    }
                     tokens.Add(new Token(TokenType.String, input.Substring(start, i - start)));
                     i++; // Skip closing quote
                     continue;
@@ -143,10 +170,12 @@ namespace Garnet.server.Vector.Filter
                     continue;
                 }
 
-                throw new InvalidOperationException($"Unexpected character in filter expression: '{input[i]}' at position {i}");
+                error = $"Unexpected character in filter expression: '{input[i]}' at position {i}";
+                tokens = null;
+                return false;
             }
 
-            return tokens;
+            return true;
         }
 
         /// <summary>

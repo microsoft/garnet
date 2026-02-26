@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using Allure.NUnit;
 using Garnet.server.Vector.Filter;
@@ -17,8 +16,8 @@ namespace Garnet.test
         [Test]
         public void Parser_NumberLiteral()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("42");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out var end);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("42", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out var end, out _));
             ClassicAssert.AreEqual(1, end);
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
             var lit = (LiteralExpr)expr;
@@ -29,8 +28,8 @@ namespace Garnet.test
         [Test]
         public void Parser_StringLiteral()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("\"hello\"");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("\"hello\"", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
             var lit = (LiteralExpr)expr;
             ClassicAssert.AreEqual(FilterValueKind.String, lit.Value.Kind);
@@ -40,15 +39,15 @@ namespace Garnet.test
         [Test]
         public void Parser_BooleanLiteral()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("true");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("true", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
             var lit = (LiteralExpr)expr;
             ClassicAssert.AreEqual(FilterValueKind.Number, lit.Value.Kind);
             ClassicAssert.AreEqual(1.0, lit.Value.AsNumber());
 
-            tokens = VectorFilterTokenizer.Tokenize("false");
-            expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("false", out tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out expr, out _, out _));
             ClassicAssert.IsInstanceOf<LiteralExpr>(expr);
             lit = (LiteralExpr)expr;
             ClassicAssert.AreEqual(FilterValueKind.Number, lit.Value.Kind);
@@ -58,8 +57,8 @@ namespace Garnet.test
         [Test]
         public void Parser_MemberAccess()
         {
-            var tokens = VectorFilterTokenizer.Tokenize(".year");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(".year", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<MemberExpr>(expr);
             ClassicAssert.AreEqual("year", ((MemberExpr)expr).Property);
         }
@@ -67,8 +66,8 @@ namespace Garnet.test
         [Test]
         public void Parser_UnaryNot()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("not true");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("not true", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<UnaryExpr>(expr);
             var unary = (UnaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.Not, unary.Operator);
@@ -78,8 +77,8 @@ namespace Garnet.test
         [Test]
         public void Parser_UnaryNegation()
         {
-            var tokens = VectorFilterTokenizer.Tokenize(".a + (-.b)");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(".a + (-.b)", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.Add, binary.Operator);
@@ -90,8 +89,8 @@ namespace Garnet.test
         [Test]
         public void Parser_OperatorPrecedence_MultiplicationBeforeAddition()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("1 + 2 * 3");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("1 + 2 * 3", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.Add, binary.Operator);
@@ -103,8 +102,8 @@ namespace Garnet.test
         [Test]
         public void Parser_OperatorPrecedence_AndBeforeOr()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("true or false and true");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("true or false and true", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.Or, binary.Operator);
@@ -116,8 +115,8 @@ namespace Garnet.test
         [Test]
         public void Parser_ParenthesesOverridePrecedence()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("(1 + 2) * 3");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("(1 + 2) * 3", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.Multiply, binary.Operator);
@@ -128,8 +127,8 @@ namespace Garnet.test
         [Test]
         public void Parser_Containment()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("\"action\" in .tags");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("\"action\" in .tags", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.In, binary.Operator);
@@ -140,8 +139,8 @@ namespace Garnet.test
         [Test]
         public void Parser_ExponentiationRightAssociative()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("2 ** 3 ** 2");
-            var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("2 ** 3 ** 2", out var tokens, out _));
+            ClassicAssert.IsTrue(VectorFilterParser.TryParseExpression(tokens, 0, out var expr, out _, out _));
             ClassicAssert.IsInstanceOf<BinaryExpr>(expr);
             var binary = (BinaryExpr)expr;
             ClassicAssert.AreEqual(OperatorKind.Power, binary.Operator);
@@ -154,32 +153,61 @@ namespace Garnet.test
         public void Parser_ErrorOnUnexpectedEnd()
         {
             var tokens = new List<Token>();
-            ClassicAssert.Throws<InvalidOperationException>(() =>
-                VectorFilterParser.ParseExpression(tokens, 0, out _));
+            ClassicAssert.IsFalse(VectorFilterParser.TryParseExpression(tokens, 0, out var result, out _, out var error));
+            ClassicAssert.IsNull(result);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("Unexpected end"));
         }
 
         [Test]
         public void Parser_ErrorOnMissingClosingParen()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("(1 + 2");
-            ClassicAssert.Throws<InvalidOperationException>(() =>
-                VectorFilterParser.ParseExpression(tokens, 0, out _));
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize("(1 + 2", out var tokens, out _));
+            ClassicAssert.IsFalse(VectorFilterParser.TryParseExpression(tokens, 0, out var result, out _, out var error));
+            ClassicAssert.IsNull(result);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("Missing closing parenthesis"));
         }
 
         [Test]
         public void Parser_ErrorOnInvalidNumberLiteral_DoubleDot()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("1..023");
-            ClassicAssert.Throws<FormatException>(() =>
-                VectorFilterParser.ParseExpression(tokens, 0, out _));
+            // Now caught at tokenization time: "1..023" has multiple decimal points
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("1..023", out _, out var error));
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("multiple decimal points"));
         }
 
         [Test]
         public void Parser_ErrorOnInvalidNumberLiteral_MultipleDots()
         {
-            var tokens = VectorFilterTokenizer.Tokenize("1.2.3");
-            ClassicAssert.Throws<FormatException>(() =>
-                VectorFilterParser.ParseExpression(tokens, 0, out _));
+            // Now caught at tokenization time: "1.2.3" has multiple decimal points
+            ClassicAssert.IsFalse(VectorFilterTokenizer.TryTokenize("1.2.3", out _, out var error));
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("multiple decimal points"));
+        }
+
+        [Test]
+        public void Parser_ErrorOnExcessiveRecursionDepth()
+        {
+            // Build a deeply nested expression: (((((...(1)...))))
+            var depth = 100;
+            var expr = new string('(', depth) + "1" + new string(')', depth);
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(expr, out var tokens, out _));
+            ClassicAssert.IsFalse(VectorFilterParser.TryParseExpression(tokens, 0, out var result, out _, out var error));
+            ClassicAssert.IsNull(result);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("maximum nesting depth"));
+        }
+
+        [Test]
+        public void Parser_ErrorOnUnexpectedToken()
+        {
+            ClassicAssert.IsTrue(VectorFilterTokenizer.TryTokenize(")", out var tokens, out _));
+            ClassicAssert.IsFalse(VectorFilterParser.TryParseExpression(tokens, 0, out var result, out _, out var error));
+            ClassicAssert.IsNull(result);
+            ClassicAssert.IsNotNull(error);
+            ClassicAssert.IsTrue(error.Contains("Unexpected token"));
         }
     }
 }

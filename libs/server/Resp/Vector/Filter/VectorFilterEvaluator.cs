@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -11,9 +12,24 @@ namespace Garnet.server.Vector.Filter
     /// Evaluator for vector filter expressions.
     /// Evaluates parsed expression trees against JSON attribute data.
     /// Returns FilterValue (a struct) to avoid boxing allocations on every evaluation.
+    ///
+    /// Note: This evaluator operates over top-level properties of the JSON document only.
+    /// Nested property access is not supported. A future optimization could replace the
+    /// JsonElement-based lookup with a raw span + (offset, length) pairs approach for
+    /// better performance, avoiding JsonDocument allocation entirely.
     /// </summary>
     internal static class VectorFilterEvaluator
     {
+        /// <summary>
+        /// Evaluate a filter expression against a JSON element and return a boolean result.
+        /// This is the primary public API for filter evaluation.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool EvaluateFilterBool(Expr expr, JsonElement root)
+        {
+            return IsTruthy(EvaluateExpression(expr, root));
+        }
+
         /// <summary>
         /// Evaluate a filter expression against a JSON element.
         /// Returns a FilterValue (struct) — no boxing occurs for numeric results.
@@ -60,7 +76,7 @@ namespace Garnet.server.Vector.Filter
             {
                 OperatorKind.Not => IsTruthy(operand) ? FilterValue.False : FilterValue.True,
                 OperatorKind.Negate => FilterValue.FromNumber(-ToNumber(operand)),
-                _ => throw new InvalidOperationException($"Unknown unary operator: {unary.Operator}")
+                _ => FilterValue.Null
             };
         }
 
@@ -102,7 +118,7 @@ namespace Garnet.server.Vector.Filter
                     OperatorKind.Equal => FilterValue.FromBool(AreEqual(left, right)),
                     OperatorKind.NotEqual => FilterValue.FromBool(!AreEqual(left, right)),
                     OperatorKind.In => FilterValue.FromBool(IsIn(left, right)),
-                    _ => throw new InvalidOperationException($"Unknown operator: {binary.Operator}")
+                    _ => FilterValue.Null
                 };
             }
         }
@@ -113,7 +129,7 @@ namespace Garnet.server.Vector.Filter
             return value.Kind switch
             {
                 FilterValueKind.Number => value.AsNumber(),
-                FilterValueKind.String => double.TryParse(value.AsString(), out var result) ? result : 0,
+                FilterValueKind.String => double.TryParse(value.AsString(), NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var result) ? result : 0,
                 _ => 0
             };
         }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace Garnet.server.Vector.Filter
@@ -11,7 +10,6 @@ namespace Garnet.server.Vector.Filter
     /// Discriminated union value type to eliminate boxing of doubles/strings
     /// throughout the filter evaluation pipeline.
     /// </summary>
-    [StructLayout(LayoutKind.Auto)]
     internal readonly struct FilterValue
     {
         private readonly double _number;

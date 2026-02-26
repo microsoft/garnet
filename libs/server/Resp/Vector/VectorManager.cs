@@ -935,6 +935,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Apply post-filtering to vector search results based on JSON path filter expression.
+        /// Returns the number of results that passed the filter, or -1 if the filter expression is invalid.
+        ///
+        /// TODO: A better approach would be to produce a bitmap of passing elements and let
+        /// NetworkVSIM handle skipping non-matching entries, avoiding the in-place compaction copies.
+        /// For now we compact in-place to minimize the scope of changes.
         /// </summary>
         private int ApplyPostFilter(
             ReadOnlySpan<byte> filter,
@@ -948,88 +953,92 @@ namespace Garnet.server
                 return numResults;
             }
 
+            // Convert filter bytes to string for tokenization.
+            // NOTE: This allocation is required because the tokenizer operates on strings.
+            // A future optimization could make the tokenizer work directly on ReadOnlySpan<byte>.
             var filterStr = Encoding.UTF8.GetString(filter);
 
-            try
+            // Tokenize and parse the filter expression. If this fails, we return -1 to indicate a bad filter expression.
+            if (!VectorFilterTokenizer.TryTokenize(filterStr, out var tokens, out _))
             {
-                var filteredCount = 0;
+                return -1;
+            }
 
-                // Parse the filter expression once, then evaluate per result
-                var tokens = VectorFilterTokenizer.Tokenize(filterStr);
-                var filterExpr = VectorFilterParser.ParseExpression(tokens, 0, out var endIndex);
+            if (!VectorFilterParser.TryParseExpression(tokens, 0, out var filterExpr, out var endIndex, out _))
+            {
+                return -1;
+            }
 
-                // Ensure the entire token stream was consumed by the parser
-                if (endIndex != tokens.Count)
+            // Ensure the entire token stream was consumed by the parser
+            if (endIndex != tokens.Count)
+            {
+                return -1;
+            }
+
+            var filteredCount = 0;
+
+            var idsSpan = outputIds.AsSpan();
+            var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+            var attributesSpan = outputAttributes.AsSpan();
+
+            var idReadPos = 0;
+            var attrReadPos = 0;
+            var idWritePos = 0;
+            var distWritePos = 0;
+            var attrWritePos = 0;
+
+            for (var i = 0; i < numResults; i++)
+            {
+                // Read ID
+                var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
+                var idTotalLen = sizeof(int) + idLen;
+
+                // Read attribute
+                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
+                var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
+
+                // Evaluate filter
+                if (EvaluateFilter(filterExpr, attrData))
                 {
-                    throw new ArgumentException("Invalid filter expression: unexpected tokens after end of expression.", nameof(filter));
-                }
-
-                var idsSpan = outputIds.AsSpan();
-                var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
-                var attributesSpan = outputAttributes.AsSpan();
-
-                var idReadPos = 0;
-                var attrReadPos = 0;
-                var idWritePos = 0;
-                var distWritePos = 0;
-                var attrWritePos = 0;
-
-                for (var i = 0; i < numResults; i++)
-                {
-                    // Read ID
-                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
-                    var idTotalLen = sizeof(int) + idLen;
-
-                    // Read attribute
-                    var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
-                    var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
-
-                    // Evaluate filter
-                    if (EvaluateFilter(filterExpr, attrData))
+                    // Copy ID if not already in place
+                    if (idReadPos != idWritePos)
                     {
-                        // Copy ID if not already in place
-                        if (idReadPos != idWritePos)
-                        {
-                            idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
-                        }
-
-                        // Copy distance if not already in place
-                        if (i != distWritePos)
-                        {
-                            distancesSpan[distWritePos] = distancesSpan[i];
-                        }
-
-                        // Copy attribute if not already in place
-                        if (attrReadPos != attrWritePos)
-                        {
-                            attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
-                        }
-
-                        idWritePos += idTotalLen;
-                        distWritePos++;
-                        attrWritePos += sizeof(int) + attrLen;
-                        filteredCount++;
+                        idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
                     }
 
-                    idReadPos += idTotalLen;
-                    attrReadPos += sizeof(int) + attrLen;
+                    // Copy distance if not already in place
+                    if (i != distWritePos)
+                    {
+                        distancesSpan[distWritePos] = distancesSpan[i];
+                    }
+
+                    // Copy attribute if not already in place
+                    if (attrReadPos != attrWritePos)
+                    {
+                        attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
+                    }
+
+                    idWritePos += idTotalLen;
+                    distWritePos++;
+                    attrWritePos += sizeof(int) + attrLen;
+                    filteredCount++;
                 }
 
-                // Update lengths
-                outputIds.Length = idWritePos;
-                outputDistances.Length = distWritePos * sizeof(float);
-                outputAttributes.Length = attrWritePos;
+                idReadPos += idTotalLen;
+                attrReadPos += sizeof(int) + attrLen;
+            }
 
-                return filteredCount;
-            }
-            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is InvalidOperationException)
-            {
-                throw new ArgumentException("Invalid filter expression.", nameof(filter), ex);
-            }
+            // Update lengths
+            outputIds.Length = idWritePos;
+            outputDistances.Length = distWritePos * sizeof(float);
+            outputAttributes.Length = attrWritePos;
+
+            return filteredCount;
         }
 
         /// <summary>
         /// Evaluate a pre-parsed filter expression against attribute data.
+        /// Returns false if the JSON is malformed or the filter cannot be evaluated.
         /// </summary>
         private static bool EvaluateFilter(Expr filterExpr, ReadOnlySpan<byte> attributeJson)
         {
@@ -1038,14 +1047,12 @@ namespace Garnet.server
                 var reader = new Utf8JsonReader(attributeJson);
                 using var jsonDoc = JsonDocument.ParseValue(ref reader);
                 var root = jsonDoc.RootElement;
-                var result = VectorFilterEvaluator.EvaluateExpression(filterExpr, root);
 
-                return VectorFilterEvaluator.IsTruthy(result);
+                return VectorFilterEvaluator.EvaluateFilterBool(filterExpr, root);
             }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            catch (JsonException)
             {
-                // If filter evaluation fails (malformed JSON or invalid expression), exclude the result
-                Trace.TraceWarning("Vector filter evaluation failed: {0}", ex);
+                // Malformed JSON in attribute data — exclude the result
                 return false;
             }
         }
