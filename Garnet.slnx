@@ -48,7 +48,6 @@
   <Folder Name="/playground/">
     <Project Path="modules/NoOpModule/NoOpModule.csproj" />
     <Project Path="playground/Bitmap/Bitmap.csproj" />
-    <Project Path="playground/ClusterStress/ClusterStress.csproj" />
     <Project Path="playground/CommandInfoUpdater/CommandInfoUpdater.csproj" />
     <Project Path="playground/Embedded.perftest/Embedded.perftest.csproj" />
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />

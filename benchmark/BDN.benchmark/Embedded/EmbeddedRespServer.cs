@@ -50,6 +50,14 @@ namespace Embedded.server
             return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
         }
 
+        internal RespServerSession[] GetRespSessions(int count)
+        {
+            var sessions = new RespServerSession[count];
+            for (var i = 0; i < count; i++)
+                sessions[i] = new RespServerSession(i, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
+            return sessions;
+        }
+
         internal EmbeddedNetworkHandler GetNetworkHandler()
         {
             return garnetServerEmbedded.CreateNetworkHandler();
