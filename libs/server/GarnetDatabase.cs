@@ -166,7 +166,6 @@ namespace Garnet.server
                         Thread.Yield();
                 }
             }
-            disposed = true;
         }
     }
 }
