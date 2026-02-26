@@ -288,6 +288,47 @@ namespace Garnet.server
                         continue;
                     }
 
+                    // Look for distance metric - this is an extension, though hopefully one Redis can be convinced to adopt
+                    if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XDISTANCE_METRIC"u8))
+                    {
+                        if (distanceMetric != null)
+                        {
+                            return AbortWithErrorMessage("XDISTANCE_METRIC specified multiple times");
+                        }
+
+                        curIx++;
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithErrorMessage("ERR invalid option after element");
+                        }
+
+                        // Look for distance metric spec
+                        if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("L2"u8))
+                        {
+                            distanceMetric = VectorDistanceMetricType.L2;
+                        }
+                        else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("COSINE"u8))
+                        {
+                            distanceMetric = VectorDistanceMetricType.Cosine;
+                        }
+                        else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("IP"u8))
+                        {
+                            distanceMetric = VectorDistanceMetricType.InnerProduct;
+                        }
+                        else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XCOSINE_NORMALIZED"u8))
+                        {
+                            // This is an extension to the Redis protocol, thus the X prefix
+                            distanceMetric = VectorDistanceMetricType.XCosine_Normalized;
+                        }
+                        else
+                        {
+                            return AbortWithErrorMessage("ERR invalid XDISTANCE_METRIC");
+                        }
+
+                        curIx++;
+                        continue;
+                    }
+
                     // Didn't recognize this option, error out
                     return AbortWithErrorMessage("ERR invalid option after element");
                 }
@@ -303,8 +344,6 @@ namespace Garnet.server
                 buildExplorationFactor ??= 200;
                 attributes ??= default;
                 numLinks ??= 16;
-
-                // TODO: Distance metric specification is an extension - still needs to be implemented
                 distanceMetric ??= VectorDistanceMetricType.L2;
 
                 // Validate that DiskANN is expected to succeed given data sizes
@@ -319,6 +358,12 @@ namespace Garnet.server
                 if (attributes.Value.Length > maximumVectorSetValueBytes)
                 {
                     WriteError("ERR Attribute exceed configured page size"u8);
+                    return true;
+                }
+
+                if (quantType != VectorQuantType.XPreQ8 && quantType != VectorQuantType.NoQuant)
+                {
+                    WriteError("ERR Unsupported quantization type"u8);
                     return true;
                 }
 
@@ -899,7 +944,7 @@ namespace Garnet.server
             {
                 if (!parseState.GetArgSliceByRef(2).Span.EqualsUpperCaseSpanIgnoringCase("RAW"u8))
                 {
-                    return AbortWithErrorMessage("Unexpected option to VSIM");
+                    return AbortWithErrorMessage("Unexpected option to VEMB");
                 }
 
                 raw = true;
@@ -1111,7 +1156,7 @@ namespace Garnet.server
                 VectorDistanceMetricType.Cosine => "cosine"u8,
                 VectorDistanceMetricType.InnerProduct => "inner-product"u8,
                 VectorDistanceMetricType.L2 => "l2"u8,
-                VectorDistanceMetricType.CosineNormalized => "cosine-normalized"u8,
+                VectorDistanceMetricType.XCosine_Normalized => "cosine-normalized"u8,
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
