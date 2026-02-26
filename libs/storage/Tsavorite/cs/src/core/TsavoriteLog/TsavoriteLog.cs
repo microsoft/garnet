@@ -1183,7 +1183,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    if (suspended) 
+                    if (suspended)
                         epochAccessor.Resume();
                     epoch.Resume();
                 }
