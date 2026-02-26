@@ -151,6 +151,7 @@ namespace Garnet.server
 
             Store?.Dispose();
             KvSettings?.LogDevice?.Dispose();
+            KvSettings?.ObjectLogDevice?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
             StoreCollectionDbStorageSession?.Dispose();
