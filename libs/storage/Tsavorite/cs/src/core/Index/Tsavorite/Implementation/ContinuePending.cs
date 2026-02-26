@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -35,11 +35,16 @@ namespace Tsavorite.core
             if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
                 goto NotFound;
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, pendingContext.requestKey.Get()))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey &&
+#if NET9_0_OR_GREATER
+                !new SpanByteKey(pendingContext.Key).KeysEqual(new SpanByteKey(pendingContext.requestKey.Get())))
+#else
+                !PinnedSpanByte.FromPinnedSpan(pendingContext.Key).KeysEqual(pendingContext.requestKey.Get()))
+#endif
                 goto NotFound;
 
             SpinWaitUntilClosed(request.logicalAddress);
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(SpanByteComparer.StaticGetHashCode64(pendingContext.Key));
 
             while (true)
             {
@@ -60,7 +65,11 @@ namespace Tsavorite.core
                     LogRecord memoryRecord = default;
                     if (!pendingContext.IsReadAtAddress)
                     {
-                        if (TryFindRecordInMemory(pendingContext.Key, ref stackCtx, ref pendingContext))
+#if NET9_0_OR_GREATER
+                        if (TryFindRecordInMemory(new SpanByteKey(pendingContext.Key), ref stackCtx, ref pendingContext))
+#else
+                        if (TryFindRecordInMemory(PinnedSpanByte.FromPinnedSpan(pendingContext.Key), ref stackCtx, ref pendingContext))
+#endif
                         {
                             memoryRecord = stackCtx.recSrc.CreateLogRecord();
                             if (memoryRecord.Info.Tombstone)
@@ -85,8 +94,13 @@ namespace Tsavorite.core
                                 OperationStatus internalStatus;
                                 do
                                 {
-                                    internalStatus = InternalRead(pendingContext.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+#if NET9_0_OR_GREATER
+                                    internalStatus = InternalRead(new SpanByteKey(pendingContext.Key), pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
                                         pendingContext.userContext, ref pendingContext, sessionFunctions);
+#else
+                                    internalStatus = InternalRead(PinnedSpanByte.FromPinnedSpan(pendingContext.Key), pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                        pendingContext.userContext, ref pendingContext, sessionFunctions);
+#endif
                                 }
                                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
                                 return internalStatus;
@@ -300,7 +314,11 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey.Get(), ref stackCtx,
+#if NET9_0_OR_GREATER
+                if (TryFindRecordInMainLogForConditionalOperation<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, new SpanByteKey(pendingContext.requestKey.Get()), ref stackCtx,
+#else
+                if (TryFindRecordInMainLogForConditionalOperation<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey.Get(), ref stackCtx,
+#endif
                         currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))

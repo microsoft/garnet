@@ -11,14 +11,6 @@ namespace Tsavorite.core
     /// </summary>
     public interface IStoreFunctions
     {
-        #region Key Comparer
-        /// <summary>Get a 64-bit hash code for a key</summary>
-        long GetKeyHashCode64(ReadOnlySpan<byte> key);
-
-        /// <summary>Compare two keys for equality</summary>
-        bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
-        #endregion Key Comparer
-
         #region Value Serializer
         /// <summary>Creates an instance of the Value Serializer</summary>
         IObjectSerializer<IHeapObject> CreateValueObjectSerializer();

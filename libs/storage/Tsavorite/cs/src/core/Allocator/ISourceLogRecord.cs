@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
-    public unsafe interface ISourceLogRecord
+    public unsafe interface ISourceLogRecord : IKey
     {
         /// <summary>The physical address of the record data</summary>
         unsafe long PhysicalAddress => (long)Unsafe.AsPointer(ref InfoRef);
@@ -94,5 +94,14 @@ namespace Tsavorite.core
 
         /// <summary>Calculate the heap memory size of this log record</summary>
         public long CalculateHeapMemorySize();
+
+        /// <inheritdoc/>
+        long IKey.GetKeyHashCode64() => SpanByteComparer.StaticGetHashCode64(Key);
+
+        /// <inheritdoc/>
+        ReadOnlySpan<byte> IKey.KeyBytes => Key;
+
+        /// <inheritdoc/>
+        bool IKey.KeysEqual<TOther>(TOther other) => Key.SequenceEqual(other.KeyBytes);
     }
 }

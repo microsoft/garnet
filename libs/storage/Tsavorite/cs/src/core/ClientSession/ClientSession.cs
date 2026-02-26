@@ -144,10 +144,12 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => store.GetKeyHash(key);
-
-        /// <inheritdoc/>
-        public long GetKeyHash(ref ReadOnlySpan<byte> key) => store.GetKeyHash(key);
+        public long GetKeyHash<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => key.GetKeyHashCode64();
 
         /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
@@ -165,8 +167,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal void ResetModified<TSessionFunctionsWrapper, TKey>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread(sessionFunctions);
             try
@@ -315,8 +321,12 @@ namespace Tsavorite.core
 
         #region Other Operations
 
-        internal void UnsafeResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal void UnsafeResetModified<TSessionFunctionsWrapper, TKey>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             OperationStatus status;
             do
@@ -325,8 +335,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal bool IsModified<TSessionFunctionsWrapper, TKey>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread(sessionFunctions);
             try
@@ -339,8 +353,12 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool UnsafeIsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal bool UnsafeIsModified<TSessionFunctionsWrapper, TKey>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             RecordInfo modifiedInfo;
             OperationStatus status;

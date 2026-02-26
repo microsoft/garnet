@@ -752,7 +752,7 @@ namespace Garnet.server
                     var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
 
                     var destinationKey = dstKey.ReadOnlySpan;
-                    ssUnifiedTransactionalContext.Delete(destinationKey);
+                    ssUnifiedTransactionalContext.Delete(PinnedSpanByte.FromPinnedSpan(destinationKey));
 
                     RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
                     Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");

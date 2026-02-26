@@ -17,7 +17,12 @@ namespace Tsavorite.core
         /// <param name="key">The key to obtain a code for</param>
         /// </summary>
         /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{byte})"/></returns>
-        long GetKeyHash(ReadOnlySpan<byte> key);
+        long GetKeyHash<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
     }
 
     /// <summary>
@@ -79,7 +84,12 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default);
+        Status Read<TKey>(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation
@@ -90,7 +100,12 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
+        Status Read<TKey>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation
@@ -99,7 +114,12 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default);
+        Status Read<TKey>(TKey key, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation
@@ -109,7 +129,12 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
+        Status Read<TKey>(TKey key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation
@@ -117,7 +142,12 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default);
+        public (Status status, TOutput output) Read<TKey>(TKey key, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation
@@ -126,7 +156,12 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default);
+        public (Status status, TOutput output) Read<TKey>(TKey key, ref ReadOptions readOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation that accepts a <paramref name="recordMetadata"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
@@ -146,7 +181,12 @@ namespace Tsavorite.core
         /// </param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
-        Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status Read<TKey>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read operation that accepts an address to lookup at, instead of a key.
@@ -171,13 +211,22 @@ namespace Tsavorite.core
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
         /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation; this should store the key if it needs it</returns>
-        Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status ReadAtAddress<TKey>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Read batch operation, which attempts to prefetch as an optimization.
         /// </summary>
-        void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
-            where TBatch : IReadArgBatch<TInput, TOutput>
+        void ReadWithPrefetch<TKey, TBatch>(ref TBatch batch, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
@@ -190,7 +239,12 @@ namespace Tsavorite.core
         /// <param name="desiredValue"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default);
+        Status Upsert<TKey>(TKey key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Upsert operation
@@ -200,7 +254,12 @@ namespace Tsavorite.core
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
+        Status Upsert<TKey>(TKey key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Upsert operation
@@ -211,62 +270,12 @@ namespace Tsavorite.core
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="recordMetadata"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default);
+        Status Upsert<TKey>(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Upsert operation
@@ -278,7 +287,12 @@ namespace Tsavorite.core
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
+        Status Upsert<TKey>(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Upsert operation
@@ -291,7 +305,92 @@ namespace Tsavorite.core
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status Upsert<TKey>(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert<TKey>(TKey key, IHeapObject desiredValue, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert<TKey>(TKey key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert<TKey>(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert<TKey>(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="recordMetadata"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert<TKey>(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Upsert operation with a disk log record
@@ -307,7 +406,11 @@ namespace Tsavorite.core
         /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord)
+        Status Upsert<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord diskLogRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -317,7 +420,11 @@ namespace Tsavorite.core
         /// <param name="input"></param>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord)
+        Status Upsert<TKey, TSourceLogRecord>(TKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -337,7 +444,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        Status Upsert<TKey, TSourceLogRecord>(TKey key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -348,7 +459,12 @@ namespace Tsavorite.core
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default);
+        Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// RMW operation
@@ -359,7 +475,12 @@ namespace Tsavorite.core
         /// <param name="rmwOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default);
+        Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// RMW operation
@@ -370,7 +491,12 @@ namespace Tsavorite.core
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// RMW operation
@@ -382,7 +508,12 @@ namespace Tsavorite.core
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// RMW operation
@@ -391,7 +522,12 @@ namespace Tsavorite.core
         /// <param name="input"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default);
+        Status RMW<TKey>(TKey key, ref TInput input, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// RMW operation
@@ -401,7 +537,12 @@ namespace Tsavorite.core
         /// <param name="rmwOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default);
+        Status RMW<TKey>(TKey key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Delete operation
@@ -409,7 +550,12 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Delete(ReadOnlySpan<byte> key, TContext userContext = default);
+        Status Delete<TKey>(TKey key, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Delete operation
@@ -418,13 +564,23 @@ namespace Tsavorite.core
         /// <param name="deleteOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Delete(ReadOnlySpan<byte> key, ref DeleteOptions deleteOptions, TContext userContext = default);
+        Status Delete<TKey>(TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Reset the modified bit of a record (for in memory records)
         /// </summary>
         /// <param name="key"></param>
-        void ResetModified(ReadOnlySpan<byte> key);
+        void ResetModified<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Refresh session epoch and handle checkpointing phases. Used only

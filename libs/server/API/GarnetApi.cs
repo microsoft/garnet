@@ -44,7 +44,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus GET_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending)
-            => storageSession.GET_WithPending(key.ReadOnlySpan, ref input, ref output, ctx, out pending, ref stringContext);
+            => storageSession.GET_WithPending(key, ref input, ref output, ctx, out pending, ref stringContext);
 
         /// <inheritdoc />
         public bool GET_CompletePending((GarnetStatus, StringOutput)[] outputArr, bool wait = false)
@@ -225,11 +225,11 @@ namespace Garnet.server
         #region Advanced ops
         /// <inheritdoc />
         public GarnetStatus RMW_MainStore(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
-            => storageSession.RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref stringContext);
+            => storageSession.RMW_MainStore(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus Read_MainStore(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
-            => storageSession.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref stringContext);
+            => storageSession.Read_MainStore(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus RMW_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
@@ -249,7 +249,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
-            where TBatch : IReadArgBatch<StringInput, StringOutput>
+            where TBatch : IReadArgBatch<PinnedSpanByte, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif

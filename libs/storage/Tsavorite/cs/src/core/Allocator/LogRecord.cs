@@ -175,6 +175,21 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly long GetKeyHashCode64() => SpanByteComparer.StaticGetHashCode64(Key);
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool KeysEqual<TOther>(TOther other) where TOther : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Key.SequenceEqual(other.KeyBytes);
+
+        /// <inheritdoc/>
         public readonly bool IsPinnedKey => Info.KeyIsInline;
 
         /// <inheritdoc/>

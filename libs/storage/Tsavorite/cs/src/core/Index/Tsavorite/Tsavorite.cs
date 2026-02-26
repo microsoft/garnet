@@ -187,7 +187,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => storeFunctions.GetKeyHashCode64(key);
+        public long GetKeyHash<TKey>(TKey key) where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => key.GetKeyHashCode64();
 
         /// <summary>
         /// Initiate full checkpoint
@@ -475,12 +479,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
-            var keyHash = storeFunctions.GetKeyHashCode64(key);
+            var keyHash = key.GetKeyHashCode64();
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
@@ -491,9 +499,13 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [SkipLocalsInit] // Span<long> in here can be sizeable, so 0-init'ing isn't free
-        internal unsafe void ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal unsafe void ContextReadWithPrefetch<TKey, TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TBatch : IReadArgBatch<TInput, TOutput>
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
@@ -506,7 +518,7 @@ namespace Tsavorite.core
                 batch.GetInput(0, out var input);
                 batch.GetOutput(0, out var output);
 
-                var hash = storeFunctions.GetKeyHashCode64(key);
+                var hash = key.GetKeyHashCode64();
 
                 var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                 OperationStatus internalStatus;
@@ -542,7 +554,7 @@ namespace Tsavorite.core
                         for (; hashIx < PrefetchSize && nextBatchIx < batchCount; hashIx++)
                         {
                             batch.GetKey(nextBatchIx, out var key);
-                            var hash = hashes[hashIx] = storeFunctions.GetKeyHashCode64(key);
+                            var hash = hashes[hashIx] = key.GetKeyHashCode64();
 
                             Sse.Prefetch0(tableAligned + (hash & sizeMask));
 
@@ -596,7 +608,7 @@ namespace Tsavorite.core
                         batch.GetInput(i, out var input);
                         batch.GetOutput(i, out var output);
 
-                        var hash = storeFunctions.GetKeyHashCode64(key);
+                        var hash = key.GetKeyHashCode64();
 
                         var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                         OperationStatus internalStatus;
@@ -613,13 +625,17 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+        internal Status ContextRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
-            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(key);
+            var keyHash = readOptions.KeyHash ?? key.GetKeyHashCode64();
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
@@ -635,11 +651,19 @@ namespace Tsavorite.core
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             pcontext.SetIsNoKey();
-            return ContextReadAtAddress(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+#if NET9_0_OR_GREATER
+            return ContextReadAtAddress<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+#else
+            return ContextReadAtAddress<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -647,8 +671,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+        private Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus internalStatus;
@@ -661,8 +689,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+        internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
@@ -670,7 +702,7 @@ namespace Tsavorite.core
             DiskLogRecord emptyLogRecord = default;
 
             do
-                internalStatus = InternalUpsert<SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
+                internalStatus = InternalUpsert<SpanUpsertValueSelector, TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
@@ -679,8 +711,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+        internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input,
                 IHeapObject srcObjectValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
@@ -688,7 +724,7 @@ namespace Tsavorite.core
             DiskLogRecord emptyLogRecord = default;
 
             do
-                internalStatus = InternalUpsert<ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
+                internalStatus = InternalUpsert<ObjectUpsertValueSelector, TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
@@ -697,8 +733,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+        internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, long keyHash, ref TInput input,
                 in TSourceLogRecord inputLogRecord, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -706,7 +746,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert<LogRecordUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                internalStatus = InternalUpsert<LogRecordUpsertValueSelector, TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
@@ -715,8 +755,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
+        internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
                                                                           TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
@@ -731,7 +775,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);

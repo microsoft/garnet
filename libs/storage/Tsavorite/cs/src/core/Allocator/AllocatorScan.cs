@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -36,7 +36,7 @@ namespace Tsavorite.core
         internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, ref TScanFunctions scanFunctions)
             where TScanFunctions : IScanIteratorFunctions
         {
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(new SpanByteKey(key).GetKeyHashCode64());
             if (!store.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -108,7 +108,11 @@ namespace Tsavorite.core
                     // Iter records above readOnlyAddress will be in mutable log memory so the chain must be locked.
                     // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
                     if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
-                        store.LockForScan(ref stackCtx, key);
+#if NET9_0_OR_GREATER
+                        store.LockForScan(ref stackCtx, new SpanByteKey(key));
+#else
+                        store.LockForScan(ref stackCtx, PinnedSpanByte.FromPinnedSpan(key));
+#endif
                     stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
                 }
                 catch (Exception ex)
@@ -266,7 +270,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(new SpanByteKey(srcLogRecord.Key).GetKeyHashCode64());
 
             OperationStatus internalStatus;
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
@@ -274,7 +278,11 @@ namespace Tsavorite.core
             do
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx,
+#if NET9_0_OR_GREATER
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, new SpanByteKey(srcLogRecord.Key), ref stackCtx,
+#else
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, PinnedSpanByte.FromPinnedSpan(srcLogRecord.Key), ref stackCtx,
+#endif
                       currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }

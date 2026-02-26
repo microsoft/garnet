@@ -29,7 +29,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.SETBIT, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
             StringOutput output = new();
-            RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+            RMW_MainStore(key, ref input, ref output, ref context);
 
             return GarnetStatus.OK;
         }
@@ -47,7 +47,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GETBIT, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
             StringOutput output = new();
-            var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+            var status = Read_MainStore(key, ref input, ref output, ref context);
 
             if (status == GarnetStatus.OK && !output.SpanByteAndMemory.IsSpanByte)
             {
@@ -234,7 +234,7 @@ namespace Garnet.server
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
-            var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+            var status = Read_MainStore(key, ref input, ref output, ref context);
 
             if (status == GarnetStatus.OK)
             {
@@ -335,8 +335,8 @@ namespace Garnet.server
 
                 input.parseState = parseState;
                 var status = commandArguments[i].secondaryCommand == RespCommand.GET ?
-                    Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context) :
-                    RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+                    Read_MainStore(key, ref input, ref output, ref context) :
+                    RMW_MainStore(key, ref input, ref output, ref context);
 
                 scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
@@ -375,30 +375,30 @@ namespace Garnet.server
 
         public GarnetStatus StringSetBit<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
           where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+            => RMW_MainStore(key, ref input, ref output, ref context);
 
         public GarnetStatus StringGetBit<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+            => Read_MainStore(key, ref input, ref output, ref context);
 
         public unsafe GarnetStatus StringBitCount<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
          where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-             => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+             => Read_MainStore(key, ref input, ref output, ref context);
 
         public unsafe GarnetStatus StringBitPosition<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-             => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+             => Read_MainStore(key, ref input, ref output, ref context);
 
         public unsafe GarnetStatus StringBitField<TStringContext>(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             GarnetStatus status;
             if (secondaryCommand == RespCommand.GET)
-                status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+                status = Read_MainStore(key, ref input, ref output, ref context);
             else
             {
                 Debug.Assert(input.header.cmd != RespCommand.BITFIELD_RO);
-                status = RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+                status = RMW_MainStore(key, ref input, ref output, ref context);
             }
             return status;
         }
@@ -409,7 +409,7 @@ namespace Garnet.server
             var status = GarnetStatus.NOTFOUND;
 
             if (secondaryCommand == RespCommand.GET)
-                status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+                status = Read_MainStore(key, ref input, ref output, ref context);
             return status;
         }
 

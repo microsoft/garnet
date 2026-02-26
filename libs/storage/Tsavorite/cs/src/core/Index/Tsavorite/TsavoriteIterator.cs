@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -222,8 +222,13 @@ namespace Tsavorite.core
             if (recordInfo.Tombstone)
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                if (tempbContext.ContainsKeyInMemory(key, out _).Found)
-                    _ = tempbContext.Delete(key);
+#if NET9_0_OR_GREATER
+                var wrappedKey = new SpanByteKey(key);
+#else
+                var wrappedKey = PinnedSpanByte.FromPinnedSpan(key);
+#endif
+                if (tempbContext.ContainsKeyInMemory(wrappedKey, out _).Found)
+                    _ = tempbContext.Delete(wrappedKey);
             }
             else
             {
@@ -235,7 +240,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool IsTailmostMainKvRecord(ReadOnlySpan<byte> key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
+            stackCtx = new(new SpanByteKey(key).GetKeyHashCode64());
             if (store.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -247,8 +252,13 @@ namespace Tsavorite.core
                     if (mainKvRecordInfo.PreviousAddress >= store.Log.BeginAddress)
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                        if (tempbContext.ContainsKeyInMemory(key, out _).Found)
-                            _ = tempbContext.Delete(key);
+#if NET9_0_OR_GREATER
+                        var wrappedKey2 = new SpanByteKey(key);
+#else
+                        var wrappedKey2 = PinnedSpanByte.FromPinnedSpan(key);
+#endif
+                        if (tempbContext.ContainsKeyInMemory(wrappedKey2, out _).Found)
+                            _ = tempbContext.Delete(wrappedKey2);
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.

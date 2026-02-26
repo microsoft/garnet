@@ -32,7 +32,7 @@ namespace Tsavorite.core
     public interface ITransactionalKey
     {
         /// <summary>
-        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash(ReadOnlySpan{byte})"/>
+        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash{TKey}(TKey)"/>
         /// </summary>
         public long KeyHash { get; }
 
@@ -67,7 +67,12 @@ namespace Tsavorite.core
         {
             Key = PinnedSpanByte.FromPinnedSpan(key);
             LockType = lockType;
-            KeyHash = context.GetKeyHash(key);
+            KeyHash =
+#if NET9_0_OR_GREATER
+                context.GetKeyHash(new SpanByteKey(key));
+#else
+                context.GetKeyHash(PinnedSpanByte.FromPinnedSpan(key));
+#endif
         }
 
         /// <summary>

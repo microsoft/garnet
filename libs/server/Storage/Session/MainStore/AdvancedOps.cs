@@ -10,7 +10,7 @@ namespace Garnet.server
 {
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
+        public GarnetStatus GET_WithPending<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.Read(key, ref input, ref output, ctx);
@@ -68,7 +68,7 @@ namespace Garnet.server
             return ret;
         }
 
-        public GarnetStatus RMW_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+        public GarnetStatus RMW_MainStore<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.RMW(key, ref input, ref output);
@@ -82,7 +82,7 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+        public GarnetStatus Read_MainStore<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.Read(key, ref input, ref output);
@@ -98,11 +98,11 @@ namespace Garnet.server
 
 
         public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
-            where TBatch : IReadArgBatch<StringInput, StringOutput>
+            where TBatch : IReadArgBatch<PinnedSpanByte, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
             where TContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        => context.ReadWithPrefetch(ref batch, userContext);
+        => context.ReadWithPrefetch<PinnedSpanByte, TBatch>(ref batch, userContext);
     }
 }

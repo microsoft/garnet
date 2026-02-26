@@ -77,7 +77,7 @@ namespace Garnet.server
 
         public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
         {
-            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
+            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)

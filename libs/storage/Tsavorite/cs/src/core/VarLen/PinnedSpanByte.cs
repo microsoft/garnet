@@ -17,7 +17,7 @@ namespace Tsavorite.core
     /// SAFETY: This type is used to represent arguments that are assumed to point to pinned memory.
     /// </remarks>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public unsafe struct PinnedSpanByte
+    public unsafe struct PinnedSpanByte : IKey
     {
         public const int Size = 12;
 
@@ -190,5 +190,22 @@ namespace Tsavorite.core
         /// Copy non-serialized version to specified <see cref="SpanByteAndMemory"/> (do not copy the length prefix space)
         /// </summary>
         public readonly void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool) => ReadOnlySpan.CopyTo(ref dst, memoryPool);
+
+        #region IKey
+
+        /// <inheritdoc/>
+        public long GetKeyHashCode64() => SpanByteComparer.StaticGetHashCode64(ReadOnlySpan);
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> KeyBytes => ReadOnlySpan;
+
+        /// <inheritdoc/>
+        public bool KeysEqual<TOther>(TOther other) where TOther : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => ReadOnlySpan.SequenceEqual(other.KeyBytes);
+
+        #endregion IKey
     }
 }

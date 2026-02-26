@@ -2049,7 +2049,12 @@ namespace Tsavorite.core
                     var keyStartPtr = ptr + offsetToKeyStart;
 
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
+                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline &&
+#if NET9_0_OR_GREATER
+                        !new SpanByteKey(ctx.requestKey).KeysEqual(new SpanByteKey(new ReadOnlySpan<byte>(keyStartPtr, keyLength))))
+#else
+                        !ctx.requestKey.ReadOnlySpan.SequenceEqual(new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
+#endif
                         return false;
 
                     // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.

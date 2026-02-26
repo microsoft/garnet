@@ -137,8 +137,12 @@ namespace Tsavorite.core
             /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
             /// <param name="bufferPool">Allocator for backing storage</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void CopyInputsForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
+            internal void CopyInputsForReadOrRMW<TKey, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 CopyKey(key, bufferPool);
@@ -156,12 +160,16 @@ namespace Tsavorite.core
             }
 
             /// <summary>Copy the passed key into our <see cref="requestKey"/></summary>
-            internal void CopyKey(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool)
+            internal void CopyKey<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             {
                 if (requestKey is null)
-                    requestKey = new(key, bufferPool);
+                    requestKey = new(key.KeyBytes, bufferPool);
                 else
-                    Debug.Assert(requestKey.Get().ReadOnlySpan.SequenceEqual(key), "pendingContext.requestKey should not change keys");
+                    Debug.Assert(requestKey.Get().ReadOnlySpan.SequenceEqual(key.KeyBytes), "pendingContext.requestKey should not change keys");
             }
 
             /// <summary>

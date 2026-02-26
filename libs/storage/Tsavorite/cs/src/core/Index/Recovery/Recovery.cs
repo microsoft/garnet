@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1306,7 +1306,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
+                    HashEntryInfo hei = new(new SpanByteKey(logRecord.Key).GetKeyHashCode64());
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     if ((pageStartLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)

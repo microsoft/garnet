@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -47,7 +47,12 @@ namespace Tsavorite.core
         public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => clientSession.store.GetKeyHash(key);
+        public long GetKeyHash<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => clientSession.store.GetKeyHash(key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
@@ -67,7 +72,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
+        public Status Read<TKey>(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
@@ -82,8 +91,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
-            where TBatch : IReadArgBatch<TInput, TOutput>
+        public void ReadWithPrefetch<TKey, TBatch>(ref TBatch batch, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
@@ -91,7 +104,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                clientSession.store.ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
+                clientSession.store.ContextReadWithPrefetch<TKey, TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
             }
             finally
             {
@@ -101,12 +114,20 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        public Status Read<TKey>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             => Read(key, ref input, ref output, ref readOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default)
+        public Status Read<TKey>(TKey key, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             return Read(key, ref input, ref output, userContext);
@@ -114,7 +135,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        public Status Read<TKey>(TKey key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             return Read(key, ref input, ref output, ref readOptions, userContext);
@@ -122,7 +147,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default)
+        public (Status status, TOutput output) Read<TKey>(TKey key, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             TOutput output = default;
@@ -131,7 +160,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default)
+        public (Status status, TOutput output) Read<TKey>(TKey key, ref ReadOptions readOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             TOutput output = default;
@@ -140,7 +173,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Read<TKey>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
@@ -170,7 +207,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status ReadAtAddress<TKey>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
@@ -185,35 +226,55 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
+        public Status Upsert<TKey>(TKey key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+            return Upsert(key, key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert<TKey>(TKey key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+            return Upsert(key, upsertOptions.KeyHash ?? key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+        public Status Upsert<TKey>(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Upsert(key, key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+        public Status Upsert<TKey>(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Upsert(key, upsertOptions.KeyHash ?? key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Upsert(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
+        private Status Upsert<TKey>(TKey key, long keyHash, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
@@ -228,9 +289,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Upsert<TKey>(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
-            var keyHash = upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
+            var keyHash = upsertOptions.KeyHash ?? key.GetKeyHashCode64();
             UnsafeResumeThread();
             try
             {
@@ -244,35 +309,55 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, TContext userContext = default)
+        public Status Upsert<TKey>(TKey key, IHeapObject desiredValue, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+            return Upsert(key, key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert<TKey>(TKey key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+            return Upsert(key, upsertOptions.KeyHash ?? key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+        public Status Upsert<TKey>(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Upsert(key, key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+        public Status Upsert<TKey>(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Upsert(key, upsertOptions.KeyHash ?? key.GetKeyHashCode64(), ref input, desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Upsert(ReadOnlySpan<byte> key, long keyHash, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+        private Status Upsert<TKey>(TKey key, long keyHash, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
@@ -287,9 +372,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Upsert<TKey>(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
-            var keyHash = upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
+            var keyHash = upsertOptions.KeyHash ?? key.GetKeyHashCode64();
             UnsafeResumeThread();
             try
             {
@@ -305,11 +394,19 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => Upsert(diskLogRecord.Key, in diskLogRecord);
+#if NET9_0_OR_GREATER
+            => Upsert(new SpanByteKey(diskLogRecord.Key), in diskLogRecord);
+#else
+            => Upsert(PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key), in diskLogRecord);
+#endif
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord)
+        public Status Upsert<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord diskLogRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
         {
             TInput input = default;
@@ -320,7 +417,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord)
+        public Status Upsert<TKey, TSourceLogRecord>(TKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
         {
             TOutput output = default;
@@ -332,14 +433,22 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord
-            => Upsert(inputLogRecord.Key, ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
+#if NET9_0_OR_GREATER
+            => Upsert(new SpanByteKey(inputLogRecord.Key), ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
+#else
+            => Upsert(PinnedSpanByte.FromPinnedSpan(inputLogRecord.Key), ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
+#endif
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert<TKey, TSourceLogRecord>(TKey key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
         {
-            var keyHash = upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
+            var keyHash = upsertOptions.KeyHash ?? key.GetKeyHashCode64();
 
             UnsafeResumeThread();
             try
@@ -354,28 +463,48 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
-            => RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
+        public Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => RMW(key, key.GetKeyHashCode64(), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(key, rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
+        public Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => RMW(key, rmwOptions.KeyHash ?? key.GetKeyHashCode64(), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out recordMetadata, userContext);
+        public Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => RMW(key, key.GetKeyHashCode64(), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status RMW<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
-            var keyHash = rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
+            var keyHash = rmwOptions.KeyHash ?? key.GetKeyHashCode64();
             return RMW(key, keyHash, ref input, ref output, out recordMetadata, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status RMW(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        private Status RMW<TKey>(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
@@ -390,7 +519,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default)
+        public Status RMW<TKey>(TKey key, ref TInput input, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TOutput output = default;
             return RMW(key, ref input, ref output, userContext);
@@ -398,7 +531,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+        public Status RMW<TKey>(TKey key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             TOutput output = default;
             return RMW(key, ref input, ref output, ref rmwOptions, userContext);
@@ -406,22 +543,34 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ReadOnlySpan<byte> key, TContext userContext = default)
-            => Delete(key, store.storeFunctions.GetKeyHashCode64(key), userContext);
+        public Status Delete<TKey>(TKey key, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Delete(key, key.GetKeyHashCode64(), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ReadOnlySpan<byte> key, ref DeleteOptions deleteOptions, TContext userContext = default)
-            => Delete(key, deleteOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), userContext);
+        public Status Delete<TKey>(TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => Delete(key, deleteOptions.KeyHash ?? key.GetKeyHashCode64(), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Delete(ReadOnlySpan<byte> key, long keyHash, TContext userContext = default)
+        private Status Delete<TKey>(TKey key, long keyHash, TContext userContext = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
             {
-                return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
+                return store.ContextDelete<TKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
             }
             finally
             {
@@ -431,11 +580,21 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(ReadOnlySpan<byte> key) => clientSession.ResetModified(sessionFunctions, key);
+        public void ResetModified<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => clientSession.ResetModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(ReadOnlySpan<byte> key) => clientSession.IsModified(sessionFunctions, key);
+        internal bool IsModified<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => clientSession.IsModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         public void Refresh() => clientSession.Refresh(sessionFunctions);
@@ -496,12 +655,16 @@ namespace Tsavorite.core
         /// <param name="logicalAddress">Logical address of record, if found</param>
         /// <param name="fromAddress">Look until this address; if less than HeadAddress, then HeadAddress is used</param>
         /// <returns>Status</returns>
-        public Status ContainsKeyInMemory(ReadOnlySpan<byte> key, out long logicalAddress, long fromAddress = -1)   // TODO: remove when we remove tempkv/tempdb in iterators
+        public Status ContainsKeyInMemory<TKey>(TKey key, out long logicalAddress, long fromAddress = -1)   // TODO: remove when we remove tempkv/tempdb in iterators
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
             {
-                return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                return store.InternalContainsKeyInMemory<TKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                         key, sessionFunctions, out logicalAddress, fromAddress);
             }
             finally

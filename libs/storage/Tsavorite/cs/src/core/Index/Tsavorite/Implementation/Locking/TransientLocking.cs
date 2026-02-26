@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -60,12 +59,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void LockForScan(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ReadOnlySpan<byte> key)
+        internal void LockForScan<TKey>(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
             // This will always be an Ephemeral lock as it is not session-based
-            stackCtx = new(storeFunctions.GetKeyHashCode64(key));
+            stackCtx = new(key.GetKeyHashCode64());
             _ = FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 

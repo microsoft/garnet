@@ -93,7 +93,11 @@ namespace Tsavorite.core
                     while (iter1.GetNext())
                     {
                         if (iter1.Info.Tombstone || cf.IsDeleted(in iter1))
-                            _ = tempbContext.Delete(iter1.Key);
+#if NET9_0_OR_GREATER
+                            _ = tempbContext.Delete(new SpanByteKey(iter1.Key));
+#else
+                            _ = tempbContext.Delete(PinnedSpanByte.FromPinnedSpan(iter1.Key));
+#endif
                         else
                         {
                             var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
@@ -122,7 +126,11 @@ namespace Tsavorite.core
                         ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
                     // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
-                    if (!tempbContext.ContainsKeyInMemory(iter3.Key, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+#if NET9_0_OR_GREATER
+                    if (!tempbContext.ContainsKeyInMemory(new SpanByteKey(iter3.Key), out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+#else
+                    if (!tempbContext.ContainsKeyInMemory(PinnedSpanByte.FromPinnedSpan(iter3.Key), out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+#endif
                         continue;
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
@@ -149,7 +157,11 @@ namespace Tsavorite.core
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext())
             {
-                _ = tempbContext.Delete(iter.Key, default);
+#if NET9_0_OR_GREATER
+                _ = tempbContext.Delete(new SpanByteKey(iter.Key), default);
+#else
+                _ = tempbContext.Delete(PinnedSpanByte.FromPinnedSpan(iter.Key), default);
+#endif
                 untilAddress = iter.NextAddress;
             }
         }

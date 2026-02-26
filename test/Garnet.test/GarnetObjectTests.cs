@@ -41,7 +41,7 @@ namespace Garnet.test
             using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());
             var bContext = session.BasicContext;
 
-            var key = new ReadOnlySpan<byte>([0]);
+            var key = PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>([0]));
             var obj = new SortedSetObject();
 
             _ = bContext.Upsert(key, obj);
@@ -72,7 +72,7 @@ namespace Garnet.test
                 using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
                 var bContext = session.BasicContext;
 
-                var key = new ReadOnlySpan<byte>([keyNum]);
+                var key = PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>([keyNum]));
                 obj.Add([15], 10);
 
                 _ = bContext.Upsert(key, obj);
@@ -84,7 +84,7 @@ namespace Garnet.test
                 var bContext = session.BasicContext;
 
                 IGarnetObject output = null;
-                var key = new ReadOnlySpan<byte>([keyNum]);
+                var key = PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>([keyNum]));
                 var status = bContext.Read(key, ref output);
 
                 ClassicAssert.IsTrue(status.Found);
@@ -109,7 +109,7 @@ namespace Garnet.test
                 using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
                 var bContext = session.BasicContext;
 
-                var key = new ReadOnlySpan<byte>([keyNum]);
+                var key = PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>([keyNum]));
                 ((SortedSetObject)obj).Add([15], 10);
 
                 _ = bContext.Upsert(key, obj);
@@ -123,7 +123,7 @@ namespace Garnet.test
                 var bContext = session.BasicContext;
 
                 IGarnetObject output = null;
-                var key = new ReadOnlySpan<byte>([keyNum]);
+                var key = PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>([keyNum]));
                 var status = bContext.Read(key, ref output);
 
                 ClassicAssert.IsTrue(status.Found);

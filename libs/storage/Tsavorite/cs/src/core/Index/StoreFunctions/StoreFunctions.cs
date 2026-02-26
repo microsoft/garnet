@@ -34,16 +34,6 @@ namespace Tsavorite.core
         Action checkpointCompletionCallback = () => { };
         #endregion Fields
 
-        #region Key Comparer
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetKeyHashCode64(ReadOnlySpan<byte> key) => keyComparer.GetHashCode64(key);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => keyComparer.Equals(k1, k2);
-        #endregion Key Comparer
-
         #region Value Serializer
         /// <inheritdoc/>
         public readonly IObjectSerializer<IHeapObject> CreateValueObjectSerializer() => valueSerializerCreator is null ? default : valueSerializerCreator();

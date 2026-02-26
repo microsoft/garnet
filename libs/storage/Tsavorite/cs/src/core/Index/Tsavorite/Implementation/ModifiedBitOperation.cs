@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -19,11 +18,15 @@ namespace Tsavorite.core
         /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalModifiedBitOperation(ReadOnlySpan<byte> key, out RecordInfo modifiedInfo, bool reset = true)
+        internal OperationStatus InternalModifiedBitOperation<TKey>(TKey key, out RecordInfo modifiedInfo, bool reset = true)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(key)); ;
+            HashEntryInfo hei = new(key.GetKeyHashCode64()); ;
 
             #region Trace back for record in in-memory HybridLog
             _ = FindTag(ref hei);
@@ -32,7 +35,7 @@ namespace Tsavorite.core
             if (logicalAddress >= hlogBase.HeadAddress)
             {
                 var logRecord = hlog.CreateLogRecord(logicalAddress);
-                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, logRecord.Key))
+                if (logRecord.Info.Invalid || !key.KeysEqual(logRecord))
                 {
                     logicalAddress = logRecord.Info.PreviousAddress;
                     TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);

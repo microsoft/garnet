@@ -24,7 +24,7 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             long ctx = default;
-            var status = context.Read(key.ReadOnlySpan, ref input, ref output, ctx);
+            var status = context.Read(key, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -72,7 +72,7 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(key, ref input, in srcLogRecord);
+            _ = unifiedContext.Upsert(PinnedSpanByte.FromPinnedSpan(key), ref input, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
@@ -105,7 +105,7 @@ namespace Garnet.server
         public GarnetStatus DELETE<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = unifiedContext.Delete(key.ReadOnlySpan);
+            var status = unifiedContext.Delete(key);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
@@ -121,7 +121,7 @@ namespace Garnet.server
                 UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new UnifiedInput(RespCommand.DELIFEXPIM);
-            var status = unifiedContext.RMW(key.ReadOnlySpan, ref input);
+            var status = unifiedContext.RMW(key, ref input);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
@@ -199,7 +199,7 @@ namespace Garnet.server
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
-            var status = unifiedContext.RMW(key.ReadOnlySpan, ref input, ref unifiedOutput);
+            var status = unifiedContext.RMW(key, ref input, ref unifiedOutput);
 
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref unifiedOutput, ref unifiedContext);

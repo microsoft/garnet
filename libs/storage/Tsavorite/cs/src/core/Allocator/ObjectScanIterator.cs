@@ -221,7 +221,11 @@ namespace Tsavorite.core
                             if (currentAddress >= headAddress && store is not null)
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
-                                store.LockForScan(ref stackCtx, logRecord.Key);
+#if NET9_0_OR_GREATER
+                                store.LockForScan(ref stackCtx, new SpanByteKey(logRecord.Key));
+#else
+                                store.LockForScan(ref stackCtx, PinnedSpanByte.FromPinnedSpan(logRecord.Key));
+#endif
                             }
 
                             if (recordBuffer == null)
@@ -290,7 +294,12 @@ namespace Tsavorite.core
                 nextAddress = logRecord.Info.PreviousAddress;
 
                 // Do not SkipOnScan here; we Seal previous versions.
-                if (logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
+                if (logRecord.Info.IsNull ||
+#if NET9_0_OR_GREATER
+                    !new SpanByteKey(logRecord.Key).KeysEqual(new SpanByteKey(key)))
+#else
+                    !logRecord.Key.SequenceEqual(key))
+#endif
                 {
                     epoch?.Suspend();
                     continue;

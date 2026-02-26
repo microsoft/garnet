@@ -31,7 +31,7 @@ namespace Garnet.server
 
                 var o = StringOutput.FromPinnedSpan(new Span<byte>(ref output));
 
-                _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
+                _ = RMW_MainStore(key, ref input, ref o, ref context);
 
                 scratchBufferBuilder.RewindScratchBuffer(elementSlice);
 
@@ -59,7 +59,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus HyperLogLogAdd<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
           where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
+            => RMW_MainStore(key, ref input, ref output, ref context);
 
         public unsafe GarnetStatus HyperLogLogLength<TStringContext>(Span<PinnedSpanByte> keys, out long count, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>

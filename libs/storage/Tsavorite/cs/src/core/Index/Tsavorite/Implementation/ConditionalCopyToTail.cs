@@ -67,8 +67,13 @@ namespace Tsavorite.core
                 bool needIO;
                 do
                 {
-                    if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                            sessionFunctions, srcLogRecord.Key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
+#if NET9_0_OR_GREATER
+                    if (TryFindRecordInMainLogForConditionalOperation<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                            sessionFunctions, new SpanByteKey(srcLogRecord.Key), ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
+#else
+                    if (TryFindRecordInMainLogForConditionalOperation<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                            sessionFunctions, PinnedSpanByte.FromPinnedSpan(srcLogRecord.Key), ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
+#endif
                         return OperationStatus.SUCCESS;
                 }
                 while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
@@ -92,14 +97,18 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
-            PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            PendingContext<TInput, TOutput, TContext> pendingContext = new(SpanByteComparer.StaticGetHashCode64(srcLogRecord.Key));
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             OperationStatus status;
             bool needIO;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
+#if NET9_0_OR_GREATER
+                if (TryFindRecordInMainLogForConditionalOperation<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, new SpanByteKey(srcLogRecord.Key), ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
+#else
+                if (TryFindRecordInMainLogForConditionalOperation<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, PinnedSpanByte.FromPinnedSpan(srcLogRecord.Key), ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
+#endif
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
@@ -117,7 +126,11 @@ namespace Tsavorite.core
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSourceLogRecord : ISourceLogRecord
         {
-            pendingContext.CopyKey(srcLogRecord.Key, hlogBase.bufferPool);
+#if NET9_0_OR_GREATER
+            pendingContext.CopyKey(new SpanByteKey(srcLogRecord.Key), hlogBase.bufferPool);
+#else
+            pendingContext.CopyKey(PinnedSpanByte.FromPinnedSpan(srcLogRecord.Key), hlogBase.bufferPool);
+#endif
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
             pendingContext.maxAddress = maxAddress;

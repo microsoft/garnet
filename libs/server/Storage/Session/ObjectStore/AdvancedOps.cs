@@ -11,7 +11,7 @@ namespace Garnet.server
         public GarnetStatus RMW_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.RMW(key, ref input, ref output);
+            var status = objectContext.RMW(PinnedSpanByte.FromPinnedSpan(key), ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
@@ -29,7 +29,7 @@ namespace Garnet.server
         public GarnetStatus Read_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
         where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.Read(key, ref input, ref output);
+            var status = objectContext.Read(PinnedSpanByte.FromPinnedSpan(key), ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
