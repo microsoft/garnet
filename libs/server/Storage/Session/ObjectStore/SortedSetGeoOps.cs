@@ -75,6 +75,17 @@ namespace Garnet.server
             {
                 // Can we optimize more when ANY is used?
                 var statusOp = GET(key, out var firstObj, ref objectContext);
+
+                output.ETag = firstObj.ETag;
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(firstObj.ETag, out _, readOnlyContext: true);
+                if (!execOp)
+                {
+                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    writer.WriteNull();
+
+                    return GarnetStatus.OK;
+                }
+
                 if (statusOp == GarnetStatus.OK)
                 {
                     if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)

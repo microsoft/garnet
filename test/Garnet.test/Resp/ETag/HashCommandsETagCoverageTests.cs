@@ -48,6 +48,18 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task HExistsETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HEXISTS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(true, (bool)result);
+            }
+        }
+
+        [Test]
         public async Task HExpireETagTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], 2, "FIELDS", 1, HashData[0][0].Name };
@@ -73,6 +85,38 @@ namespace Garnet.test.Resp.ETag
                 var results = (RedisResult[])result;
                 ClassicAssert.AreEqual(1, results!.Length);
                 ClassicAssert.AreEqual(1, (long)results[0]);
+            }
+        }
+
+        [Test]
+        public async Task HGetETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HGET, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(HashData[0][0].Value, (string)result);
+            }
+        }
+
+        [Test]
+        public async Task HGetAllETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0] };
+            await CheckCommandAsync(RespCommand.HGETALL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var entryCount = HashData[0].Length;
+                ClassicAssert.AreEqual(entryCount * 2, result.Length);
+                var entries = new HashEntry[entryCount];
+                for (var i = 0; i < entryCount * 2; i += 2)
+                {
+                    entries[i / 2] = new HashEntry((string)result[i], (string)result[i + 1]);
+                }
+
+                ClassicAssert.IsTrue(HashData[0].OrderBy(e => e.Name).SequenceEqual(entries.OrderBy(r => r.Name)));
             }
         }
 

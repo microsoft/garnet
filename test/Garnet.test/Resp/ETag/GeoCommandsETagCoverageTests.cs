@@ -13,6 +13,8 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class GeoCommandsETagCoverageTests : EtagCoverageTestsBase
     {
+        const double DoubleTolerance = 1e-6;
+
         static readonly RedisKey[] GeoKeys = [KeysWithEtag[0], "geoKey2", "geoKey3"];
 
         static readonly GeoEntry[][] GeoData =
@@ -35,14 +37,69 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task GeoDistETagTestAsync()
+        {
+            var cmdArgs = new object[] { GeoKeys[0], GeoData[0][0].Member, GeoData[0][1].Member, "KM" };
+            await CheckCommandAsync(RespCommand.GEODIST, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2790.730346476901, (double)result, DoubleTolerance);
+            }
+        }
+
+        [Test]
+        public async Task GeoHashETagTestAsync()
+        {
+            var cmdArgs = new object[] { GeoKeys[0], GeoData[0][0].Member, GeoData[0][1].Member };
+            await CheckCommandAsync(RespCommand.GEOHASH, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual("sn1mz7y6xj0", (string)result[0]);
+                ClassicAssert.AreEqual("swpr41xv5w0", (string)result[1]);
+            }
+        }
+
+        [Test]
+        public async Task GeoPosETagTestAsync()
+        {
+            var cmdArgs = new object[] { GeoKeys[0], GeoData[0][0].Member };
+            await CheckCommandAsync(RespCommand.GEOPOS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, result.Length);
+                var lonLat = result[0];
+                ClassicAssert.AreEqual(2, lonLat.Length);
+                ClassicAssert.AreEqual(2.085302174091339, (double)lonLat[0], DoubleTolerance);
+                ClassicAssert.AreEqual(34.781798869371414, (double)lonLat[1], DoubleTolerance);
+            }
+        }
+
+        [Test]
         public async Task GeoRadiusETagTestAsync()
         {
             var cmdArgs = new object[] { GeoKeys[1], GeoData[1][0].Longitude, GeoData[1][0].Latitude, 1000, "KM", "STORE", GeoKeys[0] };
             await CheckCommandAsync(RespCommand.GEORADIUS, cmdArgs, VerifyResult);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusROETagTestAsync()
+        {
+            var cmdArgs = new object[] { GeoKeys[0], GeoData[0][0].Longitude, GeoData[0][0].Latitude, 1000, "KM" };
+            await CheckCommandAsync(RespCommand.GEORADIUS_RO, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, result.Length);
+                ClassicAssert.AreEqual(GeoData[0][0].Member, (string)result[0]);
             }
         }
 
@@ -55,6 +112,32 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusByMemberROETagTestAsync()
+        {
+            var cmdArgs = new object[] { GeoKeys[0], GeoData[0][0].Member, 1000, "KM" };
+            await CheckCommandAsync(RespCommand.GEORADIUSBYMEMBER_RO, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, result.Length);
+                ClassicAssert.AreEqual(GeoData[0][0].Member, (string)result[0]);
+            }
+        }
+
+        [Test]
+        public async Task GeoSearchETagTestAsync()
+        {
+            var cmdArgs = new object[] { GeoKeys[0], "FROMMEMBER", GeoData[0][0].Member, "BYRADIUS", 1000, "KM" };
+            await CheckCommandAsync(RespCommand.GEOSEARCH, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, result.Length);
+                ClassicAssert.AreEqual(GeoData[0][0].Member, (string)result[0]);
             }
         }
 

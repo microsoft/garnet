@@ -257,7 +257,7 @@ namespace Garnet.server
                 startIdx: sourceIdx + 1, arg1: (int)command)
             { SortedSetOp = SortedSetOperation.GEOSEARCH };
 
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
