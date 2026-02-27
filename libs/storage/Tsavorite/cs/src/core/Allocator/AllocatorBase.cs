@@ -2050,11 +2050,7 @@ namespace Tsavorite.core
 
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
                     if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline &&
-#if NET9_0_OR_GREATER
-                        !new SpanByteKey(ctx.requestKey).KeysEqual(new SpanByteKey(new ReadOnlySpan<byte>(keyStartPtr, keyLength))))
-#else
-                        !ctx.requestKey.ReadOnlySpan.SequenceEqual(new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
-#endif
+                        !ctx.requestKey.KeysEqual(dataHeader))
                         return false;
 
                     // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.

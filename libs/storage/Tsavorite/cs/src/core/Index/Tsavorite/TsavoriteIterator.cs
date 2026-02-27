@@ -120,10 +120,10 @@ namespace Tsavorite.core
                     if (mainKvIter.GetNext())
                     {
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
-                        if (IsTailmostMainKvRecord(mainKvIter.Key, mainKvIter.Info, ref stackCtx))
+                        if (IsTailmostMainKvRecord(mainKvIter, mainKvIter.Info, ref stackCtx))
                             return true;
 
-                        ProcessNonTailmostMainKvRecord(mainKvIter.Info, mainKvIter.Key);
+                        ProcessNonTailmostMainKvRecord(mainKvIter.Info, mainKvIter);
                         continue;
                     }
 
@@ -164,15 +164,14 @@ namespace Tsavorite.core
                     {
                         try
                         {
-                            var key = mainKvIter.Key;
-                            if (IsTailmostMainKvRecord(key, mainKvIter.Info, ref stackCtx))
+                            if (IsTailmostMainKvRecord(mainKvIter, mainKvIter.Info, ref stackCtx))
                             {
                                 // Push Iter records are in temp storage so do not need locks.
                                 stop = !scanFunctions.Reader(in mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress, mainKvIter.ETag), numRecords, out _);
                                 return !stop;
                             }
 
-                            ProcessNonTailmostMainKvRecord(mainKvIter.Info, key);
+                            ProcessNonTailmostMainKvRecord(mainKvIter.Info, mainKvIter);
                             continue;
                         }
                         catch (Exception ex)
@@ -216,19 +215,18 @@ namespace Tsavorite.core
             }
         }
 
-        private void ProcessNonTailmostMainKvRecord(RecordInfo recordInfo, ReadOnlySpan<byte> key)
+        private void ProcessNonTailmostMainKvRecord<TKey>(RecordInfo recordInfo, TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             // Not the tailmost record in the tag chain so add it to or remove it from tempKV (we want to return only the latest version).
             if (recordInfo.Tombstone)
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
-#if NET9_0_OR_GREATER
-                var wrappedKey = new SpanByteKey(key);
-#else
-                var wrappedKey = PinnedSpanByte.FromPinnedSpan(key);
-#endif
-                if (tempbContext.ContainsKeyInMemory(wrappedKey, out _).Found)
-                    _ = tempbContext.Delete(wrappedKey);
+                if (tempbContext.ContainsKeyInMemory(key, out _).Found)
+                    _ = tempbContext.Delete(key);
             }
             else
             {
@@ -238,9 +236,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IsTailmostMainKvRecord(ReadOnlySpan<byte> key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+        bool IsTailmostMainKvRecord<TKey>(TKey key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            stackCtx = new(new SpanByteKey(key).GetKeyHashCode64());
+            stackCtx = new(key.GetKeyHashCode64());
             if (store.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -252,13 +254,8 @@ namespace Tsavorite.core
                     if (mainKvRecordInfo.PreviousAddress >= store.Log.BeginAddress)
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
-#if NET9_0_OR_GREATER
-                        var wrappedKey2 = new SpanByteKey(key);
-#else
-                        var wrappedKey2 = PinnedSpanByte.FromPinnedSpan(key);
-#endif
-                        if (tempbContext.ContainsKeyInMemory(wrappedKey2, out _).Found)
-                            _ = tempbContext.Delete(wrappedKey2);
+                        if (tempbContext.ContainsKeyInMemory(key, out _).Found)
+                            _ = tempbContext.Delete(key);
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.
@@ -291,6 +288,9 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool IsPinnedKey => CurrentIter.IsPinnedKey;
+
+        /// <inheritdoc/>
+        public bool IsPinned => IsPinnedKey;
 
         /// <inheritdoc/>
         public unsafe byte* PinnedKeyPointer => CurrentIter.PinnedKeyPointer;

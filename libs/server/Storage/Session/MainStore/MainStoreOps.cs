@@ -16,7 +16,7 @@ namespace Garnet.server
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             long ctx = default;
-            var status = context.Read(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output, ctx);
+            var status = context.Read((SpanByteKey)key.ReadOnlySpan, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -41,7 +41,7 @@ namespace Garnet.server
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>, IUnsafeContext
         {
             epochChanged = false;
-            var status = context.Read(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref Unsafe.AsRef(in input), ref output, userContext: default);
+            var status = context.Read((SpanByteKey)key.ReadOnlySpan, ref Unsafe.AsRef(in input), ref output, userContext: default);
 
             if (status.IsPending)
             {
@@ -111,7 +111,7 @@ namespace Garnet.server
         {
             ObjectInput input = default;
             output = default;
-            var status = objectContext.Read(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output, userContext: default);
+            var status = objectContext.Read((SpanByteKey)key.ReadOnlySpan, ref input, ref output, userContext: default);
 
             if (status.IsPending)
             {
@@ -135,7 +135,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GETEX<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
 
             if (status.IsPending)
             {
@@ -168,7 +168,7 @@ namespace Garnet.server
         {
             var input = new StringInput(RespCommand.GETDEL);
 
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
 
             if (status.IsPending)
@@ -180,7 +180,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GETRANGE<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output);
+            var status = context.Read((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
 
             if (status.IsPending)
             {
@@ -204,7 +204,7 @@ namespace Garnet.server
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            context.Upsert(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), value.ReadOnlySpan);
+            context.Upsert((SpanByteKey)key.ReadOnlySpan, value.ReadOnlySpan);
             return GarnetStatus.OK;
         }
 
@@ -212,7 +212,7 @@ namespace Garnet.server
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var output = new StringOutput();
-            context.Upsert(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, value.ReadOnlySpan, ref output);
+            context.Upsert((SpanByteKey)key.ReadOnlySpan, ref input, value.ReadOnlySpan, ref output);
             return GarnetStatus.OK;
         }
 
@@ -222,7 +222,7 @@ namespace Garnet.server
             byte* pbOutput = stackalloc byte[8];
             var o = StringOutput.FromPinnedPointer(pbOutput, 8);
 
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref o);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref o);
 
             if (status.IsPending)
             {
@@ -251,7 +251,7 @@ namespace Garnet.server
 
             Span<byte> outputSpan = stackalloc byte[8];
             var output = StringOutput.FromPinnedSpan(outputSpan);
-            var status = context.RMW(key, ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
 
             if (status.IsPending)
             {
@@ -278,7 +278,7 @@ namespace Garnet.server
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
 
             if (status.IsPending)
             {
@@ -353,7 +353,7 @@ namespace Garnet.server
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            objectContext.Upsert(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), value);
+            objectContext.Upsert((SpanByteKey)key.ReadOnlySpan, value);
             return GarnetStatus.OK;
         }
 
@@ -363,7 +363,7 @@ namespace Garnet.server
             unsafe
             {
                 fixed (byte* ptr = value.Span)
-                    context.Upsert(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), new ReadOnlySpan<byte>(ptr, value.Length));
+                    context.Upsert((SpanByteKey)key.ReadOnlySpan, new ReadOnlySpan<byte>(ptr, value.Length));
             }
             return GarnetStatus.OK;
         }
@@ -411,7 +411,7 @@ namespace Garnet.server
         public unsafe GarnetStatus APPEND<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
             if (status.IsPending)
             {
                 StartPendingMetrics();
@@ -433,7 +433,7 @@ namespace Garnet.server
         public GarnetStatus DELETE_MainStore<TStringContext>(PinnedSpanByte key, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Delete(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan));
+            var status = context.Delete((SpanByteKey)key.ReadOnlySpan);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
@@ -453,7 +453,7 @@ namespace Garnet.server
         {
             StringOutput sbmOut = new(new SpanByteAndMemory(output));
 
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref sbmOut);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref sbmOut);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref sbmOut, ref context);
 
@@ -466,7 +466,7 @@ namespace Garnet.server
         public GarnetStatus Increment<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
             return GarnetStatus.OK;
@@ -487,7 +487,7 @@ namespace Garnet.server
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var stringOutput = StringOutput.FromPinnedSpan(stackalloc byte[outputBufferLength]);
 
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key.ReadOnlySpan), ref input, ref stringOutput);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref stringOutput);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref stringOutput, ref context);
 

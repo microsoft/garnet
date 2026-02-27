@@ -174,6 +174,8 @@ namespace Tsavorite.core
             }
         }
 
+        #region IKey
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetKeyHashCode64() => SpanByteComparer.StaticGetHashCode64(Key);
@@ -188,6 +190,11 @@ namespace Tsavorite.core
             , allows ref struct
 #endif
             => Key.SequenceEqual(other.KeyBytes);
+
+        /// <inheritdoc/>
+        public readonly bool IsPinned => IsPinnedKey;
+
+        #endregion
 
         /// <inheritdoc/>
         public readonly bool IsPinnedKey => Info.KeyIsInline;
@@ -403,7 +410,11 @@ namespace Tsavorite.core
         /// Initialize record for <see cref="ObjectAllocator{TStoreFunctions}"/>--includes Overflow option for Key and Overflow and Object option for Value
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
             _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
@@ -415,13 +426,13 @@ namespace Tsavorite.core
             if (sizeInfo.KeyIsInline)
             {
                 InfoRef.SetKeyIsInline();
-                key.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
+                key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
             }
             else
             {
                 InfoRef.SetKeyIsOverflow();
-                var overflow = new OverflowByteArray(key.Length, startOffset: 0, endOffset: 0, zeroInit: false);
-                key.CopyTo(overflow.Span);
+                var overflow = new OverflowByteArray(key.KeyBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
+                key.KeyBytes.CopyTo(overflow.Span);
 
                 // This is record initialization so no object has been allocated for this field yet.
                 var objectId = objectIdMap.Allocate();
@@ -461,7 +472,11 @@ namespace Tsavorite.core
         /// Initialize record for <see cref="SpanByteAllocator{TStoreFunctions}"/>--does not include Overflow/Object options so is streamlined
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo)
+        public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
             _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
@@ -469,7 +484,7 @@ namespace Tsavorite.core
             InfoRef.SetKeyAndValueInline();
 
             // Serialize Key. Do nothing for the value; we've set it inline and the actual value setting is done in ISessionFunctions).
-            key.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
+            key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
         }
 
         /// <summary>A ref to the record header</summary>

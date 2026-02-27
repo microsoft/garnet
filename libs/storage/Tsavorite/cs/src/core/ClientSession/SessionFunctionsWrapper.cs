@@ -101,12 +101,20 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueSpan, ref upsertInfo, epochAccessor);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueObject, ref upsertInfo, epochAccessor);
         #endregion Upserts
@@ -114,7 +122,11 @@ namespace Tsavorite.core
         #region RMWs
         #region InitialUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => _clientSession.functions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -192,7 +204,11 @@ namespace Tsavorite.core
         #endregion InPlaceUpdater
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+        public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostRMWOperation(key, ref input, ref rmwInfo, epochAccessor);
 
@@ -223,7 +239,11 @@ namespace Tsavorite.core
             return true;
         }
 
-        public void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+        public void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostDeleteOperation(key, ref deleteInfo, epochAccessor);
         #endregion Deletes
@@ -255,7 +275,12 @@ namespace Tsavorite.core
 
         #region Internal utilities
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) => _clientSession.functions.GetRMWInitialFieldInfo(key, ref input);
+        public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.GetRMWInitialFieldInfo(key, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input)
@@ -263,13 +288,27 @@ namespace Tsavorite.core
             => _clientSession.functions.GetRMWModifiedFieldInfo(in srcLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input) => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input)
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
             => _clientSession.functions.GetUpsertFieldInfo(key, in inputLogRecord, ref input);
 

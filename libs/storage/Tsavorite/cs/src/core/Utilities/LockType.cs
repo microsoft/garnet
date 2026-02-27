@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-
 namespace Tsavorite.core
 {
     /// <summary>
@@ -32,7 +30,7 @@ namespace Tsavorite.core
     public interface ITransactionalKey
     {
         /// <summary>
-        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash{TKey}(TKey)"/>
+        /// The hash code for a specific key, obtained from <see cref="IKey.GetKeyHashCode64"/>
         /// </summary>
         public long KeyHash { get; }
 
@@ -40,65 +38,6 @@ namespace Tsavorite.core
         /// The lock type for a specific key
         /// </summary>
         public LockType LockType { get; }
-    }
-
-    /// <summary>
-    /// A utility class to carry a fixed-length key (blittable or object type) and its assciated info for Locking
-    /// </summary>
-    public struct FixedLengthTransactionalKeyStruct : ITransactionalKey
-    {
-        /// <summary>
-        /// The key that is acquiring or releasing a lock
-        /// </summary>
-        public PinnedSpanByte Key;
-
-        #region ITransactionalKey
-        /// <inheritdoc/>
-        public long KeyHash { get; set; }
-
-        /// <inheritdoc/>
-        public LockType LockType { get; set; }
-        #endregion ITransactionalKey
-
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, LockType lockType, ITsavoriteContext context)
-        {
-            Key = PinnedSpanByte.FromPinnedSpan(key);
-            LockType = lockType;
-            KeyHash =
-#if NET9_0_OR_GREATER
-                context.GetKeyHash(new SpanByteKey(key));
-#else
-                context.GetKeyHash(PinnedSpanByte.FromPinnedSpan(key));
-#endif
-        }
-
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, long keyHash, LockType lockType, ITransactionalContext context)
-        {
-            Key = PinnedSpanByte.FromPinnedSpan(key);
-            KeyHash = keyHash;
-            LockType = lockType;
-        }
-
-        /// <summary>
-        /// Sort the passed key array for use in <see cref="ITransactionalContext.Lock"/>
-        /// and <see cref="ITransactionalContext.Unlock"/>
-        /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="context"></param>
-        public static void Sort(FixedLengthTransactionalKeyStruct[] keys, ITransactionalContext context) => context.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
-
-        /// <inheritdoc/>
-        public override string ToString()
-        {
-            var hashStr = Utility.GetHashString(KeyHash);
-            return $"key {Key}, hash {hashStr}, {LockType}";
-        }
     }
 
     /// <summary>

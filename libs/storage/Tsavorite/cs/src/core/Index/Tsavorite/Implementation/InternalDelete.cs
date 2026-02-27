@@ -169,7 +169,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                sessionFunctions.PostDeleteOperation(key.KeyBytes, ref deleteInfo, epoch);
+                sessionFunctions.PostDeleteOperation(key, ref deleteInfo, epoch);
                 EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
 
@@ -215,7 +215,7 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var sizeInfo = hlog.GetDeleteRecordSize(key.KeyBytes);
+            var sizeInfo = hlog.GetDeleteRecordSize(key);
             AllocateOptions allocOptions = new()
             {
                 recycle = true,
@@ -226,7 +226,7 @@ namespace Tsavorite.core
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key.KeyBytes, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             newLogRecord.InfoRef.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 

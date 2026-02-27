@@ -32,7 +32,7 @@ namespace Garnet.server
                 ThrowObjectStoreUninitializedException();
 
             // Perform RMW on object store
-            var status = objectContext.RMW(PinnedSpanByte.FromPinnedSpan(key), ref input, ref output);
+            var status = objectContext.RMW((SpanByteKey)key, ref input, ref output);
 
             return CompletePendingAndGetGarnetStatus(status, ref objectContext, ref output);
         }
@@ -53,7 +53,7 @@ namespace Garnet.server
                 ThrowObjectStoreUninitializedException();
 
             // Perform read on object store
-            var status = objectContext.Read(PinnedSpanByte.FromPinnedSpan(key), ref input, ref output);
+            var status = objectContext.Read((SpanByteKey)key, ref input, ref output);
 
             return CompletePendingAndGetGarnetStatus(status, ref objectContext, ref output);
         }
@@ -659,7 +659,7 @@ namespace Garnet.server
         public GarnetStatus DELETE_ObjectStore<TObjectContext>(PinnedSpanByte key, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.Delete(key);
+            var status = objectContext.Delete((SpanByteKey)key.ReadOnlySpan);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

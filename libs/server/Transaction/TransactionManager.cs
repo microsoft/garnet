@@ -299,10 +299,10 @@ namespace Garnet.server
 
             // Release context
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                stringTransactionalContext.ResetModified(key);
+                stringTransactionalContext.ResetModified((SpanByteKey)key.ReadOnlySpan);
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
-                objectTransactionalContext.ResetModified(key);
-            unifiedTransactionalContext.ResetModified(key);
+                objectTransactionalContext.ResetModified((SpanByteKey)key.ReadOnlySpan);
+            unifiedTransactionalContext.ResetModified((SpanByteKey)key.ReadOnlySpan);
         }
 
         internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)

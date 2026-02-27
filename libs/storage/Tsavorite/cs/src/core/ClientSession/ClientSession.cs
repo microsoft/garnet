@@ -144,14 +144,6 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-            => key.GetKeyHashCode64();
-
-        /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

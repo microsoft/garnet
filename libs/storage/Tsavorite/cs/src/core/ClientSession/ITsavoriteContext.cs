@@ -8,27 +8,9 @@ using System.Threading.Tasks;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Interface for Key-only Tsavorite operations
-    /// </summary>
-    public interface ITsavoriteContext
-    {
-        /// <summary>
-        /// Obtain a code by which groups of keys will be sorted for Transactional locking, to avoid deadlocks.
-        /// <param name="key">The key to obtain a code for</param>
-        /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{byte})"/></returns>
-        long GetKeyHash<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-            ;
-    }
-
-    /// <summary>
     /// Interface for Tsavorite operations
     /// </summary>
-    public interface ITsavoriteContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext
+    public interface ITsavoriteContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>

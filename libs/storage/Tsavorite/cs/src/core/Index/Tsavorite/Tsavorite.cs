@@ -186,13 +186,6 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash<TKey>(TKey key) where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-            => key.GetKeyHashCode64();
-
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>
@@ -651,11 +644,8 @@ namespace Tsavorite.core
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             pcontext.SetIsNoKey();
-#if NET9_0_OR_GREATER
+
             return ContextReadAtAddress<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
-#else
-            return ContextReadAtAddress<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

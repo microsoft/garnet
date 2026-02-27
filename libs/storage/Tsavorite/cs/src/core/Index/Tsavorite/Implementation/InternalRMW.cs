@@ -128,7 +128,7 @@ namespace Tsavorite.core
                         // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
-                            if (!sessionFunctions.NeedInitialUpdate(key.KeyBytes, ref input, ref output, ref rmwInfo))
+                            if (!sessionFunctions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo))
                             {
                                 status = OperationStatus.NOTFOUND;
                                 goto LatchRelease;
@@ -227,7 +227,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                sessionFunctions.PostRMWOperation(key.KeyBytes, ref input, ref rmwInfo, epoch);
+                sessionFunctions.PostRMWOperation(key, ref input, ref rmwInfo, epoch);
                 EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
 
@@ -274,7 +274,7 @@ namespace Tsavorite.core
             var ok = false;
             try
             {
-                var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
+                var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord, ref input, sessionFunctions);
                 ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
                 if (logRecord.TrySetContentLengths(in sizeInfo))
                 {
@@ -426,7 +426,7 @@ namespace Tsavorite.core
 
             if (!doingCU)
             {
-                if (!sessionFunctions.NeedInitialUpdate(key.KeyBytes, ref input, ref output, ref rmwInfo))
+                if (!sessionFunctions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo))
                     return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
             }
 
@@ -436,19 +436,19 @@ namespace Tsavorite.core
             {
                 sizeInfo = doingCU
                     ? hlog.GetRMWCopyRecordSize(in srcLogRecord, ref input, sessionFunctions)
-                    : hlog.GetRMWInitialRecordSize(key.KeyBytes, ref input, sessionFunctions);
+                    : hlog.GetRMWInitialRecordSize(key, ref input, sessionFunctions);
             }
             else
             {
                 Debug.Assert(!allocOptions.elideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
                     "This block only handles NCU requested deletion for unelidable src records.");
-                sizeInfo = hlog.GetDeleteRecordSize(key.KeyBytes);
+                sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key.KeyBytes, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.elideSourceRecord)
                 newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -633,7 +633,7 @@ namespace Tsavorite.core
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
             advancedStatusCode |= StatusCode.Expired;
-            if (!sessionFunctions.NeedInitialUpdate(logRecord.Key, ref input, ref output, ref rmwInfo))
+            if (!sessionFunctions.NeedInitialUpdate(logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
@@ -648,7 +648,7 @@ namespace Tsavorite.core
             }
 
             // Try to reinitialize in place
-            var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
+            var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord, ref input, sessionFunctions);
 
             if (logRecord.TryReinitializeValueLength(in sizeInfo))
             {

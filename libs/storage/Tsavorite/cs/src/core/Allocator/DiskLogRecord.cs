@@ -217,6 +217,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> Key => logRecord.Key;
 
+        #region IKey
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetKeyHashCode64() => logRecord.GetKeyHashCode64();
@@ -226,11 +228,17 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool KeysEqual<TOther>(TOther other) where TOther : IKey
+        public readonly bool KeysEqual<TOther>(TOther other)
+            where TOther: IKey
 #if NET9_0_OR_GREATER
-            , allows ref struct
+                , allows ref struct
 #endif
             => logRecord.KeysEqual(other);
+
+        /// <inheritdoc/>
+        public readonly bool IsPinned
+            => true;
+        #endregion
 
         /// <inheritdoc/>
         public readonly Span<byte> ValueSpan => logRecord.ValueSpan;

@@ -11,7 +11,7 @@ namespace Garnet.server
         public GarnetStatus Read_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = unifiedContext.Read(PinnedSpanByte.FromPinnedSpan(key), ref input, ref output);
+            var status = unifiedContext.Read((SpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
@@ -22,7 +22,7 @@ namespace Garnet.server
         public GarnetStatus RMW_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext context)
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(PinnedSpanByte.FromPinnedSpan(key), ref input, ref output);
+            var status = context.RMW((SpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);

@@ -175,7 +175,7 @@ namespace Garnet.server
                         return GarnetStatus.OK;
                     }
 
-                    _ = geoObjectTransactionalContext.Delete(destination);
+                    _ = geoObjectTransactionalContext.Delete((SpanByteKey)destination.ReadOnlySpan);
 
                     _ = RespReadUtils.TryReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
@@ -201,7 +201,7 @@ namespace Garnet.server
                     }, ref parseState);
 
                     var zAddOutput = new ObjectOutput();
-                    RMWObjectStoreOperation(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);
+                    RMWObjectStoreOperation(destination.ReadOnlySpan, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);
 
                     writer.WriteInt32(foundItems);
                 }

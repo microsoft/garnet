@@ -48,14 +48,6 @@ namespace Tsavorite.core
         public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-            => clientSession.store.GetKeyHash(key);
-
-        /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
@@ -339,11 +331,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
-            => Upsert(new SpanByteKey(diskLogRecord.Key), in diskLogRecord);
-#else
-            => Upsert(PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key), in diskLogRecord);
-#endif
+            => Upsert(diskLogRecord, in diskLogRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -378,11 +366,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
-            => Upsert(new SpanByteKey(inputLogRecord.Key), ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
-#else
-            => Upsert(PinnedSpanByte.FromPinnedSpan(inputLogRecord.Key), ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
-#endif
+            => Upsert(inputLogRecord, ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -508,12 +492,8 @@ namespace Tsavorite.core
             where TKey : IKey
 #if NET9_0_OR_GREATER
             , allows ref struct
-            => clientSession.UnsafeResetModified(sessionFunctions, new SpanByteKey(key.KeyBytes));
-#else
-        {
-            clientSession.UnsafeResetModified(sessionFunctions, PinnedSpanByte.FromPinnedSpan(key.KeyBytes));
-        }
 #endif
+            => clientSession.UnsafeResetModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -521,12 +501,8 @@ namespace Tsavorite.core
             where TKey : IKey
 #if NET9_0_OR_GREATER
             , allows ref struct
-            => clientSession.UnsafeIsModified(sessionFunctions, new SpanByteKey(key.KeyBytes));
-#else
-        {
-            return clientSession.UnsafeIsModified(sessionFunctions, PinnedSpanByte.FromPinnedSpan(key.KeyBytes));
-        }
 #endif
+            => clientSession.UnsafeIsModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         public void Refresh()

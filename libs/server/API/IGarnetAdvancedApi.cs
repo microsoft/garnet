@@ -64,7 +64,7 @@ namespace Garnet.server
         /// Read batch of keys on main store.
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
-            where TBatch : IReadArgBatch<PinnedSpanByte, StringInput, StringOutput>
+            where TBatch : IReadArgBatch<SpanByteKey, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif

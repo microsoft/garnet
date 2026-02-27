@@ -31,7 +31,7 @@ namespace Tsavorite.core
             internal DiskLogRecord diskLogRecord;
 
             /// <summary>The Key that was sent to this operation if it was RUMD.</summary>
-            internal SpanByteHeapContainer requestKey;
+            internal ConditionallyHoistedKey requestKey;
             /// <summary>The hash of <see cref="requestKey"/> if it is present.</summary>
             internal long keyHash;
 
@@ -85,7 +85,7 @@ namespace Tsavorite.core
             /// <inheritdoc/>
             public override readonly string ToString()
             {
-                var keyStr = requestKey is not null ? SpanByte.ToShortString(requestKey.Get(), 12) : "<null>";
+                var keyStr = !requestKey.IsEmpty ? SpanByte.ToShortString(requestKey.KeyBytes, 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
                 return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ETag={eTag}, ReadCopyOpt={readCopyOptions}";
             }
@@ -120,7 +120,7 @@ namespace Tsavorite.core
                 if (diskLogRecord.IsSet)
                     diskLogRecord.Dispose();
                 diskLogRecord = default;
-                requestKey?.Dispose();
+                requestKey.Dispose();
                 requestKey = default;
                 input?.Dispose();
                 input = default;
@@ -149,10 +149,7 @@ namespace Tsavorite.core
 
                 if (this.input == default)
                 {
-                    if (typeof(TInput) == typeof(PinnedSpanByte))
-                        this.input = new SpanByteHeapContainer(Unsafe.As<TInput, PinnedSpanByte>(ref input), sessionFunctions.Store.hlogBase.bufferPool) as IHeapContainer<TInput>;
-                    else
-                        this.input = new StandardHeapContainer<TInput>(ref input);
+                    this.input = new StandardHeapContainer<TInput>(input);
                 }
                 this.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);
@@ -166,10 +163,10 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
             {
-                if (requestKey is null)
-                    requestKey = new(key.KeyBytes, bufferPool);
+                if (requestKey.IsEmpty)
+                    requestKey = ConditionallyHoistedKey.Create(key, bufferPool);
                 else
-                    Debug.Assert(requestKey.Get().ReadOnlySpan.SequenceEqual(key.KeyBytes), "pendingContext.requestKey should not change keys");
+                    Debug.Assert(requestKey.KeysEqual(key), "pendingContext.requestKey should not change keys");
             }
 
             /// <summary>
@@ -212,6 +209,15 @@ namespace Tsavorite.core
             #endregion // Serialized Record Creation
 
             #region Shortcuts to contained DiskLogRecord
+            public readonly DiskLogRecord DiskLogRecord
+            {
+                get
+                {
+                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'DiskLogRecord'");
+                    return diskLogRecord;
+                }
+            }
+
             /// <inheritdoc/>
             public readonly RecordInfo Info
             {

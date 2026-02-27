@@ -595,7 +595,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             foreach (var key in keys)
-                RMWObjectStoreOperation(key, ref input, ref objectContext, ref output);
+                RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             return GarnetStatus.OK;
         }

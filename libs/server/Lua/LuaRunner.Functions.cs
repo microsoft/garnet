@@ -227,7 +227,7 @@ namespace Garnet.server
 
                     if (txnMode)
                     {
-                        txnKeyEntries.AddKey(key, LockType.Exclusive);
+                        txnKeyEntries.AddKey((SpanByteKey)key.ReadOnlySpan, LockType.Exclusive);
                     }
 
                     // Equivalent to KEYS[i+1] = key

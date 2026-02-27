@@ -75,9 +75,13 @@ namespace Garnet.server
             }
         }
 
-        public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
+        public void AddKey<TKey>(TKey keyArgSlice, LockType type)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice);
+            var keyHash = keyArgSlice.GetKeyHashCode64();
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)

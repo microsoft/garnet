@@ -7,6 +7,8 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// A readonly ref struct that wraps a <see cref="ReadOnlySpan{T}"/> of bytes as an <see cref="IKey"/> implementation.
+    /// 
+    /// Assumes that the underlying memory is pinned.
     /// </summary>
     public readonly
 #if NET9_0_OR_GREATER
@@ -36,7 +38,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a new SpanByteKey wrapping the given bytes.
         /// </summary>
-        public SpanByteKey(ReadOnlySpan<byte> key)
+        private SpanByteKey(ReadOnlySpan<byte> key)
         {
 #if NET9_0_OR_GREATER
             _keyBytes = key;
@@ -44,6 +46,9 @@ namespace Tsavorite.core
 
 #endif
         }
+
+        /// <inheritdoc/>
+        public readonly bool IsPinned => true;
 
         /// <inheritdoc/>
         public readonly long GetKeyHashCode64() => SpanByteComparer.StaticGetHashCode64(KeyBytes);

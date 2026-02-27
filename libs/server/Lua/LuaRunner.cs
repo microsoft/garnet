@@ -14,6 +14,7 @@ using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -1238,7 +1239,7 @@ namespace Garnet.server
                     foreach (var key in keys)
                     {
                         var _key = scratchBufferBuilder.CreateArgSlice(key);
-                        txnKeyEntries.AddKey(_key, Tsavorite.core.LockType.Exclusive);
+                        txnKeyEntries.AddKey((SpanByteKey)_key.ReadOnlySpan, Tsavorite.core.LockType.Exclusive);
                     }
 
                     adapter = new(scratchBufferBuilder);

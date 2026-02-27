@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -55,7 +56,7 @@ namespace Tsavorite.core
     ///     </item>
     /// </list>
     ///</summary>
-    public unsafe struct RecordDataHeader
+    public unsafe struct RecordDataHeader : IKey
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         // When assigning these bits, use the highest # in kReservedBitMask#
@@ -425,5 +426,41 @@ namespace Tsavorite.core
             var recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
             return recordLength - GetFillerLength(recordInfo, recordLength);
         }
+
+        #region IKey
+
+        /// <inheritdoc/>
+        public readonly bool IsPinned => true;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> KeyBytes
+        {
+            get
+            {
+                var ptr = HeaderPtr - RecordInfo.Size;
+
+                var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
+                var offsetToKeyStart = GetOffsetToKeyStart(headerLength);
+
+                var keyStartPtr = ptr + offsetToKeyStart;
+                var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
+
+                return new ReadOnlySpan<byte>(keyStartPtr, keyLength);
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly long GetKeyHashCode64()
+            => SpanByteComparer.StaticGetHashCode64(KeyBytes);
+
+        /// <inheritdoc/>
+        public readonly bool KeysEqual<TOther>(TOther other)
+            where TOther : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => KeyBytes.SequenceEqual(other.KeyBytes);
+
+        #endregion
     }
 }

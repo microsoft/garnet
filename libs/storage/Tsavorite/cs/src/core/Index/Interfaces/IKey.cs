@@ -11,6 +11,11 @@ namespace Tsavorite.core
     public interface IKey
     {
         /// <summary>
+        /// True if the <see cref="KeyBytes"/> and other memory exposed by this <see cref="IKey"/> can be safely assumed to not move.
+        /// </summary>
+        bool IsPinned { get; }
+
+        /// <summary>
         /// Get 64-bit hash code for this key.
         /// </summary>
         long GetKeyHashCode64();

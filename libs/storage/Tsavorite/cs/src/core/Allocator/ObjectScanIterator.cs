@@ -221,11 +221,7 @@ namespace Tsavorite.core
                             if (currentAddress >= headAddress && store is not null)
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
-#if NET9_0_OR_GREATER
-                                store.LockForScan(ref stackCtx, new SpanByteKey(logRecord.Key));
-#else
-                                store.LockForScan(ref stackCtx, PinnedSpanByte.FromPinnedSpan(logRecord.Key));
-#endif
+                                store.LockForScan(ref stackCtx, logRecord);
                             }
 
                             if (recordBuffer == null)
@@ -274,7 +270,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator.BeginGetPrevInMemory(ReadOnlySpan<byte> key, out LogRecord logRecord, out bool continueOnDisk)
+        bool IPushScanIterator.BeginGetPrevInMemory<TKey>(TKey key, out LogRecord logRecord, out bool continueOnDisk)
         {
             while (true)
             {
@@ -295,11 +291,7 @@ namespace Tsavorite.core
 
                 // Do not SkipOnScan here; we Seal previous versions.
                 if (logRecord.Info.IsNull ||
-#if NET9_0_OR_GREATER
-                    !new SpanByteKey(logRecord.Key).KeysEqual(new SpanByteKey(key)))
-#else
-                    !logRecord.Key.SequenceEqual(key))
-#endif
+                    !logRecord.KeysEqual(key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -346,6 +338,23 @@ namespace Tsavorite.core
             get => diskLogRecord.KeyOverflow;
             set => diskLogRecord.KeyOverflow = value;
         }
+
+        #region IKey
+        public bool IsPinned => IsPinnedKey;
+
+        public long GetKeyHashCode64()
+            => SpanByteComparer.StaticGetHashCode64(Key);
+
+        public ReadOnlySpan<byte> KeyBytes
+            => Key;
+
+        public bool KeysEqual<TOther>(TOther other)
+            where TOther : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => Key.SequenceEqual(other.KeyBytes);
+        #endregion
 
         /// <inheritdoc/>
         public Span<byte> ValueSpan => diskLogRecord.ValueSpan;

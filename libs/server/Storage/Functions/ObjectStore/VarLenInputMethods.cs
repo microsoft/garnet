@@ -12,11 +12,15 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref ObjectInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref ObjectInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
@@ -38,11 +42,15 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref ObjectInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
@@ -50,11 +58,15 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref ObjectInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
@@ -62,12 +74,16 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref ObjectInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
         {
             return new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()

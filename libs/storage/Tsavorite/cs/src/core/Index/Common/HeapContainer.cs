@@ -10,6 +10,9 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="T"></typeparam>
     public interface IHeapContainer<T> : IDisposable
+#if NET9_0_OR_GREATER
+        where T: allows ref struct
+#endif
     {
         /// <summary>
         /// Get a reference to the contained object
@@ -25,7 +28,7 @@ namespace Tsavorite.core
     {
         private T obj;
 
-        public StandardHeapContainer(ref T obj)
+        public StandardHeapContainer(T obj)
         {
             this.obj = obj;
         }

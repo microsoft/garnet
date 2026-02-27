@@ -18,7 +18,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus MEMORYUSAGE(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         #endregion
 
@@ -26,7 +26,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus TYPE(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         #endregion
 
@@ -34,7 +34,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus TTL(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         #endregion
 
@@ -42,7 +42,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         #endregion
 
@@ -50,7 +50,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus EXISTS(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
         public GarnetStatus EXISTS(PinnedSpanByte key)
@@ -74,7 +74,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.RMW_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
@@ -102,7 +102,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public unsafe GarnetStatus PERSIST(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
-            => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            => storageSession.RMW_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         #endregion
     }

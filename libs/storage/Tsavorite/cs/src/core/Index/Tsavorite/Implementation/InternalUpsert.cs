@@ -134,7 +134,7 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord.Key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
+                    var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
 
                     // Type arg specification is needed because we don't pass TContext
                     if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
@@ -176,7 +176,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TValueSelector.PostUpsertOperation<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, LightEpoch>(key.KeyBytes, ref input,
+                TValueSelector.PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, LightEpoch>(key, ref input,
                     srcStringValue, srcObjectValue, in inputLogRecord, ref upsertInfo, sessionFunctions, epoch);
                 EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
@@ -216,7 +216,7 @@ namespace Tsavorite.core
                 logRecord.ClearOptionals();
                 logRecord.InfoRef.ClearTombstone();
 
-                var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, logRecord.Key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
+                var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, logRecord, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
 
                 ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
 
@@ -306,7 +306,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, key.KeyBytes, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
+            var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
             AllocateOptions allocOptions = new()
             {
                 recycle = true,
@@ -316,7 +316,7 @@ namespace Tsavorite.core
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key.KeyBytes, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.elideSourceRecord)
                 newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);

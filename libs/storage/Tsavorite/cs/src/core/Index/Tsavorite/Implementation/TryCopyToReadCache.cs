@@ -30,7 +30,7 @@ namespace Tsavorite.core
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _ /*status*/))
                 return false;
-            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readcacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord, readcacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
 
             stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
@@ -66,11 +66,7 @@ namespace Tsavorite.core
                     //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
                     //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
                     success = EnsureNoNewMainLogRecordWasSpliced(
-#if NET9_0_OR_GREATER
-                        new SpanByteKey(inputLogRecord.Key),
-#else
-                        PinnedSpanByte.FromPinnedSpan(inputLogRecord.Key),
-#endif
+                        inputLogRecord,
                         ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
                 }
             }

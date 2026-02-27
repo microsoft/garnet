@@ -1,9 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if !NET9_0_OR_GREATER
-using System;
-#endif
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -56,14 +53,9 @@ namespace Tsavorite.core
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    var keySpan = recordInfo.KeyIsInline
-                        ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)    // Most keys are inline and this is faster
-                        : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
-#if NET9_0_OR_GREATER
-                    if (key.KeysEqual(new SpanByteKey(keySpan)))
-#else
-                    if (key.KeyBytes.SequenceEqual(keySpan))
-#endif
+                    var logRecord = readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+
+                    if (key.KeysEqual(logRecord))
                     {
                         // Keep these at the current readcache location; they'll be the caller's source record.
                         stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
@@ -307,7 +299,7 @@ namespace Tsavorite.core
                 Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
-                HashEntryInfo hei = new(new SpanByteKey(logRecord.Key).GetKeyHashCode64());
+                HashEntryInfo hei = new(logRecord.GetKeyHashCode64());
                 if (!FindTag(ref hei))
                     goto NextRecord;
 
@@ -339,7 +331,7 @@ namespace Tsavorite.core
                 // Due to collisions, we can compare the hash code *mask* (i.e. the hash bucket index), not the key
                 var mask = state[resizeInfo.version].size_mask;
                 var rc_mask = hei.hash & mask;
-                var pa_mask = new SpanByteKey(logRecord.Key).GetKeyHashCode64() & mask;
+                var pa_mask = logRecord.GetKeyHashCode64() & mask;
                 Debug.Assert(rc_mask == pa_mask, "The keyHash mask of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");
 #endif
 

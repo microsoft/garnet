@@ -17,7 +17,11 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
@@ -26,7 +30,7 @@ namespace Garnet.server
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                key, value, epochAccessor, out _);
+                key.KeyBytes, value, epochAccessor, out _);
         }
 
         /// <summary>
@@ -34,7 +38,11 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
@@ -46,7 +54,7 @@ namespace Garnet.server
             {
                 functionsState.appendOnlyFile.Enqueue(
                     new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                    key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), epochAccessor, out _);
+                    key.KeyBytes, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), epochAccessor, out _);
             }
         }
 
@@ -56,7 +64,11 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogRMW<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
@@ -64,7 +76,7 @@ namespace Garnet.server
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                key, ref input, epochAccessor, out _);
+                key.KeyBytes, ref input, epochAccessor, out _);
         }
 
         /// <summary>
@@ -72,13 +84,17 @@ namespace Garnet.server
         ///  a. InPlaceDeleter
         ///  b. PostInitialDeleter
         /// </summary>
-        void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogDelete<TKey, TEpochAccessor>(TKey key, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
 
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, epochAccessor, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, key.KeyBytes, item2: default, epochAccessor, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

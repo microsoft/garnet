@@ -13,7 +13,7 @@ namespace Garnet.server
         public GarnetStatus GET_WithPending<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(key, ref input, ref output, ctx);
+            var status = context.Read((SpanByteKey)key.ReadOnlySpan, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -71,7 +71,7 @@ namespace Garnet.server
         public GarnetStatus RMW_MainStore<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(key, ref input, ref output);
+            var status = context.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
@@ -85,7 +85,7 @@ namespace Garnet.server
         public GarnetStatus Read_MainStore<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(key, ref input, ref output);
+            var status = context.Read((SpanByteKey)key.ReadOnlySpan, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
@@ -98,11 +98,11 @@ namespace Garnet.server
 
 
         public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
-            where TBatch : IReadArgBatch<PinnedSpanByte, StringInput, StringOutput>
+            where TBatch : IReadArgBatch<SpanByteKey, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
             where TContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        => context.ReadWithPrefetch<PinnedSpanByte, TBatch>(ref batch, userContext);
+        => context.ReadWithPrefetch<SpanByteKey, TBatch>(ref batch, userContext);
     }
 }

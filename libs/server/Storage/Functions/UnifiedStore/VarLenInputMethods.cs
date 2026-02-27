@@ -83,46 +83,63 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref UnifiedInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = 0,
                 HasETag = input.header.CheckWithETagFlag()
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value,
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value,
             ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
                 HasETag = input.header.CheckWithETagFlag()
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref UnifiedInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key,
+        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key,
             in TSourceLogRecord inputLogRecord,
-            ref UnifiedInput input) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord
         {
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
                 HasETag = input.header.CheckWithETagFlag(),

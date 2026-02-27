@@ -86,7 +86,11 @@ namespace Tsavorite.core
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+        public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
             if (readBuffers is null)
@@ -109,12 +113,8 @@ namespace Tsavorite.core
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
-                    if (!requestedKey.IsEmpty &&
-#if NET9_0_OR_GREATER
-                        !new SpanByteKey(requestedKey).KeysEqual(new SpanByteKey(logRecord.KeyOverflow.Span)))
-#else
-                        !requestedKey.SequenceEqual(logRecord.KeyOverflow.Span))
-#endif
+                    if (!requestedKey.KeyBytes.IsEmpty &&
+                        !requestedKey.KeysEqual(logRecord))
                         return false;
                 }
 

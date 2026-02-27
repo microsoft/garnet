@@ -1306,7 +1306,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(new SpanByteKey(logRecord.Key).GetKeyHashCode64());
+                    HashEntryInfo hei = new(logRecord.GetKeyHashCode64());
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     if ((pageStartLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)

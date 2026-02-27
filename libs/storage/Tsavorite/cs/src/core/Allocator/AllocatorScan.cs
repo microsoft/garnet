@@ -33,10 +33,14 @@ namespace Tsavorite.core
         /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, ref TScanFunctions scanFunctions)
+        internal bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, ref TScanFunctions scanFunctions)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TScanFunctions : IScanIteratorFunctions
         {
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(new SpanByteKey(key).GetKeyHashCode64());
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(key.GetKeyHashCode64());
             if (!store.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -51,7 +55,11 @@ namespace Tsavorite.core
         /// Push-based iteration of key versions, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal abstract bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal abstract bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, long beginAddress, ref TScanFunctions scanFunctions)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
@@ -90,7 +98,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions
         /// </summary>
-        internal bool IterateHashChain<TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+        internal bool IterateHashChain<TKey, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+            where TKey: IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
@@ -108,11 +120,8 @@ namespace Tsavorite.core
                     // Iter records above readOnlyAddress will be in mutable log memory so the chain must be locked.
                     // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
                     if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
-#if NET9_0_OR_GREATER
-                        store.LockForScan(ref stackCtx, new SpanByteKey(key));
-#else
-                        store.LockForScan(ref stackCtx, PinnedSpanByte.FromPinnedSpan(key));
-#endif
+                        store.LockForScan(ref stackCtx, key);
+
                     stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
                 }
                 catch (Exception ex)
@@ -152,15 +161,19 @@ namespace Tsavorite.core
             return !stop;
         }
 
-        internal bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+        internal bool GetFromDiskAndPushToReader<TKey, TScanFunctions>(TKey key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TScanFunctions : IScanIteratorFunctions
         {
             stop = false;
             if (logicalAddress < BeginAddress)
                 return false;
 
-            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
+            completionEvent.Prepare(key, logicalAddress, this.bufferPool);
             AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
             completionEvent.Wait();
 
@@ -270,7 +283,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(new SpanByteKey(srcLogRecord.Key).GetKeyHashCode64());
+            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(srcLogRecord.GetKeyHashCode64());
 
             OperationStatus internalStatus;
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
@@ -278,11 +291,7 @@ namespace Tsavorite.core
             do
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-#if NET9_0_OR_GREATER
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, new SpanByteKey(srcLogRecord.Key), ref stackCtx,
-#else
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<PinnedSpanByte, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, PinnedSpanByte.FromPinnedSpan(srcLogRecord.Key), ref stackCtx,
-#endif
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord, ref stackCtx,
                       currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }

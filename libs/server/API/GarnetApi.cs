@@ -121,7 +121,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(key, ref input, in srcLogRecord, ref unifiedContext);
+            => storageSession.SET(key.ReadOnlySpan, ref input, in srcLogRecord, ref unifiedContext);
 
         #endregion
 
@@ -249,7 +249,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
-            where TBatch : IReadArgBatch<PinnedSpanByte, StringInput, StringOutput>
+            where TBatch : IReadArgBatch<SpanByteKey, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif

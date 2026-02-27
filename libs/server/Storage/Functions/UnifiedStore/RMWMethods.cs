@@ -15,8 +15,12 @@ namespace Garnet.server
     public readonly partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output,
+        public bool NeedInitialUpdate<TKey>(TKey key, ref UnifiedInput input, ref UnifiedOutput output,
             ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return input.header.cmd switch
             {
@@ -341,11 +345,15 @@ namespace Garnet.server
 
 
         /// <inheritdoc />
-        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+        public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
-                WriteLogRMW(key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
+                WriteLogRMW(key.KeyBytes, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }
     }
 }

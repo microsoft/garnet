@@ -24,7 +24,7 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             long ctx = default;
-            var status = context.Read(key, ref input, ref output, ctx);
+            var status = context.Read((SpanByteKey)key.ReadOnlySpan, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -72,7 +72,7 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(PinnedSpanByte.FromPinnedSpan(key), ref input, in srcLogRecord);
+            _ = unifiedContext.Upsert((SpanByteKey)key, ref input, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
@@ -93,7 +93,7 @@ namespace Garnet.server
             var output = new UnifiedOutput();
 
             // TODO: The output is unused so optimize ReadMethods to not copy it.
-            return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            return Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
         }
 
         /// <summary>
@@ -105,7 +105,7 @@ namespace Garnet.server
         public GarnetStatus DELETE<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = unifiedContext.Delete(key);
+            var status = unifiedContext.Delete((SpanByteKey)key.ReadOnlySpan);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
@@ -121,7 +121,7 @@ namespace Garnet.server
                 UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new UnifiedInput(RespCommand.DELIFEXPIM);
-            var status = unifiedContext.RMW(key, ref input);
+            var status = unifiedContext.RMW((SpanByteKey)key.ReadOnlySpan, ref input);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
@@ -199,7 +199,7 @@ namespace Garnet.server
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
-            var status = unifiedContext.RMW(key, ref input, ref unifiedOutput);
+            var status = unifiedContext.RMW((SpanByteKey)key.ReadOnlySpan, ref input, ref unifiedOutput);
 
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref unifiedOutput, ref unifiedContext);
@@ -313,7 +313,7 @@ namespace Garnet.server
                     if (withEtag)
                         input.header.SetWithETagFlag();
 
-                    status = SET(newKey, ref input, in logRecord, ref context);
+                    status = SET(newKey.ReadOnlySpan, ref input, in logRecord, ref context);
                     if (status == GarnetStatus.OK)
                     {
                         result = 1;
