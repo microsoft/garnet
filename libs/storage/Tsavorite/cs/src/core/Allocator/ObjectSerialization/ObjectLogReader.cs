@@ -113,7 +113,7 @@ namespace Tsavorite.core
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
-                    if (!requestedKey.KeyBytes.IsEmpty &&
+                    if (!requestedKey.IsEmpty &&
                         !requestedKey.KeysEqual(logRecord))
                         return false;
                 }

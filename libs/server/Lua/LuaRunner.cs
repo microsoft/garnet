@@ -14,7 +14,6 @@ using System.Text;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {

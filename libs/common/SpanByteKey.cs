@@ -2,8 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+#if !NET9_0_OR_GREATER
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+#endif
+using Tsavorite.core;
 
-namespace Tsavorite.core
+namespace Garnet.common
 {
     /// <summary>
     /// A readonly ref struct that wraps a <see cref="ReadOnlySpan{T}"/> of bytes as an <see cref="IKey"/> implementation.
@@ -19,7 +24,8 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
         private readonly ReadOnlySpan<byte> _keyBytes;
 #else
-        
+        private readonly unsafe void* ptr;
+        private readonly int len;
 #endif
 
         /// <inheritdoc/>
@@ -30,7 +36,10 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
                 return _keyBytes;
 #else
-                return default;
+                unsafe
+                {
+                    return new(ptr, len);
+                }
 #endif
             }
         }
@@ -43,12 +52,21 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
             _keyBytes = key;
 #else
-
+            unsafe
+            {
+                ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(key));
+                len = key.Length;
+            }
 #endif
         }
 
         /// <inheritdoc/>
         public readonly bool IsPinned => true;
+
+#if NET9_0_OR_GREATER
+        /// <inheritdoc/>
+        public readonly bool IsEmpty => false;
+#endif
 
         /// <inheritdoc/>
         public readonly long GetKeyHashCode64() => SpanByteComparer.StaticGetHashCode64(KeyBytes);

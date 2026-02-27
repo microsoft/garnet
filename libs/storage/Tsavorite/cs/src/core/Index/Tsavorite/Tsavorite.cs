@@ -645,7 +645,7 @@ namespace Tsavorite.core
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             pcontext.SetIsNoKey();
 
-            return ContextReadAtAddress<SpanByteKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
+            return ContextReadAtAddress<EmptyKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

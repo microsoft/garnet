@@ -870,7 +870,7 @@ namespace Tsavorite.core
                 // Iterate all records again to actually do the deserialization.
                 result.readBuffers.nextFileReadPosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
-                SpanByteKey noKey = default;
+                EmptyKey noKey = default;
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 

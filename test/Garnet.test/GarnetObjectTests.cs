@@ -4,6 +4,7 @@
 using System;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;

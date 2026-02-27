@@ -16,6 +16,13 @@ namespace Tsavorite.core
         bool IsPinned { get; }
 
         /// <summary>
+        /// True if the <see cref="IKey"/> is truly empty - not zero bytes, but uninitialized and conceptually bereft of data.
+        /// 
+        /// This should be false for almost all implementors.
+        /// </summary>
+        bool IsEmpty => false;
+
+        /// <summary>
         /// Get 64-bit hash code for this key.
         /// </summary>
         long GetKeyHashCode64();
