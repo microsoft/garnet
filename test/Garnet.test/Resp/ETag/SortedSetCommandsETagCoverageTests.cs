@@ -39,6 +39,32 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task ZCardETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0] };
+
+            await CheckCommandAsync(RespCommand.ZCARD, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(SortedSetData[0].Length, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZCountETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 1.15, 1.25 };
+
+            await CheckCommandAsync(RespCommand.ZCOUNT, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
         public async Task ZCollectETagTestAsync()
         {
             // Wait for the expiration of one member in the sorted set
@@ -50,6 +76,18 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual("OK", result.ToString());
+            }
+        }
+
+        [Test]
+        public async Task ZDiffETagTestAsync()
+        {
+            var cmdArgs = new object[] { 2, SortedSetKeys[0], SortedSetKeys[1] };
+            await CheckCommandAsync(RespCommand.ZDIFF, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(SortedSetData[0].Length, result.Length);
             }
         }
 
@@ -95,6 +133,20 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task ZExpireTimeETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "MEMBERS", 1, SortedSetData[0][0].Element };
+            await CheckCommandAsync(RespCommand.ZEXPIRETIME, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds();
+                ClassicAssert.GreaterOrEqual(expireTimestamp, (long)result[0]);
+                ClassicAssert.Less(0, (long)result[0]);
+            }
+        }
+
+        [Test]
         public async Task ZIncrByETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetData[0][0].Element };
@@ -108,6 +160,30 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task ZInterETagTestAsync()
+        {
+            var cmdArgs = new object[] { 2, SortedSetKeys[0], SortedSetKeys[1] };
+            await CheckCommandAsync(RespCommand.ZINTER, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(0, result.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZInterCardETagTestAsync()
+        {
+            var cmdArgs = new object[] { 2, SortedSetKeys[0], SortedSetKeys[1] };
+            await CheckCommandAsync(RespCommand.ZINTERCARD, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(0, (long)result);
+            }
+        }
+
+        [Test]
         public async Task ZInterStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetKeys[1], SortedSetKeys[2] };
@@ -116,6 +192,18 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZLexCountETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "-", "+" };
+            await CheckCommandAsync(RespCommand.ZLEXCOUNT, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(SortedSetData[0].Length, (long)result);
             }
         }
 
@@ -141,38 +229,16 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task ZRemRangeByLexETagTestAsync()
+        public async Task ZMScoreETagTestAsync()
         {
-            var cmdArgs = new object[] { SortedSetKeys[0], "[a1", "(a3" };
-            await CheckCommandAsync(RespCommand.ZREMRANGEBYLEX, cmdArgs, VerifyResult);
+            var cmdArgs = new object[] { SortedSetKeys[0], SortedSetData[0][0].Element, SortedSetData[0][1].Element };
+            await CheckCommandAsync(RespCommand.ZMSCORE, cmdArgs, VerifyResult, isReadOnly: true);
 
             static void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(2, (long)result);
-            }
-        }
-
-        [Test]
-        public async Task ZRemRangeByRankETagTestAsync()
-        {
-            var cmdArgs = new object[] { SortedSetKeys[0], 1, 2};
-            await CheckCommandAsync(RespCommand.ZREMRANGEBYRANK, cmdArgs, VerifyResult);
-
-            static void VerifyResult(RedisResult result)
-            {
-                ClassicAssert.AreEqual(2, (long)result);
-            }
-        }
-
-        [Test]
-        public async Task ZRemRangeByScoreETagTestAsync()
-        {
-            var cmdArgs = new object[] { SortedSetKeys[0], 0, 1.25 };
-            await CheckCommandAsync(RespCommand.ZREMRANGEBYSCORE, cmdArgs, VerifyResult);
-
-            static void VerifyResult(RedisResult result)
-            {
-                ClassicAssert.AreEqual(2, (long)result);
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual(SortedSetData[0][0].Score, (double)result[0]);
+                ClassicAssert.AreEqual(SortedSetData[0][1].Score, (double)result[1]);
             }
         }
 
@@ -202,6 +268,20 @@ namespace Garnet.test.Resp.ETag
                 var results = (RedisResult[])result;
                 ClassicAssert.AreEqual(1, results!.Length);
                 ClassicAssert.AreEqual(1, (long)results[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZPExpireTimeETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "MEMBERS", 1, SortedSetData[0][0].Element };
+            await CheckCommandAsync(RespCommand.ZPEXPIRETIME, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds();
+                ClassicAssert.GreaterOrEqual(expireTimestamp, (long)result[0]);
+                ClassicAssert.Less(0, (long)result[0]);
             }
         }
 
@@ -252,10 +332,90 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task ZPTtlETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "MEMBERS", 1, SortedSetData[0][0].Element };
+            await CheckCommandAsync(RespCommand.ZPTTL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var ttl = TimeSpan.FromSeconds(3).TotalMilliseconds;
+                ClassicAssert.GreaterOrEqual(ttl, (long)result[0]);
+                ClassicAssert.Less(0, (long)result[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZRandMemberETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0] };
+            await CheckCommandAsync(RespCommand.ZRANDMEMBER, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                CollectionAssert.Contains(SortedSetData[0].Select(d => (string)d.Element), (string)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRangeETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 0, 1 };
+            await CheckCommandAsync(RespCommand.ZRANGE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual((string)SortedSetData[0][0].Element, (string)result[0]);
+                ClassicAssert.AreEqual((string)SortedSetData[0][1].Element, (string)result[1]);
+            }
+        }
+
+        [Test]
+        public async Task ZRangeByLexETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "[a1", "[a2" };
+            await CheckCommandAsync(RespCommand.ZRANGEBYLEX, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual((string)SortedSetData[0][0].Element, (string)result[0]);
+                ClassicAssert.AreEqual((string)SortedSetData[0][1].Element, (string)result[1]);
+            }
+        }
+
+        [Test]
+        public async Task ZRangeByScoreETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 1, 1.25 };
+            await CheckCommandAsync(RespCommand.ZRANGEBYSCORE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual((string)SortedSetData[0][0].Element, (string)result[0]);
+                ClassicAssert.AreEqual((string)SortedSetData[0][1].Element, (string)result[1]);
+            }
+        }
+
+        [Test]
         public async Task ZRangeStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[2], 0, 3, "BYSCORE" };
             await CheckCommandAsync(RespCommand.ZRANGESTORE, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRankETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], SortedSetData[0][1].Element };
+            await CheckCommandAsync(RespCommand.ZRANK, cmdArgs, VerifyResult, isReadOnly: true);
 
             static void VerifyResult(RedisResult result)
             {
@@ -272,6 +432,146 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRemRangeByLexETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "[a1", "(a3" };
+            await CheckCommandAsync(RespCommand.ZREMRANGEBYLEX, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRemRangeByRankETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 1, 2 };
+            await CheckCommandAsync(RespCommand.ZREMRANGEBYRANK, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRemRangeByScoreETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 0, 1.25 };
+            await CheckCommandAsync(RespCommand.ZREMRANGEBYSCORE, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRevRangeETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 1, 2 };
+            await CheckCommandAsync(RespCommand.ZREVRANGE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual((string)SortedSetData[0][1].Element, (string)result[0]);
+                ClassicAssert.AreEqual((string)SortedSetData[0][0].Element, (string)result[1]);
+            }
+        }
+
+        [Test]
+        public async Task ZRevRangeByLexETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "[a2", "[a1" };
+            await CheckCommandAsync(RespCommand.ZREVRANGEBYLEX, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual((string)SortedSetData[0][1].Element, (string)result[0]);
+                ClassicAssert.AreEqual((string)SortedSetData[0][0].Element, (string)result[1]);
+            }
+        }
+
+        [Test]
+        public async Task ZRevRangeByScoreETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 1.25, 1 };
+            await CheckCommandAsync(RespCommand.ZREVRANGEBYSCORE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual((string)SortedSetData[0][1].Element, (string)result[0]);
+                ClassicAssert.AreEqual((string)SortedSetData[0][0].Element, (string)result[1]);
+            }
+        }
+
+        [Test]
+        public async Task ZRevRankETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], SortedSetData[0][1].Element };
+            await CheckCommandAsync(RespCommand.ZREVRANK, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZScanETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 0 };
+            await CheckCommandAsync(RespCommand.ZSCAN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+            }
+        }
+
+        [Test]
+        public async Task ZScoreETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], SortedSetData[0][0].Element };
+            await CheckCommandAsync(RespCommand.ZSCORE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(SortedSetData[0][0].Score, (double)result);
+            }
+        }
+
+        [Test]
+        public async Task ZTtlETagTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], "MEMBERS", 1, SortedSetData[0][0].Element };
+            await CheckCommandAsync(RespCommand.ZTTL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.GreaterOrEqual(3, (long)result[0]);
+                ClassicAssert.Less(0, (long)result[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZUnionETagTestAsync()
+        {
+            var cmdArgs = new object[] { 2, SortedSetKeys[0], SortedSetKeys[1] };
+            await CheckCommandAsync(RespCommand.ZUNION, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEquivalent(SortedSetData[0].Union(SortedSetData[1]).Select(d => (string)d.Element), results!);
             }
         }
 
@@ -338,7 +638,7 @@ namespace Garnet.test.Resp.ETag
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
             }
         }
-
+        
         public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
