@@ -941,21 +941,39 @@ namespace Garnet.test
             TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0];
 
         /// <summary>
-        /// Build path for unit test working directory using Guid
+        /// Build path for unit test working directory.
         /// </summary>
-        /// <param name="category"></param>
-        /// <param name="includeGuid"></param>
         /// <returns></returns>
-        internal static string UnitTestWorkingDir(string category = null, bool includeGuid = false)
+        internal static string UnitTestWorkingDir()
         {
             // Include process id to avoid conflicts between parallel test runs
             var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
+
+            // Incorporate arguments (as a hash code) so different runs of the same method get different folders
+            //
+            // Using hashes instead of the arguments themselves to keep length down
+            if ((TestContext.CurrentContext.Test.Arguments?.Length ?? 0) > 0)
+            {
+                HashCode hash = new();
+                foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+                {
+                    if (arg is string str)
+                    {
+                        hash.Add(str);
+                    }
+                    else
+                    {
+                        var argAsStr = arg?.ToString() ?? "--EMPTY--";
+                        hash.Add(argAsStr);
+                    }
+                }
+
+                testPath += $"_{hash.ToHashCode()}";
+            }
+
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
-            if (category != null)
-                rootPath = Path.Combine(rootPath, category);
-
-            return includeGuid ? Path.Combine(rootPath, Guid.NewGuid().ToString()) : rootPath;
+            return rootPath;
         }
 
         /// <summary>
