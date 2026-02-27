@@ -24,6 +24,9 @@ namespace Garnet.server.Vector.Filter
     {
         private const int MaxStack = 256;
 
+        [ThreadStatic]
+        private static ExprToken[] t_stack;
+
         /// <summary>
         /// Execute the compiled program against JSON attribute data.
         /// Returns true if the expression evaluates to a truthy value, false otherwise.
@@ -31,8 +34,8 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         public static bool Run(ExprProgram program, ReadOnlySpan<byte> json)
         {
-            // Stack for values during execution
-            var stack = new ExprToken[MaxStack];
+            // Reuse thread-local stack to avoid per-call allocation
+            var stack = t_stack ??= new ExprToken[MaxStack];
             var stackLen = 0;
 
             for (var i = 0; i < program.Length; i++)
@@ -43,10 +46,17 @@ namespace Garnet.server.Vector.Filter
                 if (inst.TokenType == ExprTokenType.Selector)
                 {
                     var extracted = AttributeExtractor.ExtractField(json, inst.Str);
-                    if (extracted == null)
+                    if (extracted.IsNone)
+                    {
+                        stack.AsSpan(0, stackLen).Clear();
                         return false; // Selector not found → expression is false (matches Redis)
+                    }
 
-                    if (stackLen >= MaxStack) return false;
+                    if (stackLen >= MaxStack)
+                    {
+                        stack.AsSpan(0, stackLen).Clear();
+                        return false;
+                    }
                     stack[stackLen++] = extracted;
                     continue;
                 }
@@ -54,17 +64,25 @@ namespace Garnet.server.Vector.Filter
                 // Non-operator values — push directly
                 if (inst.TokenType != ExprTokenType.Op)
                 {
-                    if (stackLen >= MaxStack) return false;
+                    if (stackLen >= MaxStack)
+                    {
+                        stack.AsSpan(0, stackLen).Clear();
+                        return false;
+                    }
                     stack[stackLen++] = inst;
                     continue;
                 }
 
                 // Operators — pop operands, compute, push result
                 var arity = OpTable.GetArity(inst.OpCode);
-                if (stackLen < arity) return false;
+                if (stackLen < arity)
+                {
+                    stack.AsSpan(0, stackLen).Clear();
+                    return false;
+                }
 
-                ExprToken b = stackLen > 0 ? stack[--stackLen] : null;
-                ExprToken a = arity == 2 && stackLen > 0 ? stack[--stackLen] : null;
+                ExprToken b = stackLen > 0 ? stack[--stackLen] : default;
+                ExprToken a = arity == 2 && stackLen > 0 ? stack[--stackLen] : default;
 
                 var result = ExprToken.NewNum(0);
 
@@ -120,12 +138,21 @@ namespace Garnet.server.Vector.Filter
                         break;
                 }
 
-                if (stackLen >= MaxStack) return false;
+                if (stackLen >= MaxStack)
+                {
+                    stack.AsSpan(0, stackLen).Clear();
+                    return false;
+                }
                 stack[stackLen++] = result;
             }
 
-            if (stackLen == 0) return false;
-            return ToBool(stack[stackLen - 1]) != 0;
+            var returnValue = false;
+            if (stackLen > 0)
+                returnValue = ToBool(stack[stackLen - 1]) != 0;
+
+            // Clear used portion to release string references for GC
+            stack.AsSpan(0, stackLen).Clear();
+            return returnValue;
         }
 
         // ======================== Type conversion helpers ========================
@@ -137,7 +164,7 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         private static double ToNum(ExprToken t)
         {
-            if (t == null) return 0;
+            if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num;
             if (t.TokenType == ExprTokenType.Str && t.Str != null)
             {
@@ -153,7 +180,7 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         private static double ToBool(ExprToken t)
         {
-            if (t == null) return 0;
+            if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num != 0 ? 1 : 0;
             if (t.TokenType == ExprTokenType.Str && (t.Str == null || t.Str.Length == 0)) return 0;
             if (t.TokenType == ExprTokenType.Null) return 0;
@@ -170,7 +197,7 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         private static bool AreEqual(ExprToken a, ExprToken b)
         {
-            if (a == null || b == null) return a == null && b == null;
+            if (a.IsNone || b.IsNone) return a.IsNone && b.IsNone;
 
             // Both strings
             if (a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
@@ -197,7 +224,7 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         private static bool EvalIn(ExprToken a, ExprToken b)
         {
-            if (b == null) return false;
+            if (b.IsNone) return false;
 
             // Tuple membership (works for both expression tuples [1,2,3] and JSON array tuples)
             if (b.TokenType == ExprTokenType.Tuple)
@@ -211,7 +238,7 @@ namespace Garnet.server.Vector.Filter
             }
 
             // String substring check (matching Redis exprTokensStringIn)
-            if (a != null && a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
+            if (!a.IsNone && a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
             {
                 if (a.Str == null || b.Str == null) return false;
                 if (a.Str.Length > b.Str.Length) return false;

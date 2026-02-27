@@ -29,13 +29,14 @@ namespace Garnet.server.Vector.Filter
     /// </summary>
     internal enum ExprTokenType : byte
     {
-        Num = 0,
-        Str = 1,
-        Tuple = 2,
-        Selector = 3,
-        Op = 4,
-        Null = 5,
-        Eof = 6,
+        None = 0,
+        Num = 1,
+        Str = 2,
+        Tuple = 3,
+        Selector = 4,
+        Op = 5,
+        Null = 6,
+        Eof = 7,
     }
 
     /// <summary>
@@ -114,7 +115,7 @@ namespace Garnet.server.Vector.Filter
     /// execution (e.g. from <see cref="AttributeExtractor"/> JSON field extraction) are
     /// transient and discarded after each <see cref="ExprRunner.Run"/> call.</para>
     /// </summary>
-    internal sealed class ExprToken
+    internal struct ExprToken
     {
         public ExprTokenType TokenType;
 
@@ -132,6 +133,9 @@ namespace Garnet.server.Vector.Filter
 
         /// <summary>Number of elements in the tuple.</summary>
         public int TupleLength;
+
+        /// <summary>True when this token is the default (uninitialized) value, replacing null checks.</summary>
+        public readonly bool IsNone => TokenType == ExprTokenType.None;
 
         public static ExprToken NewNum(double value)
         {

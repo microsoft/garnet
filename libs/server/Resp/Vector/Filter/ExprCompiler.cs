@@ -72,7 +72,7 @@ namespace Garnet.server.Vector.Filter
                 if (IsDigit(expr[p]) || (minusIsNumber && expr[p] == (byte)'-'))
                 {
                     var t = ParseNumber(expr, ref p);
-                    if (t == null) { errpos = p; return null; }
+                    if (t.IsNone) { errpos = p; return null; }
                     tokens[numTokens++] = t;
                     continue;
                 }
@@ -81,7 +81,7 @@ namespace Garnet.server.Vector.Filter
                 if (expr[p] == (byte)'"' || expr[p] == (byte)'\'')
                 {
                     var t = ParseString(expr, ref p);
-                    if (t == null) { errpos = p; return null; }
+                    if (t.IsNone) { errpos = p; return null; }
                     tokens[numTokens++] = t;
                     continue;
                 }
@@ -98,7 +98,7 @@ namespace Garnet.server.Vector.Filter
                 if (expr[p] == (byte)'[')
                 {
                     var t = ParseTuple(expr, ref p);
-                    if (t == null) { errpos = p; return null; }
+                    if (t.IsNone) { errpos = p; return null; }
                     tokens[numTokens++] = t;
                     continue;
                 }
@@ -107,7 +107,7 @@ namespace Garnet.server.Vector.Filter
                 if (IsLetter(expr[p]) || IsOperatorSpecialChar(expr[p]))
                 {
                     var t = ParseOperatorOrLiteral(expr, ref p);
-                    if (t == null) { errpos = p; return null; }
+                    if (t.IsNone) { errpos = p; return null; }
                     tokens[numTokens++] = t;
                     continue;
                 }
@@ -277,7 +277,7 @@ namespace Garnet.server.Vector.Filter
             if (!Utf8Parser.TryParse(numSpan, out double value, out var bytesConsumed) || bytesConsumed != numSpan.Length)
             {
                 p = start;
-                return null;
+                return default;
             }
             return ExprToken.NewNum(value);
         }
@@ -337,7 +337,7 @@ namespace Garnet.server.Vector.Filter
                 }
                 p++;
             }
-            return null; // Unterminated string
+            return default; // Unterminated string
         }
 
         private static ExprToken ParseSelector(ReadOnlySpan<byte> s, ref int p)
@@ -367,8 +367,8 @@ namespace Garnet.server.Vector.Filter
             while (true)
             {
                 SkipSpaces(s, ref p);
-                if (p >= s.Length) return null;
-                if (count >= elements.Length) return null;
+                if (p >= s.Length) return default;
+                if (count >= elements.Length) return default;
 
                 // Parse element: number or string
                 ExprToken ele;
@@ -382,17 +382,17 @@ namespace Garnet.server.Vector.Filter
                 }
                 else
                 {
-                    return null;
+                    return default;
                 }
-                if (ele == null) return null;
+                if (ele.IsNone) return default;
 
                 elements[count++] = ele;
 
                 SkipSpaces(s, ref p);
-                if (p >= s.Length) return null;
+                if (p >= s.Length) return default;
 
                 if (s[p] == (byte)']') { p++; break; }
-                if (s[p] != (byte)',') return null;
+                if (s[p] != (byte)',') return default;
                 p++; // Skip comma
             }
 
@@ -410,7 +410,7 @@ namespace Garnet.server.Vector.Filter
                 p++;
 
             var matchLen = p - start;
-            if (matchLen == 0) return null;
+            if (matchLen == 0) return default;
 
             // Check for literals
             if (matchLen == 4 && s.Slice(start, 4).SequenceEqual("null"u8))
@@ -451,7 +451,7 @@ namespace Garnet.server.Vector.Filter
             if (bestLen == 0)
             {
                 p = start;
-                return null;
+                return default;
             }
 
             // Rewind p to consume only the matched operator length

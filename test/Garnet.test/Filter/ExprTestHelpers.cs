@@ -68,7 +68,7 @@ namespace Garnet.test
                 if (inst.TokenType == ExprTokenType.Selector)
                 {
                     var extracted = AttributeExtractor.ExtractField(json, inst.Str);
-                    if (extracted == null)
+                    if (extracted.IsNone)
                         return ExprToken.NewNull();
                     stack[stackLen++] = extracted;
                     continue;
@@ -81,8 +81,8 @@ namespace Garnet.test
                 }
 
                 var arity = OpTable.GetArity(inst.OpCode);
-                ExprToken b = stackLen > 0 ? stack[--stackLen] : null;
-                ExprToken a = arity == 2 && stackLen > 0 ? stack[--stackLen] : null;
+                ExprToken b = stackLen > 0 ? stack[--stackLen] : default;
+                ExprToken a = arity == 2 && stackLen > 0 ? stack[--stackLen] : default;
 
                 var result = ExprToken.NewNum(0);
 
@@ -146,7 +146,7 @@ namespace Garnet.test
 
         private static double TokenToNum(ExprToken t)
         {
-            if (t == null) return 0;
+            if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num;
             if (t.TokenType == ExprTokenType.Str && t.Str != null)
             {
@@ -158,7 +158,7 @@ namespace Garnet.test
 
         private static double TokenToBool(ExprToken t)
         {
-            if (t == null) return 0;
+            if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num != 0 ? 1 : 0;
             if (t.TokenType == ExprTokenType.Str && (t.Str == null || t.Str.Length == 0)) return 0;
             if (t.TokenType == ExprTokenType.Null) return 0;
@@ -167,7 +167,7 @@ namespace Garnet.test
 
         private static bool TokensEqual(ExprToken a, ExprToken b)
         {
-            if (a == null || b == null) return a == null && b == null;
+            if (a.IsNone || b.IsNone) return a.IsNone && b.IsNone;
             if (a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
                 return string.Equals(a.Str, b.Str, StringComparison.Ordinal);
             if (a.TokenType == ExprTokenType.Num && b.TokenType == ExprTokenType.Num)
@@ -179,7 +179,7 @@ namespace Garnet.test
 
         private static bool EvalIn(ExprToken a, ExprToken b)
         {
-            if (b == null) return false;
+            if (b.IsNone) return false;
             if (b.TokenType == ExprTokenType.Tuple)
             {
                 for (var i = 0; i < b.TupleLength; i++)
@@ -189,7 +189,7 @@ namespace Garnet.test
                 }
                 return false;
             }
-            if (a != null && a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
+            if (!a.IsNone && a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
             {
                 if (a.Str == null || b.Str == null) return false;
                 return b.Str.IndexOf(a.Str, StringComparison.Ordinal) >= 0;
