@@ -951,7 +951,7 @@ namespace Garnet.test
 
             // Incorporate arguments (as a hash code) so different runs of the same method get different folders
             //
-            // Using hashes instead of the arugments themselves to keep length down
+            // Using hashes instead of the arguments themselves to keep length down
             if ((TestContext.CurrentContext.Test.Arguments?.Length ?? 0) > 0)
             {
                 HashCode hash = new();
