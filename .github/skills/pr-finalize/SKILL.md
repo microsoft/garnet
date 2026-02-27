@@ -79,7 +79,7 @@ Before suggesting changes, evaluate the current description:
 |-------------------|----------|
 | **Structure** | Clear sections, headers, organized flow |
 | **Technical depth** | File-by-file changes, specific code references |
-| **Scanability** | Easy to find what changed and where |
+| **Scannability** | Easy to find what changed and where |
 | **Accuracy** | Matches actual diff — not stale or incorrect |
 | **Completeness** | Breaking changes, performance impact, testing info |
 
