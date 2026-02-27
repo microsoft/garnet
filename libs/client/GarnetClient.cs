@@ -138,6 +138,7 @@ namespace Garnet.client
         /// <param name="recordLatency">Record latency using client internal histogram</param>
         /// <param name="useTimeoutChecker"></param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
         public GarnetClient(
             EndPoint endpoint,
