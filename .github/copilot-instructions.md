@@ -11,27 +11,27 @@ Garnet is a high-performance remote cache-store from Microsoft Research implemen
 dotnet build
 
 # Run all Garnet tests
-dotnet test test/Garnet.test -f net8.0 -c Debug -l "console;verbosity=detailed"
+dotnet test test/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run all cluster tests
-dotnet test test/Garnet.test.cluster -f net8.0 -c Debug -l "console;verbosity=detailed"
+dotnet test test/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run a single test by fully qualified name
-dotnet test test/Garnet.test -f net8.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
+dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
 
 # Run all tests in a single test class
-dotnet test test/Garnet.test -f net8.0 -c Debug --filter "FullyQualifiedName~RespTests"
+dotnet test test/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 
 # Build and test Tsavorite independently (has its own solution)
 dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
-dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f net8.0 -c Debug -l "console;verbosity=detailed"
+dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Check formatting (CI enforces this)
 dotnet format Garnet.slnx --verify-no-changes
 dotnet format libs/storage/Tsavorite/cs/Tsavorite.slnx --verify-no-changes
 
 # Run the server locally (from repo root)
-cd main/GarnetServer && dotnet run -c Debug -f net8.0 -- --logger-level Trace -m 4g -i 64m
+cd main/GarnetServer && dotnet run -c Debug -f net10.0 -- --logger-level Trace -m 4g -i 64m
 ```
 
 Target frameworks are `net8.0` and `net10.0`. CI runs tests on both, in Debug and Release, on Ubuntu and Windows.
