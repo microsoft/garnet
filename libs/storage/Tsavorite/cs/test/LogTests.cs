@@ -94,7 +94,7 @@ namespace Tsavorite.test
             device?.Dispose();
             device = null;
 
-            DeleteDirectory(MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         internal class Counter
@@ -1124,6 +1124,7 @@ namespace Tsavorite.test
             catch (TsavoriteException)
             {
             }
+            recoveredLog.Dispose();
 
             // Default argument should recover to most recent, with TryRecoverLatest set to true
             logSettings.TryRecoverLatest = true;

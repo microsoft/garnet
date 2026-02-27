@@ -224,7 +224,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
             if (!forRecovery)
             {
-                DeleteDirectory(MethodTestDir);
+                OnTearDown();
             }
         }
 

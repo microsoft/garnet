@@ -89,7 +89,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            TestUtils.OnTearDown(waitForDelete: true);
             TestUtils.DeleteDirectory(Directory.GetParent(extTestDir)?.FullName);
         }
 

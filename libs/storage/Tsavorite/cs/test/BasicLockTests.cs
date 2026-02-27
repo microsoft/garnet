@@ -107,7 +107,7 @@ namespace Tsavorite.test.LockTests
             log?.Dispose();
             log = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test]

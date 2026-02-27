@@ -860,7 +860,7 @@ namespace Garnet.test
             return configOptions;
         }
 
-        public static GarnetClient GetGarnetClient(EndPoint endpoint = null, bool useTLS = false, bool recordLatency = false)
+        public static GarnetClient GetGarnetClient(EndPoint endpoint = null, bool useTLS = false, bool recordLatency = false, client.LightEpoch epoch = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -873,7 +873,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
+            return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)
@@ -1146,6 +1146,28 @@ using System.Threading.Tasks;
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             return RandomNumberGenerator.GetString(chars, len);
+        }
+
+        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null)
+        {
+            DeleteDirectory(MethodTestDir, wait: waitForDelete);
+            var count = Tsavorite.core.LightEpoch.ActiveInstanceCount();
+            if (count != 0)
+            {
+                // Reset all instances to avoid impacting other tests
+                Tsavorite.core.LightEpoch.ResetAllInstances();
+                logger?.LogError("Tsavorite.core.LightEpoch instances still active: {count}", count);
+                Assert.Fail($"Tsavorite.core.LightEpoch instances still active: {count}");
+            }
+
+            var count2 = client.LightEpoch.ActiveInstanceCount();
+            if (count2 != 0)
+            {
+                // Reset all instances to avoid impacting other tests
+                client.LightEpoch.ResetAllInstances();
+                logger?.LogError("Garnet.client.LightEpoch instances still active: {count2}", count2);
+                Assert.Fail($"Garnet.client.LightEpoch instances still active: {count2}");
+            }
         }
     }
 }
