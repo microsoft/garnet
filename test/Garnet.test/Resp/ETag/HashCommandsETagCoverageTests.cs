@@ -89,6 +89,22 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task HExpireTimeETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], "FIELDS", 1, HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HEXPIRETIME, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds();
+
+                ClassicAssert.AreEqual(1, result.Length);
+                ClassicAssert.GreaterOrEqual(expireTimestamp, (long)result[0]);
+                ClassicAssert.Less(0, (long)result[0]);
+            }
+        }
+
+        [Test]
         public async Task HGetETagTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name };
@@ -116,7 +132,7 @@ namespace Garnet.test.Resp.ETag
                     entries[i / 2] = new HashEntry((string)result[i], (string)result[i + 1]);
                 }
 
-                ClassicAssert.IsTrue(HashData[0].OrderBy(e => e.Name).SequenceEqual(entries.OrderBy(r => r.Name)));
+                CollectionAssert.AreEquivalent(HashData[0], entries);
             }
         }
 
@@ -141,6 +157,45 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(double.Parse(HashData[0][1].Value) + 2.2, (double)result);
+            }
+        }
+
+        [Test]
+        public async Task HKeysETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0] };
+            await CheckCommandAsync(RespCommand.HKEYS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEquivalent(HashData[0].Select(d => (string)d.Name), results!);
+            }
+        }
+
+        [Test]
+        public async Task HLenETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0] };
+            await CheckCommandAsync(RespCommand.HLEN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(HashData[0].Length, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task HMGetETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name, HashData[0][1].Name };
+            await CheckCommandAsync(RespCommand.HMGET, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+                ClassicAssert.AreEqual(HashData[0][0].Value, (string)result[0]);
+                ClassicAssert.AreEqual(HashData[0][1].Value, (string)result[1]);
             }
         }
 
@@ -186,6 +241,22 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task HPExpireTimeETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], "FIELDS", 1, HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HEXPIRETIME, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds();
+
+                ClassicAssert.AreEqual(1, result.Length);
+                ClassicAssert.GreaterOrEqual(expireTimestamp, (long)result[0]);
+                ClassicAssert.Less(0, (long)result[0]);
+            }
+        }
+
+        [Test]
         public async Task HPersistETagTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], "FIELDS", 1, HashData[0][0].Name };
@@ -196,6 +267,44 @@ namespace Garnet.test.Resp.ETag
                 var results = (RedisResult[])result;
                 ClassicAssert.AreEqual(1, results!.Length);
                 ClassicAssert.AreEqual(1, (long)results[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPTtlETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], "FIELDS", 1, HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HPTTL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var ttl = TimeSpan.FromSeconds(3).TotalMilliseconds;
+                ClassicAssert.GreaterOrEqual(ttl, (long)result);
+                ClassicAssert.Less(0, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task HRandFieldETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0] };
+            await CheckCommandAsync(RespCommand.HRANDFIELD, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                CollectionAssert.Contains(HashData[0].Select(d => (string)d.Name), (string)result);
+            }
+        }
+
+        [Test]
+        public async Task HScanETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], 0 };
+            await CheckCommandAsync(RespCommand.HSCAN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
             }
         }
 
@@ -220,6 +329,44 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task HStrLenETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HSTRLEN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual((((string)HashData[0][0].Value)!).Length, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task HTtlETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], "FIELDS", 1, HashData[0][0].Name };
+            await CheckCommandAsync(RespCommand.HTTL, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.GreaterOrEqual(3, (long)result);
+                ClassicAssert.Less(0, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task HValsETagTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0] };
+            await CheckCommandAsync(RespCommand.HVALS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEquivalent(HashData[0].Select(d => (string)d.Value), results!);
             }
         }
 

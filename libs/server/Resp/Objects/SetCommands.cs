@@ -462,6 +462,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SetIsMember(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {

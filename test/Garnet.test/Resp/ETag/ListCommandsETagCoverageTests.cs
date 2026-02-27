@@ -24,6 +24,19 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
+        public async Task LIndexETagTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], 1 };
+
+            await CheckCommandAsync(RespCommand.LINDEX, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(ListData[0][1], (string)result);
+            }
+        }
+
+        [Test]
         public async Task LInsertETagTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], "AFTER", ListData[0][1], ListData[1][0] };
@@ -33,6 +46,19 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(4, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task LLenETagTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0] };
+
+            await CheckCommandAsync(RespCommand.LLEN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(ListData[0].Length, (long)result);
             }
         }
 
@@ -81,6 +107,19 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task LPosETagTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], ListData[0][1] };
+
+            await CheckCommandAsync(RespCommand.LPOS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
         public async Task LPushETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
@@ -103,6 +142,20 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(ListData[0].Length + 1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task LRangeETagTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], 0, -1 };
+
+            await CheckCommandAsync(RespCommand.LRANGE, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEqual(ListData[0].Select(d => (string)d), results!);
             }
         }
 

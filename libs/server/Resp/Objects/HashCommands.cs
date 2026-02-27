@@ -345,7 +345,6 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HSTRLEN };
             var output = new ObjectOutput();
 
-
             var status = storageApi.HashStrLength(key, ref input, ref output);
             etag = output.ETag;
 

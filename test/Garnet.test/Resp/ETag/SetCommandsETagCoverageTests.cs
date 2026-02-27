@@ -37,6 +37,32 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task SCardETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0] };
+
+            await CheckCommandAsync(RespCommand.SCARD, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(SetData[0].Length, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task SDiffETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0], SetKeys[1] };
+            await CheckCommandAsync(RespCommand.SDIFF, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEqual(SetData[0].Select(d => (string)d), results!);
+            }
+        }
+
+        [Test]
         public async Task SDiffStoreETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0], SetKeys[2], SetKeys[3] };
@@ -45,6 +71,31 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task SInterETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0], SetKeys[1] };
+            await CheckCommandAsync(RespCommand.SINTER, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                ClassicAssert.AreEqual(0, results!.Length);
+            }
+        }
+
+        [Test]
+        public async Task SInterCardETagTestAsync()
+        {
+            var cmdArgs = new object[] { 2, SetKeys[0], SetKeys[1] };
+            await CheckCommandAsync(RespCommand.SINTERCARD, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(0, (long)result);
             }
         }
 
@@ -60,6 +111,44 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
+        [Test]
+        public async Task SIsMemberETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0], SetData[0][0] };
+            await CheckCommandAsync(RespCommand.SISMEMBER, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task SMembersETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0] };
+            await CheckCommandAsync(RespCommand.SMEMBERS, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEquivalent(SetData[0].Select(d => (string)d), results!);
+            }
+        }
+
+        [Test]
+        public async Task SMIsMemberETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0], SetData[0][0], SetData[1][0] };
+            await CheckCommandAsync(RespCommand.SMISMEMBER, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result!.Length);
+                ClassicAssert.AreEqual(1, (long)result[0]);
+                ClassicAssert.AreEqual(0, (long)result[1]);
+            }
+        }
 
         [Test]
         public async Task SMoveETagTestAsync()
@@ -86,6 +175,18 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task SRandMemberETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0] };
+            await CheckCommandAsync(RespCommand.SRANDMEMBER, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                CollectionAssert.Contains(SetData[0].Select(d => (string)d), (string)result);
+            }
+        }
+
+        [Test]
         public async Task SRemETagTestAsync()
         {
             var cmdArgs = new object[] { SetKeys[0], SetData[0][0] };
@@ -94,6 +195,31 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task SScanETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0], 0 };
+            await CheckCommandAsync(RespCommand.SSCAN, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, result.Length);
+            }
+        }
+
+        [Test]
+        public async Task SUnionETagTestAsync()
+        {
+            var cmdArgs = new object[] { SetKeys[0], SetKeys[1] };
+            await CheckCommandAsync(RespCommand.SUNION, cmdArgs, VerifyResult, isReadOnly: true);
+
+            static void VerifyResult(RedisResult result)
+            {
+                var results = (string[])result;
+                CollectionAssert.AreEquivalent(SetData[0].Union(SetData[1]).Select(d => (string)d), results!);
             }
         }
 
