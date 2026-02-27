@@ -49,7 +49,7 @@ namespace Tsavorite.test
             logUncommitted = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         public void PopulateLog(TsavoriteLog log)
