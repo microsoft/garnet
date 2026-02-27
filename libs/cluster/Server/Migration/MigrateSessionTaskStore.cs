@@ -23,7 +23,9 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// Disposes all managed resources held by this instance.
+        /// </summary>
         public void Dispose()
         {
             _lock.WriteLock();
