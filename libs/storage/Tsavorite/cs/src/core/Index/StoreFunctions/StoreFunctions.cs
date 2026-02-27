@@ -16,14 +16,10 @@ namespace Tsavorite.core
     /// because there is no need to wrap calls to them with additional functionality. This can be changed to redirect if such wrapper
     /// functionality is needed.
     /// </remarks>
-    public struct StoreFunctions<TKeyComparer, TRecordDisposer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordDisposer recordDisposer) : IStoreFunctions
-        where TKeyComparer : IKeyComparer
+    public struct StoreFunctions<TRecordDisposer>(Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordDisposer recordDisposer) : IStoreFunctions
         where TRecordDisposer : IRecordDisposer
     {
         #region Fields
-        /// <summary>Compare two keys for equality, and get a key's hash code.</summary>
-        readonly TKeyComparer keyComparer = keyComparer;
-
         /// <summary>Serialize a Value to persistent storage</summary>
         readonly Func<IObjectSerializer<IHeapObject>> valueSerializerCreator = valueSerializerCreator;
 
@@ -84,38 +80,28 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>
-                (TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordDisposer recordDisposer)
-            where TKeyComparer : IKeyComparer
+        public static StoreFunctions<TRecordDisposer> Create<TRecordDisposer>
+                (Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordDisposer recordDisposer)
             where TRecordDisposer : IRecordDisposer
-            => new(keyComparer, valueSerializerCreator, recordDisposer);
+            => new(valueSerializerCreator, recordDisposer);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
-            where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator, DefaultRecordDisposer.Instance);
+        public static StoreFunctions<DefaultRecordDisposer> Create(Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
+            => new(valueSerializerCreator, DefaultRecordDisposer.Instance);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>(TKeyComparer keyComparer, TRecordDisposer recordDisposer)
-            where TKeyComparer : IKeyComparer
+        public static StoreFunctions<TRecordDisposer> Create<TRecordDisposer>(TRecordDisposer recordDisposer)
             where TRecordDisposer : IRecordDisposer
-            => new(keyComparer, valueSerializerCreator: null, recordDisposer);
+            => new(valueSerializerCreator: null, recordDisposer);
 
         /// <summary>
-        /// Store functions that take only the <paramref name="keyComparer"/>
+        /// Default store functions.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer)
-            where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator: null, DefaultRecordDisposer.Instance);
-
-        /// <summary>
-        /// Store functions for <see cref="Span{_byte_}"/> Key and Value
-        /// </summary>
-        public static StoreFunctions<SpanByteComparer, DefaultRecordDisposer> Create()
-            => new(SpanByteComparer.Instance, valueSerializerCreator: null, DefaultRecordDisposer.Instance);
+        public static StoreFunctions<DefaultRecordDisposer> Create()
+            => new(valueSerializerCreator: null, DefaultRecordDisposer.Instance);
     }
 }

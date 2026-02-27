@@ -7,9 +7,9 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Equality comparer for <see cref="ReadOnlySpan{_byte_}"/>
+    /// Equality comparer and hash calculator for <see cref="ReadOnlySpan{_byte_}"/>
     /// </summary>
-    public struct SpanByteComparer : IKeyComparer
+    public struct SpanByteComparer
     {
         /// <summary>
         /// The default instance.

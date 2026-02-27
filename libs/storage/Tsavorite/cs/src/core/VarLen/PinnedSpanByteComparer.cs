@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
@@ -9,8 +8,7 @@ using System.Numerics;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// ArgSlice Comparer. This implements <see cref="IEqualityComparer{PinnedSpanByte}"/>, not <see cref="IKeyComparer"/>,
-    /// as it is not used for Tsavorite keys directly (they are converted to <see cref="ReadOnlySpan{_byte_}"/>).
+    /// ArgSlice Comparer.
     /// </summary>
     public sealed class PinnedSpanByteComparer : IEqualityComparer<PinnedSpanByte>
     {

@@ -339,8 +339,7 @@ namespace Garnet
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
-                , Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(),
-                    () => new GarnetObjectSerializer(customCommandManager))
+                , Tsavorite.core.StoreFunctions.Create(() => new GarnetObjectSerializer(customCommandManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
