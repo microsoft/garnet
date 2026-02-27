@@ -12,7 +12,7 @@ Azure Cosmos DB Garnet Cache lets you choose the underlying [Azure Virtual Machi
 
 Every node also has a [Premium SSD Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds) provisioned for [data persistence](./resiliency.md#data-persistence). The disk size is not configurable and represents 2x the total memory of each node. The Managed Disk SKU provisioned for each option is in the table below, and is priced at the [Azure Managed Disk price](https://azure.microsoft.com/pricing/details/managed-disks).
 
-The pricing model for cache nodes is instance-based and there are no licensing fees. For information about pricing for specific SKUs, reach out to [ManagedGarnet@service.microsoft.com](mailto:ManagedGarnet@service.microsoft.com).
+The pricing model for cache nodes is instance-based and there are no licensing fees. For information about pricing for specific SKUs, reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com).
 
 ### General Purpose
 

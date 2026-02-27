@@ -636,6 +636,10 @@ namespace Garnet.server
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
                 }
             }
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Exception received at AutoCheckpointTask");
@@ -822,9 +826,9 @@ namespace Garnet.server
                 if (!hasKeyInSlots && !serverOptions.DisableObjects)
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
-                    var objStorefunctions = new ObjectSessionFunctions(functionsState);
-                    var objectStoreSession = store?.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStorefunctions);
-                    var iter = objectStoreSession.Iterate();
+                    var objStoreFunctions = new ObjectSessionFunctions(functionsState);
+                    using var objectStoreSession = store?.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
+                    using var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext())
                     {
                         ushort hashSlotForKey = HashSlotUtils.HashSlot(iter.Key);

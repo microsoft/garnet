@@ -37,7 +37,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown(waitForDelete: true);
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
 
@@ -367,7 +367,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown(waitForDelete: true);
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
 

@@ -150,7 +150,6 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             try
             {
                 if (aclFile != null)
@@ -162,6 +161,7 @@ namespace Garnet.test
             {
                 // Best effort
             }
+            TestUtils.OnTearDown();
         }
 
         [Test]

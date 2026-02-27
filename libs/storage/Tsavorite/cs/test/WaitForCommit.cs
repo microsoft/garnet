@@ -41,7 +41,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [TestCase("Sync")]  // use string here instead of Bool so shows up in Test Explorer with more descriptive name

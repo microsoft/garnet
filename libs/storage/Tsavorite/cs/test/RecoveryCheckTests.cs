@@ -44,7 +44,7 @@ namespace Tsavorite.test.recovery
         {
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         protected static void AssertEquivalentTailAddress(long tailAddress1, long tailAddress2, long pageSize, int iteration)

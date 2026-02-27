@@ -44,7 +44,7 @@ namespace Tsavorite.test
             bufferPool.Free();
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            TestUtils.OnTearDown(waitForDelete: true);
         }
 
         [Test]
