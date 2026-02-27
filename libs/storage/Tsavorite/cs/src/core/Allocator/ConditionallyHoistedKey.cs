@@ -83,7 +83,6 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
-
         {
             var keyBytes = key.KeyBytes;
 

@@ -76,7 +76,7 @@ namespace Garnet.server
         }
 
         public void AddKey<TKey>(TKey keyArgSlice, LockType type)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

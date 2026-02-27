@@ -87,7 +87,7 @@ namespace Tsavorite.core
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

@@ -229,7 +229,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool KeysEqual<TOther>(TOther other)
-            where TOther: IKey
+            where TOther : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

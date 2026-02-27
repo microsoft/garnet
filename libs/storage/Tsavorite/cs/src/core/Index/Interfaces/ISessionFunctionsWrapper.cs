@@ -36,7 +36,7 @@ namespace Tsavorite.core
         bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord;
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

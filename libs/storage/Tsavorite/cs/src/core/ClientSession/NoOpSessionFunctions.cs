@@ -133,28 +133,28 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor 
+            where TEpochAccessor : IEpochAccessor
         { }
         public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor 
+            where TEpochAccessor : IEpochAccessor
         { }
         public readonly void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor 
+            where TEpochAccessor : IEpochAccessor
         { }
         public readonly void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor 
+            where TEpochAccessor : IEpochAccessor
         { }
 
         public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }

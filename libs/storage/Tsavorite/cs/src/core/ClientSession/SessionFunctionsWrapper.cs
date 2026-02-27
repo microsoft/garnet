@@ -102,7 +102,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

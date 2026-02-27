@@ -237,7 +237,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool IsTailmostMainKvRecord<TKey>(TKey key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
