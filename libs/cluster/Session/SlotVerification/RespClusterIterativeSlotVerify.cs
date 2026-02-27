@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
@@ -27,6 +28,7 @@ namespace Garnet.cluster
         /// <param name="keySlice"></param>
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
+        /// <param name="waitForStableSlot"></param>
         /// <returns></returns>
         public bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot)
         {
@@ -70,8 +72,12 @@ namespace Garnet.cluster
         /// <param name="output"></param>
         public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output)
         {
-            var errorMessage = GetSlotVerificationMessage(configSnapshot, cachedVerificationResult);
-            RespWriteUtils.TryWriteError(errorMessage, ref output);
+            if (cachedVerificationResult.state != SlotVerifiedState.OK)
+            {
+                logger?.LogError("Slot verification failed {cachedVerificationResult}!", cachedVerificationResult.ToString());
+                var errorMessage = GetSlotVerificationMessage(configSnapshot, cachedVerificationResult);
+                _ = RespWriteUtils.TryWriteError(errorMessage, ref output);
+            }
         }
     }
 }
