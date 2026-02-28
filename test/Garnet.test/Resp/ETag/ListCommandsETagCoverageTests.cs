@@ -11,7 +11,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class ListCommandsETagCoverageTests : EtagCoverageTestsBase
+    public class ListCommandsETagCoverageTests : ETagCoverageTestsBase
     {
         static readonly RedisKey[] ListKeys = [KeysWithEtag[0], KeysWithEtag[1], "lKey3", "lKey4"];
 

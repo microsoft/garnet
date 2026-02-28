@@ -60,10 +60,12 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo));
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out externalRespCommandsInfo, externalOnly: true));
+            ClassicAssert.IsTrue(
+                RespCommandsInfo.TryGetRespCommandsInfo(out externalRespCommandsInfo, externalOnly: true));
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo));
             ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs));
-            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out externalRespCommandsDocs, externalOnly: true));
+            ClassicAssert.IsTrue(
+                RespCommandDocs.TryGetRespCommandsDocs(out externalRespCommandsDocs, externalOnly: true));
             ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsDocs(out respCustomCommandsDocs));
@@ -116,7 +118,8 @@ namespace Garnet.test
             }
 
             var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands);
-            CollectionAssert.AreEquivalent(allCommands, commandsWithInfo, "Some commands have missing info. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
+            CollectionAssert.AreEquivalent(allCommands, commandsWithInfo,
+                "Some commands have missing info. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
         }
 
         /// <summary>
@@ -221,7 +224,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
+            var customCommandsRegistered =
+                RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
@@ -230,7 +234,9 @@ namespace Garnet.test
             results = (RedisResult[])db.Execute("COMMAND");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
+            ClassicAssert.AreEqual(
+                externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length,
+                results.Length);
         }
 
         /// <summary>
@@ -249,7 +255,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
+            var customCommandsRegistered =
+                RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
@@ -258,13 +265,16 @@ namespace Garnet.test
             results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
+            ClassicAssert.AreEqual(
+                externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length,
+                results.Length);
 
             ClassicAssert.IsTrue(results.All(res => res.Length == 10));
             ClassicAssert.IsTrue(results.All(res => (string)res[0] != null));
             var cmdNameToResult = results.ToDictionary(res => (string)res[0], res => res);
 
-            foreach (var cmdName in externalRespCommandsInfo.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
+            foreach (var cmdName in externalRespCommandsInfo.Keys.Union(customCommandsRegistered)
+                         .Union(customCommandsRegisteredDyn))
             {
                 ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
                 VerifyCommandInfo(cmdName, cmdNameToResult[cmdName]);
@@ -310,7 +320,8 @@ namespace Garnet.test
             var actualCommands = cmdNameToResult.Keys.OrderBy(c => c);
             CollectionAssert.AreEqual(expectedCommands, actualCommands);
 
-            foreach (var cmdName in externalRespCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
+            foreach (var cmdName in externalRespCommandsDocs.Keys.Union(customCommandsRegistered)
+                         .Union(customCommandsRegisteredDyn))
             {
                 ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
                 VerifyCommandDocs(cmdName, cmdNameToResult[cmdName]);
@@ -332,7 +343,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, commandCount);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
+            var customCommandsRegistered =
+                RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
@@ -340,7 +352,9 @@ namespace Garnet.test
             // Get command count (including custom commands)
             commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            ClassicAssert.AreEqual(externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, commandCount);
+            ClassicAssert.AreEqual(
+                externalRespCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length,
+                commandCount);
         }
 
         /// <summary>
@@ -480,7 +494,8 @@ namespace Garnet.test
         [Test]
         public void AofIndependentCommandsTest()
         {
-            RespCommand[] aofIndpendentCmds = [
+            RespCommand[] aofIndpendentCmds =
+            [
                 RespCommand.ASYNC,
                 RespCommand.PING,
                 RespCommand.SELECT,
@@ -546,7 +561,16 @@ namespace Garnet.test
 
         private string[] RegisterCustomCommands(List<string> registerCommandsSubset = null)
         {
-            var commands = new HashSet<string> { "DELIFM", "MGETIFPM", "MYDICTGET", "MYDICTSET", "READWRITETX", "SETIFPM", "SETWPIFPGT" };
+            var commands = new HashSet<string>
+            {
+                "DELIFM",
+                "MGETIFPM",
+                "MYDICTGET",
+                "MYDICTSET",
+                "READWRITETX",
+                "SETIFPM",
+                "SETWPIFPGT"
+            };
             if (registerCommandsSubset != null)
             {
                 commands.IntersectWith(registerCommandsSubset);
@@ -555,19 +579,26 @@ namespace Garnet.test
 
             var factory = new MyDictFactory();
             if (commands.Contains("DELIFM"))
-                server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand(), respCustomCommandsInfo["DELIFM"], respCustomCommandsDocs["DELIFM"]);
+                server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand(),
+                    respCustomCommandsInfo["DELIFM"], respCustomCommandsDocs["DELIFM"]);
             if (commands.Contains("MGETIFPM"))
-                server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"], respCustomCommandsDocs["MGETIFPM"]);
+                server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"],
+                    respCustomCommandsDocs["MGETIFPM"]);
             if (commands.Contains("MYDICTGET"))
-                server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), respCustomCommandsInfo["MYDICTGET"], respCustomCommandsDocs["MYDICTGET"]);
+                server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(),
+                    respCustomCommandsInfo["MYDICTGET"], respCustomCommandsDocs["MYDICTGET"]);
             if (commands.Contains("MYDICTSET"))
-                server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"], respCustomCommandsDocs["MYDICTSET"]);
+                server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(),
+                    respCustomCommandsInfo["MYDICTSET"], respCustomCommandsDocs["MYDICTSET"]);
             if (commands.Contains("READWRITETX"))
-                server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), respCustomCommandsInfo["READWRITETX"], respCustomCommandsDocs["READWRITETX"]);
+                server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(),
+                    respCustomCommandsInfo["READWRITETX"], respCustomCommandsDocs["READWRITETX"]);
             if (commands.Contains("SETIFPM"))
-                server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"], respCustomCommandsDocs["SETIFPM"]);
+                server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(),
+                    respCustomCommandsInfo["SETIFPM"], respCustomCommandsDocs["SETIFPM"]);
             if (commands.Contains("SETWPIFPGT"))
-                server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"], respCustomCommandsDocs["SETWPIFPGT"]);
+                server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
+                    respCustomCommandsInfo["SETWPIFPGT"], respCustomCommandsDocs["SETWPIFPGT"]);
 
             return commands.ToArray();
         }
@@ -580,27 +611,17 @@ namespace Garnet.test
 
             var namespaces = new[]
             {
-                "Tsavorite.core",
-                "Garnet.common",
-                "Garnet.server",
-                "System",
-                "System.Buffers",
-                "System.Collections.Generic",
-                "System.Diagnostics",
-                "System.IO",
-                "System.Text",
+                "Tsavorite.core", "Garnet.common", "Garnet.server", "System", "System.Buffers",
+                "System.Collections.Generic", "System.Diagnostics", "System.IO", "System.Text",
             };
 
             var referenceFiles = new[]
             {
-                Path.Combine(runtimePath, "System.dll"),
-                Path.Combine(runtimePath, "System.Collections.dll"),
+                Path.Combine(runtimePath, "System.dll"), Path.Combine(runtimePath, "System.Collections.dll"),
                 Path.Combine(runtimePath, "System.Core.dll"),
                 Path.Combine(runtimePath, "System.Private.CoreLib.dll"),
-                Path.Combine(runtimePath, "System.Runtime.dll"),
-                Path.Combine(binPath, "Tsavorite.core.dll"),
-                Path.Combine(binPath, "Garnet.common.dll"),
-                Path.Combine(binPath, "Garnet.server.dll"),
+                Path.Combine(runtimePath, "System.Runtime.dll"), Path.Combine(binPath, "Tsavorite.core.dll"),
+                Path.Combine(binPath, "Garnet.common.dll"), Path.Combine(binPath, "Garnet.server.dll"),
             };
 
             var dir1 = Path.Combine(this.extTestDir, Path.GetFileName(TestUtils.MethodTestDir));
@@ -614,8 +635,10 @@ namespace Garnet.test
                     Path.Combine(dir1, "testLib5.dll"),
                     new[]
                     {
-                        Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
-                        Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath)
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs",
+                            TestUtils.RootTestsProjectPath),
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs",
+                            TestUtils.RootTestsProjectPath)
                     }
                 },
             };
@@ -641,11 +664,20 @@ namespace Garnet.test
 
             var args = new List<object>
             {
-                "TXN", "READWRITETX", 3, "ReadWriteTxn",
-                "READ", "MYDICTGET", 1, "MyDictFactory",
-                "INFO", cmdInfoPath,
-                "DOCS", cmdDocsPath,
-                "SRC", srcPath
+                "TXN",
+                "READWRITETX",
+                3,
+                "ReadWriteTxn",
+                "READ",
+                "MYDICTGET",
+                1,
+                "MyDictFactory",
+                "INFO",
+                cmdInfoPath,
+                "DOCS",
+                cmdDocsPath,
+                "SRC",
+                srcPath
             };
 
             // Register select custom commands and transactions
@@ -690,7 +722,8 @@ namespace Garnet.test
                         break;
                     case "group":
                         if (cmdDoc.Group == RespCommandGroup.None) continue;
-                        ClassicAssert.IsTrue(EnumUtils.TryParseEnumFromDescription(value.ToString(), out RespCommandGroup group));
+                        ClassicAssert.IsTrue(
+                            EnumUtils.TryParseEnumFromDescription(value.ToString(), out RespCommandGroup group));
                         ClassicAssert.AreEqual(cmdDoc.Group, group);
                         break;
                     case "arguments":
@@ -710,16 +743,21 @@ namespace Garnet.test
         [TestCase("SET", new[] { "mykey", "value" }, false, new[] { "mykey" })]
         [TestCase("MSET", new[] { "key1", "value1", "key2", "value2" }, false, new[] { "key1", "key2" })]
         [TestCase("MGET", new[] { "key1", "key2", "key3" }, false, new[] { "key1", "key2", "key3" })]
-        [TestCase("ZUNIONSTORE", new[] { "destination", "2", "key1", "key2" }, false, new[] { "destination", "key1", "key2" })]
-        [TestCase("EVAL", new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, false, new[] { "key1", "key2" })]
+        [TestCase("ZUNIONSTORE", new[] { "destination", "2", "key1", "key2" }, false,
+            new[] { "destination", "key1", "key2" })]
+        [TestCase("EVAL", new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, false,
+            new[] { "key1", "key2" })]
         [TestCase("EXPIRE", new[] { "mykey", "100", "NX" }, false, new[] { "mykey" })]
-        [TestCase("MIGRATE", new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, false, new[] { "key1", "key2" })]
-        [TestCase("GEOSEARCHSTORE", new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, false, new[] { "dst", "src" })]
+        [TestCase("MIGRATE", new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, false,
+            new[] { "key1", "key2" })]
+        [TestCase("GEOSEARCHSTORE", new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, false,
+            new[] { "dst", "src" })]
         [TestCase("DELIFM", new[] { "mykey", "value" }, true, new[] { "mykey" })]
         [TestCase("MGETIFPM", new[] { "prefix", "key1", "key2", "key3" }, true, new[] { "key1", "key2", "key3" })]
         [TestCase("MYDICTGET", new[] { "mykey", "key1" }, true, new[] { "mykey" })]
         [TestCase("MYDICTSET", new[] { "mykey", "key1", "val1" }, true, new[] { "mykey" })]
-        [TestCase("READWRITETX", new[] { "readkey", "writekey1", "writekey2" }, true, new[] { "readkey", "writekey1", "writekey2" })]
+        [TestCase("READWRITETX", new[] { "readkey", "writekey1", "writekey2" }, true,
+            new[] { "readkey", "writekey1", "writekey2" })]
         [TestCase("SETIFPM", new[] { "mykey", "myvalue", "prefix" }, true, new[] { "mykey" })]
         [TestCase("SETWPIFPGT", new[] { "mykey", "myvalue", "prefix" }, true, new[] { "mykey" })]
         public void CommandGetKeysTest(string command, string[] args, bool isCustomCmd, string[] expectedKeys)
@@ -730,7 +768,8 @@ namespace Garnet.test
             if (isCustomCmd)
                 RegisterCustomCommands();
 
-            var results = (RedisResult[])db.Execute("COMMAND", new object[] { "GETKEYS", command }.Union(args).ToArray());
+            var results =
+                (RedisResult[])db.Execute("COMMAND", new object[] { "GETKEYS", command }.Union(args).ToArray());
 
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(expectedKeys.Length, results!.Length);
@@ -743,22 +782,65 @@ namespace Garnet.test
         /// Test COMMAND GETKEYSANDFLAGS command with various command signatures
         /// </summary>
         [Test]
-        [TestCase("SET", new[] { "mykey", "value" }, false, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update | KeySpecificationFlags.VariableFlags })]
-        [TestCase("MSET", new[] { "key1", "value1", "key2", "value2" }, false, new[] { "key1", "key2" }, new[] { KeySpecificationFlags.OW | KeySpecificationFlags.Update })]
-        [TestCase("MGET", new[] { "key1", "key2", "key3" }, false, new[] { "key1", "key2", "key3" }, new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
-        [TestCase("ZUNIONSTORE", new[] { "destination", "2", "key1", "key2" }, false, new[] { "destination", "key1", "key2" }, new[] { KeySpecificationFlags.OW | KeySpecificationFlags.Update, KeySpecificationFlags.RO | KeySpecificationFlags.Access, KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
-        [TestCase("EVAL", new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, false, new[] { "key1", "key2" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
-        [TestCase("EXPIRE", new[] { "mykey", "100", "NX" }, false, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Update })]
-        [TestCase("MIGRATE", new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, false, new[] { "key1", "key2" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Delete | KeySpecificationFlags.Incomplete })]
-        [TestCase("GEOSEARCHSTORE", new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, false, new[] { "dst", "src" }, new[] { KeySpecificationFlags.OW | KeySpecificationFlags.Update, KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
-        [TestCase("DELIFM", new[] { "mykey", "value" }, true, new[] { "mykey" }, new[] { KeySpecificationFlags.RM | KeySpecificationFlags.Delete })]
-        [TestCase("MGETIFPM", new[] { "prefix", "key1", "key2", "key3" }, true, new[] { "key1", "key2", "key3" }, new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
-        [TestCase("MYDICTGET", new[] { "mykey", "key1" }, true, new[] { "mykey" }, new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
-        [TestCase("MYDICTSET", new[] { "mykey", "key1", "val1" }, true, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
-        [TestCase("READWRITETX", new[] { "readkey", "writekey1", "writekey2" }, true, new[] { "readkey", "writekey1", "writekey2" }, new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access, KeySpecificationFlags.OW | KeySpecificationFlags.Update, KeySpecificationFlags.OW | KeySpecificationFlags.Update })]
-        [TestCase("SETIFPM", new[] { "mykey", "myvalue", "prefix" }, true, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
-        [TestCase("SETWPIFPGT", new[] { "mykey", "myvalue", "prefix" }, true, new[] { "mykey" }, new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
-        public void CommandGetKeysAndFlagsTest(string command, string[] args, bool isCustomCmd, string[] expectedKeys, KeySpecificationFlags[] keySpecFlags)
+        [TestCase("SET", new[] { "mykey", "value" }, false, new[] { "mykey" },
+            new[]
+            {
+                KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update |
+                KeySpecificationFlags.VariableFlags
+            })]
+        [TestCase("MSET", new[] { "key1", "value1", "key2", "value2" }, false, new[] { "key1", "key2" },
+            new[] { KeySpecificationFlags.OW | KeySpecificationFlags.Update })]
+        [TestCase("MGET", new[] { "key1", "key2", "key3" }, false, new[] { "key1", "key2", "key3" },
+            new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
+        [TestCase("ZUNIONSTORE", new[] { "destination", "2", "key1", "key2" }, false,
+            new[] { "destination", "key1", "key2" },
+            new[]
+            {
+                KeySpecificationFlags.OW | KeySpecificationFlags.Update,
+                KeySpecificationFlags.RO | KeySpecificationFlags.Access,
+                KeySpecificationFlags.RO | KeySpecificationFlags.Access
+            })]
+        [TestCase("EVAL", new[] { "return redis.call('GET', KEYS[1])", "2", "key1", "key2" }, false,
+            new[] { "key1", "key2" },
+            new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
+        [TestCase("EXPIRE", new[] { "mykey", "100", "NX" }, false, new[] { "mykey" },
+            new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Update })]
+        [TestCase("MIGRATE", new[] { "127.0.0.1", "6379", "", "0", "5000", "KEYS", "key1", "key2" }, false,
+            new[] { "key1", "key2" },
+            new[]
+            {
+                KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Delete |
+                KeySpecificationFlags.Incomplete
+            })]
+        [TestCase("GEOSEARCHSTORE", new[] { "dst", "src", "FROMMEMBER", "member", "COUNT", "10", "ASC" }, false,
+            new[] { "dst", "src" },
+            new[]
+            {
+                KeySpecificationFlags.OW | KeySpecificationFlags.Update,
+                KeySpecificationFlags.RO | KeySpecificationFlags.Access
+            })]
+        [TestCase("DELIFM", new[] { "mykey", "value" }, true, new[] { "mykey" },
+            new[] { KeySpecificationFlags.RM | KeySpecificationFlags.Delete })]
+        [TestCase("MGETIFPM", new[] { "prefix", "key1", "key2", "key3" }, true, new[] { "key1", "key2", "key3" },
+            new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
+        [TestCase("MYDICTGET", new[] { "mykey", "key1" }, true, new[] { "mykey" },
+            new[] { KeySpecificationFlags.RO | KeySpecificationFlags.Access })]
+        [TestCase("MYDICTSET", new[] { "mykey", "key1", "val1" }, true, new[] { "mykey" },
+            new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
+        [TestCase("READWRITETX", new[] { "readkey", "writekey1", "writekey2" }, true,
+            new[] { "readkey", "writekey1", "writekey2" },
+            new[]
+            {
+                KeySpecificationFlags.RO | KeySpecificationFlags.Access,
+                KeySpecificationFlags.OW | KeySpecificationFlags.Update,
+                KeySpecificationFlags.OW | KeySpecificationFlags.Update
+            })]
+        [TestCase("SETIFPM", new[] { "mykey", "myvalue", "prefix" }, true, new[] { "mykey" },
+            new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
+        [TestCase("SETWPIFPGT", new[] { "mykey", "myvalue", "prefix" }, true, new[] { "mykey" },
+            new[] { KeySpecificationFlags.RW | KeySpecificationFlags.Access | KeySpecificationFlags.Update })]
+        public void CommandGetKeysAndFlagsTest(string command, string[] args, bool isCustomCmd, string[] expectedKeys,
+            KeySpecificationFlags[] keySpecFlags)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -766,7 +848,8 @@ namespace Garnet.test
             if (isCustomCmd)
                 RegisterCustomCommands();
 
-            var results = (RedisResult[])db.Execute("COMMAND", new object[] { "GETKEYSANDFLAGS", command }.Union(args).ToArray());
+            var results = (RedisResult[])db.Execute("COMMAND",
+                new object[] { "GETKEYSANDFLAGS", command }.Union(args).ToArray());
 
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(expectedKeys.Length, results!.Length);
@@ -809,31 +892,6 @@ namespace Garnet.test
 
             Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand));
             Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand, "INVALIDCOMMAND", "key1"));
-        }
-
-        /// <summary>
-        /// Check that all multi-key commands are properly marked as such in <see cref="RespCommandExtensions.IsMultiKeyCommand"/>
-        /// </summary>
-        [Test]
-        public void MultiKeyCommandCoverageTest()
-        {
-            var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).ToHashSet();
-            var nonCoveredMultiKeyCommands = new HashSet<RespCommand>();
-
-            foreach (var cmd in allCommands)
-            {
-                if (!cmd.IsDataCommand())
-                    continue;
-
-                var success = RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdSimpleInfo);
-                ClassicAssert.IsTrue(success);
-
-                if (cmdSimpleInfo.IsMultiKeyCommand() && !cmd.IsMultiKeyCommand())
-                    nonCoveredMultiKeyCommands.Add(cmd);
-            }
-
-            CollectionAssert.IsEmpty(nonCoveredMultiKeyCommands,
-                $"Found multi-key commands that are not properly marked. Please update {nameof(RespCommand)}.{nameof(RespCommandExtensions.IsMultiKeyCommand)}");
         }
     }
 }

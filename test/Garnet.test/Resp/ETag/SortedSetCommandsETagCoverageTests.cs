@@ -13,7 +13,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class SortedSetCommandsETagCoverageTests : EtagCoverageTestsBase
+    public class SortedSetCommandsETagCoverageTests : ETagCoverageTestsBase
     {
         static readonly RedisKey[] SortedSetKeys = [KeysWithEtag[0], "ssKey2", "ssKey3"];
 

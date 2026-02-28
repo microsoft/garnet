@@ -11,7 +11,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class GeoCommandsETagCoverageTests : EtagCoverageTestsBase
+    public class GeoCommandsETagCoverageTests : ETagCoverageTestsBase
     {
         const double DoubleTolerance = 1e-6;
 

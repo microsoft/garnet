@@ -737,10 +737,6 @@ namespace Garnet.server
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
                             SendAndReset();
 
-                    if (cmd.IsMultiKeyCommand())
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_MULTI_KEY_UNSUPPORTED, ref dcurr, dend))
-                            SendAndReset();
-
                     outputEtag = true;
                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                         SendAndReset();
@@ -761,7 +757,7 @@ namespace Garnet.server
                 RespCommand.SETNX => NetworkSETNX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
-                RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.DEL => NetworkDEL(cmd, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(cmd, ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAME(cmd, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
@@ -827,12 +823,12 @@ namespace Garnet.server
                 RespCommand.MGET => NetworkMGET(ref storageApi),
                 RespCommand.MSET => NetworkMSET(ref storageApi),
                 RespCommand.MSETNX => NetworkMSETNX(ref storageApi),
-                RespCommand.UNLINK => NetworkDEL(ref storageApi),
+                RespCommand.UNLINK => NetworkDEL(cmd, ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
                 RespCommand.SWAPDB => NetworkSWAPDB(),
-                RespCommand.WATCH => NetworkWATCH(),
-                RespCommand.WATCHMS => NetworkWATCH_MS(),
-                RespCommand.WATCHOS => NetworkWATCH_OS(),
+                RespCommand.WATCH => NetworkWATCH(cmd, StoreType.All),
+                RespCommand.WATCHMS => NetworkWATCH(cmd, StoreType.Main),
+                RespCommand.WATCHOS => NetworkWATCH(cmd, StoreType.Object),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(cmd),
                 RespCommand.SSUBSCRIBE => NetworkSUBSCRIBE(cmd),

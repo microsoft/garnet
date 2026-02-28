@@ -248,9 +248,9 @@ namespace Garnet.server
             {
                 updatedEtag = MetaCommand switch
                 {
-                    RespMetaCommand.None or RespMetaCommand.ExecWithEtag => currEtag + 1,
+                    RespMetaCommand.None or RespMetaCommand.ExecWithEtag or RespMetaCommand.ExecIfNotMatch => currEtag + 1,
                     RespMetaCommand.ExecIfMatch => inputEtag + 1,
-                    RespMetaCommand.ExecIfGreater => currEtag == LogRecord.NoETag ? inputEtag : currEtag + 1,
+                    RespMetaCommand.ExecIfGreater => inputEtag,
                     _ => throw new ArgumentException($"Unexpected meta command: {MetaCommand}", nameof(MetaCommand)),
                 };
             }

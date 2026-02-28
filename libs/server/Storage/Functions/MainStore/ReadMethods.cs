@@ -28,7 +28,10 @@ namespace Garnet.server
             output.ETag = srcLogRecord.ETag;
 
             if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+            {
+                output.OutputFlags |= StringOutputFlags.OperationSkipped;
                 return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+            }
 
             var cmd = input.header.cmd;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations

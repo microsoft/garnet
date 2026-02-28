@@ -368,10 +368,6 @@ namespace Garnet.server
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
-            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            else if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
-                return IPUResult.Failed;
-            var shouldCheckExpiration = true;
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
             if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
@@ -381,10 +377,21 @@ namespace Garnet.server
                 if (hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
                 rmwInfo.Action = RMWAction.CancelOperation;
-                functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+
+                if (cmd == RespCommand.SET)
+                    CopyRespTo(logRecord.ValueSpan, ref output);
+                else
+                    functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                
                 return IPUResult.NotUpdated;
             }
 
+            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
+            if (!hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand() &&
+                !logRecord.CanAddETagInPlace(out _, out _, out _))
+                return IPUResult.Failed;
+
+            var shouldCheckExpiration = true;
             var shouldUpdateETag = hadETagPreMutation || metaCmd.IsETagCommand();
 
             switch (cmd)
@@ -630,6 +637,8 @@ namespace Garnet.server
                     // Then, set ExpireAndStop action to delete the record.
                     CopyRespTo(logRecord.ValueSpan, ref output);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
+                    output.ETag = functionsState.etagState.ETag;
+
                     return IPUResult.Failed;
 
                 case RespCommand.GETEX:
@@ -676,6 +685,8 @@ namespace Garnet.server
                         // Append the new value with the client input at the end of the old data
                         appendValue.ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
                     }
+                    else
+                        shouldUpdateETag = false;
 
                     if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
                         return IPUResult.Failed;
@@ -1159,6 +1170,7 @@ namespace Garnet.server
                     // Then, set ExpireAndStop action to delete the record.
                     CopyRespTo(oldValue, ref output);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
+                    output.ETag = functionsState.etagState.ETag;
 
                     // reset etag state that may have been initialized earlier
                     ETagState.ResetState(ref functionsState.etagState);

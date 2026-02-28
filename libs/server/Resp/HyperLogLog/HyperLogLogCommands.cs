@@ -77,6 +77,13 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.PFCOUNT),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
@@ -106,6 +113,13 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.PFMERGE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));

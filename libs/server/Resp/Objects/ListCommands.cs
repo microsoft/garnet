@@ -186,6 +186,13 @@ namespace Garnet.server
         private unsafe bool ListPopMultiple<TGarnetApi>(ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.LMPOP),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 3)
                 return AbortWithWrongNumberOfArguments("LMPOP");
 
@@ -266,6 +273,13 @@ namespace Garnet.server
 
         private bool ListBlockingPop(RespCommand command)
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(command.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
 
@@ -312,6 +326,13 @@ namespace Garnet.server
 
         private unsafe bool ListBlockingMove()
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.BLMOVE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 5)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMOVE));
 
@@ -334,6 +355,13 @@ namespace Garnet.server
         /// <returns></returns>
         private bool ListBlockingPopPush()
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.BRPOPLPUSH),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 3)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BRPOPLPUSH));
 
@@ -692,8 +720,15 @@ namespace Garnet.server
         private bool ListMove<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.LMOVE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 4)
-                return AbortWithWrongNumberOfArguments("LMOVE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LMOVE));
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
@@ -736,8 +771,15 @@ namespace Garnet.server
         private bool ListRightPopLeftPush<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.RPOPLPUSH),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 2)
-                return AbortWithWrongNumberOfArguments("RPOPLPUSH");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RPOPLPUSH));
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
@@ -843,6 +885,13 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool ListBlockingPopMultiple()
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.BLMPOP),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 4)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMPOP));
 

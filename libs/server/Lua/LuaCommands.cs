@@ -20,10 +20,17 @@ namespace Garnet.server
                 return true;
             }
 
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.EVALSHA),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var count = parseState.Count;
             if (count < 2)
             {
-                return AbortWithWrongNumberOfArguments("EVALSHA");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EVALSHA));
             }
 
             if (!parseState.TryGetInt(1, out var n) || (n < 0) || (n > count - 2))
@@ -105,10 +112,17 @@ namespace Garnet.server
                 return true;
             }
 
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.EVAL),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var count = parseState.Count;
             if (count < 2)
             {
-                return AbortWithWrongNumberOfArguments("EVAL");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EVAL));
             }
 
             if (!parseState.TryGetInt(1, out var n) || (n < 0) || (n > count - 2))

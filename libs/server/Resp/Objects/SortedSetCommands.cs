@@ -235,6 +235,13 @@ namespace Garnet.server
         private unsafe bool SortedSetRangeStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZRANGESTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             // ZRANGESTORE dst src min max [BYSCORE | BYLEX] [REV] [LIMIT offset count]
             if (parseState.Count is < 4 or > 9)
             {
@@ -438,6 +445,13 @@ namespace Garnet.server
         private unsafe bool SortedSetMPop<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZMPOP),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             // ZMPOP requires at least 3 args: numkeys, key [key...], <MIN|MAX> [COUNT count]
             if (parseState.Count < 3)
             {
@@ -953,6 +967,13 @@ namespace Garnet.server
         private unsafe bool SortedSetDifference<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZDIFF),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZDIFF");
@@ -1048,6 +1069,13 @@ namespace Garnet.server
         private unsafe bool SortedSetDifferenceStore<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZDIFFSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZDIFFSTORE));
@@ -1093,6 +1121,13 @@ namespace Garnet.server
         private unsafe bool SortedSetIntersect<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZINTER),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZINTER));
@@ -1216,6 +1251,13 @@ namespace Garnet.server
         private unsafe bool SortedSetIntersectLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZINTERCARD),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZINTERCARD));
@@ -1289,6 +1331,13 @@ namespace Garnet.server
         private unsafe bool SortedSetIntersectStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZINTERSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZINTERSTORE));
@@ -1376,6 +1425,13 @@ namespace Garnet.server
         private unsafe bool SortedSetUnion<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZUNION),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZUNION));
@@ -1506,6 +1562,13 @@ namespace Garnet.server
         private unsafe bool SortedSetUnionStore<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZUNIONSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZUNIONSTORE));
@@ -1598,6 +1661,13 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingPop(RespCommand command)
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(command.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -1655,6 +1725,13 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingMPop()
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.BZMPOP),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BZMPOP));

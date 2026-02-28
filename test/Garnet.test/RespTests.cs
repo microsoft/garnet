@@ -2504,7 +2504,6 @@ namespace Garnet.test
             var key = "expireKey";
             var val = "expireValue";
             var expire = 2;
-
             var ttl = db.Execute("TTL", key);
             ClassicAssert.AreEqual(-2, (int)ttl);
 

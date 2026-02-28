@@ -265,16 +265,6 @@ namespace Garnet.server
 
                     throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
-                case RespCommand.TTL:
-                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
-                    return;
-
-                case RespCommand.PTTL:
-                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(pttlValue, ref output.SpanByteAndMemory);
-                    return;
-
                 case RespCommand.GETRANGE:
                     var len = value.Length;
                     var start = input.parseState.GetInt(0);
@@ -283,14 +273,9 @@ namespace Garnet.server
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(value, ref output, start, end);
                     return;
-                case RespCommand.EXPIRETIME:
-                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(expireTime, ref output.SpanByteAndMemory);
-                    return;
-
-                case RespCommand.PEXPIRETIME:
-                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(pexpireTime, ref output.SpanByteAndMemory);
+                
+                case RespCommand.STRLEN:
+                    functionsState.CopyRespNumber(value.Length, ref output.SpanByteAndMemory);
                     return;
 
                 default:

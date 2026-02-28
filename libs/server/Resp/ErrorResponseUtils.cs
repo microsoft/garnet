@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -8,12 +8,12 @@ using Garnet.common;
 namespace Garnet.server
 {
     /// <summary>
-    /// Server session for RESP protocol - sorted set
+    /// Server session for RESP protocol - error response utilities
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs
+        /// Aborts the execution of the current command and outputs
         /// an error message to indicate a wrong number of arguments for the given command.
         /// </summary>
         /// <param name="cmdName">Name of the command that caused the error message.</param>
@@ -26,7 +26,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs
+        /// Aborts the execution of the current command and outputs
         /// an error message to indicate an unknown subcommand or wrong number of arguments for the given command.
         /// </summary>
         /// <param name="subCommand">Name of the subcommand that caused the error message.</param>
@@ -40,9 +40,23 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs a given error message
+        /// Aborts the execution of the current command and outputs
+        /// an error message to indicate a command called with an unsupported meta-command.
         /// </summary>
-        /// <param name="errorMessage">Error message to print to result stream</param>
+        /// <param name="cmdName">Name of the command that caused the error message.</param>
+        /// <param name="metaCommandName">Name of the meta-command that caused the error message.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithCommandUnsupportedWithMetaCommand(string cmdName, string metaCommandName)
+        {
+            var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, cmdName, metaCommandName.ToUpper()));
+
+            return AbortWithErrorMessage(errorMessage);
+        }
+
+        /// <summary>
+        /// Aborts the execution of the current command and outputs a given error message.
+        /// </summary>
+        /// <param name="errorMessage">Error message to print to result stream.</param>
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         private bool AbortWithErrorMessage(ReadOnlySpan<byte> errorMessage)
         {
@@ -54,7 +68,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// Aborts the execution of the current command and outputs a given error message.
         /// </summary>
         /// <param name="format">The format string for the error message.</param>
         /// <param name="arg0">The first argument to format.</param>
@@ -65,7 +79,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// Aborts the execution of the current command and outputs a given error message.
         /// </summary>
         /// <param name="format">The format string for the error message.</param>
         /// <param name="arg0">The first argument to format.</param>
@@ -77,7 +91,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// Aborts the execution of the current command and outputs a given error message.
         /// </summary>
         /// <param name="format">The format string for the error message.</param>
         /// <param name="arg0">The first argument to format.</param>
@@ -90,7 +104,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// Aborts the execution of the current command and outputs a given error message.
         /// </summary>
         /// <param name="format">The format string for the error message.</param>
         /// <param name="args">The arguments to format.</param>

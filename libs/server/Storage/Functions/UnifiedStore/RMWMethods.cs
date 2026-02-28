@@ -89,11 +89,25 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DEL:
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
-                    output.ETag = LogRecord.NoETag;
-                    ETagState.ResetState(ref functionsState.etagState);
+                    var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _);
+                    if (execOp)
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                    }
+                    else
+                    {
+                        functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                        output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                    }
+
+                    output.ETag = srcLogRecord.ETag;
+
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.ResetState(ref functionsState.etagState);
+
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
-                    // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
+                    // Setting no Action and returning false for non-delete case will short-circuit the InternalRMW code to not run CU, and return SUCCESS.
                     // If we want to delete the object setting the Action to ExpireAndStop will add the tombstone in hybrid log for us.
                     return false;
             }
@@ -293,9 +307,6 @@ namespace Garnet.server
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
-            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            else if (metaCmd.IsETagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
-                return IPUResult.Failed;
 
             var shouldUpdateETag = hadETagPreMutation || metaCmd.IsETagCommand();
             var hasExpiration = logRecord.Info.HasExpiration;
@@ -303,6 +314,7 @@ namespace Garnet.server
             if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
             {
                 output.ETag = functionsState.etagState.ETag;
+                output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
                 if (hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
                 functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
@@ -310,11 +322,16 @@ namespace Garnet.server
                 return IPUResult.NotUpdated;
             }
 
+            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
+            if (!hadETagPreMutation && metaCmd.IsETagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
+                return IPUResult.Failed;
+
             var ipuResult = IPUResult.Succeeded;
             switch (cmd)
             {
                 case RespCommand.DEL:
                     rmwInfo.Action = RMWAction.ExpireAndStop;
+                    output.ETag = logRecord.ETag;
                     if (hadETagPreMutation)
                         ETagState.ResetState(ref functionsState.etagState);
                     return IPUResult.Failed;

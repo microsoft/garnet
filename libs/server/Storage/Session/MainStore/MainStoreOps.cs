@@ -537,6 +537,9 @@ namespace Garnet.server
             }
         }
 
+        public GarnetStatus STRLEN<TStringContext>(PinnedSpanByte key, ref StringOutput output, ref StringInput input, ref TStringContext context) where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        => Read_MainStore(key, ref input, ref output, ref context);
+
         private unsafe GarnetStatus LCSInternal<TStringContext>(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, ref TStringContext context, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {

@@ -283,7 +283,16 @@ namespace Garnet.server
         private bool NetworkGETSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.GETSET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETSET));
+
             var key = parseState.GetArgSliceByRef(0);
 
             return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false, ref storageApi);
@@ -625,11 +634,10 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (!getValue)
+            if (!getValue && !metaCommandInfo.MetaCommand.IsETagCommand())
             {
                 var output = new StringOutput();
                 var status = storageApi.SET_Conditional(key, ref input, ref output);
-                etag = output.ETag;
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
                 if (cmd == RespCommand.SETKEEPTTL)
@@ -644,10 +652,8 @@ namespace Garnet.server
                     // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
                     if (cmd == RespCommand.SETEXNX)
                         ok = !ok;
-                    else if (cmd == RespCommand.SET)
-                        ok = status is GarnetStatus.NOTFOUND or GarnetStatus.OK;
 
-                    if (ok && !output.IsOperationSkipped)
+                    if (ok)
                     {
                         while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
@@ -662,24 +668,21 @@ namespace Garnet.server
             }
             else
             {
-                input.header.SetSetGetFlag();
+                if (getValue)
+                    input.header.SetSetGetFlag();
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 var output = GetStringOutput();
-                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
+                var status = storageApi.SET_Conditional(key, ref input, ref output);
                 etag = output.ETag;
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
-                bool ok = status != GarnetStatus.NOTFOUND;
+                var ok = status != GarnetStatus.NOTFOUND;
 
-                if (ok)
-                {
-                    ProcessOutput(output.SpanByteAndMemory);
-                }
-                else
-                {
+                if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && !output.IsOperationSkipped))
                     WriteNull();
-                }
+                else 
+                    ProcessOutput(output.SpanByteAndMemory);
 
                 return true;
             }
@@ -947,15 +950,18 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN));
             }
 
-            //STRLEN key
+            // STRLEN key
             var key = parseState.GetArgSliceByRef(0);
-            var status = storageApi.GET(key, out PinnedSpanByte value);
+            var input = new StringInput(RespCommand.STRLEN, ref metaCommandInfo);
+            var output = GetStringOutput();
+
+            var status = storageApi.STRLEN(key, ref output, ref input);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(value.Length, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))

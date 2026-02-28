@@ -12,7 +12,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class UnifiedCommandsEtagCoverageTest : EtagCoverageTestsBase
+    public class UnifiedCommandsETagCoverageTest : ETagCoverageTestsBase
     {
         static readonly RedisKey[] StringKeys = [KeysWithEtag[0], KeysWithEtag[1], KeysWithEtag[2]];
 
@@ -31,16 +31,28 @@ namespace Garnet.test.Resp.ETag
         public async Task DelETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
+            var totalKeys = cmdArgs.Length;
 
-            await CheckCommandAsync(RespCommand.DEL, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.DEL, cmdArgs, VerifyResult, totalKeys: totalKeys);
+
+            cmdArgs = [StringKeys[0], StringKeys[1]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.DEL, cmdArgs, VerifyResult, totalKeys: totalKeys);
 
             cmdArgs = [ListKeys[0]];
+            totalKeys = cmdArgs.Length;
 
-            await CheckCommandAsync(RespCommand.DEL, cmdArgs, VerifyResult, [3]);
+            await CheckCommandAsync(RespCommand.DEL, cmdArgs, VerifyResult, [3], totalKeys: totalKeys);
 
-            static void VerifyResult(RedisResult result)
+            cmdArgs = [ListKeys[0], ListKeys[1]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.DEL, cmdArgs, VerifyResult, [3], totalKeys: totalKeys);
+
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(1, (long)result);
+                ClassicAssert.AreEqual(totalKeys, (long)result);
             }
         }
 
@@ -48,12 +60,28 @@ namespace Garnet.test.Resp.ETag
         public async Task ExistsETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
+            var totalKeys = cmdArgs.Length;
 
-            await CheckCommandAsync(RespCommand.EXISTS, cmdArgs, VerifyResult, isReadOnly: true);
+            await CheckCommandAsync(RespCommand.EXISTS, cmdArgs, VerifyResult, isReadOnly: true, totalKeys: totalKeys);
 
-            static void VerifyResult(RedisResult result)
+            cmdArgs = [StringKeys[0], StringKeys[1]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.EXISTS, cmdArgs, VerifyResult, isReadOnly: true, totalKeys: totalKeys);
+
+            cmdArgs = [ListKeys[0]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.EXISTS, cmdArgs, VerifyResult, [3], isReadOnly: true, totalKeys: totalKeys);
+
+            cmdArgs = [ListKeys[0], ListKeys[1]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.EXISTS, cmdArgs, VerifyResult, [3], isReadOnly: true, totalKeys: totalKeys);
+
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.IsTrue((bool)result);
+                ClassicAssert.AreEqual(totalKeys, (long)result);
             }
         }
 
@@ -296,16 +324,28 @@ namespace Garnet.test.Resp.ETag
         public async Task UnlinkETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
+            var totalKeys = cmdArgs.Length;
 
-            await CheckCommandAsync(RespCommand.UNLINK, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.UNLINK, cmdArgs, VerifyResult, totalKeys: totalKeys);
+
+            cmdArgs = [StringKeys[0], StringKeys[1]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.UNLINK, cmdArgs, VerifyResult, totalKeys: totalKeys);
 
             cmdArgs = [ListKeys[0]];
+            totalKeys = cmdArgs.Length;
 
-            await CheckCommandAsync(RespCommand.UNLINK, cmdArgs, VerifyResult, [3]);
+            await CheckCommandAsync(RespCommand.UNLINK, cmdArgs, VerifyResult, [3], totalKeys: totalKeys);
 
-            static void VerifyResult(RedisResult result)
+            cmdArgs = [ListKeys[0], ListKeys[1]];
+            totalKeys = cmdArgs.Length;
+
+            await CheckCommandAsync(RespCommand.UNLINK, cmdArgs, VerifyResult, [3], totalKeys: totalKeys);
+
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(1, (long)result);
+                ClassicAssert.AreEqual(totalKeys, (long)result);
             }
         }
 
@@ -322,9 +362,8 @@ namespace Garnet.test.Resp.ETag
             {
                 var setCmdArgs = new object[] { "SET", StringKeys[i], StringData[i] };
                 var results = (string[])db.Execute("EXECWITHETAG", setCmdArgs);
-
                 ClassicAssert.AreEqual(2, results!.Length);
-                ClassicAssert.AreEqual("OK", results[0]);
+                ClassicAssert.IsNull(results[0]);
                 ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
             }
 

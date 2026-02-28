@@ -315,6 +315,7 @@ namespace Garnet.server
         public const string GenericErrUnknownSubCommandOrWrongNumberOfArguments = "ERR unknown subcommand or wrong number of arguments for '{0}'. Try {1} HELP";
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
+        public const string GenericErrCmdUnsupportedWithMetaCommand = "ERR command '{0}' is currently unsupported with meta-command '{1}'";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR Parameter `{0}` should be greater than 0";
         public const string GenericErrNotAFloat = "ERR {0} value is not a valid float";

@@ -317,6 +317,13 @@ namespace Garnet.server
         private bool NetworkStringBitOperation<TGarnetApi>(BitmapOperation bitOp, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.BITOP),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             // Too few keys
             if (parseState.Count < 2)
             {

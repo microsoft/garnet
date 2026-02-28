@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// DEL Conditional
         /// </summary>
-        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref UnifiedInput input);
+        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         /// <summary>
         /// SET Conditional
@@ -1237,6 +1237,16 @@ namespace Garnet.server
         /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
         /// <returns>The status of the operation.</returns>
         GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
+
+        /// <summary>
+        /// Gets the length of the value stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input);
+        
         #endregion
 
         #region GETRANGE

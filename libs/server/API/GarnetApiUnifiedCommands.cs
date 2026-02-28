@@ -69,8 +69,8 @@ namespace Garnet.server
         #region DELETE
 
         /// <inheritdoc />
-        public GarnetStatus DEL_Conditional(PinnedSpanByte key, ref UnifiedInput input)
-            => storageSession.DEL_Conditional(key, ref input, ref unifiedContext);
+        public GarnetStatus DEL_Conditional(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
+            => storageSession.DEL_Conditional(key, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
         public GarnetStatus DELETE(PinnedSpanByte key)

@@ -639,6 +639,13 @@ namespace Garnet.server
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.HCOLLECT),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.HCOLLECT));
@@ -668,6 +675,13 @@ namespace Garnet.server
         private bool NetworkZCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZCOLLECT),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZCOLLECT));

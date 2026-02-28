@@ -12,7 +12,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class HashCommandsETagCoverageTests : EtagCoverageTestsBase
+    public class HashCommandsETagCoverageTests : ETagCoverageTestsBase
     {
         static readonly RedisKey[] HashKeys = [KeysWithEtag[0], "hKey2", "hKey3"];
 

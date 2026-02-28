@@ -98,11 +98,9 @@ namespace Garnet.server
             return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
         }
 
-        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref UnifiedInput input, ref TStringContext context)
+        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var output = new UnifiedOutput();
-
             var status = context.RMW(key, ref input, ref output);
 
             if (status.IsPending)

@@ -61,10 +61,18 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
-            garnetApi.WATCH(key1, StoreType.Object);
-            garnetApi.WATCH(key2, StoreType.Object);
+            garnetApi.WATCH(key1, StoreType.Main);
+            garnetApi.WATCH(key2, StoreType.Main);
             return garnetApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
         }
+
+        /// <inheritdoc />
+        public GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.STRLEN(key, ref output, ref input);
+        }
+
         #endregion
 
         #region GETRANGE

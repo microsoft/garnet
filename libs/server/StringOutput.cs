@@ -68,15 +68,15 @@ namespace Garnet.server
     [Flags]
     public enum StringOutputFlags : byte
     {
-        // Non-error flags
+        // Non-error flags (bits 0–3)
         None = 0,
         OperationSkipped = 1 << 0,
 
-        // Error marker
-        Error = 1 << 7,
+        // Error bits (bits 4–6)
+        InvalidTypeError = Error | (1 << 4),
+        NaNOrInfinityError = Error | (1 << 5),
 
-        // Error flags (Error bit always set)
-        InvalidTypeError = Error | (1 << 0),
-        NaNOrInfinityError = Error | (1 << 1),
+        // Error marker (bit 7)
+        Error = 1 << 7,
     }
 }

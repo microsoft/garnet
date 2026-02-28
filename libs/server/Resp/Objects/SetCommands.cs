@@ -65,9 +65,16 @@ namespace Garnet.server
         private bool SetIntersect<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SINTER),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SINTER");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTER));
             }
 
             // Read all keys
@@ -119,9 +126,16 @@ namespace Garnet.server
         private bool SetIntersectStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SINTERSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SINTERSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTERSTORE));
             }
 
             // Get the key
@@ -158,6 +172,13 @@ namespace Garnet.server
         private bool SetIntersectLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SINTERCARD),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2) // Need at least numkeys + 1 key
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTERCARD));
@@ -225,9 +246,16 @@ namespace Garnet.server
         private bool SetUnion<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SUNION),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SUNION");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUNION));
             }
 
             // Read all the keys
@@ -270,9 +298,16 @@ namespace Garnet.server
         private bool SetUnionStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SUNIONSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SUNIONSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUNIONSTORE));
             }
 
             // Get the key
@@ -571,9 +606,16 @@ namespace Garnet.server
         private unsafe bool SetMove<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SMOVE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("SMOVE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SMOVE));
             }
 
             // Get the source key
@@ -689,9 +731,16 @@ namespace Garnet.server
         private bool SetDiff<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SDIFF),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SDIFF");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SDIFF));
             }
 
             var keys = new PinnedSpanByte[parseState.Count];
@@ -731,9 +780,16 @@ namespace Garnet.server
         private bool SetDiffStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SDIFFSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SDIFFSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SDIFFSTORE));
             }
 
             // Get the key

@@ -10,7 +10,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class StringCommandsETagCoverageTests : EtagCoverageTestsBase
+    public class StringCommandsETagCoverageTests : ETagCoverageTestsBase
     {
         static readonly RedisKey[] StringKeys = [KeysWithEtag[0], "key2", "key3"];
 
@@ -226,7 +226,8 @@ namespace Garnet.test.Resp.ETag
 
             void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(nxKey ? null : StringData[0], (string)result);
+                var expectedValue = nxKey ? null : StringData[0];
+                ClassicAssert.AreEqual(expectedValue, (string)result);
             }
         }
 
@@ -369,9 +370,10 @@ namespace Garnet.test.Resp.ETag
 
             await CheckCommandAsync(RespCommand.PSETEX, cmdArgs, VerifyResult, nxKey: nxKey);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual("OK", (string)result);
+                var expectedValue = CurrMetaCommand == RespMetaCommand.None ? "OK" : (CommandExecuted ? null : StringData[0]);
+                ClassicAssert.AreEqual(expectedValue, (string)result);
             }
         }
 
@@ -395,9 +397,10 @@ namespace Garnet.test.Resp.ETag
 
             await CheckCommandAsync(RespCommand.SET, cmdArgs, VerifyResult, nxKey: nxKey);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual("OK", (string)result);
+                var expectedValue = CurrMetaCommand == RespMetaCommand.None ? "OK" : (CommandExecuted ? null : StringData[0]);
+                ClassicAssert.AreEqual(expectedValue, (string)result);
             }
         }
 
@@ -421,9 +424,10 @@ namespace Garnet.test.Resp.ETag
 
             await CheckCommandAsync(RespCommand.SETEX, cmdArgs, VerifyResult, nxKey: nxKey);
 
-            static void VerifyResult(RedisResult result)
+            void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual("OK", (string)result);
+                var expectedValue = CurrMetaCommand == RespMetaCommand.None ? "OK" : (CommandExecuted ? null : StringData[0]);
+                ClassicAssert.AreEqual(expectedValue, (string)result);
             }
         }
 
@@ -496,14 +500,14 @@ namespace Garnet.test.Resp.ETag
             var setCmdArgs = new object[] { "SET", StringKeys[0], StringData[0] };
             var results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
 
-            ClassicAssert.AreEqual(2, results.Length);
-            ClassicAssert.AreEqual("OK", (string)results[0]);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.IsNull((string)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
 
             var pfAddCmdArgs = new object[] { "PFADD", HllKeys[0], StringData[0] };
             results = (RedisResult[])db.Execute("EXECWITHETAG", pfAddCmdArgs);
 
-            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
 
@@ -513,8 +517,8 @@ namespace Garnet.test.Resp.ETag
             setCmdArgs = ["SET", BitmapKeys[0], BitmapData[0]];
             results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
 
-            ClassicAssert.AreEqual(2, results.Length);
-            ClassicAssert.AreEqual("OK", (string)results[0]);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.IsNull((string)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
             
             success = db.StringSet(BitmapKeys[1], BitmapData[1]);

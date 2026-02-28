@@ -219,16 +219,19 @@ namespace Garnet.server
             var paramsRequiredInCommand = 0;
 
             int sourceIdx = 0;
+            var isMultiKeyCommand = false;
             switch (command)
             {
                 case RespCommand.GEORADIUS:
                     paramsRequiredInCommand = 5;
+                    isMultiKeyCommand = true;
                     break;
                 case RespCommand.GEORADIUS_RO:
                     paramsRequiredInCommand = 5;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                     paramsRequiredInCommand = 4;
+                    isMultiKeyCommand = true;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     paramsRequiredInCommand = 4;
@@ -238,10 +241,18 @@ namespace Garnet.server
                     break;
                 case RespCommand.GEOSEARCHSTORE:
                     paramsRequiredInCommand = 7;
+                    isMultiKeyCommand = true;
                     sourceIdx = 1;
                     break;
                 default:
                     throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
+            }
+
+            // Multi-key commands currently do not support execution with any meta-commands
+            if (isMultiKeyCommand && metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(command.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
             }
 
             if (parseState.Count < paramsRequiredInCommand)

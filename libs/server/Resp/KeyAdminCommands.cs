@@ -148,16 +148,30 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var status = storageApi.GET(key, out PinnedSpanByte value);
+            var input = new StringInput(RespCommand.GET, ref metaCommandInfo);
+            var output = StringOutput.FromPinnedSpan(scratchBufferBuilder.ViewRemainingArgSlice());
 
-            if (status is GarnetStatus.NOTFOUND)
+            var status = storageApi.GET(key, ref input, ref output);
+            etag = output.ETag;
+
+            if (status is GarnetStatus.NOTFOUND || output.IsOperationSkipped)
             {
                 WriteNull();
                 return true;
             }
 
-            Span<byte> encodedLength = stackalloc byte[5];
+            PinnedSpanByte value;
+            if (!output.SpanByteAndMemory.IsSpanByte)
+            {
+                value = scratchBufferBuilder.FormatScratch(0, output.SpanByteAndMemory.ReadOnlySpan);
+                output.SpanByteAndMemory.Memory.Dispose();
+            }
+            else
+            {
+                value = scratchBufferBuilder.CreateArgSlice(output.SpanByteAndMemory.Length);
+            }
 
+            Span<byte> encodedLength = stackalloc byte[5];
             if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
             {
                 while (!RespWriteUtils.TryWriteError("ERR DUMP payload length is invalid", ref dcurr, dend))
@@ -331,10 +345,17 @@ namespace Garnet.server
             }
 
             var exists = 0;
+            var keyCount = parseState.Count;
+
+            // Command currently does not support execution with any meta-commands when more than one key is specified
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None && keyCount > 1)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.EXISTS),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
 
             // Prepare input
             var input = new UnifiedInput(RespCommand.EXISTS, ref metaCommandInfo, ref parseState);
-
             var output = new UnifiedOutput();
 
             for (var i = 0; i < parseState.Count; i++)
@@ -343,6 +364,15 @@ namespace Garnet.server
                 var status = storageApi.EXISTS(key, ref input, ref output);
                 if (status == GarnetStatus.OK)
                     exists++;
+            }
+
+            if (metaCommandInfo.MetaCommand.IsETagCommand())
+                etag = output.ETag;
+
+            if (output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
             }
 
             while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))

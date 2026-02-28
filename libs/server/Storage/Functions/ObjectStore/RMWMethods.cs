@@ -144,22 +144,24 @@ namespace Garnet.server
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (hadETagPreMutation)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+
+            if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
+            {
+                output.ETag = functionsState.etagState.ETag;
+                if (hadETagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
+                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+            }
+
             // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            else if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
+            if (!hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand() &&
+                !logRecord.CanAddETagInPlace(out _, out _, out _))
                 return false;
 
             var shouldUpdateETag = !hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand();
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
-                {
-                    output.ETag = functionsState.etagState.ETag;
-                    if (hadETagPreMutation)
-                        ETagState.ResetState(ref functionsState.etagState);
-                    return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
-                }
-
                 ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                 shouldUpdateETag |= (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 

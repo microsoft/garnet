@@ -68,6 +68,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
             => storageSession.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+
+        /// <inheritdoc />
+        public GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input)
+            => storageSession.STRLEN(key, ref output, ref input, ref stringContext);
         #endregion
 
         #region GETEX
