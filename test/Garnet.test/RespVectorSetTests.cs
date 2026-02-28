@@ -686,17 +686,17 @@ namespace Garnet.test
 
             // Add first vector with year=1980
             var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             // Add second vector with year=1960
             var res2 = db.Execute("VADD", ["foo", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960}"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             // Add third vector with year=1940
             var res3 = db.Execute("VADD", ["foo", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1940}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1940}"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
 
@@ -734,11 +734,11 @@ namespace Garnet.test
 
             // Add vectors with attributes
             db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980}"]);
             db.Execute("VADD", ["foo", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960}"]);
             db.Execute("VADD", ["foo", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1940}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1940}"]);
 
             // FILTER without WITHATTRIBS should work: fetch attributes internally and apply filter
             var res = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0",
@@ -846,15 +846,15 @@ namespace Garnet.test
 
             var queryElementId = new byte[] { 0, 0, 0, 0 };
             var res1 = db.Execute("VADD", ["movies", "VALUES", "3", "1.0", "2.0", "3.0", queryElementId,
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"tags\":[\"classic\",\"popular\"]}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"tags\":[\"classic\",\"popular\"]}"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = db.Execute("VADD", ["movies", "VALUES", "3", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 1 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960,\"rating\":3.8,\"genre\":\"drama\",\"tags\":[\"classic\"]}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":1960,\"rating\":3.8,\"genre\":\"drama\",\"tags\":[\"classic\"]}"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             var res3 = db.Execute("VADD", ["movies", "VALUES", "3", "1.5", "2.5", "3.5", new byte[] { 0, 0, 0, 2 },
-                "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "{\"year\":2010,\"rating\":4.2,\"genre\":\"action\",\"tags\":[\"modern\"]}"]);
+                "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "{\"year\":2010,\"rating\":4.2,\"genre\":\"action\",\"tags\":[\"modern\"]}"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             return queryElementId;
