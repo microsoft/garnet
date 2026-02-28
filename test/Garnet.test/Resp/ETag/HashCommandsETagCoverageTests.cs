@@ -378,9 +378,9 @@ namespace Garnet.test.Resp.ETag
             db.KeyDelete(HashKeys);
             if (nxKey) return;
 
-            var hSetCmdArgs = new object[] { "HSET", HashKeys[0] }.Union(HashData[0]
+            var hSetCmdArgs = new object[] { HashKeys[0] }.Concat(HashData[0]
                 .SelectMany(e => new[] { e.Name.ToString(), e.Value.ToString() })).ToArray();
-            var results = (string[])db.Execute("EXECWITHETAG", hSetCmdArgs);
+            var results = (string[])db.ExecWithEtag("HSET", hSetCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(HashData[0].Length, long.Parse(results[0]!));

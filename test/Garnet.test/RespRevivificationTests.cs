@@ -1,10 +1,11 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.test.Resp.ETag;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -87,7 +88,7 @@ namespace Garnet.test
             await db.KeyDeleteAsync("foo");
 
             // now originally the key held a 1 byte value and 8 byte metadata, so inchain revivification of the exact same size should work
-            await db.ExecuteAsync("EXECIFGREATER", 1, "SET", "foo", "b");
+            await db.ExecIfGreaterAsync(1, "SET", "foo", "b");
 
             // check for revivification stats
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
@@ -102,7 +103,7 @@ namespace Garnet.test
             {
 
                 // should be able to reuse the tombstoned record value is 1 byte and etag space is 8 bytes == 9 bytes
-                var res = (RedisResult[])await db.ExecuteAsync("EXECIFGREATER", 5, "SET", "foo", "c");
+                var res = (RedisResult[])await db.ExecIfGreaterAsync(5, "SET", "foo", "c");
                 ClassicAssert.IsTrue(res[0].IsNull);
                 ClassicAssert.AreEqual(5, (long)res[1]);
             };
@@ -197,13 +198,13 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
             // Do a new-record operation that will reuse a tombstoned record via FreeRecordPool
-            await db.ExecuteAsync("EXECIFGREATER", 23, "SET", "the", "terminator");
+            await db.ExecIfGreaterAsync(23, "SET", "the", "terminator");
 
             // confirm we did indeed use a reviv record
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecuteAsync("EXECWITHETAG", "GET", "the");
+            var res = (RedisResult[])await db.ExecWithEtagAsync("GET", "the");
 
             ClassicAssert.AreEqual("terminator", res[0].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
             ClassicAssert.AreEqual(23, (long)res[1], "Incorrect Etag.");
@@ -235,7 +236,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert2, "Expected AOF tail address to move forward on DELETE");
 
             // inchain revivification of the exact same key should take place
-            await db.ExecuteAsync("EXECIFGREATER", 1, "SET", "hoo", "b");
+            await db.ExecIfGreaterAsync(1, "SET", "hoo", "b");
             long tailAddrAfterRevivifyRmw = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterRevivifyRmw > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification RMW");
 

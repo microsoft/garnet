@@ -647,9 +647,9 @@ namespace Garnet.test.Resp.ETag
             db.KeyDelete(SortedSetKeys);
             if (nxKey) return;
 
-            var zaddCmdArgs = new object[] { "ZADD", SortedSetKeys[0] }.Union(SortedSetData[0]
+            var zaddCmdArgs = new object[] { SortedSetKeys[0] }.Concat(SortedSetData[0]
                 .SelectMany(e => new[] { e.Score.ToString(), e.Element.ToString() })).ToArray();
-            var results = (string[])db.Execute("EXECWITHETAG", zaddCmdArgs);
+            var results = (string[])db.ExecWithEtag("ZADD", zaddCmdArgs);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(SortedSetData[0].Length, long.Parse(results[0]!));
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1

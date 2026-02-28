@@ -342,8 +342,8 @@ namespace Garnet.test.Resp.ETag
 
             for (var i = 0; i < 2; i++)
             {
-                var sAddCmdArgs = new object[] { "RPUSH", ListKeys[i] }.Union(ListData[i].Select(d => d.ToString())).ToArray();
-                var results = (string[])db.Execute("EXECWITHETAG", sAddCmdArgs);
+                var sAddCmdArgs = new object[] { ListKeys[i] }.Concat(ListData[i].Select(d => d.ToString())).ToArray();
+                var results = (string[])db.ExecWithEtag("RPUSH", sAddCmdArgs);
 
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.AreEqual(ListData[i].Length, long.Parse(results[0]!));

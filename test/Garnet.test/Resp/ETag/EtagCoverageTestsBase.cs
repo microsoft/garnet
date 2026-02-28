@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -201,8 +200,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECWITHETAG meta-command
-            var args = new object[] { command.ToString() }.Concat(commandArgs).ToArray();
-            var result = await db.ExecuteAsync("EXECWITHETAG", args);
+            var result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
 
             // Verify result & expected ETag
             var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || nxKey || command.IsMetadataCommand() ? 1 : 2;
@@ -219,8 +217,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECIFMATCH meta-command with existing ETag (should succeed)
-            var args = new object[] { nxKey ? 0 : 1, command.ToString() }.Concat(commandArgs).ToArray();
-            var result = await db.ExecuteAsync("EXECIFMATCH", args);
+            var result = await db.ExecIfMatchAsync(nxKey ? 0 : 1, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
             var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || command.IsMetadataCommand() ? 1 : 2;
@@ -230,8 +227,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECIFMATCH meta-command with ETag 3 (should fail only if key exists)
-            args = new object[] { 3, command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECIFMATCH", args);
+            result = await db.ExecIfMatchAsync(3, command.ToString(), commandArgs);
             CommandExecuted = nxKey;
 
             if (!nxKey)
@@ -260,8 +256,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECIFMATCH meta-command with different ETag (should succeed)
-            var args = new object[] { 2, command.ToString() }.Concat(commandArgs).ToArray();
-            var result = await db.ExecuteAsync("EXECIFNOTMATCH", args);
+            var result = await db.ExecIfNotMatchAsync(2, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
             var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || command.IsMetadataCommand() ? 1 : 2;
@@ -271,8 +266,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECIFMATCH meta-command with current ETag (should succeed only if key exists)
-            args = new object[] { nxKey ? 0 : 1, command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECIFNOTMATCH", args);
+            result = await db.ExecIfNotMatchAsync(nxKey ? 0 : 1, command.ToString(), commandArgs);
             CommandExecuted = nxKey;
 
             if (!nxKey)
@@ -301,8 +295,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECIFGREATER meta-command with ETag 3 (should succeed)
-            var args = new object[] { 3, command.ToString() }.Concat(commandArgs).ToArray();
-            var result = await db.ExecuteAsync("EXECIFGREATER", args);
+            var result = await db.ExecIfGreaterAsync(3, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
             var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || command.IsMetadataCommand() ? 1 : 3;
@@ -312,8 +305,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey);
 
             // Add the EXECIFGREATER meta-command with ETag 1 (should fail only if key exists)
-            args = new object[] { 1, command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECIFGREATER", args);
+            result = await db.ExecIfGreaterAsync(1, command.ToString(), commandArgs);
             CommandExecuted = nxKey;
 
             if (!nxKey)
@@ -335,23 +327,19 @@ namespace Garnet.test.Resp.ETag
         protected async Task CheckCommandWithUnsupportedMetaCommandAsync(IDatabase db, RespCommand command, object[] commandArgs)
         {
             // Add the EXECWITHETAG meta-command (error expected)
-            var args = new object[] { command.ToString() }.Concat(commandArgs).ToArray();
-            var result = await db.ExecuteAsync("EXECWITHETAG", args);
+            var result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
             VerifyErrorResult(result, string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, command.ToString(), "EXECWITHETAG"));
 
             // Add the EXECIFMATCH meta-command (error expected)
-            args = new object[] { 0, command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECIFMATCH", args);
+            result = await db.ExecIfMatchAsync(0, command.ToString(), commandArgs);
             VerifyErrorResult(result, string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, command.ToString(), "EXECIFMATCH"));
 
             // Add the EXECIFNOTMATCH meta-command (error expected)
-            args = new object[] { 0, command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECIFNOTMATCH", args);
+            result = await db.ExecIfNotMatchAsync(0, command.ToString(), commandArgs);
             VerifyErrorResult(result, string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, command.ToString(), "EXECIFNOTMATCH"));
 
             // Add the EXECIFGREATER meta-command (error expected)
-            args = new object[] { 1, command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECIFGREATER", args);
+            result = await db.ExecIfGreaterAsync(1, command.ToString(), commandArgs);
             VerifyErrorResult(result, string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, command.ToString(), "EXECIFGREATER"));
         }
 

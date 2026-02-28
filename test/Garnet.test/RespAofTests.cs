@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using Allure.NUnit;
 using Garnet.server;
+using Garnet.test.Resp.ETag;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -231,8 +232,8 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
-                db.Execute("EXECWITHETAG", "SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
-                db.Execute("EXECIFMATCH", 1, "SET", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3");
+                db.ExecWithEtag("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
+                db.ExecIfMatch(1, "SET", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3");
                 db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
                 var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
             }
@@ -891,7 +892,7 @@ namespace Garnet.test
 
         private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
         {
-            RedisResult res = db.Execute("EXECWITHETAG", "GET", key);
+            RedisResult res = db.ExecWithEtag("GET", key);
             if (expectedValue == null)
             {
                 ClassicAssert.IsTrue(res.IsNull);

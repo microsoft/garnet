@@ -161,9 +161,9 @@ namespace Garnet.test.Resp.ETag
             db.KeyDelete(GeoKeys);
             if (nxKey) return;
 
-            var geoAddCmdArgs = new object[] { "GEOADD", GeoKeys[0] }.Union(GeoData[0]
+            var geoAddCmdArgs = new object[] { GeoKeys[0] }.Concat(GeoData[0]
                 .SelectMany(e => new[] { e.Longitude.ToString(), e.Latitude.ToString(), e.Member.ToString() })).ToArray();
-            var results = (string[])db.Execute("EXECWITHETAG", geoAddCmdArgs);
+            var results = (string[])db.ExecWithEtag("GEOADD", geoAddCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(GeoData[0].Length, long.Parse(results[0]!));

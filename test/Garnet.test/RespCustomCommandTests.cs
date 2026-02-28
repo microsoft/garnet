@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
+using Garnet.test.Resp.ETag;
 using GarnetJSON;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1446,19 +1447,19 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("EXECWITHETAG", "SET", key1, value1);
-                db.Execute("EXECWITHETAG", "SET", key2, value2);
+                db.ExecWithEtag("SET", key1, value1);
+                db.ExecWithEtag("SET", key2, value2);
 
                 RedisResult result = db.Execute("RANDOPS", key1, key2);
 
                 ClassicAssert.AreEqual("OK", result.ToString());
 
                 // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key1);
+                RedisResult[] res = (RedisResult[])db.ExecWithEtag("GET", key1);
                 ClassicAssert.IsTrue(res[0].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
                 ClassicAssert.AreEqual("2", res[1].ToString());
 
-                res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key2);
+                res = (RedisResult[])db.ExecWithEtag("GET", key2);
                 ClassicAssert.AreEqual("18", res[0].ToString());
                 ClassicAssert.AreEqual("2", res[1].ToString());
             }
@@ -1484,8 +1485,8 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("EXECWITHETAG", "SET", key1, value1);
-                db.Execute("EXECWITHETAG", "SET", key2, value2);
+                db.ExecWithEtag("SET", key1, value1);
+                db.ExecWithEtag("SET", key2, value2);
 
                 // incr key2, and just get key1
                 RedisResult result = db.Execute("INCRGET", key2, key1);
@@ -1493,12 +1494,12 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(value1, result.ToString());
 
                 // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key1);
+                RedisResult[] res = (RedisResult[])db.ExecWithEtag("GET", key1);
                 // etag not updated for this
                 ClassicAssert.AreEqual(value1, res[0].ToString());
                 ClassicAssert.AreEqual("1", res[1].ToString());
 
-                res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key2);
+                res = (RedisResult[])db.ExecWithEtag("GET", key2);
                 // etag updated for this
                 ClassicAssert.AreEqual("257", res[0].ToString());
                 ClassicAssert.AreEqual("2", res[1].ToString());

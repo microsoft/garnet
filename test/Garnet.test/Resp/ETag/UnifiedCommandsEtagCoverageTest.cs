@@ -360,8 +360,8 @@ namespace Garnet.test.Resp.ETag
 
             for (var i = 0; i < 2; i++)
             {
-                var setCmdArgs = new object[] { "SET", StringKeys[i], StringData[i] };
-                var results = (string[])db.Execute("EXECWITHETAG", setCmdArgs);
+                var setCmdArgs = new object[] { StringKeys[i], StringData[i] };
+                var results = (string[])db.ExecWithEtag("SET", setCmdArgs);
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.IsNull(results[0]);
                 ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
@@ -372,8 +372,8 @@ namespace Garnet.test.Resp.ETag
 
             for (var i = 0; i < 2; i++)
             {
-                var sAddCmdArgs = new object[] { "RPUSH", ListKeys[i] }.Union(ListData[i].Select(d => d.ToString())).ToArray();
-                var results = (string[])db.Execute("EXECWITHETAG", sAddCmdArgs);
+                var sAddCmdArgs = new object[] { ListKeys[i] }.Concat(ListData[i].Select(d => d.ToString())).ToArray();
+                var results = (string[])db.ExecWithEtag("RPUSH", sAddCmdArgs);
 
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.AreEqual(ListData[i].Length, long.Parse(results[0]!));
@@ -420,8 +420,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey: false);
 
             // Add the EXECWITHETAG meta-command
-            var args = new object[] { command.ToString() }.Concat(commandArgs).ToArray();
-            result = await db.ExecuteAsync("EXECWITHETAG", args);
+            result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
 
             // Verify result & expected ETag (RENAME with EXECWITHETAG advances the etag)
             VerifyResultAndETag(result, verifyResult, dstKeyNx ? 1 : 2);

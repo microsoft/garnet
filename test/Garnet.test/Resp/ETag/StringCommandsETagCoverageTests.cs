@@ -497,15 +497,15 @@ namespace Garnet.test.Resp.ETag
 
             if (nxKey) return;
 
-            var setCmdArgs = new object[] { "SET", StringKeys[0], StringData[0] };
-            var results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
+            var setCmdArgs = new object[] { StringKeys[0], StringData[0] };
+            var results = (RedisResult[])db.ExecWithEtag("SET", setCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull((string)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
 
-            var pfAddCmdArgs = new object[] { "PFADD", HllKeys[0], StringData[0] };
-            results = (RedisResult[])db.Execute("EXECWITHETAG", pfAddCmdArgs);
+            var pfAddCmdArgs = new object[] { HllKeys[0], StringData[0] };
+            results = (RedisResult[])db.ExecWithEtag("PFADD", pfAddCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -514,8 +514,8 @@ namespace Garnet.test.Resp.ETag
             success = db.HyperLogLogAdd(HllKeys[1], StringData[2]);
             ClassicAssert.IsTrue(success);
 
-            setCmdArgs = ["SET", BitmapKeys[0], BitmapData[0]];
-            results = (RedisResult[])db.Execute("EXECWITHETAG", setCmdArgs);
+            setCmdArgs = [BitmapKeys[0], BitmapData[0]];
+            results = (RedisResult[])db.ExecWithEtag("SET", setCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull((string)results[0]);
