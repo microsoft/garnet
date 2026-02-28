@@ -3,7 +3,6 @@
 
 using Garnet.common;
 using Garnet.server;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
@@ -74,7 +73,6 @@ namespace Garnet.cluster
         {
             if (cachedVerificationResult.state != SlotVerifiedState.OK)
             {
-                logger?.LogError("Slot verification failed {cachedVerificationResult}!", cachedVerificationResult.ToString());
                 var errorMessage = GetSlotVerificationMessage(configSnapshot, cachedVerificationResult);
                 _ = RespWriteUtils.TryWriteError(errorMessage, ref output);
             }

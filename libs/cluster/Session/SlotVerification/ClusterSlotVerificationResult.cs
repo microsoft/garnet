@@ -18,8 +18,5 @@ namespace Garnet.cluster
             this.state = state;
             this.slot = slot;
         }
-
-        public override string ToString()
-            => $"{state},{slot}";
     }
 }
