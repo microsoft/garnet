@@ -41,7 +41,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal struct SpanBytePushIterationTestFunctions : IScanIteratorFunctions

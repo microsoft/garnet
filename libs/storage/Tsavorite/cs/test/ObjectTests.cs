@@ -56,7 +56,7 @@ namespace Tsavorite.test.Objects
             log = null;
             objlog?.Dispose();
             objlog = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]

@@ -73,7 +73,7 @@ namespace Garnet.cluster
         /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
         /// <param name="logger"></param>
-        public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
+        public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
             var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
@@ -86,6 +86,7 @@ namespace Garnet.cluster
                 timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
+                epoch: epoch,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 logger: logger);
             this.initialized = 0;
@@ -111,7 +112,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             // Single write lock acquisition only
-            if (!dispose.CloseLock())
+            if (!dispose.TryCloseLock())
             {
                 logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
                 return;

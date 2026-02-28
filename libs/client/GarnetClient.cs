@@ -49,6 +49,8 @@ namespace Garnet.client
         readonly int sendPageSize;
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
+        readonly LightEpoch epoch;
+        readonly bool isEpochOwned;
         NetworkWriter networkWriter;
 
         readonly TcsWrapper[] tcsArray;
@@ -136,6 +138,7 @@ namespace Garnet.client
         /// <param name="recordLatency">Record latency using client internal histogram</param>
         /// <param name="useTimeoutChecker"></param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
         public GarnetClient(
             EndPoint endpoint,
@@ -151,6 +154,7 @@ namespace Garnet.client
             bool recordLatency = false,
             bool useTimeoutChecker = true,
             int networkSendThrottleMax = 8,
+            LightEpoch epoch = null,
             ILogger logger = null)
         {
             EndPoint = endpoint;
@@ -183,6 +187,13 @@ namespace Garnet.client
             this.networkSendThrottleMax = networkSendThrottleMax;
             for (int i = 0; i < maxOutstandingTasks; i++)
                 tcsArray[i].nextTaskId = i;
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                isEpochOwned = true;
+            }
+            else
+                this.epoch = epoch;
         }
 
         /// <summary>
@@ -199,7 +210,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocketAsync(timeoutMilliseconds).ConfigureAwait(false).GetAwaiter().GetResult();
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
             networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
 
             if (timeoutMilliseconds > 0)
@@ -245,7 +256,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -472,6 +483,8 @@ namespace Garnet.client
             socket?.Dispose();
             networkWriter?.Dispose();
             latency?.Return();
+            if (isEpochOwned)
+                epoch.Dispose();
         }
 
         void CheckLength(int totalLen, TcsWrapper tcs)

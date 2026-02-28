@@ -182,7 +182,7 @@ namespace Garnet.test.cluster
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
-                sublogCount: 4);
+                sublogCount: TestSublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -209,7 +209,7 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: false,
                 asyncReplay: asyncReplay,
-                sublogCount: 4);
+                sublogCount: TestSublogCount);
             context.nodes[primaryNodeIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 

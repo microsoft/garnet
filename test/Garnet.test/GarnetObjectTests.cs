@@ -32,7 +32,7 @@ namespace Garnet.test
             logDevice.Dispose();
             objectLogDevice.Dispose();
             logDevice = objectLogDevice = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

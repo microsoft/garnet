@@ -1223,6 +1223,7 @@ namespace Garnet.test.cluster
             {
                 // Issue replicate
                 context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
             }
 
             // Execute custom proc before replicat attach
@@ -1233,6 +1234,7 @@ namespace Garnet.test.cluster
                 // Issue replicate
                 var attachResp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
                 ClassicAssert.AreEqual("OK", attachResp);
+                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
             }
 
             // Validate primary keys

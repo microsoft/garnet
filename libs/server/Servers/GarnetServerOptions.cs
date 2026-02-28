@@ -755,14 +755,13 @@ namespace Garnet.server
         /// Get AOF settings
         /// </summary>
         /// <param name="dbId">DB ID</param>
+        /// <param name="epoch">AOF Epoch</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        public void GetAofSettings(int dbId, out TsavoriteLogSettings[] tsavoriteLogSettings)
+        public void GetAofSettings(int dbId, LightEpoch epoch, out TsavoriteLogSettings[] tsavoriteLogSettings)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
-
             for (var i = 0; i < AofPhysicalSublogCount; i++)
             {
-
                 tsavoriteLogSettings[i] = new TsavoriteLogSettings
                 {
                     MemorySizeBits = AofMemorySizeBits(),
@@ -773,6 +772,7 @@ namespace Garnet.server
                     FastCommitMode = EnableFastCommit,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
+                    Epoch = epoch
                 };
 
                 if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].MemorySize)
