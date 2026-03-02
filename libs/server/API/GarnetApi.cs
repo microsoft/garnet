@@ -190,14 +190,10 @@ namespace Garnet.server
 
             _ = Increment(key, ref input, ref stringOutput);
 
-            if (!stringOutput.HasError || stringOutput.IsOperationSkipped)
-            {
+            if (!stringOutput.HasError && !stringOutput.IsOperationSkipped)
                 _ = NumUtils.TryReadDouble(stringOutput.SpanByteAndMemory.Span, out output);
-            }
             else
-            {
                 output = (stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0 ? double.NaN : 0;
-            }
 
             return GarnetStatus.OK;
         }

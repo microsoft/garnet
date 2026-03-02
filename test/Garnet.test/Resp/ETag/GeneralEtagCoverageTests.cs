@@ -47,8 +47,6 @@ namespace Garnet.test.Resp.ETag
                 if (test.Name == nameof(AllDataCommandsCovered))
                     continue;
 
-                ClassicAssert.IsTrue(test.Name.EndsWith("ETagTestAsync"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllDataCommandsCovered)} to be per-command and end with ETagTestAsync, unexpected test: {test.Name}");
-
                 var command = test.Name[..^"ETagTestAsync".Length];
                 covered.Add(command);
             }

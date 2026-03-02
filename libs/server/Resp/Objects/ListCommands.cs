@@ -493,7 +493,7 @@ namespace Garnet.server
             var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, arg1: start, arg2: stop) { ListOp = ListOperation.LTRIM };
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var status = storageApi.ListTrim(key, ref input, ref output);
             etag = output.ETag;

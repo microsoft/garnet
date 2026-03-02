@@ -25,14 +25,14 @@ namespace Garnet.common
         ref SpanByteAndMemory output;
         public readonly bool resp3;
 
-        public unsafe RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output, int offset = 0)
+        public unsafe RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
         {
             this.output = ref output;
             ptrHandle = default;
             resp3 = respVersion >= 3;
 
             ptr = output.SpanByte.ToPointer();
-            curr = ptr + offset;
+            curr = ptr;
             end = curr + output.Length;
         }
 

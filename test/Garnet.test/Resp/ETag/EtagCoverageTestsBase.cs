@@ -19,8 +19,29 @@ namespace Garnet.test.Resp.ETag
         protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2", "keyWithEtag3", "keyWithEtag4", "keyWithEtag5", "keyWithEtag6"];
         protected HashSet<RespCommand> NoKeyCommands = new();
         protected HashSet<RespCommand> OverwriteCommands = new();
-        protected HashSet<RespCommand> DeleteCommands = new();
-        protected HashSet<RespCommand> SetCommands = new();
+        protected HashSet<RespCommand> DeleteCommands = [RespCommand.DEL, RespCommand.GETDEL, RespCommand.UNLINK];
+        protected HashSet<RespCommand> SetCommands = [RespCommand.SET, RespCommand.SETEX, RespCommand.PSETEX, RespCommand.GETSET];
+        protected HashSet<RespCommand> MetadataCommands =
+        [
+            RespCommand.GETEX,
+            RespCommand.EXPIRE,
+            RespCommand.EXPIREAT,
+            RespCommand.PEXPIRE,
+            RespCommand.PEXPIREAT,
+            RespCommand.ZEXPIRE,
+            RespCommand.ZEXPIREAT,
+            RespCommand.ZPEXPIRE,
+            RespCommand.ZPEXPIREAT,
+            RespCommand.HEXPIRE,
+            RespCommand.HEXPIREAT,
+            RespCommand.HPEXPIRE,
+            RespCommand.HPEXPIREAT,
+            RespCommand.PERSIST,
+            RespCommand.ZPERSIST,
+            RespCommand.HPERSIST,
+            RespCommand.ZCOLLECT,
+            RespCommand.HCOLLECT
+        ];
 
         protected HashSet<RespCommand> MetaCommandUnsupportedCommands =
         [
@@ -105,9 +126,6 @@ namespace Garnet.test.Resp.ETag
                 if (simpleRespCommandInfo.IsOverwriteCommand() || cmd == RespCommand.SET)
                     OverwriteCommands.Add(cmd);
             }
-
-            DeleteCommands = [RespCommand.DEL, RespCommand.GETDEL, RespCommand.UNLINK];
-            SetCommands = [RespCommand.SET, RespCommand.SETEX, RespCommand.PSETEX, RespCommand.GETSET];
         }
 
         public abstract void DataSetUp(bool nxKey = false);
@@ -185,7 +203,7 @@ namespace Garnet.test.Resp.ETag
                 // 1. If command overwrites / deletes the value - ETag should be 0 
                 // 2. If command only changes the metadata of the record or is a read-only command - ETag should remain 1
                 // 3. Otherwise, ETag should advance to 2
-                var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : isReadOnly || command.IsMetadataCommand() ? 1 : 2;
+                var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
                 ClassicAssert.AreEqual(expectedEtag, etag);
             }
         }
@@ -203,7 +221,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || nxKey || command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || nxKey || MetadataCommands.Contains(command) ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
         }
 
@@ -220,7 +238,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecIfMatchAsync(nxKey ? 0 : 1, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data
@@ -259,7 +277,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecIfNotMatchAsync(2, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || command.IsMetadataCommand() ? 1 : 2;
+            var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data
@@ -298,7 +316,7 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecIfGreaterAsync(3, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || command.IsMetadataCommand() ? 1 : 3;
+            var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || MetadataCommands.Contains(command) ? 1 : 3;
             VerifyResultAndETag(result, verifyResult, expectedEtag);
 
             // Reset the data
@@ -396,7 +414,7 @@ namespace Garnet.test.Resp.ETag
 
                 var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
 
-                var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
+                var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : MetadataCommands.Contains(command) ? 1 : 2;
                 ClassicAssert.AreEqual(expectedEtag, etag);
             }
         }

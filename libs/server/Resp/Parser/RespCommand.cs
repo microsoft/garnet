@@ -634,43 +634,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns true if <paramref name="cmd"/> is a meta command.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsMetaCommand(this RespCommand cmd)
         {
             // If cmd < RespCommand.EXECWITHETAG - underflows, setting high bits
             var test = (uint)((int)cmd - (int)RespCommand.EXECWITHETAG);
             return test <= (RespCommand.EXECIFGREATER - RespCommand.EXECWITHETAG);
-        }
-
-        /// <summary>
-        /// Returns true if <paramref name="cmd"/> is a write command that only modifies record metadata.
-        /// </summary>
-        public static bool IsMetadataCommand(this RespCommand cmd)
-        {
-            if (!IsDataCommand(cmd) || IsReadOnly(cmd)) 
-                return false;
-
-            return cmd switch
-            {
-                RespCommand.GETEX or
-                RespCommand.EXPIRE or 
-                RespCommand.EXPIREAT or 
-                RespCommand.PEXPIRE or 
-                RespCommand.PEXPIREAT or 
-                RespCommand.ZEXPIRE or 
-                RespCommand.ZEXPIREAT or
-                RespCommand.ZPEXPIRE or 
-                RespCommand.ZPEXPIREAT or
-                RespCommand.HEXPIRE or 
-                RespCommand.HEXPIREAT or 
-                RespCommand.HPEXPIRE or
-                RespCommand.HPEXPIREAT or 
-                RespCommand.PERSIST or
-                RespCommand.ZPERSIST or
-                RespCommand.HPERSIST or 
-                RespCommand.ZCOLLECT or 
-                RespCommand.HCOLLECT => true,
-                _ => false
-            };
         }
     }
 

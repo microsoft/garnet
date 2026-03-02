@@ -239,8 +239,11 @@ namespace Garnet.server
                 }
             }
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            writer.WriteDirect(CmdStrings.RESP_OK);
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteDirect(CmdStrings.RESP_OK);
+            }
 
             if (trimmed == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;

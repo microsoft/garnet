@@ -810,28 +810,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array consisting a Bulk string value followed by an ETag into the buffer.
-        /// NOTE: Caller should make sure there is enough space in the buffer for sending the etag, and value array. Otherwise, this will quietly fail.
-        /// </summary>
-        /// <param name="etag">etag value to write in the array</param>
-        /// <param name="value">value to write in the array</param>
-        /// <param name="curr">start of destination buffer</param>
-        /// <param name="end">end of destincation buffer</param>
-        /// <param name="writeDirect">Whether to write the value directly to buffer or transform it to a resp bulk string</param>
-        public static void WriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end, bool writeDirect)
-        {
-            // Writes a Resp encoded Array bulk string for value as first element and of Integer for ETAG as second element
-            TryWriteArrayLength(2, ref curr, end);
-            
-            if (writeDirect)
-                TryWriteDirect(value, ref curr, end);
-            else
-                TryWriteBulkString(value, ref curr, end);
-
-            TryWriteInt64(etag, ref curr, end);
-        }
-
-        /// <summary>
         /// Writes newline (\r\n) to <paramref name="curr"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

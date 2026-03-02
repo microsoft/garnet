@@ -694,7 +694,7 @@ namespace Garnet.server
 
                 UpdateSize(max.Element, false);
 
-                if (!withHeader || writer.resp3)
+                if (!withHeader || respProtocolVersion >= 3)
                     writer.WriteArrayLength(2);
 
                 writer.WriteBulkString(max.Element);
