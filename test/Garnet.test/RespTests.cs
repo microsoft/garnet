@@ -3627,11 +3627,11 @@ namespace Garnet.test
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             db.KeyExpire(keyB, TimeSpan.FromSeconds(expire));
 
-            db.StringSet(keyA, keyA, keepTtl: true);
+            db.StringSet(keyA, keyA, null, keepTtl: true);
             var time = db.KeyTimeToLive(keyA);
             ClassicAssert.IsTrue(time.Value.Ticks > 0);
 
-            db.StringSet(keyB, keyB, keepTtl: false);
+            db.StringSet(keyB, keyB, null, keepTtl: false);
             time = db.KeyTimeToLive(keyB);
             ClassicAssert.IsTrue(time == null);
 
@@ -4540,7 +4540,7 @@ namespace Garnet.test
 
             if (initialTimeSpan.HasValue)
             {
-                db.StringSet(key, value, initialTimeSpan);
+                db.StringSet(key, value, initialTimeSpan, keepTtl: false);
             }
             else
             {
@@ -4591,7 +4591,7 @@ namespace Garnet.test
 
             if (initialTimeSpan.HasValue)
             {
-                db.StringSet(key, value, initialTimeSpan);
+                db.StringSet(key, value, initialTimeSpan, keepTtl: false);
             }
             else
             {
@@ -4640,7 +4640,7 @@ namespace Garnet.test
 
             if (initialTimeSpan.HasValue)
             {
-                db.StringSet(key, value, initialTimeSpan);
+                db.StringSet(key, value, initialTimeSpan, keepTtl: false);
             }
             else
             {
