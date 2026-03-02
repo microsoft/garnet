@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -519,12 +519,12 @@ namespace Garnet.test
             c.Execute("SET", key, origValue);
 
             var newValue1 = "foovalue1";
-            var response = await c.ExecuteAsync("a.setifpm", key, newValue1, "foo");
+            var response = await c.ExecuteAsync("a.setifpm", key, newValue1, "foo").ConfigureAwait(false);
             // Test the command was recognized.
             ClassicAssert.AreEqual("OK", response);
 
             // Test the command did something.
-            var retValue = await c.ExecuteAsync("GET", key);
+            var retValue = await c.ExecuteAsync("GET", key).ConfigureAwait(false);
             ClassicAssert.AreEqual(newValue1, retValue);
         }
 
@@ -750,16 +750,16 @@ namespace Garnet.test
             string origValue = "foovalue0";
             long prefix = 0;
 
-            await db.ExecuteAsync("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix));
-            await db.KeyExpireAsync(key, TimeSpan.FromMinutes(expire));
+            await db.ExecuteAsync("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix)).ConfigureAwait(false);
+            await db.KeyExpireAsync(key, TimeSpan.FromMinutes(expire)).ConfigureAwait(false);
 
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue.Substring(8));
 
             string newValue1 = "foovalue10";
             prefix = 1;
-            await db.ExecuteAsync("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix));
-            await db.KeyExpireAsync(key, TimeSpan.FromMinutes(expire));
+            await db.ExecuteAsync("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix)).ConfigureAwait(false);
+            await db.KeyExpireAsync(key, TimeSpan.FromMinutes(expire)).ConfigureAwait(false);
 
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue1, retValue.Substring(8));
@@ -779,14 +779,14 @@ namespace Garnet.test
             string origValue = "foovalue0";
             long prefix = 0;
 
-            await db.ExecuteAsync("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix));
+            await db.ExecuteAsync("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix)).ConfigureAwait(false);
 
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue.Substring(8));
 
             string newValue1 = "foovalue10";
             prefix = 1;
-            await db.ExecuteAsync("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix));
+            await db.ExecuteAsync("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix)).ConfigureAwait(false);
 
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue1, retValue.Substring(8));

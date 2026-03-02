@@ -902,9 +902,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "笑い男";
-            await db.ExecuteForLongResultAsync("SET", ["mykey", origValue, "WITHETAG"]);
+            await db.ExecuteForLongResultAsync("SET", ["mykey", origValue, "WITHETAG"]).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -921,12 +921,12 @@ namespace Garnet.test
             for (int i = 0; i < length; i++)
                 value[i] = (byte)((byte)'a' + ((byte)i % 26));
 
-            RedisResult res = await db.ExecuteAsync("SET", ["mykey", value, "WITHETAG"]);
+            RedisResult res = await db.ExecuteAsync("SET", ["mykey", value, "WITHETAG"]).ConfigureAwait(false);
             long initalEtag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(1, initalEtag);
 
             // Backwards compatability of data set with etag and plain GET call
-            var retvalue = (byte[])await db.StringGetAsync("mykey");
+            var retvalue = (byte[])await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(new ReadOnlySpan<byte>(value).SequenceEqual(new ReadOnlySpan<byte>(retvalue)));
         }
