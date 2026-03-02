@@ -7,6 +7,7 @@ using System.IO;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Exporter;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -240,6 +241,27 @@ namespace Garnet.server
         /// Metrics sampling frequency
         /// </summary>
         public int MetricsSamplingFrequency = 0;
+
+        /// <summary>
+        /// The Url of the OpenTelemetry collector to export metrics to. If null, OpenTelemetry metrics export is disabled.
+        /// </summary>
+        public Uri OpenTelemetryEndpoint = null;
+
+        /// <summary>
+        /// The Protocol to use when exporting OpenTelemetry metrics.
+        /// If null, the default will be used.
+        /// </summary>
+        public OtlpExportProtocol? OpenTelemetryExportProtocol = null;
+
+        /// <summary>
+        /// The interval in milliseconds to export OpenTelemetry metrics. If 0, the default interval of 60 seconds will be used.
+        /// </summary>
+        public int OpenTelemetryExportInterval = 0;
+
+        /// <summary>
+        /// The timeout in milliseconds when exporting OpenTelemetry metrics. If 0, the default timeout of 10 seconds will be used.
+        /// </summary>
+        public int OpenTelemetryExportTimeout = 0;
 
         /// <summary>
         /// Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None
@@ -668,6 +690,9 @@ namespace Garnet.server
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
+
+            if (OpenTelemetryEndpoint != null && MetricsSamplingFrequency == 0)
+                throw new Exception("OpenTelemetry requires MetricsSamplingFrequency to be set");
 
             // Read cache related settings
             if (EnableReadCache && !EnableStorageTier)

@@ -141,6 +141,7 @@ namespace Garnet.server
         internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
+        internal readonly GarnetOpenTelemetryServerMonitor openTelemetryServerMonitor;
         internal readonly IClusterProvider clusterProvider;
         internal readonly SlowLogContainer slowLogContainer;
         internal readonly ILogger sessionLogger;
@@ -199,6 +200,9 @@ namespace Garnet.server
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
+                : null;
+            this.openTelemetryServerMonitor = serverOptions.MetricsSamplingFrequency > 0 && serverOptions.OpenTelemetryEndpoint != null
+                ? new GarnetOpenTelemetryServerMonitor(serverOptions, monitor.GlobalMetrics)
                 : null;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
@@ -813,6 +817,7 @@ namespace Garnet.server
         internal void Start()
         {
             monitor?.Start();
+            openTelemetryServerMonitor?.Start();
             clusterProvider?.Start();
             luaTimeoutManager?.Start();
 
@@ -919,6 +924,7 @@ namespace Garnet.server
             itemBroker?.Dispose();
             clusterProvider?.Dispose();
             monitor?.Dispose();
+            openTelemetryServerMonitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             taskManager.Dispose();

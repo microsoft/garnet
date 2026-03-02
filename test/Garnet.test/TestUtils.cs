@@ -278,6 +278,7 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
+            bool enableOpenTelemetry = false,
             string aofMemorySize = "64m"
         )
         {
@@ -346,6 +347,7 @@ namespace Garnet.test
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
+                OpenTelemetryEndpoint = enableOpenTelemetry ? new Uri("http://localhost:4317") : null,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
                         : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
