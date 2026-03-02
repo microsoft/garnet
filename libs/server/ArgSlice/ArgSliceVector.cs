@@ -4,21 +4,24 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
-    /// Vector of ArgSlices represented as PinnedSpanByte
+    /// Vector of ArgSlices
     /// </summary>
     /// <param name="maxItemNum"></param>
     public unsafe class ArgSliceVector(int maxItemNum = 1 << 18) : IEnumerable<PinnedSpanByte>
     {
+        private bool enumerating;
+
         ScratchBufferBuilder bufferManager = new();
         readonly int maxCount = maxItemNum;
         public int Count => items.Count;
         public bool IsEmpty => items.Count == 0;
-        readonly List<PinnedSpanByte> items = [];
+        readonly List<(int Offset, int Length)> items = [];
 
         /// <summary>
         /// Try to add ArgSlice
@@ -27,10 +30,16 @@ namespace Garnet.server
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
         public bool TryAddItem(ReadOnlySpan<byte> item)
         {
+            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+
             if (Count + 1 >= maxCount)
                 return false;
 
-            items.Add(bufferManager.CreateArgSlice(item));
+            var insertLoc = bufferManager.ScratchBufferOffset;
+
+            var sb = bufferManager.CreateArgSlice(item);
+
+            items.Add((insertLoc, sb.Length));
             return true;
         }
 
@@ -39,6 +48,8 @@ namespace Garnet.server
         /// </summary>
         public void Clear()
         {
+            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+
             items.Clear();
             bufferManager.Reset();
         }
@@ -46,10 +57,28 @@ namespace Garnet.server
         /// <inheritdoc/>
         public IEnumerator<PinnedSpanByte> GetEnumerator()
         {
-            foreach (var item in items)
-                yield return item;
+            Debug.Assert(!enumerating, "Concurrent enumeration is not allwed");
+
+            var full = bufferManager.ViewFullArgSlice();
+
+            enumerating = true;
+            try
+            {
+                foreach (var (offset, length) in items)
+                {
+                    var span = full.ReadOnlySpan.Slice(offset, length);
+                    var ret = PinnedSpanByte.FromPinnedSpan(span);
+
+                    yield return ret;
+                }
+            }
+            finally
+            {
+                enumerating = false;
+            }
         }
 
+        /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }
