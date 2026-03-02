@@ -38,17 +38,18 @@ namespace Garnet.server
 
             if (cmd > RespCommandExtensions.LastValidCommand)
             {
-                if (srcLogRecord.Info.HasETag)
-                {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                    return true;
-                }
-
-                var valueLength = value.Length;
-
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
                 try
                 {
+                    if (srcLogRecord.Info.HasETag)
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                        return true;
+                    }
+
+                    var valueLength = value.Length;
+
                     var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
                         .Reader(srcLogRecord.Key, ref input, value, ref writer, ref readInfo);
                     Debug.Assert(valueLength <= value.Length);

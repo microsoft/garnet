@@ -349,6 +349,57 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
+        [Test]
+        public async Task EvalETagTestAsync()
+        {
+            var cmdArgs = new object[] { "return redis.call('APPEND', KEYS[1], ARGV[1])", 1, StringKeys[0], StringData[1] };
+
+            await CheckCommandAsync(RespCommand.EVAL, cmdArgs, VerifyAppendResult);
+
+            cmdArgs = ["return redis.call('GET', KEYS[1])", 1, StringKeys[0]];
+
+            await CheckCommandAsync(RespCommand.EVAL, cmdArgs, VerifyGetResult, isReadOnly: true);
+
+            static void VerifyAppendResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0].Length + StringData[1].Length, (long)result);
+            }
+
+            static void VerifyGetResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(StringData[0], (string)result);
+            }
+        }
+
+        [Test]
+        public async Task EvalSHAETagTestAsync()
+        {
+            await using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var sha1 = (string)await db.ExecuteAsync("SCRIPT", ["LOAD", "return redis.call('LPUSH', KEYS[1], ARGV[1])"]);
+
+            var cmdArgs = new object[] { sha1, 1, ListKeys[0], ListData[1][0] };
+
+            await CheckCommandAsync(RespCommand.EVALSHA, cmdArgs, VerifyLPushResult, [3]);
+
+            sha1 = (string)await db.ExecuteAsync("SCRIPT", ["LOAD", "return redis.call('LLEN', KEYS[1])"]);
+
+            cmdArgs = [sha1, 1, ListKeys[0]];
+
+            await CheckCommandAsync(RespCommand.EVALSHA, cmdArgs, VerifyLLenResult, [3], isReadOnly: true);
+
+            static void VerifyLPushResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(ListData[0].Length + 1, (long)result);
+            }
+
+            static void VerifyLLenResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(ListData[0].Length, (long)result);
+            }
+        }
+
         public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

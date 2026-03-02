@@ -130,11 +130,16 @@ namespace Garnet.server
 
             index = index < 0 ? list.Count + index : index;
             var item = list.ElementAtOrDefault(index);
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             if (item != null)
             {
-                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
                 writer.WriteBulkString(item);
                 output.Result1 = 1;
+            }
+            else
+            {
+                writer.WriteNull();
             }
         }
 

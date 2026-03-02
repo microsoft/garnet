@@ -696,7 +696,8 @@ namespace Garnet.server
                     {
                         if (shouldUpdateETag)
                         {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
+                            using var memWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                            memWriter.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
                             // reset etag state that may have been initialized earlier but don't update ETag
                             if (hadETagPreMutation)
                                 ETagState.ResetState(ref functionsState.etagState);
@@ -812,17 +813,18 @@ namespace Garnet.server
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
-                        if (srcLogRecord.Info.HasETag)
-                        {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                            // reset etag state that may have been initialized earlier
-                            ETagState.ResetState(ref functionsState.etagState);
-                            return false;
-                        }
-
                         var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        
                         try
                         {
+                            if (srcLogRecord.Info.HasETag)
+                            {
+                                writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                                // reset etag state that may have been initialized earlier
+                                ETagState.ResetState(ref functionsState.etagState);
+                                return false;
+                            }
+
                             var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
                                 .NeedCopyUpdate(srcLogRecord.Key, ref input, srcLogRecord.ValueSpan, ref writer);
                             return ret;
@@ -1218,7 +1220,8 @@ namespace Garnet.server
                     {
                         if (srcLogRecord.Info.HasETag)
                         {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
+                            using var memWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                            memWriter.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
                             // reset etag state that may have been initialized earlier
                             if (hadETagPreMutation)
                                 ETagState.ResetState(ref functionsState.etagState);

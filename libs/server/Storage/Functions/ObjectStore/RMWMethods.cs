@@ -209,18 +209,20 @@ namespace Garnet.server
                 return true;
             }
 
-            if (hadETagPreMutation)
-            {
-                functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                // reset etag state that may have been initialized earlier but don't update ETag
-                ETagState.ResetState(ref functionsState.etagState);
-                return true;
-            }
-
-            var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
             try
             {
+                if (hadETagPreMutation)
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                    // reset etag state that may have been initialized earlier but don't update ETag
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return true;
+                }
+
+                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+
                 var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
                 if (!result)
                     return false;
@@ -331,18 +333,20 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (hadETagPreMutation)
-                {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                    // reset etag state that may have been initialized earlier but don't update ETag
-                    ETagState.ResetState(ref functionsState.etagState);
-                    return true;
-                }
-
-                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
                 try
                 {
+                    if (hadETagPreMutation)
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                        // reset etag state that may have been initialized earlier but don't update ETag
+                        ETagState.ResetState(ref functionsState.etagState);
+                        return true;
+                    }
+
+                    var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+
                     var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
                     return result;
                 }

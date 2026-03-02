@@ -65,16 +65,18 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (srcRecordHasETag)
-                {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                    return true;
-                }
-
-                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
                 try
                 {
+                    if (srcRecordHasETag)
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                        return true;
+                    }
+
+                    var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+
                     var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, garnetObject, ref writer, ref readInfo);
                     return result;
                 }

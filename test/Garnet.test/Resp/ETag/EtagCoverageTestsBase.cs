@@ -14,7 +14,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public abstract class ETagCoverageTestsBase
     {
-        private GarnetServer server;
+        protected GarnetServer server;
 
         protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2", "keyWithEtag3", "keyWithEtag4", "keyWithEtag5", "keyWithEtag6"];
         protected HashSet<RespCommand> NoKeyCommands = new();
@@ -82,7 +82,7 @@ namespace Garnet.test.Resp.ETag
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true);
 
             server.Start();
 
