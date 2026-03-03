@@ -2233,5 +2233,86 @@ namespace Garnet.test.cluster
                     $"Expected hostname resolution error or unknown endpoint error, got: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// Regression test for: migration crashes with NullReferenceException when object store tombstones
+        /// (deleted keys) are present during slot migration. The scan should skip tombstone records and
+        /// not pass null IGarnetObject values to the scan functions.
+        /// </summary>
+        [Test, Order(26)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSlotsWithObjectTombstones()
+        {
+            context.logger.LogDebug("0. ClusterMigrateSlotsWithObjectTombstones started");
+            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+
+            // Slot 7638 belongs to node 1 in the default 3-node cluster setup.
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes("{abc}"));
+            ClassicAssert.AreEqual(7638, slot);
+
+            // Write string keys directly to the source node to increase the main store's TailAddress.
+            // This is required because the object store scan range is bounded by storeTailAddress
+            // (the main store's tail address captured at migration start). Without this data, tombstone
+            // records in the object store would fall outside the scan range, and the bug would not trigger.
+            context.logger.LogDebug("1. Writing string keys to source node to increase main store TailAddress");
+            var sourceServer = context.clusterTestUtils.GetServer(sourceNodeIndex);
+            const int stringKeyCount = 200;
+            for (var i = 0; i < stringKeyCount; i++)
+                sourceServer.Execute("set", $"{{abc}}strkey{i}", "value");
+
+            // Add an object store key (sorted set) that will remain live through migration.
+            context.logger.LogDebug("2. Adding live sorted set key");
+            var liveKey = Encoding.ASCII.GetBytes("{abc}zadd_live");
+            var memberCount = 5;
+            DoZADD(sourceNodeIndex, liveKey, memberCount);
+
+            // Add another sorted set key that will be deleted to create an object store tombstone.
+            context.logger.LogDebug("3. Adding sorted set key to delete (will become tombstone)");
+            var tombstoneKey = Encoding.ASCII.GetBytes("{abc}zadd_tombstone");
+            DoZADD(sourceNodeIndex, tombstoneKey, memberCount);
+
+            // Delete the key to create a tombstone record in the object store log.
+            // The tombstone record has a null IGarnetObject value. With the old code
+            // (includeTombstones: true), the migration scan would pass this null value to
+            // ObjectStoreScan.SingleReader which crashes with NullReferenceException.
+            context.logger.LogDebug("4. Deleting key to create object store tombstone");
+            var delResult = sourceServer.Execute("del", "{abc}zadd_tombstone");
+            ClassicAssert.AreEqual(1L, (long)delResult);
+
+            // Migrate slot 7638 from node 1 to node 2.
+            // With the old code (includeTombstones: true), this crashes with:
+            //   NullReferenceException in ObjectStoreScan.SingleReader -> ClusterSession.Expired(ref value)
+            // With the fix (includeTombstones: false), tombstones are excluded and migration succeeds.
+            context.logger.LogDebug("5. Migrating slot {slot} (with tombstone present)", slot);
+            context.clusterTestUtils.MigrateSlots(
+                context.clusterTestUtils.GetEndPoint(sourceNodeIndex),
+                context.clusterTestUtils.GetEndPoint(targetNodeIndex),
+                new List<int> { slot },
+                logger: context.logger);
+            context.logger.LogDebug("6. Migration command issued");
+
+            // Wait for migration to complete and verify the live key was migrated correctly.
+            // With the old code, the migration fails and the slot stays on node 1 (loop never exits).
+            // With the fix, migration succeeds and the loop exits when node 2 owns slot 7638.
+            context.logger.LogDebug("7. Verifying live key was migrated to target node");
+            int count;
+            string address;
+            int port;
+            int keySlot;
+            string resp;
+            do
+            {
+                resp = DoZCOUNT(targetNodeIndex, liveKey, out count, out address, out port, out keySlot, logger: context.logger);
+            } while (!resp.Equals("OK"));
+            ClassicAssert.AreEqual(memberCount, count, $"Live key should have {memberCount} members on target after migration");
+
+            context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
+            context.logger.LogDebug("8. ClusterMigrateSlotsWithObjectTombstones done");
+        }
     }
 }
