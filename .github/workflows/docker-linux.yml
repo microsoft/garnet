@@ -21,13 +21,13 @@ jobs:
             image: ghcr.io/${{ github.repository }}-alpine
             os: ubuntu-latest
           - dockerfile: Dockerfile.ubuntu
-            image: ghcr.io/${{ github.repository }}-jammy
+            image: ghcr.io/${{ github.repository }}-noble
             os: ubuntu-latest
           - dockerfile: Dockerfile.chiseled
-            image: ghcr.io/${{ github.repository }}-jammy-chiseled
+            image: ghcr.io/${{ github.repository }}-noble-chiseled
             os: ubuntu-latest
           - dockerfile: Dockerfile.cbl-mariner
-            image: ghcr.io/${{ github.repository }}-cbl-mariner2.0
+            image: ghcr.io/${{ github.repository }}-azurelinux3.0
             os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     permissions:

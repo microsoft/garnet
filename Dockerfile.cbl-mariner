@@ -55,7 +55,7 @@ RUN DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) 
     && cp /lua/liblua54.so "$DN_DIR/liblua54.so"
 
 # Install libaio
-RUN dnf install -y libaio && dnf clean all
+RUN tdnf install -y libaio && tdnf clean all
 
 RUN mkdir /data /app \
     && chown -R $APP_UID:$APP_UID /data /app

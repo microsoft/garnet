@@ -44,7 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends libaio1t64 && r
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble AS runtime
 
 # Copy libaio from amd64 builder stage (avoiding installation under QEMU)
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libaio.so.1 /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1t64
+RUN ln -sf /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

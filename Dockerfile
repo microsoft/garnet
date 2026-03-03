@@ -45,6 +45,7 @@ RUN apt-get update \
        liblua5.4-0 \
     && ARCH="$(uname -m)" \
     && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
+    && ln -sf "/usr/lib/${MULTIARCH}/libaio.so.1t64" "/usr/lib/${MULTIARCH}/libaio.so.1" \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* 2>/dev/null | head -n1 || true) \
     && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/${MULTIARCH}/liblua5.4.so.0" "$DN_DIR/liblua54.so"; fi \
     && rm -rf /var/lib/apt/lists/*
