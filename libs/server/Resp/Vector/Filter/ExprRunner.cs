@@ -27,10 +27,10 @@ namespace Garnet.server.Vector.Filter
 
         /// <summary>
         /// Create a reusable evaluation stack with default capacity (16).
-        /// The caller owns the list and can pass it to <see cref="Run"/> across multiple calls.
-        /// The list is cleared at the start of each Run call, so the caller does not need to clear it.
+        /// The caller owns the stack and can pass it to <see cref="Run"/> across multiple calls.
+        /// The stack is cleared at the start of each Run call, so the caller does not need to clear it.
         /// </summary>
-        public static List<ExprToken> CreateStack() => new List<ExprToken>(DefaultStackCapacity);
+        public static Stack<ExprToken> CreateStack() => new Stack<ExprToken>(DefaultStackCapacity);
 
         /// <summary>
         /// Execute the compiled program against JSON attribute data.
@@ -40,7 +40,7 @@ namespace Garnet.server.Vector.Filter
         /// <param name="program">The compiled postfix program.</param>
         /// <param name="json">Raw JSON attribute bytes to evaluate against.</param>
         /// <param name="stack">A reusable evaluation stack obtained from <see cref="CreateStack"/>.</param>
-        public static bool Run(ExprProgram program, ReadOnlySpan<byte> json, List<ExprToken> stack)
+        public static bool Run(ExprProgram program, ReadOnlySpan<byte> json, Stack<ExprToken> stack)
         {
             stack.Clear();
 
@@ -58,14 +58,14 @@ namespace Garnet.server.Vector.Filter
                         return false; // Selector not found → expression is false (matches Redis)
                     }
 
-                    stack.Add(extracted);
+                    stack.Push(extracted);
                     continue;
                 }
 
                 // Non-operator values — push directly
                 if (inst.TokenType != ExprTokenType.Op)
                 {
-                    stack.Add(inst);
+                    stack.Push(inst);
                     continue;
                 }
 
@@ -77,8 +77,8 @@ namespace Garnet.server.Vector.Filter
                     return false;
                 }
 
-                ExprToken b = stack.Count > 0 ? Pop(stack) : default;
-                ExprToken a = arity == 2 && stack.Count > 0 ? Pop(stack) : default;
+                ExprToken b = stack.Count > 0 ? stack.Pop() : default;
+                ExprToken a = arity == 2 && stack.Count > 0 ? stack.Pop() : default;
 
                 var result = ExprToken.NewNum(0);
 
@@ -134,25 +134,16 @@ namespace Garnet.server.Vector.Filter
                         break;
                 }
 
-                stack.Add(result);
+                stack.Push(result);
             }
 
             var returnValue = false;
             if (stack.Count > 0)
-                returnValue = ToBool(stack[stack.Count - 1]) != 0;
+                returnValue = ToBool(stack.Peek()) != 0;
 
             // Clear to release string references for GC
             stack.Clear();
             return returnValue;
-        }
-
-        /// <summary>Pop the last element from the stack.</summary>
-        private static ExprToken Pop(List<ExprToken> stack)
-        {
-            var last = stack.Count - 1;
-            var value = stack[last];
-            stack.RemoveAt(last);
-            return value;
         }
 
         // ======================== Type conversion helpers ========================

@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers.Text;
+using System.Collections.Generic;
 using System.Text;
 
 namespace Garnet.server.Vector.Filter
@@ -22,14 +23,10 @@ namespace Garnet.server.Vector.Filter
     /// Compiled postfix order:
     ///   .price 100 &lt; .category "books" == and
     ///
-    /// Safety limits:
-    /// - Maximum 1024 tokens per expression (prevents unbounded allocation).
-    /// - Maximum 256 instructions in the compiled program.
     /// </summary>
     internal static class ExprCompiler
     {
-        private const int MaxTokens = 1024;
-        private const int MaxProgram = 256;
+        private const int DefaultCapacity = 16;
 
         /// <summary>
         /// Compile a filter expression (as UTF-8 bytes) into a flat postfix program.
@@ -42,8 +39,7 @@ namespace Garnet.server.Vector.Filter
                 return null;
 
             // Phase 1: Tokenize into a flat list
-            var tokens = new ExprToken[MaxTokens];
-            var numTokens = 0;
+            var tokens = new List<ExprToken>(DefaultCapacity);
 
             var p = 0;
             while (p < expr.Length)
@@ -52,23 +48,17 @@ namespace Garnet.server.Vector.Filter
                 if (p >= expr.Length)
                     break;
 
-                if (numTokens >= MaxTokens)
-                {
-                    errpos = p;
-                    return null;
-                }
-
                 // Determine if '-' should be a negative number sign or a subtraction operator
                 var minusIsNumber = false;
                 if (expr[p] == (byte)'-' && p + 1 < expr.Length && (IsDigit(expr[p + 1]) || expr[p + 1] == (byte)'.'))
                 {
-                    if (numTokens == 0)
+                    if (tokens.Count == 0)
                     {
                         minusIsNumber = true;
                     }
                     else
                     {
-                        var prev = tokens[numTokens - 1];
+                        var prev = tokens[tokens.Count - 1];
                         if (prev.TokenType == ExprTokenType.Op && prev.OpCode != OpCode.CParen)
                             minusIsNumber = true;
                     }
@@ -79,7 +69,7 @@ namespace Garnet.server.Vector.Filter
                 {
                     var t = ParseNumber(expr, ref p);
                     if (t.IsNone) { errpos = p; return null; }
-                    tokens[numTokens++] = t;
+                    tokens.Add(t);
                     continue;
                 }
 
@@ -88,7 +78,7 @@ namespace Garnet.server.Vector.Filter
                 {
                     var t = ParseString(expr, ref p);
                     if (t.IsNone) { errpos = p; return null; }
-                    tokens[numTokens++] = t;
+                    tokens.Add(t);
                     continue;
                 }
 
@@ -96,7 +86,7 @@ namespace Garnet.server.Vector.Filter
                 if (expr[p] == (byte)'.' && p + 1 < expr.Length && IsSelectorChar(expr[p + 1]))
                 {
                     var t = ParseSelector(expr, ref p);
-                    tokens[numTokens++] = t;
+                    tokens.Add(t);
                     continue;
                 }
 
@@ -105,7 +95,7 @@ namespace Garnet.server.Vector.Filter
                 {
                     var t = ParseTuple(expr, ref p);
                     if (t.IsNone) { errpos = p; return null; }
-                    tokens[numTokens++] = t;
+                    tokens.Add(t);
                     continue;
                 }
 
@@ -114,7 +104,7 @@ namespace Garnet.server.Vector.Filter
                 {
                     var t = ParseOperatorOrLiteral(expr, ref p);
                     if (t.IsNone) { errpos = p; return null; }
-                    tokens[numTokens++] = t;
+                    tokens.Add(t);
                     continue;
                 }
 
@@ -123,13 +113,11 @@ namespace Garnet.server.Vector.Filter
             }
 
             // Phase 2: Shunting-yard compilation to postfix
-            var program = new ExprToken[MaxProgram];
-            var programLen = 0;
-            var opsStack = new ExprToken[MaxTokens];
-            var opsLen = 0;
+            var program = new List<ExprToken>(DefaultCapacity);
+            var opsStack = new Stack<ExprToken>(DefaultCapacity);
             var stackItems = 0; // track what would be on the values stack at runtime
 
-            for (var i = 0; i < numTokens; i++)
+            for (var i = 0; i < tokens.Count; i++)
             {
                 var token = tokens[i];
 
@@ -140,8 +128,7 @@ namespace Garnet.server.Vector.Filter
                     token.TokenType == ExprTokenType.Selector ||
                     token.TokenType == ExprTokenType.Null)
                 {
-                    if (programLen >= MaxProgram) { errpos = 0; return null; }
-                    program[programLen++] = token;
+                    program.Add(token);
                     stackItems++;
                     continue;
                 }
@@ -149,16 +136,16 @@ namespace Garnet.server.Vector.Filter
                 // Operators
                 if (token.TokenType == ExprTokenType.Op)
                 {
-                    if (!ProcessOperator(token, program, ref programLen, opsStack, ref opsLen, ref stackItems, out errpos))
+                    if (!ProcessOperator(token, program, opsStack, ref stackItems, out errpos))
                         return null;
                     continue;
                 }
             }
 
             // Flush remaining operators from the stack
-            while (opsLen > 0)
+            while (opsStack.Count > 0)
             {
-                var op = opsStack[--opsLen];
+                var op = opsStack.Pop();
                 if (op.OpCode == OpCode.OParen)
                 {
                     errpos = 0;
@@ -167,15 +154,14 @@ namespace Garnet.server.Vector.Filter
 
                 var arity = OpTable.GetArity(op.OpCode);
                 if (stackItems < arity) { errpos = 0; return null; }
-                if (programLen >= MaxProgram) { errpos = 0; return null; }
-                program[programLen++] = op;
+                program.Add(op);
                 stackItems = stackItems - arity + 1;
             }
 
             // After compilation, exactly one value should remain on the stack
             if (stackItems != 1) { errpos = 0; return null; }
 
-            return new ExprProgram { Instructions = program, Length = programLen };
+            return new ExprProgram { Instructions = program.ToArray(), Length = program.Count };
         }
 
         /// <summary>
@@ -184,8 +170,8 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         private static bool ProcessOperator(
             ExprToken op,
-            ExprToken[] program, ref int programLen,
-            ExprToken[] opsStack, ref int opsLen,
+            List<ExprToken> program,
+            Stack<ExprToken> opsStack,
             ref int stackItems,
             out int errpos)
         {
@@ -193,8 +179,7 @@ namespace Garnet.server.Vector.Filter
 
             if (op.OpCode == OpCode.OParen)
             {
-                if (opsLen >= opsStack.Length) { errpos = 0; return false; }
-                opsStack[opsLen++] = op;
+                opsStack.Push(op);
                 return true;
             }
 
@@ -203,15 +188,14 @@ namespace Garnet.server.Vector.Filter
                 // Pop operators until matching '('
                 while (true)
                 {
-                    if (opsLen == 0) { errpos = 0; return false; } // Unmatched ')'
-                    var topOp = opsStack[--opsLen];
+                    if (opsStack.Count == 0) { errpos = 0; return false; } // Unmatched ')'
+                    var topOp = opsStack.Pop();
                     if (topOp.OpCode == OpCode.OParen)
                         return true;
 
                     var arity = OpTable.GetArity(topOp.OpCode);
                     if (stackItems < arity) { errpos = 0; return false; }
-                    if (programLen >= MaxProgram) { errpos = 0; return false; }
-                    program[programLen++] = topOp;
+                    program.Add(topOp);
                     stackItems = stackItems - arity + 1;
                 }
             }
@@ -219,9 +203,9 @@ namespace Garnet.server.Vector.Filter
             var curPrec = OpTable.GetPrecedence(op.OpCode);
 
             // Pop operators with higher or equal precedence
-            while (opsLen > 0)
+            while (opsStack.Count > 0)
             {
-                var topOp = opsStack[opsLen - 1];
+                var topOp = opsStack.Peek();
                 if (topOp.OpCode == OpCode.OParen) break;
 
                 var topPrec = OpTable.GetPrecedence(topOp.OpCode);
@@ -230,16 +214,14 @@ namespace Garnet.server.Vector.Filter
                 // Right-associative: ** only pops if strictly higher
                 if (op.OpCode == OpCode.Pow && topPrec <= curPrec) break;
 
-                opsLen--;
+                opsStack.Pop();
                 var arity = OpTable.GetArity(topOp.OpCode);
                 if (stackItems < arity) { errpos = 0; return false; }
-                if (programLen >= MaxProgram) { errpos = 0; return false; }
-                program[programLen++] = topOp;
+                program.Add(topOp);
                 stackItems = stackItems - arity + 1;
             }
 
-            if (opsLen >= opsStack.Length) { errpos = 0; return false; }
-            opsStack[opsLen++] = op;
+            opsStack.Push(op);
             return true;
         }
 
