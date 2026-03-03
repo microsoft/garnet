@@ -734,8 +734,11 @@ namespace Garnet.server
                 if (metaCommandInfo.MetaCommand.IsETagCommand())
                 {
                     if (!cmd.IsDataCommand())
+                    {
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
                             SendAndReset();
+                        return true;
+                    }
 
                     outputEtag = true;
                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))

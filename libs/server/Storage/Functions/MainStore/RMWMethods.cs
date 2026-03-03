@@ -437,9 +437,6 @@ namespace Garnet.server
                     if (sizeInfo.FieldInfo.HasExpiration && input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
                         return IPUResult.Failed;
 
-                    if (!metaCmd.IsETagCommand() && !logRecord.RemoveETag())
-                        return IPUResult.Failed;
-
                     break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
@@ -638,6 +635,8 @@ namespace Garnet.server
                     CopyRespTo(logRecord.ValueSpan, ref output);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     output.ETag = functionsState.etagState.ETag;
+                    if (hadETagPreMutation)
+                        ETagState.ResetState(ref functionsState.etagState);
 
                     return IPUResult.Failed;
 

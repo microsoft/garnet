@@ -72,11 +72,11 @@ namespace Garnet.server
         None = 0,
         OperationSkipped = 1 << 0,
 
+        // Error marker (bit 7)
+        Error = 1 << 7,
+
         // Error bits (bits 4–6)
         InvalidTypeError = Error | (1 << 4),
         NaNOrInfinityError = Error | (1 << 5),
-
-        // Error marker (bit 7)
-        Error = 1 << 7,
     }
 }

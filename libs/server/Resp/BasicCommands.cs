@@ -399,7 +399,7 @@ namespace Garnet.server
             }
 
             if (metaCommandInfo.MetaCommand.IsETagCommand())
-                return NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue: false, highPrecision: false, ref storageApi);
+                return NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue: false, highPrecision: highPrecision, ref storageApi);
 
             var valMetadata = DateTimeOffset.UtcNow.Ticks +
                               (highPrecision
@@ -679,7 +679,7 @@ namespace Garnet.server
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 var ok = status != GarnetStatus.NOTFOUND;
 
-                if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && !output.IsOperationSkipped))
+                if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && output.IsOperationSkipped))
                     WriteNull();
                 else 
                     ProcessOutput(output.SpanByteAndMemory);

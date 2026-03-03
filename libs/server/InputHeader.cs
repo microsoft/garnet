@@ -329,7 +329,7 @@ namespace Garnet.server
 
             // Serialize parse state
             remainingLength = length - (int)(curr - dest);
-            parseState.SerializeTo(curr, remainingLength);
+            len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Number of serialized bytes

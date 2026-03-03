@@ -531,7 +531,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedCount, count);
         }
 
-        public static unsafe long Bitpos(byte[] bitmap, int startOffset = 0, int endOffset = -1, bool set = true)
+        private static unsafe long Bitpos(byte[] bitmap, int startOffset = 0, int endOffset = -1, bool set = true)
         {
             long pos = 0;
             var start = startOffset < 0 ? (startOffset % bitmap.Length) + bitmap.Length : startOffset;

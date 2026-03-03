@@ -11,7 +11,7 @@ namespace Garnet.test.Resp.ETag
     /// Extension methods for <see cref="IDatabase"/> and <see cref="ITransaction"/>
     /// that provide convenience wrappers around the ETag meta-commands.
     /// </summary>
-    public static class IDatabaseExtensions
+    public static class StackExchangeRedisExtensions
     {
         /// <summary>
         /// Executes a command with ETag tracking enabled.

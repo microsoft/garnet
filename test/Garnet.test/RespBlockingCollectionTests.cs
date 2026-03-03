@@ -763,7 +763,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var timeout = TimeSpan.FromSeconds(500);
+            var timeout = TimeSpan.FromSeconds(5);
             try
             {
                 Task.WaitAll([blockingTask, releasingTask], timeout);

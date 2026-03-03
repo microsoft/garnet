@@ -132,7 +132,7 @@ namespace Garnet.server
 
                 if (output.IsOperationSkipped)
                 {
-                    ProcessOutput(output.SpanByteAndMemory);
+                    WriteNull();
                     return true;
                 }
 

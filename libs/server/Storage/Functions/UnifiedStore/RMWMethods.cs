@@ -64,6 +64,9 @@ namespace Garnet.server
         public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
+            // reset etag state set at need initial update
+            ETagState.ResetState(ref functionsState.etagState);
+
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {

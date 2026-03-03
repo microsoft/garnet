@@ -163,7 +163,7 @@ namespace Garnet.server
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                shouldUpdateETag |= (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
+                shouldUpdateETag |= hadETagPreMutation && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
                 {
@@ -206,6 +206,8 @@ namespace Garnet.server
             if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
             {
                 output.OutputFlags |= ObjectOutputFlags.WrongType;
+                if (hadETagPreMutation)
+                    ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
@@ -272,7 +274,6 @@ namespace Garnet.server
             _ = dstLogRecord.TrySetValueObject(value);
 
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-            // TODO: Object store ETags
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
