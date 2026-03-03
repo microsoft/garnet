@@ -31,22 +31,22 @@ COPY test/testcerts test/testcerts
 RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/defaults.conf
 
 WORKDIR /src/main/GarnetServer
-RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net10.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
 # Final stage/image
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       libaio1 \
+       libaio1t64 \
        liblua5.4-0 \
-       dpkg-dev \
-    && ARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" \
+    && ARCH="$(uname -m)" \
+    && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* 2>/dev/null | head -n1 || true) \
-    && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/${ARCH}/liblua5.4.so.0" "$DN_DIR/liblua54.so"; fi \
+    && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/${MULTIARCH}/liblua5.4.so.0" "$DN_DIR/liblua54.so"; fi \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /data /app \

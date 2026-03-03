@@ -31,20 +31,19 @@ COPY test/testcerts test/testcerts
 RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/defaults.conf
 
 WORKDIR /src/main/GarnetServer
-RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net10.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
 # Final stage/image
-FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0-alpine AS runtime
 
 # Install dependencies
-RUN apk update && apk add --no-cache \
+RUN apk add --no-cache \
       libaio \
       gcompat \
       lua5.4-libs \
-    && ARCH="$(apk --print-arch)" \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* 2>/dev/null | head -n1 || true) \
     && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/liblua-5.4.so.0" "$DN_DIR/liblua54.so"; fi
 
