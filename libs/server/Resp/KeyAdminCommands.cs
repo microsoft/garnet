@@ -592,7 +592,7 @@ namespace Garnet.server
             {
                 if (output.IsOperationSkipped)
                     WriteNull();
-                else 
+                else
                     ProcessOutput(output.SpanByteAndMemory);
             }
             else

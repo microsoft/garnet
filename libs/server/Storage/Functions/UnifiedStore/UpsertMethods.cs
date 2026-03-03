@@ -206,8 +206,8 @@ namespace Garnet.server
 
                 output.ETag = updatedEtag;
             }
-            else if (!logRecord.RemoveETag()) 
-                    return false;
+            else if (!logRecord.RemoveETag())
+                return false;
 
             sizeInfo.AssertOptionals(logRecord.Info);
 

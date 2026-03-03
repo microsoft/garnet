@@ -155,7 +155,7 @@ namespace Garnet.server
             else
             {
                 writer.WriteInt32(addedOrChanged);
-                
+
                 if (addedOrChanged == 0)
                     output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
             }
@@ -789,7 +789,7 @@ namespace Garnet.server
         private void SortedSetCollect(ref ObjectOutput output)
         {
             DeleteExpiredItems();
-            
+
             output.Result1 = 1;
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }

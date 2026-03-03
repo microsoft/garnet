@@ -32,7 +32,7 @@ namespace Garnet.server
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
                     return false;
-                case RespCommand.SET: 
+                case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
                     return true;
@@ -311,7 +311,7 @@ namespace Garnet.server
             sizeInfo.AssertOptionals(logRecord.Info);
             return true;
         }
-         
+
         /// <inheritdoc />
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
@@ -382,7 +382,7 @@ namespace Garnet.server
                     CopyRespTo(logRecord.ValueSpan, ref output);
                 else
                     functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
-                
+
                 return IPUResult.NotUpdated;
             }
 
@@ -813,7 +813,7 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                        
+
                         try
                         {
                             if (srcLogRecord.Info.HasETag)

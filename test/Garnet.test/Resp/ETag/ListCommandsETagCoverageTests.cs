@@ -207,7 +207,7 @@ namespace Garnet.test.Resp.ETag
 
             void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(nxKey ? 1 :  ListData[0].Length + 1, (long)result);
+                ClassicAssert.AreEqual(nxKey ? 1 : ListData[0].Length + 1, (long)result);
             }
         }
 

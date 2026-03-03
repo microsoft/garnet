@@ -39,7 +39,7 @@ namespace Garnet.server
             // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
             _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedEtag, initContext: true);
 
-            var result =  input.header.cmd switch
+            var result = input.header.cmd switch
             {
                 RespCommand.DELIFEXPIM or
                 RespCommand.PERSIST or

@@ -272,7 +272,7 @@ namespace Garnet.server
             if (simpleCommandInfo.KeySpecs == null)
                 return false;
 
-            if (simpleCommandInfo.KeySpecs.Length > 1) 
+            if (simpleCommandInfo.KeySpecs.Length > 1)
                 return true;
 
             var findKeys = simpleCommandInfo.KeySpecs[0].FindKeys;

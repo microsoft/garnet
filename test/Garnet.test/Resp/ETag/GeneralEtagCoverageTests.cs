@@ -71,7 +71,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp();
 
             var txn = db.CreateTransaction();
-            
+
             _ = txn.StringAppendAsync(StringKeys[0], StringData[1]);
             _ = txn.StringAppendAsync(StringKeys[0], StringData[2]);
 
@@ -99,7 +99,7 @@ namespace Garnet.test.Resp.ETag
         public async Task CustomCommandWithEtagUnsupportedTestAsync()
         {
             server.Register.NewCommand("MY.SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
-            
+
             DataSetUp();
 
             await using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

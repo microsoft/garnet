@@ -1246,7 +1246,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <returns></returns>
         GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input);
-        
+
         #endregion
 
         #region GETRANGE

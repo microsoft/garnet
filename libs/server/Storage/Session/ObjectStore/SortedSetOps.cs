@@ -121,7 +121,8 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREM };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZREM };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
@@ -154,7 +155,8 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREM };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZREM };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
@@ -202,7 +204,8 @@ namespace Garnet.server
 
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);

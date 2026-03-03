@@ -34,7 +34,7 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
-            var result =  cmd switch
+            var result = cmd switch
             {
                 RespCommand.EXISTS => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),

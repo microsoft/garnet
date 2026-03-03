@@ -597,7 +597,7 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(byte[] result)
             {
                 var key1 = SortedSetKeys[0].ToString();
-                var elem1 = SortedSetData[0][2]; 
+                var elem1 = SortedSetData[0][2];
                 var elem2 = SortedSetData[0][1];
                 var btExpectedResponse =
                     $"*2\r\n${key1.Length}\r\n{key1}\r\n*2\r\n*2\r\n${elem1.Element.ToString().Length}\r\n{elem1.Element}\r\n${elem1.Score.ToString().Length}\r\n{elem1.Score}\r\n*2\r\n${elem2.Element.ToString().Length}\r\n{elem2.Element}\r\n${elem2.Score.ToString().Length}\r\n{elem2.Score}\r\n";
@@ -638,7 +638,7 @@ namespace Garnet.test.Resp.ETag
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
             }
         }
-        
+
         public override void DataSetUp(bool nxKey = false)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

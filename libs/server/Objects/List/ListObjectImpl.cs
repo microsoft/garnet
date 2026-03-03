@@ -299,7 +299,7 @@ namespace Garnet.server
 
             if (list.Count < count)
                 count = list.Count;
-            
+
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (list.Count == 0)

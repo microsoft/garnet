@@ -152,7 +152,7 @@ namespace Garnet.server
 
             var statusOp = storageApi.ListPosition(key, ref input, ref output);
             etag = output.ETag;
-            
+
             switch (statusOp)
             {
                 case GarnetStatus.OK:

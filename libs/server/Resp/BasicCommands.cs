@@ -681,7 +681,7 @@ namespace Garnet.server
 
                 if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && output.IsOperationSkipped))
                     WriteNull();
-                else 
+                else
                     ProcessOutput(output.SpanByteAndMemory);
 
                 return true;
@@ -720,7 +720,7 @@ namespace Garnet.server
 
             if (stringOutput.IsOperationSkipped)
             {
-                while(!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                     SendAndReset();
             }
             else if (!stringOutput.HasError)

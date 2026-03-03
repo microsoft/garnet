@@ -229,7 +229,7 @@ namespace Garnet.test.Resp.ETag
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
         }
 
-        [Test]  
+        [Test]
         public void SortedSetLengthConditionalEtagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

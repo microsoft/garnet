@@ -1133,7 +1133,7 @@ namespace Garnet.test.Resp.ETag
 
             var n = db.StringDecrement(strKey);
             ClassicAssert.AreEqual(nVal - 1, n);
-            
+
             GetAndCheckEtagAndValue(db, strKey, 2, n.ToString());
         }
 

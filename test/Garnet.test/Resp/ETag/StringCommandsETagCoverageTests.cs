@@ -29,7 +29,7 @@ namespace Garnet.test.Resp.ETag
         ];
 
         [Test]
-        public async Task AppendETagTestAsync([Values(true, false)]bool nxKey)
+        public async Task AppendETagTestAsync([Values(true, false)] bool nxKey)
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
@@ -44,7 +44,7 @@ namespace Garnet.test.Resp.ETag
         [Test]
         public async Task BitCountETagTestAsync()
         {
-            var cmdArgs = new object[] { BitmapKeys[0], 0, -1, "BIT"};
+            var cmdArgs = new object[] { BitmapKeys[0], 0, -1, "BIT" };
 
             await CheckCommandAsync(RespCommand.BITCOUNT, cmdArgs, VerifyResult, [2], isReadOnly: true);
 
@@ -237,7 +237,7 @@ namespace Garnet.test.Resp.ETag
             var cmdArgs = new object[] { StringKeys[0] };
 
             await CheckCommandAsync(RespCommand.INCR, cmdArgs, VerifyResult, nxKey: nxKey);
-            
+
             void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(nxKey ? 1 : long.Parse(StringData[0]) + 1, (long)result);
@@ -413,7 +413,7 @@ namespace Garnet.test.Resp.ETag
 
             void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(nxKey ? 0 :  1, (long)result);
+                ClassicAssert.AreEqual(nxKey ? 0 : 1, (long)result);
             }
         }
 
@@ -520,7 +520,7 @@ namespace Garnet.test.Resp.ETag
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull((string)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
-            
+
             success = db.StringSet(BitmapKeys[1], BitmapData[1]);
             ClassicAssert.IsTrue(success);
             success = db.StringSet(BitmapKeys[2], BitmapData[2]);

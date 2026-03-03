@@ -273,7 +273,7 @@ namespace Garnet.server
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(value, ref output, start, end);
                     return;
-                
+
                 case RespCommand.STRLEN:
                     functionsState.CopyRespNumber(value.Length, ref output.SpanByteAndMemory);
                     return;

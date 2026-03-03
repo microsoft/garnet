@@ -144,7 +144,7 @@ namespace Garnet.test.Resp.ETag
 
             static void VerifyResult(RedisResult result)
             {
-                ClassicAssert.AreEqual(long.Parse(HashData[0][0].Value) + 2 , (long)result);
+                ClassicAssert.AreEqual(long.Parse(HashData[0][0].Value) + 2, (long)result);
             }
         }
 
@@ -325,7 +325,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
             await CheckCommandAsync(RespCommand.HSETNX, cmdArgs, VerifyResult, nxKey: nxKey);
-            
+
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);

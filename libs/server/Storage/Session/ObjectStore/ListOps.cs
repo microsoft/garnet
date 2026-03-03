@@ -291,7 +291,7 @@ namespace Garnet.server
                         _ = srcListObject.LnkList.Count == 0
                             ? DELETE_ObjectStore(sourceKey, ref objectContext)
                             : SET(sourceKey, in sourceList, ref objectContext);
-                        
+
                         // Left push (addfirst) to destination
                         if (destinationDirection == OperationDirection.Left)
                             _ = dstListObject.LnkList.AddFirst(element);

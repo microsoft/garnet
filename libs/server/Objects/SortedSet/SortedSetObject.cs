@@ -323,7 +323,7 @@ namespace Garnet.server
             byte respProtocolVersion, out long memorySizeChange)
         {
             memorySizeChange = 0;
-            
+
             var header = input.header;
             if (header.type != GarnetObjectType.SortedSet)
             {

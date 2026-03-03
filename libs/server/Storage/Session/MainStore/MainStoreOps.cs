@@ -458,7 +458,7 @@ namespace Garnet.server
             var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
-            
+
             return GarnetStatus.OK;
         }
 

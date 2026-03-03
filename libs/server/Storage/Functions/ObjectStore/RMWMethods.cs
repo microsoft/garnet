@@ -50,7 +50,7 @@ namespace Garnet.server
 
                 // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
                 _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedEtag, initContext: true);
-                
+
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
 
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
@@ -284,7 +284,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
-            var shouldUpdateETag = !hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand(); 
+            var shouldUpdateETag = !hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand();
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
