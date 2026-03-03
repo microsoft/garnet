@@ -92,7 +92,8 @@ namespace Garnet.test.cluster
         public Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning},
-            {"ClusterReplicationMultiRestartRecover", LogLevel.Trace}
+            {"ClusterReplicationMultiRestartRecover", LogLevel.Trace},
+            {"ClusterReplicationStoredProc", LogLevel.Error}
         };
 
         [SetUp]
@@ -1217,7 +1218,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(24)]
         [Category("REPLICATION")]
-        public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst)
+        public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst, [Values] bool objectStore)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1235,8 +1236,16 @@ namespace Garnet.test.cluster
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
             // Register custom procedure
-            context.nodes[primaryNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
-            context.nodes[replicaNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+            if (objectStore)
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+            }
+            else
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+            }
 
             // Setup cluster
             context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -1247,21 +1256,19 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
 
             if (attachFirst)
-            {
-                // Issue replicate
-                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
-                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
-            }
+                ClusterReplicate();
 
-            // Execute custom proc before replicat attach
-            ExecuteRateLimit();
+            if (objectStore)
+                ExecuteRateLimit();
+            else
+            {
+                string[] increment = ["10", "15"];
+                ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, [expectedKeys[0]], [increment[0]]);
+                ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, [expectedKeys[1]], [increment[1]]);
+            }
 
             if (!attachFirst)
-            {
-                // Issue replicate
-                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
-                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
-            }
+                ClusterReplicate();
 
             // Validate primary keys
             var resp = primaryServer.Execute("KEYS", ["*"]);
@@ -1274,11 +1281,18 @@ namespace Garnet.test.cluster
 
             void ExecuteRateLimit()
             {
-                primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
                 var resp = primaryServer.Execute("RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
                 resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
+            }
+
+            void ClusterReplicate()
+            {
+                // Issue replicate
+                var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
             }
         }
 
