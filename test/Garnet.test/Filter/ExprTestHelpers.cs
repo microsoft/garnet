@@ -70,6 +70,13 @@ namespace Garnet.test
                     var extracted = AttributeExtractor.ExtractField(json, inst.Str);
                     if (extracted.IsNone)
                         return ExprToken.NewNull();
+
+                    // Materialize JSON refs to strings for test convenience (OK to allocate in tests)
+                    if (extracted.IsJsonRef)
+                    {
+                        extracted = ExprToken.NewStr(Encoding.UTF8.GetString(json.Slice(extracted.Utf8Start, extracted.Utf8Length)));
+                    }
+
                     stack[stackLen++] = extracted;
                     continue;
                 }
@@ -160,7 +167,11 @@ namespace Garnet.test
         {
             if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num != 0 ? 1 : 0;
-            if (t.TokenType == ExprTokenType.Str && (t.Str == null || t.Str.Length == 0)) return 0;
+            if (t.TokenType == ExprTokenType.Str)
+            {
+                if (t.IsJsonRef) return t.Utf8Length == 0 ? 0 : 1;
+                return (t.Str == null || t.Str.Length == 0) ? 0 : 1;
+            }
             if (t.TokenType == ExprTokenType.Null) return 0;
             return 1;
         }

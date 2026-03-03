@@ -133,8 +133,17 @@ namespace Garnet.server.Vector.Filter
         /// <summary>Number of elements in the tuple.</summary>
         public int TupleLength;
 
+        /// <summary>Start byte-offset of a string value in the source JSON (for zero-allocation extraction).</summary>
+        public int Utf8Start;
+
+        /// <summary>Byte-length of the string value in the source JSON (for zero-allocation extraction).</summary>
+        public int Utf8Length;
+
         /// <summary>True when this token is the default (uninitialized) value, replacing null checks.</summary>
         public readonly bool IsNone => TokenType == ExprTokenType.None;
+
+        /// <summary>True when this is a Str token that references raw JSON bytes instead of an allocated string.</summary>
+        public readonly bool IsJsonRef => TokenType == ExprTokenType.Str && Str == null;
 
         public static ExprToken NewNum(double value)
         {
@@ -164,6 +173,15 @@ namespace Garnet.server.Vector.Filter
         public static ExprToken NewTuple(ExprToken[] elements, int length)
         {
             return new ExprToken { TokenType = ExprTokenType.Tuple, TupleElements = elements, TupleLength = length };
+        }
+
+        /// <summary>
+        /// Create a string token that references raw UTF-8 bytes in the source JSON — zero allocation.
+        /// The offset and length define the string content (excluding quotes) within the JSON span.
+        /// </summary>
+        public static ExprToken NewJsonStr(int utf8Start, int utf8Length)
+        {
+            return new ExprToken { TokenType = ExprTokenType.Str, Utf8Start = utf8Start, Utf8Length = utf8Length };
         }
     }
 

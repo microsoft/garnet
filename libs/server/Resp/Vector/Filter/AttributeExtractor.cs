@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Text;
-using System.Text;
 
 namespace Garnet.server.Vector.Filter
 {
@@ -111,19 +111,20 @@ namespace Garnet.server.Vector.Filter
                 }
                 if (json[p] == (byte)'"')
                 {
-                    string value;
                     if (!hasEscape)
                     {
-                        // Zero-copy: decode directly from the span
-                        value = Encoding.UTF8.GetString(json.Slice(start, p - start));
+                        // Zero-allocation: store byte offset+length into the source JSON
+                        var len = p - start;
+                        p++; // Skip closing quote
+                        return ExprToken.NewJsonStr(start, len);
                     }
                     else
                     {
-                        // Process escapes
-                        value = UnescapeJsonString(json, start, p);
+                        // Escaped strings must be materialized (rare path)
+                        var value = UnescapeJsonString(json, start, p);
+                        p++; // Skip closing quote
+                        return ExprToken.NewStr(value);
                     }
-                    p++; // Skip closing quote
-                    return ExprToken.NewStr(value);
                 }
                 p++;
             }
@@ -164,14 +165,14 @@ namespace Garnet.server.Vector.Filter
             return t;
         }
 
+        /// <summary>Max array elements before rejecting.</summary>
+        private const int MaxArrayElements = 64;
+
         private static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref int p)
         {
             if (p >= json.Length || json[p] != (byte)'[') return default;
             p++; // Skip '['
             SkipWhiteSpace(json, ref p);
-
-            var elements = new ExprToken[64];
-            var count = 0;
 
             // Handle empty array
             if (p < json.Length && json[p] == (byte)']')
@@ -180,25 +181,36 @@ namespace Garnet.server.Vector.Filter
                 return ExprToken.NewTuple([], 0);
             }
 
-            while (true)
+            // Rent from pool instead of allocating a new scratch array every call
+            var elements = ArrayPool<ExprToken>.Shared.Rent(MaxArrayElements);
+            var count = 0;
+
+            try
             {
-                SkipWhiteSpace(json, ref p);
-                if (p >= json.Length || count >= elements.Length) return default;
+                while (true)
+                {
+                    SkipWhiteSpace(json, ref p);
+                    if (p >= json.Length || count >= MaxArrayElements) return default;
 
-                var ele = ParseValueToken(json, ref p);
-                if (ele.IsNone) return default;
-                elements[count++] = ele;
+                    var ele = ParseValueToken(json, ref p);
+                    if (ele.IsNone) return default;
+                    elements[count++] = ele;
 
-                SkipWhiteSpace(json, ref p);
-                if (p >= json.Length) return default;
-                if (json[p] == (byte)',') { p++; continue; }
-                if (json[p] == (byte)']') { p++; break; }
-                return default; // Malformed
+                    SkipWhiteSpace(json, ref p);
+                    if (p >= json.Length) return default;
+                    if (json[p] == (byte)',') { p++; continue; }
+                    if (json[p] == (byte)']') { p++; break; }
+                    return default; // Malformed
+                }
+
+                var result = new ExprToken[count];
+                Array.Copy(elements, result, count);
+                return ExprToken.NewTuple(result, count);
             }
-
-            var result = new ExprToken[count];
-            Array.Copy(elements, result, count);
-            return ExprToken.NewTuple(result, count);
+            finally
+            {
+                ArrayPool<ExprToken>.Shared.Return(elements, clearArray: true);
+            }
         }
 
         // ======================== Fast skipping (non-allocating) ========================

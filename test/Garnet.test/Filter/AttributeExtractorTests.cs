@@ -20,6 +20,20 @@ namespace Garnet.test
         private static ExprToken Extract(string json, string field)
             => AttributeExtractor.ExtractField(Encoding.UTF8.GetBytes(json), field);
 
+        /// <summary>
+        /// Get the string value from an ExprToken, handling both allocated strings and JSON byte refs.
+        /// </summary>
+        private static string GetStr(string json, ExprToken token)
+        {
+            if (token.Str != null) return token.Str;
+            if (token.IsJsonRef)
+            {
+                var bytes = Encoding.UTF8.GetBytes(json);
+                return Encoding.UTF8.GetString(bytes, token.Utf8Start, token.Utf8Length);
+            }
+            return null;
+        }
+
         // ======================== Number extraction ========================
 
         [Test]
@@ -67,17 +81,21 @@ namespace Garnet.test
         [Test]
         public void ExtractField_SimpleString()
         {
-            var token = Extract("{\"genre\":\"action\"}", "genre");
+            var json = "{\"genre\":\"action\"}";
+            var token = Extract(json, "genre");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
-            ClassicAssert.AreEqual("action", token.Str);
+            ClassicAssert.IsTrue(token.IsJsonRef, "Non-escaped strings should be JSON byte refs");
+            ClassicAssert.AreEqual("action", GetStr(json, token));
         }
 
         [Test]
         public void ExtractField_EmptyString()
         {
-            var token = Extract("{\"name\":\"\"}", "name");
+            var json = "{\"name\":\"\"}";
+            var token = Extract(json, "name");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
-            ClassicAssert.AreEqual("", token.Str);
+            ClassicAssert.IsTrue(token.IsJsonRef);
+            ClassicAssert.AreEqual("", GetStr(json, token));
         }
 
         [Test]
@@ -85,6 +103,7 @@ namespace Garnet.test
         {
             var token = Extract("{\"name\":\"hello\\\"world\"}", "name");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
+            ClassicAssert.IsFalse(token.IsJsonRef, "Escaped strings should be materialized");
             ClassicAssert.AreEqual("hello\"world", token.Str);
         }
 
@@ -93,6 +112,7 @@ namespace Garnet.test
         {
             var token = Extract("{\"path\":\"c:\\\\temp\"}", "path");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
+            ClassicAssert.IsFalse(token.IsJsonRef);
             ClassicAssert.AreEqual("c:\\temp", token.Str);
         }
 
@@ -101,6 +121,7 @@ namespace Garnet.test
         {
             var token = Extract("{\"text\":\"line1\\nline2\"}", "text");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
+            ClassicAssert.IsFalse(token.IsJsonRef);
             ClassicAssert.AreEqual("line1\nline2", token.Str);
         }
 
@@ -109,6 +130,7 @@ namespace Garnet.test
         {
             var token = Extract("{\"text\":\"col1\\tcol2\"}", "text");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
+            ClassicAssert.IsFalse(token.IsJsonRef);
             ClassicAssert.AreEqual("col1\tcol2", token.Str);
         }
 
@@ -117,6 +139,7 @@ namespace Garnet.test
         {
             var token = Extract("{\"url\":\"http:\\/\\/example.com\"}", "url");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
+            ClassicAssert.IsFalse(token.IsJsonRef);
             ClassicAssert.AreEqual("http://example.com", token.Str);
         }
 
@@ -152,12 +175,13 @@ namespace Garnet.test
         [Test]
         public void ExtractField_StringArray()
         {
-            var token = Extract("{\"tags\":[\"classic\",\"popular\"]}", "tags");
+            var json = "{\"tags\":[\"classic\",\"popular\"]}";
+            var token = Extract(json, "tags");
             ClassicAssert.AreEqual(ExprTokenType.Tuple, token.TokenType);
             ClassicAssert.AreEqual(2, token.TupleLength);
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TupleElements[0].TokenType);
-            ClassicAssert.AreEqual("classic", token.TupleElements[0].Str);
-            ClassicAssert.AreEqual("popular", token.TupleElements[1].Str);
+            ClassicAssert.AreEqual("classic", GetStr(json, token.TupleElements[0]));
+            ClassicAssert.AreEqual("popular", GetStr(json, token.TupleElements[1]));
         }
 
         [Test]
@@ -174,13 +198,14 @@ namespace Garnet.test
         [Test]
         public void ExtractField_MixedArray()
         {
-            var token = Extract("{\"data\":[1,\"two\",true,null]}", "data");
+            var json = "{\"data\":[1,\"two\",true,null]}";
+            var token = Extract(json, "data");
             ClassicAssert.AreEqual(ExprTokenType.Tuple, token.TokenType);
             ClassicAssert.AreEqual(4, token.TupleLength);
             ClassicAssert.AreEqual(ExprTokenType.Num, token.TupleElements[0].TokenType);
             ClassicAssert.AreEqual(1.0, token.TupleElements[0].Num);
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TupleElements[1].TokenType);
-            ClassicAssert.AreEqual("two", token.TupleElements[1].Str);
+            ClassicAssert.AreEqual("two", GetStr(json, token.TupleElements[1]));
             ClassicAssert.AreEqual(ExprTokenType.Num, token.TupleElements[2].TokenType);
             ClassicAssert.AreEqual(1.0, token.TupleElements[2].Num); // true → 1
             ClassicAssert.AreEqual(ExprTokenType.Null, token.TupleElements[3].TokenType);
@@ -351,25 +376,28 @@ namespace Garnet.test
         [Test]
         public void ExtractField_StringValueContainingBraces()
         {
-            var token = Extract("{\"data\":\"{not an object}\"}", "data");
+            var json = "{\"data\":\"{not an object}\"}";
+            var token = Extract(json, "data");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
-            ClassicAssert.AreEqual("{not an object}", token.Str);
+            ClassicAssert.AreEqual("{not an object}", GetStr(json, token));
         }
 
         [Test]
         public void ExtractField_StringValueContainingBrackets()
         {
-            var token = Extract("{\"data\":\"[not an array]\"}", "data");
+            var json = "{\"data\":\"[not an array]\"}";
+            var token = Extract(json, "data");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
-            ClassicAssert.AreEqual("[not an array]", token.Str);
+            ClassicAssert.AreEqual("[not an array]", GetStr(json, token));
         }
 
         [Test]
         public void ExtractField_StringValueContainingComma()
         {
-            var token = Extract("{\"msg\":\"hello, world\"}", "msg");
+            var json = "{\"msg\":\"hello, world\"}";
+            var token = Extract(json, "msg");
             ClassicAssert.AreEqual(ExprTokenType.Str, token.TokenType);
-            ClassicAssert.AreEqual("hello, world", token.Str);
+            ClassicAssert.AreEqual("hello, world", GetStr(json, token));
         }
 
         [Test]
