@@ -149,6 +149,12 @@ namespace Garnet.server
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = sbDstHLL.ToPointer();
 
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(srcHLL, sbSrcHLL.Length))
+                    {
+                        error = true;
+                        break;
+                    }
+
                     if (!isFirst)
                     {
                         isFirst = true;
@@ -229,6 +235,12 @@ namespace Garnet.server
                         continue;
                     // Invalid Type
                     if (*(long*)readBuffer == -1)
+                    {
+                        error = true;
+                        break;
+                    }
+
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(mergeBuffer.SpanByte.ToPointer(), mergeBuffer.SpanByte.Length))
                     {
                         error = true;
                         break;

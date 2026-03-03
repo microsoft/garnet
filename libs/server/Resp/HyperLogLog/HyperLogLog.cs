@@ -217,8 +217,17 @@ namespace Garnet.server
 
         private bool IsValidHLLLength(byte* ptr, int length)
         {
-            return (IsSparse(ptr) && SparseInitialLength(1) <= length || length <= SparseSizeMaxCap) ||
-                (IsDense(ptr) && length == this.DenseBytes);
+            if (IsDense(ptr))
+                return length == this.DenseBytes;
+
+            if (!IsSparse(ptr))
+                return false;
+
+            if (length < SparseInitialLength(1) || length > SparseSizeMaxCap)
+                return false;
+
+            var sparsePayloadBytes = length - SparseHeaderSize;
+            return GetSparseRLESize(ptr) <= sparsePayloadBytes;
         }
 
         /// <summary>

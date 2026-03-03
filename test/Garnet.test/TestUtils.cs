@@ -278,7 +278,8 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
-            string aofMemorySize = "64m"
+            string aofMemorySize = "64m",
+            bool skipRDBRestoreChecksumValidation = false
         )
         {
             if (useAzureStorage)
@@ -368,6 +369,7 @@ namespace Garnet.test
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
                 EnableVectorSetPreview = enableVectorSetPreview,
+                SkipRDBRestoreChecksumValidation = skipRDBRestoreChecksumValidation,
             };
 
             if (!string.IsNullOrEmpty(memorySize))

@@ -225,6 +225,122 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HyperLogLogValidatorRejectsMalformedSparsePayload()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_malformed_source";
+
+            db.KeyDelete(sourceKey);
+
+            for (int i = 0; i < 20; i++)
+                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            var dump = db.KeyDump(sourceKey)!;
+
+            int valueLength;
+            int valueStart;
+            if (dump[1] < 0x40)
+            {
+                valueLength = dump[1];
+                valueStart = 2;
+            }
+            else if (dump[1] < 0x80)
+            {
+                valueLength = ((dump[1] & 0x3F) << 8) | dump[2];
+                valueStart = 3;
+            }
+            else
+            {
+                valueLength = BinaryPrimitives.ReadInt32BigEndian(dump.AsSpan(2, 4));
+                valueStart = 6;
+            }
+
+            var malformedValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, malformedValue[3], "Expected sparse HLL representation for malformed payload test.");
+            BinaryPrimitives.WriteUInt16LittleEndian(malformedValue.AsSpan(16, 2), (ushort)(valueLength + 100));
+
+            fixed (byte* validPtr = dump.AsSpan(valueStart, valueLength))
+            fixed (byte* malformedPtr = malformedValue)
+            {
+                ClassicAssert.IsTrue(HyperLogLog.DefaultHLL.IsValidHYLL(validPtr, valueLength));
+                ClassicAssert.IsFalse(HyperLogLog.DefaultHLL.IsValidHYLL(malformedPtr, malformedValue.Length));
+            }
+        }
+
+        [Test]
+        public void HyperLogLogSkipChecksumRestoreAcceptedButPfCommandsReturnWrongType()
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, skipRDBRestoreChecksumValidation: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_skip_src";
+            const string malformedKey = "hll_skip_bad";
+            const string mergeDst = "hll_skip_dst";
+
+            db.KeyDelete(sourceKey);
+            db.KeyDelete(malformedKey);
+            db.KeyDelete(mergeDst);
+
+            for (var i = 0; i < 2; i++)
+                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            var dump = db.KeyDump(sourceKey)!;
+
+            int valueLength;
+            int valueStart;
+            if (dump[1] < 0x40)
+            {
+                valueLength = dump[1];
+                valueStart = 2;
+            }
+            else if (dump[1] < 0x80)
+            {
+                valueLength = ((dump[1] & 0x3F) << 8) | dump[2];
+                valueStart = 3;
+            }
+            else
+            {
+                valueLength = BinaryPrimitives.ReadInt32BigEndian(dump.AsSpan(2, 4));
+                valueStart = 6;
+            }
+
+            var hllValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, hllValue[3], "Expected sparse HLL representation for checksum-skip malformed payload test.");
+            BinaryPrimitives.WriteUInt16LittleEndian(hllValue.AsSpan(16, 2), (ushort)(valueLength + 100));
+
+            byte[] encodedLength = hllValue.Length < 64
+                ? [(byte)(hllValue.Length & 0x3F)]
+                : hllValue.Length < 16384
+                    ? [(byte)(((hllValue.Length >> 8) & 0x3F) | 0x40), (byte)(hllValue.Length & 0xFF)]
+                    : [0x80, .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(hllValue.Length))];
+
+            var rdbVersion = dump.AsSpan(valueStart + valueLength, 2).ToArray();
+            var crafted = new byte[1 + encodedLength.Length + hllValue.Length + rdbVersion.Length + 8];
+            crafted[0] = 0x00;
+            encodedLength.CopyTo(crafted.AsSpan(1, encodedLength.Length));
+            hllValue.CopyTo(crafted.AsSpan(1 + encodedLength.Length, hllValue.Length));
+            rdbVersion.CopyTo(crafted.AsSpan(1 + encodedLength.Length + hllValue.Length, rdbVersion.Length));
+
+            db.KeyRestore(malformedKey, crafted);
+            ClassicAssert.IsTrue(db.KeyExists(malformedKey));
+
+            var countEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogLength(malformedKey));
+            StringAssert.Contains("WRONGTYPE Key is not a valid HyperLogLog string value.", countEx!.Message);
+
+            var addEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogAdd(malformedKey, "x"));
+            StringAssert.Contains("WRONGTYPE Key is not a valid HyperLogLog string value.", addEx!.Message);
+
+            var mergeEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogMerge(mergeDst, [malformedKey]));
+            StringAssert.Contains("WRONGTYPE Key is not a valid HyperLogLog string value.", mergeEx!.Message);
+        }
+
+        [Test]
         public void HyperLogLogSimpleInvalidHLLTypeTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
