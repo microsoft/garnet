@@ -1362,20 +1362,27 @@ namespace Garnet.test.cluster
                                 await Task.Delay(1).ConfigureAwait(false);
                             }
 
-                            // This should follow redirects, so migration shouldn't cause any failures
+                            // This should follow redirects, so migration shouldn't cause any failures.
+                            // StackExchange.Redis 2.11.8 changed MOVED handling: when MOVED points to the same endpoint,
+                            // it reconnects before retrying, which can throw RedisConnectionException or RedisTimeoutException
+                            // instead of (or in addition to) RedisServerException("MOVED ...").
                             try
                             {
                                 var addRes = (int)readWriteDb.Execute("VADD", [new RedisKey(primary0Key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
                                 ClassicAssert.AreEqual(1, addRes);
                             }
-                            catch (RedisServerException exc)
+                            // Catch Exception (not RedisException) because RedisTimeoutException extends
+                            // TimeoutException, not RedisException. Two MOVED message formats exist:
+                            // - Server: "MOVED N host:port"
+                            // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                            catch (Exception exc) when (
+                                exc is RedisTimeoutException
+                                || exc is RedisConnectionException
+                                || (exc is RedisServerException rse && (
+                                    rse.Message.StartsWith("MOVED ")
+                                    || rse.Message.StartsWith("Key has MOVED to "))))
                             {
-                                if (exc.Message.StartsWith("MOVED "))
-                                {
-                                    continue;
-                                }
-
-                                throw;
+                                continue;
                             }
 
                             added.Add((elem.ToArray(), data.ToArray(), attr.ToArray()));
@@ -1718,20 +1725,28 @@ namespace Garnet.test.cluster
                                             ClassicAssert.AreEqual(1, addRes);
                                             break;
                                         }
-                                        catch (RedisServerException exc)
+                                        // Catch Exception (not RedisException) because RedisTimeoutException extends
+                                        // TimeoutException, not RedisException. Two MOVED message formats exist:
+                                        // - Server: "MOVED N host:port"
+                                        // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                                        catch (Exception exc) when (
+                                            exc is RedisTimeoutException
+                                            || exc is RedisConnectionException
+                                            || (exc is RedisServerException rse && (
+                                                rse.Message.StartsWith("MOVED ")
+                                                || rse.Message.StartsWith("Key has MOVED to "))))
                                         {
-                                            if (exc.Message.StartsWith("MOVED "))
+                                            // These are all retryable transient errors during slot migration:
+                                            // - RedisServerException("MOVED"): slot has moved, retry
+                                            // - RedisTimeoutException: server blocked in WaitForSlotToStabilize, timed out
+                                            // - RedisConnectionException: reconnect triggered by StackExchange.Redis 2.11.8+
+                                            //   MOVED-to-same-endpoint handling
+                                            if (writeCancel.IsCancellationRequested)
                                             {
-                                                // This is fine, just try again if we're not cancelled
-                                                if (writeCancel.IsCancellationRequested)
-                                                {
-                                                    return;
-                                                }
-
-                                                continue;
+                                                return;
                                             }
 
-                                            throw;
+                                            continue;
                                         }
                                     }
 
@@ -1784,7 +1799,25 @@ namespace Garnet.test.cluster
 
                                     var (elem, data, _, _) = written.ToList()[readTaskRandom.Next(r)];
 
-                                    var emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
+                                    string[] emb;
+                                    try
+                                    {
+                                        emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
+                                    }
+                                    // Catch Exception (not RedisException) because RedisTimeoutException extends
+                                    // TimeoutException, not RedisException. Two MOVED message formats exist:
+                                    // - Server: "MOVED N host:port"
+                                    // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                                    catch (Exception exc) when (
+                                        exc is RedisTimeoutException
+                                        || exc is RedisConnectionException
+                                        || (exc is RedisServerException rse && (
+                                            rse.Message.StartsWith("MOVED ")
+                                            || rse.Message.StartsWith("Key has MOVED to "))))
+                                    {
+                                        // Transient errors during slot migration are expected; retry
+                                        continue;
+                                    }
 
                                     if (emb.Length == 0)
                                     {
