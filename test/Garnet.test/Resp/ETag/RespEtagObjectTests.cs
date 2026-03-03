@@ -9,7 +9,7 @@ using StackExchange.Redis;
 namespace Garnet.test.Resp.ETag
 {
     [TestFixture]
-    public class RespETagObjectTests
+    public class RespETagObjectTests : AllureTestBase
     {
         private GarnetServer server;
 
