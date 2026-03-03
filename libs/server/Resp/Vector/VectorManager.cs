@@ -977,6 +977,9 @@ namespace Garnet.server
 
             var filteredCount = 0;
 
+            // Allocate the evaluation stack once and reuse it across all candidate evaluations
+            var stack = ExprRunner.CreateStack();
+
             var idsSpan = outputIds.AsSpan();
             var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
             var attributesSpan = outputAttributes.AsSpan();
@@ -999,7 +1002,7 @@ namespace Garnet.server
 
                 // Execute the compiled filter program against raw JSON bytes.
                 // No JsonDocument DOM allocation — AttributeExtractor extracts fields on demand.
-                if (ExprRunner.Run(program, attrData))
+                if (ExprRunner.Run(program, attrData, stack))
                 {
                     // Copy ID if not already in place
                     if (idReadPos != idWritePos)

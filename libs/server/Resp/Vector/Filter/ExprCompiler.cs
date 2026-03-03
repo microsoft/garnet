@@ -8,13 +8,19 @@ using System.Text;
 namespace Garnet.server.Vector.Filter
 {
     /// <summary>
-    /// Shunting-yard compiler that tokenizes and compiles a filter expression string
+    /// Shunting-Yard compiler that tokenizes and compiles a filter expression string
     /// into a flat postfix <see cref="ExprProgram"/>.
     ///
     /// Single-pass tokenize-and-compile approach modeled after Redis expr.c.
     ///
     /// The compiled program is a flat array of <see cref="ExprToken"/> instructions
     /// (values + operators in postfix order) that can be executed by <see cref="ExprRunner"/>.
+    ///
+    /// Example:
+    /// Input expression:
+    ///   .price &lt; 100 and .category == "books"
+    /// Compiled postfix order:
+    ///   .price 100 &lt; .category "books" == and
     ///
     /// Safety limits:
     /// - Maximum 1024 tokens per expression (prevents unbounded allocation).

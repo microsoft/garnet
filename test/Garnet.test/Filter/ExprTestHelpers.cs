@@ -39,7 +39,7 @@ namespace Garnet.test
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
             var jsonBytes = Encoding.UTF8.GetBytes(json);
-            return ExprRunner.Run(program, jsonBytes);
+            return ExprRunner.Run(program, jsonBytes, ExprRunner.CreateStack());
         }
 
         /// <summary>

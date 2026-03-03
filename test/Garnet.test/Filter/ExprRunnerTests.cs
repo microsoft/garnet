@@ -183,10 +183,11 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(program);
 
             var nonJson = System.Text.Encoding.UTF8.GetBytes("this is not json");
-            ClassicAssert.IsFalse(ExprRunner.Run(program, nonJson));
+            var stack = ExprRunner.CreateStack();
+            ClassicAssert.IsFalse(ExprRunner.Run(program, nonJson, stack));
 
             var emptyJson = System.Text.Encoding.UTF8.GetBytes("");
-            ClassicAssert.IsFalse(ExprRunner.Run(program, emptyJson));
+            ClassicAssert.IsFalse(ExprRunner.Run(program, emptyJson, stack));
         }
 
         [Test]

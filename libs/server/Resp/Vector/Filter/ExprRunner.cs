@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 namespace Garnet.server.Vector.Filter
 {
@@ -22,21 +23,26 @@ namespace Garnet.server.Vector.Filter
     /// </summary>
     internal static class ExprRunner
     {
-        private const int MaxStack = 256;
+        private const int DefaultStackCapacity = 16;
 
-        [ThreadStatic]
-        private static ExprToken[] t_stack;
+        /// <summary>
+        /// Create a reusable evaluation stack with default capacity (16).
+        /// The caller owns the list and can pass it to <see cref="Run"/> across multiple calls.
+        /// The list is cleared at the start of each Run call, so the caller does not need to clear it.
+        /// </summary>
+        public static List<ExprToken> CreateStack() => new List<ExprToken>(DefaultStackCapacity);
 
         /// <summary>
         /// Execute the compiled program against JSON attribute data.
         /// Returns true if the expression evaluates to a truthy value, false otherwise.
         /// Returns false if the JSON is malformed or a selector cannot be resolved.
         /// </summary>
-        public static bool Run(ExprProgram program, ReadOnlySpan<byte> json)
+        /// <param name="program">The compiled postfix program.</param>
+        /// <param name="json">Raw JSON attribute bytes to evaluate against.</param>
+        /// <param name="stack">A reusable evaluation stack obtained from <see cref="CreateStack"/>.</param>
+        public static bool Run(ExprProgram program, ReadOnlySpan<byte> json, List<ExprToken> stack)
         {
-            // Reuse thread-local stack to avoid per-call allocation
-            var stack = t_stack ??= new ExprToken[MaxStack];
-            var stackLen = 0;
+            stack.Clear();
 
             for (var i = 0; i < program.Length; i++)
             {
@@ -48,41 +54,31 @@ namespace Garnet.server.Vector.Filter
                     var extracted = AttributeExtractor.ExtractField(json, inst.Str);
                     if (extracted.IsNone)
                     {
-                        stack.AsSpan(0, stackLen).Clear();
+                        stack.Clear();
                         return false; // Selector not found → expression is false (matches Redis)
                     }
 
-                    if (stackLen >= MaxStack)
-                    {
-                        stack.AsSpan(0, stackLen).Clear();
-                        return false;
-                    }
-                    stack[stackLen++] = extracted;
+                    stack.Add(extracted);
                     continue;
                 }
 
                 // Non-operator values — push directly
                 if (inst.TokenType != ExprTokenType.Op)
                 {
-                    if (stackLen >= MaxStack)
-                    {
-                        stack.AsSpan(0, stackLen).Clear();
-                        return false;
-                    }
-                    stack[stackLen++] = inst;
+                    stack.Add(inst);
                     continue;
                 }
 
                 // Operators — pop operands, compute, push result
                 var arity = OpTable.GetArity(inst.OpCode);
-                if (stackLen < arity)
+                if (stack.Count < arity)
                 {
-                    stack.AsSpan(0, stackLen).Clear();
+                    stack.Clear();
                     return false;
                 }
 
-                ExprToken b = stackLen > 0 ? stack[--stackLen] : default;
-                ExprToken a = arity == 2 && stackLen > 0 ? stack[--stackLen] : default;
+                ExprToken b = stack.Count > 0 ? Pop(stack) : default;
+                ExprToken a = arity == 2 && stack.Count > 0 ? Pop(stack) : default;
 
                 var result = ExprToken.NewNum(0);
 
@@ -138,21 +134,25 @@ namespace Garnet.server.Vector.Filter
                         break;
                 }
 
-                if (stackLen >= MaxStack)
-                {
-                    stack.AsSpan(0, stackLen).Clear();
-                    return false;
-                }
-                stack[stackLen++] = result;
+                stack.Add(result);
             }
 
             var returnValue = false;
-            if (stackLen > 0)
-                returnValue = ToBool(stack[stackLen - 1]) != 0;
+            if (stack.Count > 0)
+                returnValue = ToBool(stack[stack.Count - 1]) != 0;
 
-            // Clear used portion to release string references for GC
-            stack.AsSpan(0, stackLen).Clear();
+            // Clear to release string references for GC
+            stack.Clear();
             return returnValue;
+        }
+
+        /// <summary>Pop the last element from the stack.</summary>
+        private static ExprToken Pop(List<ExprToken> stack)
+        {
+            var last = stack.Count - 1;
+            var value = stack[last];
+            stack.RemoveAt(last);
+            return value;
         }
 
         // ======================== Type conversion helpers ========================
