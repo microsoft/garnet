@@ -53,11 +53,11 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isRecovering = false)
+        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isReplaying)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferAllocator, out _);
-            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output, isRecovering);
+            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output, isReplaying);
         }
 
         private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)

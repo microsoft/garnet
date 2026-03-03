@@ -270,7 +270,7 @@ namespace Garnet.server
 
                     // Run the stored procedure with the reconstructed input                    
                     var output = aofReplayContext.output;
-                    _ = aofProcessor.respServerSession.RunTransactionProc(id, ref aofReplayContext.customProcInput, ref output, isRecovering: true);
+                    _ = aofProcessor.respServerSession.RunTransactionProc(id, ref aofReplayContext.customProcInput, ref output, isReplaying: true);
                 }
             }
         }
