@@ -1152,6 +1152,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HyperLogLogValidatorRejectsSparseStreamCoverageMismatch()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_sparse_stream_src";
+
+            db.KeyDelete(sourceKey);
+
+            for (int i = 0; i < 2; i++)
+                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            var malformedValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, malformedValue[3], "Expected sparse HLL representation for stream coverage test.");
+
+            var rleStart = 18;
+            malformedValue[rleStart] = 0x80;
+
+            fixed (byte* validPtr = dump.AsSpan(valueStart, valueLength))
+            fixed (byte* malformedPtr = malformedValue)
+            {
+                ClassicAssert.IsTrue(HyperLogLog.DefaultHLL.IsValidHYLL(validPtr, valueLength));
+                ClassicAssert.IsFalse(HyperLogLog.DefaultHLL.IsValidHYLL(malformedPtr, malformedValue.Length));
+            }
+        }
+
+        [Test]
         public void HyperLogLogSkipChecksumRestoreAcceptedButPfCommandsReturnWrongType()
         {
             server.Dispose();

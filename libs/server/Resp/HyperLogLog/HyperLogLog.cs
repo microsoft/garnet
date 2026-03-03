@@ -227,7 +227,49 @@ namespace Garnet.server
                 return false;
 
             var sparsePayloadBytes = length - SparseHeaderSize;
-            return GetSparseRLESize(ptr) <= sparsePayloadBytes;
+            return GetSparseRLESize(ptr) <= sparsePayloadBytes && IsValidSparseStream(ptr);
+        }
+
+        /// <summary>
+        /// Validates sparse opcode stream semantics.
+        /// Ensures each opcode is well-formed, register values are in range,
+        /// and total sparse coverage matches the expected register count.
+        /// </summary>
+        /// <param name="ptr">Pointer to HLL value bytes.</param>
+        /// <returns>True if sparse stream is structurally valid; otherwise false.</returns>
+        private bool IsValidSparseStream(byte* ptr)
+        {
+            var rleSize = GetSparseRLESize(ptr);
+            var curr = ptr + SparseHeaderSize;
+            var end = curr + rleSize;
+
+            var coveredRegisters = 0;
+
+            while (curr != end)
+            {
+                if (IsZeroRange(curr))
+                {
+                    coveredRegisters += ZeroRangeLen(curr);
+                }
+                else
+                {
+                    var nonZero = GetNonZero(curr);
+                    // Non-zero opcode encodes leading-zero count in [1, qbit + 1].
+                    if (nonZero == 0 || nonZero > (qbit + 1))
+                        return false;
+
+                    coveredRegisters += 1;
+                }
+
+                // Reject streams that advance beyond logical register space.
+                if (coveredRegisters > mcnt)
+                    return false;
+
+                curr++;
+            }
+
+            // Sparse stream must cover all registers exactly once.
+            return coveredRegisters == mcnt;
         }
 
         /// <summary>
