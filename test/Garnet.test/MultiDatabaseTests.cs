@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -1343,13 +1346,14 @@ namespace Garnet.test
                 Assert.Throws<RedisServerException>(() => db1.Execute("BGSAVE", "0"),
                     Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS));
 
+                int lastsave_old = lastsave;
                 // Wait for save to complete
                 do
                 {
                     Thread.Sleep(10);
                     lastsave = (int)db1.Execute("LASTSAVE");
                 }
-                while (lastsave == 0);
+                while (lastsave <= lastsave_old);
             }
         }
 

@@ -43,7 +43,7 @@ namespace Tsavorite.test.recovery
         {
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir, true);
+            OnTearDown(waitForDelete: true);
         }
 
         protected abstract void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store);

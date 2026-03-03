@@ -46,7 +46,7 @@ namespace Garnet.test.Resp.ETag
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         #region ETAG SET Happy Paths

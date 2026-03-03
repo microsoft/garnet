@@ -251,6 +251,11 @@ namespace Garnet.cluster
         public long LocalNodeConfigEpoch => workers[LOCAL_WORKER_ID].ConfigEpoch;
 
         /// <summary>
+        /// Local endpoint string
+        /// </summary>
+        public string LocalNodeEndpoint => $"{workers[LOCAL_WORKER_ID].Address}:{workers[LOCAL_WORKER_ID].Port}";
+
+        /// <summary>
         /// Return endpoint of primary if this node is a replica.
         /// </summary>
         /// <returns>Returns primary endpoints if this node is a replica, otherwise (null,-1)</returns>
@@ -1021,6 +1026,25 @@ namespace Garnet.cluster
             {
                 var w = workers[i];
                 if (w.Address == address && w.Port == port)
+                    return w.Nodeid;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Get worker node-id from address (IP or hostname) and port.
+        /// This method checks both the IP address and hostname fields.
+        /// Skips the local worker (index 1) to prevent self-migration.
+        /// </summary>
+        /// <param name="address">IP address or hostname string.</param>
+        /// <param name="port">Port number.</param>
+        /// <returns>String representing node-id matching endpoint, or null if not found.</returns>
+        public string GetWorkerNodeIdFromAddressOrHostname(string address, int port)
+        {
+            for (ushort i = 2; i <= NumWorkers; i++)
+            {
+                var w = workers[i];
+                if (w.Port == port && (w.Address == address || w.hostname == address))
                     return w.Nodeid;
             }
             return null;

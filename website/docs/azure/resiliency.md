@@ -41,7 +41,7 @@ Azure Cosmos DB Garnet Cache supports configurable replication factors to balanc
 | **High Availability** | 2x | 2, one replica per primary | Mission-critical applications |
 | **Optimized Read Performance** | 3x-5x* | 3-5, two to four replicas per primary | Mission-critical applications requiring high read throughput |
 
-*Reach out to [ManagedGarnet@service.microsoft.com](mailto:ManagedGarnet@service.microsoft.com) if you need a higher replication factor.
+*Reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com) if you need a higher replication factor.
 
 The replication process is as follows
 

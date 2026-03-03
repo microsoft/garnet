@@ -1,11 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
-using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using HdrHistogram;
