@@ -44,13 +44,13 @@ namespace Garnet.server.Vector.Filter
             var p = 0;
             while (p < expr.Length)
             {
-                SkipSpaces(expr, ref p);
+                AttributeExtractor.SkipWhiteSpace(expr, ref p);
                 if (p >= expr.Length)
                     break;
 
                 // Determine if '-' should be a negative number sign or a subtraction operator
                 var minusIsNumber = false;
-                if (expr[p] == (byte)'-' && p + 1 < expr.Length && (IsDigit(expr[p + 1]) || expr[p + 1] == (byte)'.'))
+                if (expr[p] == (byte)'-' && p + 1 < expr.Length && (AttributeExtractor.IsDigit(expr[p + 1]) || expr[p + 1] == (byte)'.'))
                 {
                     if (tokens.Count == 0)
                     {
@@ -65,7 +65,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // Number
-                if (IsDigit(expr[p]) || (minusIsNumber && expr[p] == (byte)'-'))
+                if (AttributeExtractor.IsDigit(expr[p]) || (minusIsNumber && expr[p] == (byte)'-'))
                 {
                     var t = ParseNumber(expr, ref p);
                     if (t.IsNone) { errpos = p; return null; }
@@ -100,7 +100,7 @@ namespace Garnet.server.Vector.Filter
                 }
 
                 // Operator or literal keyword (null, true, false, not, and, or, in)
-                if (IsLetter(expr[p]) || IsOperatorSpecialChar(expr[p]))
+                if (AttributeExtractor.IsLetter(expr[p]) || IsOperatorSpecialChar(expr[p]))
                 {
                     var t = ParseOperatorOrLiteral(expr, ref p);
                     if (t.IsNone) { errpos = p; return null; }
@@ -226,14 +226,8 @@ namespace Garnet.server.Vector.Filter
         }
 
         // ======================== Tokenization helpers ========================
-
-        private static bool IsDigit(byte b) => b >= (byte)'0' && b <= (byte)'9';
-
-        private static bool IsLetter(byte b) => (b >= (byte)'a' && b <= (byte)'z') || (b >= (byte)'A' && b <= (byte)'Z');
-
-        private static bool IsLetterOrDigit(byte b) => IsLetter(b) || IsDigit(b);
-
-        private static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
+        // Shared helpers (IsDigit, IsLetter, IsLetterOrDigit, IsWhiteSpace, SkipWhiteSpace)
+        // live in AttributeExtractor and are reused here.
 
         private static bool IsOperatorSpecialChar(byte b)
         {
@@ -243,14 +237,9 @@ namespace Garnet.server.Vector.Filter
                    b == (byte)'&';
         }
 
-        private static void SkipSpaces(ReadOnlySpan<byte> s, ref int p)
-        {
-            while (p < s.Length && IsWhiteSpace(s[p])) p++;
-        }
-
         private static bool IsSelectorChar(byte c)
         {
-            return IsLetterOrDigit(c) || c == (byte)'_' || c == (byte)'-';
+            return AttributeExtractor.IsLetterOrDigit(c) || c == (byte)'_' || c == (byte)'-';
         }
 
         private static ExprToken ParseNumber(ReadOnlySpan<byte> s, ref int p)
@@ -258,7 +247,7 @@ namespace Garnet.server.Vector.Filter
             var start = p;
             if (p < s.Length && s[p] == (byte)'-') p++;
 
-            while (p < s.Length && (IsDigit(s[p]) || s[p] == (byte)'.' || s[p] == (byte)'e' || s[p] == (byte)'E'))
+            while (p < s.Length && (AttributeExtractor.IsDigit(s[p]) || s[p] == (byte)'.' || s[p] == (byte)'e' || s[p] == (byte)'E'))
                 p++;
 
             var numSpan = s.Slice(start, p - start);
@@ -343,7 +332,7 @@ namespace Garnet.server.Vector.Filter
             var elements = new ExprToken[64]; // max 64 elements
             var count = 0;
 
-            SkipSpaces(s, ref p);
+            AttributeExtractor.SkipWhiteSpace(s, ref p);
 
             // Handle empty tuple []
             if (p < s.Length && s[p] == (byte)']')
@@ -354,13 +343,13 @@ namespace Garnet.server.Vector.Filter
 
             while (true)
             {
-                SkipSpaces(s, ref p);
+                AttributeExtractor.SkipWhiteSpace(s, ref p);
                 if (p >= s.Length) return default;
                 if (count >= elements.Length) return default;
 
                 // Parse element: number or string
                 ExprToken ele;
-                if (IsDigit(s[p]) || s[p] == (byte)'-')
+                if (AttributeExtractor.IsDigit(s[p]) || s[p] == (byte)'-')
                 {
                     ele = ParseNumber(s, ref p);
                 }
@@ -376,7 +365,7 @@ namespace Garnet.server.Vector.Filter
 
                 elements[count++] = ele;
 
-                SkipSpaces(s, ref p);
+                AttributeExtractor.SkipWhiteSpace(s, ref p);
                 if (p >= s.Length) return default;
 
                 if (s[p] == (byte)']') { p++; break; }
@@ -394,7 +383,7 @@ namespace Garnet.server.Vector.Filter
             var start = p;
 
             // Consume alphabetic or operator-special characters
-            while (p < s.Length && (IsLetter(s[p]) || IsOperatorSpecialChar(s[p])))
+            while (p < s.Length && (AttributeExtractor.IsLetter(s[p]) || IsOperatorSpecialChar(s[p])))
                 p++;
 
             var matchLen = p - start;

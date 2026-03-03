@@ -279,17 +279,24 @@ namespace Garnet.server.Vector.Filter
             return p > start;
         }
 
-        // ======================== Utility ========================
+        // ======================== Shared byte-level helpers ========================
+        // These are used by both AttributeExtractor and ExprCompiler.
 
-        private static void SkipWhiteSpace(ReadOnlySpan<byte> json, ref int p)
+        internal static bool IsDigit(byte b) => b >= (byte)'0' && b <= (byte)'9';
+
+        internal static bool IsLetter(byte b) => (b >= (byte)'a' && b <= (byte)'z') || (b >= (byte)'A' && b <= (byte)'Z');
+
+        internal static bool IsLetterOrDigit(byte b) => IsLetter(b) || IsDigit(b);
+
+        internal static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
+
+        internal static void SkipWhiteSpace(ReadOnlySpan<byte> s, ref int p)
         {
-            while (p < json.Length && IsWhiteSpace(json[p])) p++;
+            while (p < s.Length && IsWhiteSpace(s[p])) p++;
         }
 
-        private static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
-
         private static bool IsNumberChar(byte b) =>
-            (b >= (byte)'0' && b <= (byte)'9') || b == (byte)'-' || b == (byte)'+' ||
+            IsDigit(b) || b == (byte)'-' || b == (byte)'+' ||
             b == (byte)'.' || b == (byte)'e' || b == (byte)'E';
 
         private static bool MatchKey(ReadOnlySpan<byte> json, int keyStart, int keyEnd, string fieldName)
