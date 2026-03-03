@@ -1371,10 +1371,16 @@ namespace Garnet.test.cluster
                                 var addRes = (int)readWriteDb.Execute("VADD", [new RedisKey(primary0Key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
                                 ClassicAssert.AreEqual(1, addRes);
                             }
-                            catch (RedisException exc) when (
+                            // Catch Exception (not RedisException) because RedisTimeoutException extends
+                            // TimeoutException, not RedisException. Two MOVED message formats exist:
+                            // - Server: "MOVED N host:port"
+                            // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                            catch (Exception exc) when (
                                 exc is RedisTimeoutException
                                 || exc is RedisConnectionException
-                                || (exc is RedisServerException rse && rse.Message.StartsWith("MOVED ")))
+                                || (exc is RedisServerException rse && (
+                                    rse.Message.StartsWith("MOVED ")
+                                    || rse.Message.StartsWith("Key has MOVED to "))))
                             {
                                 continue;
                             }
@@ -1719,10 +1725,16 @@ namespace Garnet.test.cluster
                                             ClassicAssert.AreEqual(1, addRes);
                                             break;
                                         }
-                                        catch (RedisException exc) when (
+                                        // Catch Exception (not RedisException) because RedisTimeoutException extends
+                                        // TimeoutException, not RedisException. Two MOVED message formats exist:
+                                        // - Server: "MOVED N host:port"
+                                        // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                                        catch (Exception exc) when (
                                             exc is RedisTimeoutException
                                             || exc is RedisConnectionException
-                                            || (exc is RedisServerException rse && rse.Message.StartsWith("MOVED ")))
+                                            || (exc is RedisServerException rse && (
+                                                rse.Message.StartsWith("MOVED ")
+                                                || rse.Message.StartsWith("Key has MOVED to "))))
                                         {
                                             // These are all retryable transient errors during slot migration:
                                             // - RedisServerException("MOVED"): slot has moved, retry
@@ -1792,10 +1804,16 @@ namespace Garnet.test.cluster
                                     {
                                         emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
                                     }
-                                    catch (RedisException exc) when (
+                                    // Catch Exception (not RedisException) because RedisTimeoutException extends
+                                    // TimeoutException, not RedisException. Two MOVED message formats exist:
+                                    // - Server: "MOVED N host:port"
+                                    // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                                    catch (Exception exc) when (
                                         exc is RedisTimeoutException
                                         || exc is RedisConnectionException
-                                        || (exc is RedisServerException rse && rse.Message.StartsWith("MOVED ")))
+                                        || (exc is RedisServerException rse && (
+                                            rse.Message.StartsWith("MOVED ")
+                                            || rse.Message.StartsWith("Key has MOVED to "))))
                                     {
                                         // Transient errors during slot migration are expected; retry
                                         continue;
