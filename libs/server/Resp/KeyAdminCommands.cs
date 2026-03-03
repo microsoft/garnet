@@ -69,7 +69,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.serverOptions.SkipRDBRestoreChecksumValidation)
+            if (!storeWrapper.serverOptions.SkipRDBRestoreChecksumValidation)
             {
                 // crc is calculated over the encoded payload length, payload and the rdb version bytes
                 // skip's the value type byte and crc64 bytes
