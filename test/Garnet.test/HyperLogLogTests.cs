@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using Allure.NUnit;
@@ -113,6 +114,114 @@ namespace Garnet.test
             res = db.Execute("PFMERGE", keyW, keyY);
             keyWCount = db.HyperLogLogLength(keyW);
             ClassicAssert.AreEqual(keyWCount, 7);
+        }
+
+        [Test]
+        public void HyperLogLogRestoreCorruptedDumpPayloadIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_dump_source";
+            const string restoredKey = "hll_dump_restored";
+
+            db.KeyDelete(sourceKey);
+            db.KeyDelete(restoredKey);
+
+            for (int i = 0; i < 2; i++)
+                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            var dump = db.KeyDump(sourceKey)!;
+            var corruptedDump = (byte[])dump.Clone();
+
+            var corruptIndex = Math.Min(20, corruptedDump.Length - 11);
+            corruptedDump[corruptIndex] ^= 0x01;
+
+            var ex = Assert.Throws<RedisServerException>(() => db.KeyRestore(restoredKey, corruptedDump));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", ex!.Message);
+            ClassicAssert.IsFalse(db.KeyExists(restoredKey));
+        }
+
+        [Test]
+        public void HyperLogLogRestoreZeroCrcDumpPayloadIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_zero_crc_source";
+            const string restoredKey = "hll_zero_crc_restored";
+
+            db.KeyDelete(sourceKey);
+            db.KeyDelete(restoredKey);
+
+            for (int i = 0; i < 20; i++)
+                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            var dump = db.KeyDump(sourceKey)!;
+            var zeroCrcDump = (byte[])dump.Clone();
+
+            Array.Fill(zeroCrcDump, (byte)0, zeroCrcDump.Length - 8, 8);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.KeyRestore(restoredKey, zeroCrcDump));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", ex!.Message);
+            ClassicAssert.IsFalse(db.KeyExists(restoredKey));
+        }
+
+        [Test]
+        public void HyperLogLogRestoreCorruptedSparseRlePayloadIsRejected()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_sparse_source";
+            const string restoredKey = "hll_sparse_restored";
+
+            db.KeyDelete(sourceKey);
+            db.KeyDelete(restoredKey);
+
+            for (int i = 0; i < 20; i++)
+                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            var dump = db.KeyDump(sourceKey)!;
+
+            int valueLength;
+            int valueStart;
+            if (dump[1] < 0x40)
+            {
+                valueLength = dump[1];
+                valueStart = 2;
+            }
+            else if (dump[1] < 0x80)
+            {
+                valueLength = ((dump[1] & 0x3F) << 8) | dump[2];
+                valueStart = 3;
+            }
+            else
+            {
+                valueLength = BinaryPrimitives.ReadInt32BigEndian(dump.AsSpan(2, 4));
+                valueStart = 6;
+            }
+
+            var hllValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            BinaryPrimitives.WriteUInt16LittleEndian(hllValue.AsSpan(16, 2), 65000);
+            BinaryPrimitives.WriteInt64LittleEndian(hllValue.AsSpan(8, 8), long.MinValue);
+
+            byte[] encodedLength = hllValue.Length < 64
+                ? [(byte)(hllValue.Length & 0x3F)]
+                : hllValue.Length < 16384
+                    ? [(byte)(((hllValue.Length >> 8) & 0x3F) | 0x40), (byte)(hllValue.Length & 0xFF)]
+                    : [0x80, .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(hllValue.Length))];
+
+            var rdbVersion = dump.AsSpan(valueStart + valueLength, 2).ToArray();
+            var crafted = new byte[1 + encodedLength.Length + hllValue.Length + rdbVersion.Length + 8];
+            crafted[0] = 0x00;
+            encodedLength.CopyTo(crafted.AsSpan(1, encodedLength.Length));
+            hllValue.CopyTo(crafted.AsSpan(1 + encodedLength.Length, hllValue.Length));
+            rdbVersion.CopyTo(crafted.AsSpan(1 + encodedLength.Length + hllValue.Length, rdbVersion.Length));
+
+            var ex = Assert.Throws<RedisServerException>(() => db.KeyRestore(restoredKey, crafted));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", ex!.Message);
+            ClassicAssert.IsFalse(db.KeyExists(restoredKey));
         }
 
         [Test]
