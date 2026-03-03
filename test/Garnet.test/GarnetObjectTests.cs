@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Threading.Tasks;
@@ -69,7 +69,7 @@ namespace Garnet.test
 
             session.Dispose();
 
-            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
 
             store.Dispose();
             CreateStore();
@@ -106,7 +106,7 @@ namespace Garnet.test
 
             session.Dispose();
 
-            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+            await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
 
             store.Dispose();
             CreateStore();
