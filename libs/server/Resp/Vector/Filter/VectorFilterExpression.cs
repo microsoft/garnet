@@ -36,7 +36,6 @@ namespace Garnet.server.Vector.Filter
         Selector = 4,
         Op = 5,
         Null = 6,
-        Eof = 7,
     }
 
     /// <summary>

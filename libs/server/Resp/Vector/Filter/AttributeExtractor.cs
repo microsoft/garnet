@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers.Text;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Garnet.server.Vector.Filter
@@ -89,7 +88,7 @@ namespace Garnet.server.Vector.Filter
             if (c == (byte)'t') return ParseLiteralToken(json, ref p, "true"u8, ExprTokenType.Num, 1);
             if (c == (byte)'f') return ParseLiteralToken(json, ref p, "false"u8, ExprTokenType.Num, 0);
             if (c == (byte)'n') return ParseLiteralToken(json, ref p, "null"u8, ExprTokenType.Null, 0);
-            if (char.IsDigit((char)c) || c == (byte)'-' || c == (byte)'+')
+            if ((c >= (byte)'0' && c <= (byte)'9') || c == (byte)'-' || c == (byte)'+')
                 return ParseNumberToken(json, ref p);
 
             return default;
@@ -222,7 +221,6 @@ namespace Garnet.server.Vector.Filter
             };
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool SkipString(ReadOnlySpan<byte> json, ref int p)
         {
             if (p >= json.Length || json[p] != (byte)'"') return false;
@@ -271,16 +269,13 @@ namespace Garnet.server.Vector.Filter
 
         // ======================== Utility ========================
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void SkipWhiteSpace(ReadOnlySpan<byte> json, ref int p)
         {
             while (p < json.Length && IsWhiteSpace(json[p])) p++;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsNumberChar(byte b) =>
             (b >= (byte)'0' && b <= (byte)'9') || b == (byte)'-' || b == (byte)'+' ||
             b == (byte)'.' || b == (byte)'e' || b == (byte)'E';
