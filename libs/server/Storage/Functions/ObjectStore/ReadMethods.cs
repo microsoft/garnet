@@ -38,23 +38,13 @@ namespace Garnet.server
 
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    if (srcRecordHasETag)
-                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-
                     if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _,
                             readOnlyContext: true))
-                    {
-                        if (srcRecordHasETag)
-                            ETagState.ResetState(ref functionsState.etagState);
                         return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
-                    }
 
                     garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
 
                     output.ETag = srcLogRecord.ETag;
-
-                    if (srcRecordHasETag)
-                        ETagState.ResetState(ref functionsState.etagState);
 
                     return true;
                 }

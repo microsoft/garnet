@@ -49,7 +49,7 @@ namespace Garnet.server
 
             if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
             {
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(functionsState.etagState.ETag, out var updatedEtag);
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedEtag);
                 Debug.Assert(execOp);
                 if (!dstLogRecord.TrySetETag(updatedEtag))
                     return false;
@@ -199,7 +199,7 @@ namespace Garnet.server
 
             if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
             {
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(functionsState.etagState.ETag, out var updatedEtag);
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedEtag);
                 Debug.Assert(execOp);
                 if (!logRecord.TrySetETag(updatedEtag))
                     return false;
