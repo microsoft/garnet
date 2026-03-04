@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -37,23 +37,23 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Check user is authenticated to default
-            var response = await c.ExecuteAsync("ACL", "WHOAMI");
+            var response = await c.ExecuteAsync("ACL", "WHOAMI").ConfigureAwait(false);
             ClassicAssert.AreEqual("default", response);
 
             // Add the testuser and password
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin", "+@slow");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin", "+@slow").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Change users and verify whoami changes
-            response = await c.ExecuteAsync("AUTH", TestUserA, "password");
+            response = await c.ExecuteAsync("AUTH", TestUserA, "password").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
-            response = await c.ExecuteAsync("ACL", "WHOAMI");
+            response = await c.ExecuteAsync("ACL", "WHOAMI").ConfigureAwait(false);
             ClassicAssert.AreEqual(TestUserA, response);
 
             // Change users back to default and verify whoami changes
-            response = await c.ExecuteAsync("AUTH", "default", "password");
+            response = await c.ExecuteAsync("AUTH", "default", "password").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
-            response = await c.ExecuteAsync("ACL", "WHOAMI");
+            response = await c.ExecuteAsync("ACL", "WHOAMI").ConfigureAwait(false);
             ClassicAssert.AreEqual("default", response);
         }
 
@@ -70,22 +70,22 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Right now only the default user should exist
-            string[] users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             ClassicAssert.IsTrue(1 == users.Length);
             ClassicAssert.Contains(ExpectedDefaultRule, users);
 
             // Add the test user and makes sure the list gets extended
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA);
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
-            users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             ClassicAssert.IsTrue(2 == users.Length);
             ClassicAssert.Contains(ExpectedDefaultRule, users);
             ClassicAssert.Contains(ExpectedTestUserRule, users);
 
             // Remove the test user and make sure the list gets trimmed again
-            response = await c.ExecuteAsync("ACL", "DELUSER", TestUserA);
+            response = await c.ExecuteAsync("ACL", "DELUSER", TestUserA).ConfigureAwait(false);
             ClassicAssert.AreEqual("1", response);
-            users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             ClassicAssert.IsTrue(1 == users.Length);
             ClassicAssert.Contains(ExpectedDefaultRule, users);
         }
@@ -100,14 +100,14 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Right now only the default user should exist
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(1 == users.Length);
             ClassicAssert.Contains("default", users);
 
             // Add a second user and makes sure the list gets longer.
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA);
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
-            users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(2 == users.Length);
             ClassicAssert.Contains(TestUserA, users);
             ClassicAssert.Contains("default", users);
@@ -119,19 +119,19 @@ namespace Garnet.test.Resp.ACL
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
-            var response = await c.ExecuteAsync("ACL", "GENPASS");
+            var response = await c.ExecuteAsync("ACL", "GENPASS").ConfigureAwait(false);
             ClassicAssert.AreEqual(64, response.Length);
 
-            response = await c.ExecuteAsync("ACL", "GENPASS", "5");
+            response = await c.ExecuteAsync("ACL", "GENPASS", "5").ConfigureAwait(false);
             ClassicAssert.AreEqual(2, response.Length);
 
-            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "abcd"),
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "abcd").ConfigureAwait(false),
                                           "ERR value is not an integer or out of range.");
 
             var error = "ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096";
 
-            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "4097"), error);
-            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "0"), error);
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "4097").ConfigureAwait(false), error);
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "0").ConfigureAwait(false), error);
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -468,9 +468,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "abcdefg";
-            await db.StringSetAsync("mykey", origValue);
+            await db.StringSetAsync("mykey", origValue).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -482,9 +482,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "笑い男";
-            await db.StringSetAsync("mykey", origValue);
+            await db.StringSetAsync("mykey", origValue).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -3310,7 +3310,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial ADD");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
-                await Task.Delay(TimeSpan.FromSeconds(2));
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 ClassicAssert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
                 ClassicAssert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after ADD expiration");
@@ -3335,7 +3335,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial RPUSH");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
-                await Task.Delay(TimeSpan.FromSeconds(2));
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 ClassicAssert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
                 ClassicAssert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after RPUSH expiration");
@@ -3360,7 +3360,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial HSET");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
-                await Task.Delay(TimeSpan.FromSeconds(2));
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 ClassicAssert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
                 ClassicAssert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after HSET expiration");
@@ -3627,11 +3627,11 @@ namespace Garnet.test
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             db.KeyExpire(keyB, TimeSpan.FromSeconds(expire));
 
-            db.StringSet(keyA, keyA, keepTtl: true);
+            db.StringSet(keyA, keyA, null, keepTtl: true);
             var time = db.KeyTimeToLive(keyA);
             ClassicAssert.IsTrue(time.Value.Ticks > 0);
 
-            db.StringSet(keyB, keyB, keepTtl: false);
+            db.StringSet(keyB, keyB, null, keepTtl: false);
             time = db.KeyTimeToLive(keyB);
             ClassicAssert.IsTrue(time == null);
 
@@ -3852,41 +3852,41 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession(raw: true);
             c.Connect();
 
-            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
 
-            response = await c.ExecuteAsync("GET", "nx");
+            response = await c.ExecuteAsync("GET", "nx").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("GEODIST", "nx", "foo", "bar");
+            response = await c.ExecuteAsync("GEODIST", "nx", "foo", "bar").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("HGET", "nx", "nx");
+            response = await c.ExecuteAsync("HGET", "nx", "nx").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("LPOP", "nx");
+            response = await c.ExecuteAsync("LPOP", "nx").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("LPOS", "nx", "foo");
+            response = await c.ExecuteAsync("LPOS", "nx", "foo").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("SPOP", "nx");
+            response = await c.ExecuteAsync("SPOP", "nx").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("ZSCORE", "nx", "foo");
+            response = await c.ExecuteAsync("ZSCORE", "nx", "foo").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
 
-            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
+            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1").ConfigureAwait(false);
             ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
-            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
+            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1").ConfigureAwait(false);
             ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
 
-            response = await c.ExecuteAsync("SADD", "set", "foo", "bar");
+            response = await c.ExecuteAsync("SADD", "set", "foo", "bar").ConfigureAwait(false);
             ClassicAssert.AreEqual(":2\r\n", response);
-            response = await c.ExecuteAsync("SMEMBERS", "set");
+            response = await c.ExecuteAsync("SMEMBERS", "set").ConfigureAwait(false);
             ClassicAssert.AreEqual(setPrefix + "2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", response);
 
-            response = await c.ExecuteAsync("MSET", "s1", "foo", "s2", "bar");
+            response = await c.ExecuteAsync("MSET", "s1", "foo", "s2", "bar").ConfigureAwait(false);
             ClassicAssert.AreEqual("+OK\r\n", response);
-            response = await c.ExecuteAsync("LCS", "s1", "s2", "IDX");
+            response = await c.ExecuteAsync("LCS", "s1", "s2", "IDX").ConfigureAwait(false);
             ClassicAssert.AreEqual(mapPrefix + "\r\n$7\r\nmatches\r\n*0\r\n$3\r\nlen\r\n:0\r\n", response);
 
-            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b");
+            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b").ConfigureAwait(false);
             ClassicAssert.AreEqual(":2\r\n", response);
-            response = await c.ExecuteAsync("ZSCORE", "z", "a");
+            response = await c.ExecuteAsync("ZSCORE", "z", "a").ConfigureAwait(false);
             ClassicAssert.AreEqual(doublePrefix + "0\r\n", response);
         }
 
@@ -4120,9 +4120,9 @@ namespace Garnet.test
 
             // Kill old style (by remote endpoint)
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 var remoteEndpoint = GetFlagForSessionId(targetId, "addr", mainDB);
 
@@ -4135,9 +4135,9 @@ namespace Garnet.test
 
             // Kill by id
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 // Count of killed connections
                 var res = mainDB.Execute("CLIENT", "KILL", "ID", targetId);
@@ -4148,7 +4148,7 @@ namespace Garnet.test
 
             // Kill by type = NORMAL
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
                 // Count of killed connections
                 var res = mainDB.Execute("CLIENT", "KILL", "TYPE", "NORMAL");
@@ -4161,9 +4161,9 @@ namespace Garnet.test
 
             // Kill by type = PUBSUB
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                _ = await targetConnection.ExecuteForStringResultAsync("SUBSCRIBE", ["foo"]);
+                _ = await targetConnection.ExecuteForStringResultAsync("SUBSCRIBE", ["foo"]).ConfigureAwait(false);
 
                 // Count of killed connections
                 var res = mainDB.Execute("CLIENT", "KILL", "TYPE", "PUBSUB");
@@ -4176,9 +4176,9 @@ namespace Garnet.test
 
             // KILL by addr
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 var remoteEndpoint = GetFlagForSessionId(targetId, "addr", mainDB);
 
@@ -4191,9 +4191,9 @@ namespace Garnet.test
 
             // KILL by laddr
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 var localEndpoint = GetFlagForSessionId(targetId, "laddr", mainDB);
 
@@ -4208,9 +4208,9 @@ namespace Garnet.test
 
             // KILL by maxage
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 while (true)
                 {
@@ -4220,7 +4220,7 @@ namespace Garnet.test
                         break;
                     }
 
-                    await Task.Delay(1_000);
+                    await Task.Delay(1_000).ConfigureAwait(false);
                 }
 
                 // Count of killed connections
@@ -4232,9 +4232,9 @@ namespace Garnet.test
 
             // KILL by multiple
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 var addr = GetFlagForSessionId(targetId, "addr", mainDB);
 
@@ -4247,9 +4247,9 @@ namespace Garnet.test
 
             // KILL without SKIPME
             {
-                using var targetConnection = await ConnectAsync();
+                using var targetConnection = await ConnectAsync().ConfigureAwait(false);
 
-                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]).ConfigureAwait(false);
 
                 try
                 {
@@ -4290,9 +4290,9 @@ namespace Garnet.test
             static async Task<GarnetClient> ConnectAsync()
             {
                 var client = TestUtils.GetGarnetClient();
-                await client.ConnectAsync();
+                await client.ConnectAsync().ConfigureAwait(false);
 
-                _ = await client.PingAsync();
+                _ = await client.PingAsync().ConfigureAwait(false);
 
                 ClassicAssert.IsTrue(client.IsConnected);
 
@@ -4540,7 +4540,7 @@ namespace Garnet.test
 
             if (initialTimeSpan.HasValue)
             {
-                db.StringSet(key, value, initialTimeSpan);
+                db.StringSet(key, value, initialTimeSpan, keepTtl: false);
             }
             else
             {
@@ -4591,7 +4591,7 @@ namespace Garnet.test
 
             if (initialTimeSpan.HasValue)
             {
-                db.StringSet(key, value, initialTimeSpan);
+                db.StringSet(key, value, initialTimeSpan, keepTtl: false);
             }
             else
             {
@@ -4640,7 +4640,7 @@ namespace Garnet.test
 
             if (initialTimeSpan.HasValue)
             {
-                db.StringSet(key, value, initialTimeSpan);
+                db.StringSet(key, value, initialTimeSpan, keepTtl: false);
             }
             else
             {
@@ -5048,7 +5048,7 @@ namespace Garnet.test
             // Add other mode like XREAD Readis steam here
 
             // Wait for client to enter blocking state
-            await Task.Delay(1000);
+            await Task.Delay(1000).ConfigureAwait(false);
 
             // Unblock from main connection
             var args = new List<string> { "UNBLOCK", clientId };
@@ -5099,7 +5099,7 @@ namespace Garnet.test
             });
 
             // Wait for client to enter blocking state
-            await Task.Delay(1000);
+            await Task.Delay(1000).ConfigureAwait(false);
 
             // Start parallel unblock and add tasks
             var unblockTasks = new List<Task<int>>();
@@ -5115,9 +5115,9 @@ namespace Garnet.test
                 unblockTasks.Add(Task.Run(() => (int)redis.GetDatabase(0).Execute("CLIENT", "UNBLOCK", clientId, "ERROR")));
             }
 
-            await Task.WhenAll(unblockTasks);
-            await Task.WhenAll(addTasks);
-            await blockingTask;
+            await Task.WhenAll(unblockTasks).ConfigureAwait(false);
+            await Task.WhenAll(addTasks).ConfigureAwait(false);
+            await blockingTask.ConfigureAwait(false);
 
             var numberOfItemsReturned = Regex.Matches(blockingResult, value).Count;
 

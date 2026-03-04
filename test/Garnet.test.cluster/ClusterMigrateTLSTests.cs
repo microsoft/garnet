@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Threading;
@@ -81,6 +81,6 @@ namespace Garnet.test.cluster
         [Test, Order(11)]
         [Category("CLUSTER"), CancelAfter(100000)]
         public async Task ClusterTLSMigrateContinuousReadWrite(CancellationToken cancellationToken)
-            => await tests.ClusterSimpleMigrateContinuousReadWrite(cancellationToken);
+            => await tests.ClusterSimpleMigrateContinuousReadWrite(cancellationToken).ConfigureAwait(false);
     }
 }
