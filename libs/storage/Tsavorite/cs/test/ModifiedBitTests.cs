@@ -26,8 +26,8 @@ namespace Tsavorite.test.ModifiedBit
         IntKeyComparer comparer;
 
         private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private ClientSession<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -44,7 +44,7 @@ namespace Tsavorite.test.ModifiedBit
             }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, SimpleIntSimpleFunctions>(new SimpleIntSimpleFunctions());
+            session = store.NewSession<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions>(new SimpleIntSimpleFunctions());
             bContext = session.BasicContext;
         }
 
@@ -65,31 +65,31 @@ namespace Tsavorite.test.ModifiedBit
             for (int key = 0; key < NumRecords; key++)
             {
                 var value = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value)).IsPending);
             }
         }
 
-        void AssertLockandModified(TransactionalUnsafeContext<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(TransactionalUnsafeContext<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, SpanByte.FromPinnedVariable(ref key), xlock, slock);
-            var isM = luContext.IsModified(SpanByte.FromPinnedVariable(ref key));
+            var isM = luContext.IsModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(TransactionalContext<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(TransactionalContext<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, SpanByte.FromPinnedVariable(ref key), xlock, slock);
-            var isM = luContext.IsModified(SpanByte.FromPinnedVariable(ref key));
+            var isM = luContext.IsModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(ClientSession<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> intSession, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(ClientSession<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> intSession, int key, bool xlock, bool slock, bool modified = false)
         {
             var luContext = intSession.TransactionalUnsafeContext;
             luContext.BeginUnsafe();
 
             OverflowBucketLockTableTests.AssertLockCounts(store, SpanByte.FromPinnedVariable(ref key), xlock, slock);
-            var isM = luContext.IsModified(SpanByte.FromPinnedVariable(ref key));
+            var isM = luContext.IsModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.AreEqual(modified, isM, "Modified mismatch");
 
             luContext.EndUnsafe();
@@ -102,7 +102,7 @@ namespace Tsavorite.test.ModifiedBit
             Populate();
             Random r = new(100);
             int key = r.Next(NumRecords);
-            bContext.ResetModified(SpanByte.FromPinnedVariable(ref key));
+            bContext.ResetModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
 
             var lContext = session.TransactionalContext;
             lContext.BeginTransaction();
@@ -132,7 +132,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             Populate();
             int key = NumRecords + 100;
-            bContext.ResetModified(SpanByte.FromPinnedVariable(ref key));
+            bContext.ResetModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
         }
 
@@ -144,7 +144,7 @@ namespace Tsavorite.test.ModifiedBit
 
             int key = NumRecords - 500;
             int value = 14;
-            bContext.ResetModified(SpanByte.FromPinnedVariable(ref key));
+            bContext.ResetModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
 
             if (flushToDisk)
@@ -154,13 +154,13 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                    status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
                     break;
                 case UpdateOp.RMW:
-                    status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+                    status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.Delete:
-                    status = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+                    status = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                     break;
                 default:
                     break;
@@ -177,7 +177,7 @@ namespace Tsavorite.test.ModifiedBit
                         ClassicAssert.IsTrue(status.NotFound);
                         break;
                 }
-                (status, _) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
+                (status, _) = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                 ClassicAssert.IsTrue(status.Found || updateOp == UpdateOp.Delete);
             }
 
@@ -195,7 +195,7 @@ namespace Tsavorite.test.ModifiedBit
 
             int key = NumRecords - 500;
             int value = 14;
-            bContext.ResetModified(SpanByte.FromPinnedVariable(ref key));
+            bContext.ResetModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             var luContext = session.TransactionalUnsafeContext;
             luContext.BeginUnsafe();
             luContext.BeginTransaction();
@@ -218,13 +218,13 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = luContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                    status = luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
                     break;
                 case UpdateOp.RMW:
-                    status = luContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+                    status = luContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.Delete:
-                    status = luContext.Delete(SpanByte.FromPinnedVariable(ref key));
+                    status = luContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                     break;
                 default:
                     break;
@@ -250,7 +250,7 @@ namespace Tsavorite.test.ModifiedBit
             {
                 keyVec[0].LockType = LockType.Shared;
                 luContext.Lock(keyVec);
-                (status, _) = luContext.Read(SpanByte.FromPinnedVariable(ref key));
+                (status, _) = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                 ClassicAssert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
                 luContext.Unlock(keyVec);
             }
@@ -269,7 +269,7 @@ namespace Tsavorite.test.ModifiedBit
 
             int key = NumRecords - 500;
             int value = 14;
-            bContext.ResetModified(SpanByte.FromPinnedVariable(ref key));
+            bContext.ResetModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
 
             if (flushToDisk)
@@ -282,13 +282,13 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = unsafeContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                    status = unsafeContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
                     break;
                 case UpdateOp.RMW:
-                    status = unsafeContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+                    status = unsafeContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.Delete:
-                    status = unsafeContext.Delete(SpanByte.FromPinnedVariable(ref key));
+                    status = unsafeContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                     break;
                 default:
                     break;
@@ -305,7 +305,7 @@ namespace Tsavorite.test.ModifiedBit
                         ClassicAssert.IsTrue(status.NotFound);
                         break;
                 }
-                (status, _) = unsafeContext.Read(SpanByte.FromPinnedVariable(ref key));
+                (status, _) = unsafeContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                 ClassicAssert.IsTrue(status.Found || updateOp == UpdateOp.Delete);
             }
             unsafeContext.EndUnsafe();
@@ -321,7 +321,7 @@ namespace Tsavorite.test.ModifiedBit
 
             int key = NumRecords - 500;
             int value = 14;
-            bContext.ResetModified(SpanByte.FromPinnedVariable(ref key));
+            bContext.ResetModified(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             var lContext = session.TransactionalContext;
             lContext.BeginTransaction();
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
@@ -338,13 +338,13 @@ namespace Tsavorite.test.ModifiedBit
             switch (updateOp)
             {
                 case UpdateOp.Upsert:
-                    status = lContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                    status = lContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
                     break;
                 case UpdateOp.RMW:
-                    status = lContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+                    status = lContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                     break;
                 case UpdateOp.Delete:
-                    status = lContext.Delete(SpanByte.FromPinnedVariable(ref key));
+                    status = lContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                     break;
                 default:
                     break;
@@ -370,7 +370,7 @@ namespace Tsavorite.test.ModifiedBit
             {
                 keyVec[0].LockType = LockType.Shared;
                 lContext.Lock(keyVec);
-                (status, _) = lContext.Read(SpanByte.FromPinnedVariable(ref key));
+                (status, _) = lContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                 ClassicAssert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
                 lContext.Unlock(keyVec);
             }
@@ -401,7 +401,7 @@ namespace Tsavorite.test.ModifiedBit
             AssertLockandModified(luContext, key, xlock: false, slock: true, modified: true);
 
             // Check Read Copy to Tail resets the modified
-            var status = luContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out _);
+            var status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = luContext.CompletePending(wait: true);
 
@@ -412,7 +412,7 @@ namespace Tsavorite.test.ModifiedBit
             key += 10;
             keyVec[0] = new(SpanByte.FromPinnedVariable(ref key), LockType.Exclusive, luContext);
             luContext.Lock(keyVec);
-            status = luContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out _);
+            status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = luContext.CompletePending(wait: true);
             AssertLockandModified(luContext, key, xlock: true, slock: false, modified: false);

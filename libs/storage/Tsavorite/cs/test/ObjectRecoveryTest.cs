@@ -108,14 +108,14 @@ namespace Tsavorite.test.recovery.objects
             }
 
             // Register thread with Tsavorite
-            var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var session = store.NewSession<AdId, Input, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Process the batch of input data
             bool first = true;
             for (int i = 0; i < NumOps; i++)
             {
-                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref inputArray[i].Item1), ref inputArray[i].Item2, Empty.Default);
+                _ = bContext.RMW(inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
 
                 if ((i + 1) % CheckpointInterval == 0)
                 {
@@ -151,7 +151,7 @@ namespace Tsavorite.test.recovery.objects
                 };
             }
 
-            var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var session = store.NewSession<AdId, Input, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             Input input = default;
@@ -159,7 +159,7 @@ namespace Tsavorite.test.recovery.objects
             for (var i = 0; i < NumUniqueKeys; i++)
             {
                 Output output = new();
-                _ = bContext.Read(SpanByte.FromPinnedVariable(ref inputArray[i].Item1), ref input, ref output, Empty.Default);
+                _ = bContext.Read(inputArray[i].Item1, ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests

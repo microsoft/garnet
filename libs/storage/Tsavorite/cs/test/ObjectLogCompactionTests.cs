@@ -19,8 +19,8 @@ namespace Tsavorite.test
     internal class ObjectLogCompactionTests : AllureTestBase
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
-        private ClientSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
-        private BasicContext<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
+        private ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -52,7 +52,7 @@ namespace Tsavorite.test
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+            session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             bContext = session.BasicContext;
         }
 
@@ -89,7 +89,7 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, 0);
+                _ = bContext.Upsert(key1, value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -104,7 +104,7 @@ namespace Tsavorite.test
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, 0);
+                var status = bContext.Read(key1, ref input, ref output, 0);
                 if (status.IsPending)
                 {
                     _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -132,7 +132,7 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, 0);
+                _ = bContext.Upsert(key1, value, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -140,7 +140,7 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, 0);
+                _ = bContext.Upsert(key1, value, 0);
             }
 
             store.Log.Flush(true);
@@ -158,7 +158,7 @@ namespace Tsavorite.test
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, 0);
+                var status = bContext.Read(key1, ref input, ref output, 0);
                 if (status.IsPending)
                 {
                     _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -187,13 +187,21 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, 0);
+                var status = bContext.Upsert(key1, value, 0);
+                if (status.IsPending)
+                {
+                    _ = bContext.CompletePending(wait: true);
+                }
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new TestObjectKey { key = j };
-                    _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key1));
+                    var delStatus = bContext.Delete(key1);
+                    if (delStatus.IsPending)
+                    {
+                        _ = bContext.CompletePending(wait: true);
+                    }
                 }
             }
 
@@ -210,7 +218,7 @@ namespace Tsavorite.test
 
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, ctx);
+                var status = bContext.Read(key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
                     _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -245,7 +253,7 @@ namespace Tsavorite.test
 
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, 0);
+                _ = bContext.Upsert(key1, value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
@@ -261,7 +269,7 @@ namespace Tsavorite.test
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, ctx);
+                var status = bContext.Read(key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
                     _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -287,17 +295,17 @@ namespace Tsavorite.test
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
 
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
 
             var key = new TestObjectKey { key = 100 };
             var value = new TestObjectValue { value = 20 };
 
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, 0);
+            _ = bContext.Upsert(key, value, 0);
 
             store.Log.Flush(true);
 
             value = new TestObjectValue { value = 21 };
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, 0);
+            _ = bContext.Upsert(key, value, 0);
 
             store.Log.Flush(true);
 
@@ -307,7 +315,7 @@ namespace Tsavorite.test
 
             var input = default(TestObjectInput);
             var output = default(TestObjectOutput);
-            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
+            var status = bContext.Read(key, ref input, ref output);
             if (status.IsPending)
             {
                 ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));

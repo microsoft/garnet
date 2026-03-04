@@ -47,7 +47,7 @@ namespace Tsavorite.test
         public void ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
         {
             var copyOnWrite = new FunctionsCopyOnWrite();
-            ClientSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite, StructStoreFunctions, StructAllocator> session = default;
+            ClientSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite, StructStoreFunctions, StructAllocator> session = default;
 
             try
             {
@@ -63,7 +63,7 @@ namespace Tsavorite.test
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
-                session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
+                session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
                 var bContext = session.BasicContext;
 
                 var key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
@@ -72,7 +72,7 @@ namespace Tsavorite.test
                 var output = default(OutputStruct);
 
                 var upsertOptions = new UpsertOptions();
-                var status = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out RecordMetadata recordMetadata1);
+                var status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out RecordMetadata recordMetadata1);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 // InPlaceWriter and InPlaceUpater return false, so we create a new record.
@@ -80,13 +80,13 @@ namespace Tsavorite.test
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 if (updateOp == UpdateOp.Upsert)
                 {
-                    status = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out recordMetadata2);
+                    status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out recordMetadata2);
                     ClassicAssert.AreEqual(1, copyOnWrite.InPlaceWriterCallCount);
                     ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
                 else
                 {
-                    status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input, ref output, out recordMetadata2);
+                    status = bContext.RMW(key, ref input, ref output, out recordMetadata2);
                     ClassicAssert.AreEqual(1, copyOnWrite.InPlaceUpdaterCallCount);
                     ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 }
@@ -97,7 +97,7 @@ namespace Tsavorite.test
                     ClassicAssert.True(iterator.GetNext());     // We should only get the new record...
                     ClassicAssert.False(iterator.GetNext());    // ... the old record was elided, so was Sealed and invalidated.
                 }
-                status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                status = bContext.Read(key, ref output);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
 
                 _ = store.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
@@ -119,7 +119,7 @@ namespace Tsavorite.test
                 );
 
                 _ = store.Recover(token);
-                session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
+                session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
                 bContext = session.BasicContext;
 
                 using (var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
@@ -127,7 +127,7 @@ namespace Tsavorite.test
                     ClassicAssert.True(iterator.GetNext());     // We should only get one record...
                     ClassicAssert.False(iterator.GetNext());    // ... the old record was Unsealed by Recovery, but remains invalid.
                 }
-                status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                status = bContext.Read(key, ref output);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
             }
             finally

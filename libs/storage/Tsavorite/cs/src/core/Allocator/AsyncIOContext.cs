@@ -117,7 +117,6 @@ namespace Tsavorite.core
         internal void Set(ref AsyncIOContext ctx)
         {
             request.DisposeRecord();
-            request.requestKey.Dispose();
 
             request = ctx;
             exception = null;

@@ -110,6 +110,7 @@ namespace Tsavorite.core
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             keyContainer = pendingContext.requestKey;
+            pendingContext.requestKey = default;
             inputContainer = pendingContext.input;
             pendingContext.input = default;
 

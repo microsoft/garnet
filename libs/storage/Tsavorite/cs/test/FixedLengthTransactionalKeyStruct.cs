@@ -2,37 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-
-    public readonly unsafe struct TestSpanByteKey : IKey
-    {
-        private readonly void* ptr;
-        private readonly int len;
-
-        public readonly bool IsPinned => true;
-
-        public readonly ReadOnlySpan<byte> KeyBytes => new(ptr, len);
-
-        private TestSpanByteKey(void* ptr, int len)
-        {
-            this.ptr = ptr;
-            this.len = len;
-        }
-
-        public static TestSpanByteKey FromPinnedSpan(ReadOnlySpan<byte> key)
-        {
-            var ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(key));
-            var len = key.Length;
-
-            return new(ptr, len);
-        }
-    }
-
     /// <summary>
     /// A utility class to carry a fixed-length key (blittable or object type) and its assciated info for Locking
     /// </summary>

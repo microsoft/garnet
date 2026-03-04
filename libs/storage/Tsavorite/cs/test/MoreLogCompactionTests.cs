@@ -53,7 +53,7 @@ namespace Tsavorite.test
 
         public void DeleteCompactLookup([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             const int totalRecords = 2000;
@@ -64,23 +64,23 @@ namespace Tsavorite.test
             {
                 if (key == 1010)
                     compactUntil = store.Log.TailAddress;
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
             }
 
             for (long key = 0; key < totalRecords / 2; key++)
-                _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+                _ = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
 
             compactUntil = session.Compact(compactUntil, compactionType);
 
             ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
-            using var session2 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session2 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext2 = session2.BasicContext;
 
             // Verify records by reading
             for (long key = 0; key < totalRecords; key++)
             {
-                (var status, var output) = bContext2.Read(SpanByte.FromPinnedVariable(ref key));
+                (var status, var output) = bContext2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
                 if (status.IsPending)
                 {
                     _ = bContext2.CompletePendingWithOutputs(out var completedOutputs, true);

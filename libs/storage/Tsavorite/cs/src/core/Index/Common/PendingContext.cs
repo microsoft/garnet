@@ -148,7 +148,10 @@ namespace Tsavorite.core
 
                 if (this.input == default)
                 {
-                    this.input = new StandardHeapContainer<TInput>(ref input);
+                    if (typeof(TInput) == typeof(PinnedSpanByte))
+                        this.input = new SpanByteHeapContainer(Unsafe.As<TInput, PinnedSpanByte>(ref input), sessionFunctions.Store.hlogBase.bufferPool) as IHeapContainer<TInput>;
+                    else
+                        this.input = new StandardHeapContainer<TInput>(ref input);
                 }
                 this.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);

@@ -182,7 +182,7 @@ namespace Tsavorite.test.LogRecordTests
             value.Fill(0x43);
 
             var sizeInfo = new RecordSizeInfo();
-            InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
+            InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
 
             // Shrink
             var offset = 12;
@@ -258,7 +258,7 @@ namespace Tsavorite.test.LogRecordTests
             overflowValue.Fill(0x53);
 
             var sizeInfo = new RecordSizeInfo();
-            InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
+            InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
 
             // Convert to overflow. Because objectIdSize is 4 bytes our value space will shrink by the original value data size less 4 bytes, but we will use 8 bytes for ObjectLogLogPosition.
             var offset = value.Length - 4 - LogRecord.ObjectLogPositionSize;
@@ -290,7 +290,11 @@ namespace Tsavorite.test.LogRecordTests
             Assert.Ignore("TODO SerializeToMemoryPool");
         }
 
-        private void InitializeRecord(Span<byte> key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
+        private void InitializeRecord<TKey>(TKey key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             sizeInfo.FieldInfo = new()
             {

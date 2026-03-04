@@ -339,7 +339,7 @@ namespace Tsavorite.core
         }
 
         #region IKey
-        public bool IsPinned => IsPinnedKey;
+        public bool IsPinned => false;
 
         public ReadOnlySpan<byte> KeyBytes
             => Key;
