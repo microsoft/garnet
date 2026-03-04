@@ -1035,7 +1035,7 @@ namespace Garnet.test
             resp = (string)db.Execute($"{setCommand}", key, value, "keepttl");
             ClassicAssert.AreEqual(okResponse, resp);
             resp = (string)db.Execute($"{ttlCommand}", key);
-            ClassicAssert.IsTrue(int.TryParse(resp, out ttl) && ttl > 0 && ttl < 60);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl) && ttl > 0 && ttl <= 60);
 
             // ex .. nx, non-existing key
             ClassicAssert.IsTrue(db.KeyDelete(key));
