@@ -69,21 +69,18 @@ namespace Garnet.server
                 return true;
             }
 
-            if (!storeWrapper.serverOptions.SkipRDBRestoreChecksumValidation)
+            // crc is calculated over the encoded payload length, payload and the rdb version bytes
+            // skip's the value type byte and crc64 bytes
+            var calculatedCrc = new ReadOnlySpan<byte>(Crc64.Hash(valueSpan.Slice(0, valueSpan.Length - 8)));
+
+            // skip's rdb version bytes
+            var payloadCrc = footer[2..];
+
+            if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
             {
-                // crc is calculated over the encoded payload length, payload and the rdb version bytes
-                // skip's the value type byte and crc64 bytes
-                var calculatedCrc = new ReadOnlySpan<byte>(Crc64.Hash(valueSpan.Slice(0, valueSpan.Length - 8)));
-
-                // skip's rdb version bytes
-                var payloadCrc = footer[2..];
-
-                if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
-                {
-                    while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
+                while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             // decode the length of payload

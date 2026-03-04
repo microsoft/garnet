@@ -278,8 +278,7 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
-            string aofMemorySize = "64m",
-            bool skipRDBRestoreChecksumValidation = false
+            string aofMemorySize = "64m"
         )
         {
             if (useAzureStorage)
@@ -368,8 +367,7 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
-                EnableVectorSetPreview = enableVectorSetPreview,
-                SkipRDBRestoreChecksumValidation = skipRDBRestoreChecksumValidation,
+                EnableVectorSetPreview = enableVectorSetPreview
             };
 
             if (!string.IsNullOrEmpty(memorySize))
@@ -527,8 +525,7 @@ namespace Garnet.test
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null,
-            bool skipRDBRestoreChecksumValidation = false)
+            string clusterAnnounceHostname = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -593,8 +590,7 @@ namespace Garnet.test
                     replicaSyncTimeout: replicaSyncTimeout,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
-                    clusterAnnounceHostname: clusterAnnounceHostname,
-                    skipRDBRestoreChecksumValidation: skipRDBRestoreChecksumValidation);
+                    clusterAnnounceHostname: clusterAnnounceHostname);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -674,8 +670,7 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
-            bool enableVectorSetPreview = true,
-            bool skipRDBRestoreChecksumValidation = false)
+            bool enableVectorSetPreview = true)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -800,8 +795,7 @@ namespace Garnet.test
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
-                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
-                SkipRDBRestoreChecksumValidation = skipRDBRestoreChecksumValidation,
+                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs
             };
 
             if (lowMemory)

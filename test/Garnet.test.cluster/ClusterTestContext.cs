@@ -213,7 +213,6 @@ namespace Garnet.test.cluster
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
-        /// <param name="skipRDBRestoreChecksumValidation"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -262,8 +261,7 @@ namespace Garnet.test.cluster
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            bool useClusterAnnounceHostname = false,
-            bool skipRDBRestoreChecksumValidation = false)
+            bool useClusterAnnounceHostname = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -320,8 +318,7 @@ namespace Garnet.test.cluster
                 replicaSyncTimeout: replicaSyncTimeout,
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
-                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
-                skipRDBRestoreChecksumValidation: skipRDBRestoreChecksumValidation);
+                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
 
             foreach (var node in nodes)
                 node.Start();
