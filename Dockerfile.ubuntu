@@ -36,22 +36,17 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
-# Separate stage to install libaio on amd64 (avoiding QEMU issues on arm64)
-FROM --platform=linux/amd64 mcr.microsoft.com/mirror/docker/library/ubuntu:24.04 AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends libaio1t64 && rm -rf /var/lib/apt/lists/*
-
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble AS runtime
 
-# Copy libaio from amd64 builder stage (avoiding installation under QEMU)
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1t64
-RUN ln -sf /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-
+# Install dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+       libaio1t64 \
        liblua5.4-0 \
     && ARCH="$(uname -m)" \
     && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
+    && ln -sf "/usr/lib/${MULTIARCH}/libaio.so.1t64" "/usr/lib/${MULTIARCH}/libaio.so.1" \
     && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* 2>/dev/null | head -n1 || true) \
     && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/${MULTIARCH}/liblua5.4.so.0" "$DN_DIR/liblua54.so"; fi \
     && rm -rf /var/lib/apt/lists/*
