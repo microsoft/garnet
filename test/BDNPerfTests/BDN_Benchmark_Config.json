@@ -290,6 +290,20 @@
     "expected_IncrementBy_None": 0,
     "expected_DecrementBy_None": 0
   },
+  "BDN.benchmark.Operations.EtagOperations.*": {
+    "expected_SetWithEtag_ACL": 0,
+    "expected_SetIfMatch_ACL": 0,
+    "expected_GetWithEtag_ACL": 0,
+    "expected_GetIfMatch_ACL": 0,
+    "expected_SetWithEtag_AOF": 0,
+    "expected_SetIfMatch_AOF": 0,
+    "expected_GetWithEtag_AOF": 0,
+    "expected_GetIfMatch_AOF": 0,
+    "expected_SetWithEtag_None": 0,
+    "expected_SetIfMatch_None": 0,
+    "expected_GetWithEtag_None": 0,
+    "expected_GetIfMatch_None": 0,
+  },
   "BDN.benchmark.Operations.ScriptOperations.*": {
     "expected_ScriptLoad_Managed,Limit": 9600,
     "expected_ScriptExistsTrue_Managed,Limit": 0,

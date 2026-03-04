@@ -76,7 +76,10 @@ namespace Garnet.server
             rootCount = count;
 
             if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
+            {
+                bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
                 return;
+            }
 
             rootBuffer = GC.AllocateArray<PinnedSpanByte>(count <= MinParams ? MinParams : count, true);
             bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
