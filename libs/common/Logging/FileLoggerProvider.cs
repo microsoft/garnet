@@ -73,7 +73,7 @@ namespace Garnet.common
             Func<TState, Exception, string> formatter, string categoryName)
         {
             // Sanitize formatted message to prevent log injection via embedded newlines
-            var formattedMessage = formatter(state, exception)
+            var formattedMessage = (formatter(state, exception) ?? string.Empty)
                 .Replace("\r\n", "\\r\\n")
                 .Replace("\r", "\\r")
                 .Replace("\n", "\\n");

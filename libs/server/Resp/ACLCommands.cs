@@ -355,7 +355,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "ACL SAVE faulted");
-                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR failed to save the ACL configuration file"u8, ref dcurr, dend))
                     SendAndReset();
 
                 return true;

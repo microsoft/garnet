@@ -87,7 +87,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PURGEBP {type}:{managerType}", managerType, managerType.ToString());
-                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR failed to purge buffer pool"u8, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
