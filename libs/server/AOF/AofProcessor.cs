@@ -249,7 +249,7 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
+        private bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
                 int sublogIdx,
                 TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
                 byte* entryPtr, int length, bool asReplica)

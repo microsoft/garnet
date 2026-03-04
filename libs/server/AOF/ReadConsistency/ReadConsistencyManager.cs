@@ -26,11 +26,6 @@ namespace Garnet.server
         readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];
 
         /// <summary>
-        /// Get max sequence number across all sublogs
-        /// </summary>
-        public long MaxSequenceNumber => vsrs.Max(sublog => sublog.Max);
-
-        /// <summary>
         /// Get sequence number for provided key.
         /// </summary>
         /// <param name="key"></param>

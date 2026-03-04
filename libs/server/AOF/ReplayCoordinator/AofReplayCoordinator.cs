@@ -280,7 +280,7 @@ namespace Garnet.server
                 }
 
                 // Helper to iterate of transaction keys and add them to lockset
-                static unsafe void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup)
+                static void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup)
                 {
                     foreach (var entry in txnGroup.Operations)
                     {
@@ -378,7 +378,7 @@ namespace Garnet.server
 
                 // Synchronize execution across sublogs
                 var leaderBarrier = GetBarrier(barrierId, txnHeader);
-                var isLeader = leaderBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
+                var isLeader = leaderBarrier.TrySignalOrWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
                 // We execute the synchronized operation iff

@@ -15,7 +15,7 @@ namespace Garnet.server
 
         readonly long[] sketch = new long[SketchSlotSize];
         long sketchMaxValue;
-        object @lock = new();
+        readonly object @lock = new();
         TaskCompletionSource<bool> update = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public readonly long Max => sketchMaxValue;
@@ -34,15 +34,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="hash">The hash value for which to retrieve the frontier sequence number.</param>
         /// <returns>The frontier sequence number corresponding to the specified hash value.</returns>
-        public long GetFrontierSequenceNumber(long hash)
-            => Math.Max(sketch[hash & SketchSlotMask], Max);
+        public readonly long GetFrontierSequenceNumber(long hash)
+            => Math.Max(sketch[hash & SketchSlotMask], sketchMaxValue);
 
         /// <summary>
         /// Gets the sequence number associated with the specified hash key.
         /// </summary>
         /// <param name="hash">The hash value for which to retrieve the sequence number.</param>
         /// <returns>The sequence number corresponding to the given hash key.</returns>
-        public long GetKeySequenceNumber(long hash)
+        public readonly long GetKeySequenceNumber(long hash)
             => sketch[hash & SketchSlotMask];
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace Garnet.server
         /// <param name="ct">A cancellation token that can be used to cancel the wait operation.</param>
         /// <returns>A task that completes when the session's frontier sequence number for the specified hash reaches or exceeds
         /// the target value, or immediately if the condition is already met.</returns>
-        public Task WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, CancellationToken ct)
+        public readonly Task WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, CancellationToken ct)
         {
             lock (@lock)
             {

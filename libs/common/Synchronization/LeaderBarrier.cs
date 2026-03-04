@@ -27,60 +27,46 @@ namespace Garnet.common
         /// <param name="timeout">The maximum time to wait for other participants. The default value is infinite.</param>
         /// <param name="cancellationToken">A cancellation token to observe while waiting.</param>
         /// <returns>true if the caller is the first participant to arrive; otherwise, false.</returns>
-        public bool TrySignalAndWait(out Exception exception, TimeSpan timeout = default, CancellationToken cancellationToken = default)
+        public bool TrySignalOrWait(out Exception exception, TimeSpan timeout = default, CancellationToken cancellationToken = default)
         {
             exception = null;
             var newValue = Interlocked.Decrement(ref arrivedCount);
-            var isFirst = false;
 
             try
             {
+                // First participant to arrive
                 if (newValue == participantCount - 1)
                 {
-                    isFirst = true;
-                    // Wait only if there is at least one more participant
+                    // Wait only if there are more participants to arrive
                     if (newValue > 0)
                         _ = releaseFirst.Wait(timeout, cancellationToken);
+                    return true;
                 }
-                else if (newValue > 0)
-                {
-                    // Wait for first participant to release me or timeout/cancellation
-                    _ = releaseAll.Wait(timeout, cancellationToken);
-                    return false;
-                }
-                else if (newValue == 0)
-                {
-                    // Release first participant to perform the operation
+
+                // Last participant to arrive - release the first
+                if (newValue == 0)
                     releaseFirst.Set();
-                    // Wait for first participant to release me or timeout/cancellation
+
+                // All non-first participants wait for release
+                if (newValue >= 0)
+                {
                     _ = releaseAll.Wait(timeout, cancellationToken);
                     return false;
                 }
-                else
-                {
-                    throw new Exception("Invalid count value < 0");
-                }
+
+                // Invalid state
+                throw new Exception("Invalid count value < 0");
             }
             catch (Exception ex)
             {
                 exception = ex;
+                return false;
             }
-            return isFirst;
         }
 
         /// <summary>
         /// Release all waiting participants
         /// </summary>
         public void Release() => releaseAll.Set();
-
-        /// <summary>
-        /// Resets the internal state, reinitializing release flags and participant count.
-        /// </summary>
-        public void Reset()
-        {
-            releaseFirst = new(false);
-            releaseAll = new(false);
-            arrivedCount = participantCount;
-        }
     }
 }
