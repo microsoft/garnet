@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -37,7 +37,7 @@ namespace Garnet.test.Resp.ACL
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(1 == users.Length);
             ClassicAssert.Contains("default", users);
         }
@@ -61,7 +61,7 @@ namespace Garnet.test.Resp.ACL
 
             // Ensure Garnet started up with three users:
             // the 2 specified users and the automatically created default user
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(3 == users.Length);
             ClassicAssert.Contains("default", users);
             ClassicAssert.Contains("testA", users);
@@ -86,14 +86,14 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Ensure all three users are defined
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(3 == users.Length);
             ClassicAssert.Contains("default", users);
             ClassicAssert.Contains("testA", users);
             ClassicAssert.Contains("testB", users);
 
             // Ensure that the default password used to create Garnet was ignored
-            users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith("user default"))
@@ -126,7 +126,7 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Ensure Garnet started up 4 users: testA, testB, testC and default
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(4 == users.Length);
             ClassicAssert.Contains("default", users);
             ClassicAssert.Contains("testA", users);
@@ -134,7 +134,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.Contains("testC", users);
 
             // Check that (1) testB contains two passwords and (2) default user has no password
-            users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             foreach (var user in users)
             {
                 if (user.StartsWith("user testB"))
@@ -152,7 +152,7 @@ namespace Garnet.test.Resp.ACL
             c.Execute("ACL", "LOAD");
 
             // Check the integrity of the list
-            users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
 
             // Verify the ACL now contains only three users
             ClassicAssert.IsTrue(3 == users.Length);
@@ -161,7 +161,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.Contains("testB", users);
 
             // Ensure that (1) one password was removed from testB and (2) defaut password was set
-            users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             foreach (var user in users)
             {
                 if (user.StartsWith("user testB"))
@@ -197,7 +197,7 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Ensure Garnet started up 2 users: testA and default
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(2 == users.Length);
             ClassicAssert.Contains("default", users);
             ClassicAssert.Contains("testA", users);
@@ -208,7 +208,7 @@ namespace Garnet.test.Resp.ACL
 
             try
             {
-                var response = await c.ExecuteAsync("ACL", "LOAD");
+                var response = await c.ExecuteAsync("ACL", "LOAD").ConfigureAwait(false);
                 Assert.Fail("Loading a malformed ACL file should result in an error.");
             }
             catch (Exception exception)
@@ -216,7 +216,7 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.IsTrue(exception.Message.StartsWith("ERR"));
             }
 
-            users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
 
             // Check that we still only know testA and default
             ClassicAssert.IsTrue(2 == users.Length);
@@ -224,7 +224,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.Contains("testA", users);
 
             // Ensure that testA does not contain the dummy password
-            users = await c.ExecuteForArrayAsync("ACL", "LIST");
+            users = await c.ExecuteForArrayAsync("ACL", "LIST").ConfigureAwait(false);
             foreach (var user in users)
             {
                 if (user.StartsWith("user testA"))
@@ -252,7 +252,7 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Ensure correct users were created
-            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "USERS").ConfigureAwait(false);
             ClassicAssert.IsTrue(2 == users.Length);
             ClassicAssert.Contains("default", users);
             ClassicAssert.Contains("test", users);

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -25,7 +25,7 @@ namespace Garnet.test
             taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, async token =>
             {
                 _ = taskStarted.Release();
-                await taskCanComplete.WaitAsync(token);
+                await taskCanComplete.WaitAsync(token).ConfigureAwait(false);
             });
 
             ClassicAssert.IsTrue(taskStarted.Wait(TimeSpan.FromSeconds(5)), "Task should start within timeout");
@@ -56,7 +56,7 @@ namespace Garnet.test
             {
                 _ = Interlocked.Increment(ref startedCounter);
                 _ = taskStarted.Release();
-                await taskCanComplete.WaitAsync(token);
+                await taskCanComplete.WaitAsync(token).ConfigureAwait(false);
             }
         }
 
@@ -83,18 +83,18 @@ namespace Garnet.test
             if (cancelTaskPlacementCategory == TaskPlacementCategory.Replica)
             {
                 // Cancel tasks based on replica placement category
-                await taskManager.Cancel(cancelTaskPlacementCategory);
+                await taskManager.Cancel(cancelTaskPlacementCategory).ConfigureAwait(false);
 
                 // Tasks not of replica category so they should keep running
                 ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.AofSizeLimitTask));
 
                 // Cancel all tasks
-                await taskManager.Cancel(TaskPlacementCategory.All);
+                await taskManager.Cancel(TaskPlacementCategory.All).ConfigureAwait(false);
             }
             else
             {
                 // Cancel tasks based on placement category
-                await taskManager.Cancel(cancelTaskPlacementCategory);
+                await taskManager.Cancel(cancelTaskPlacementCategory).ConfigureAwait(false);
             }
 
             // Both tasks should complete and be removed since they are in primary category
@@ -104,13 +104,13 @@ namespace Garnet.test
             async Task PrimaryCategoryTask(CancellationToken token)
             {
                 _ = primaryTaskStarted.Release();
-                await Task.Delay(Timeout.Infinite, token);
+                await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
             }
 
             async Task AllCategoryTask(CancellationToken token)
             {
                 _ = allTaskStarted.Release();
-                await Task.Delay(Timeout.Infinite, token);
+                await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
             }
         }
 
@@ -166,7 +166,7 @@ namespace Garnet.test
             // Create a task factory that throws an exception
             async Task ThrowingTaskFactory(CancellationToken token)
             {
-                await taskCanRun.WaitAsync(token);
+                await taskCanRun.WaitAsync(token).ConfigureAwait(false);
                 throw new InvalidOperationException("Test exception from task factory");
             }
 

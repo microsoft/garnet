@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -400,7 +400,7 @@ namespace Garnet.test
                     for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
+                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50)).ConfigureAwait(false);
                     }
                 });
             }
@@ -416,7 +416,7 @@ namespace Garnet.test
                     for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
+                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50)).ConfigureAwait(false);
                     }
                 });
             }

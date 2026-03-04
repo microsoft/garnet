@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -35,7 +35,7 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", DefaultUserName));
+            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", DefaultUserName).ConfigureAwait(false));
 
             ClassicAssert.NotNull(commandResult);
             ClassicAssert.IsTrue(commandResult.IsWellStructured());
@@ -56,7 +56,7 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            ClassicAssert.IsTrue((await db.ExecuteAsync("ACL", "GETUSER", $"!{DefaultUserName}")).IsNull);
+            ClassicAssert.IsTrue((await db.ExecuteAsync("ACL", "GETUSER", $"!{DefaultUserName}").ConfigureAwait(false)).IsNull);
         }
 
         /// <summary>
@@ -94,7 +94,7 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: DefaultUserName));
             var db = redis.GetDatabase(0);
 
-            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", userName));
+            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", userName).ConfigureAwait(false));
 
             ClassicAssert.NotNull(commandResult);
             ClassicAssert.IsTrue(commandResult.IsWellStructured());
@@ -129,7 +129,7 @@ namespace Garnet.test.Resp.ACL
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: DefaultUserName));
             var db = redis.GetDatabase(0);
 
-            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", TestUserA));
+            UserAclResult commandResult = new UserAclResult(await db.ExecuteAsync("ACL", "GETUSER", TestUserA).ConfigureAwait(false));
 
             ClassicAssert.NotNull(commandResult);
             ClassicAssert.IsTrue(commandResult.IsWellStructured());

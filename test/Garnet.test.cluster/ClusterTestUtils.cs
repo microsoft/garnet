@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -228,7 +228,7 @@ namespace Garnet.test.cluster
             var configInfo = NodesMyself(endPoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH]);
             while (true)
             {
-                await Task.Delay(endpoints.Length * 100);
+                await Task.Delay(endpoints.Length * 100).ConfigureAwait(false);
             retry:
                 foreach (var endpoint in endpoints)
                 {
