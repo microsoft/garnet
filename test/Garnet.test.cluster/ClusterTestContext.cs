@@ -179,6 +179,7 @@ namespace Garnet.test.cluster
         /// <param name="OnDemandCheckpoint"></param>
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
+        /// <param name="useAofNullDevice"></param>
         /// <param name="DisableStorageTier"></param>
         /// <param name="EnableIncrementalSnapshots"></param>
         /// <param name="FastCommit"></param>
@@ -193,11 +194,26 @@ namespace Garnet.test.cluster
         /// <param name="enableLua"></param>
         /// <param name="asyncReplay"></param>
         /// <param name="enableDisklessSync"></param>
+        /// <param name="replicaDisklessSyncDelay"></param>
+        /// <param name="replicaDisklessSyncFullSyncAofThreshold"></param>
         /// <param name="luaMemoryMode"></param>
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
+        /// <param name="deviceType"></param>
+        /// <param name="clusterReplicationReestablishmentTimeout"></param>
+        /// <param name="aofSizeLimit"></param>
+        /// <param name="compactionFrequencySecs"></param>
+        /// <param name="compactionType"></param>
+        /// <param name="latencyMonitory"></param>
+        /// <param name="loggingFrequencySecs"></param>
+        /// <param name="checkpointThrottleFlushDelayMs"></param>
+        /// <param name="clusterReplicaResumeWithData"></param>
+        /// <param name="replicaSyncTimeout"></param>
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
+        /// <param name="clusterPreferredEndpointType"></param>
+        /// <param name="useClusterAnnounceHostname"></param>
+        /// <param name="skipRDBRestoreChecksumValidation"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -246,7 +262,8 @@ namespace Garnet.test.cluster
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            bool useClusterAnnounceHostname = false)
+            bool useClusterAnnounceHostname = false,
+            bool skipRDBRestoreChecksumValidation = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -303,7 +320,8 @@ namespace Garnet.test.cluster
                 replicaSyncTimeout: replicaSyncTimeout,
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
-                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
+                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
+                skipRDBRestoreChecksumValidation: skipRDBRestoreChecksumValidation);
 
             foreach (var node in nodes)
                 node.Start();

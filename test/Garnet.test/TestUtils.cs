@@ -527,7 +527,8 @@ namespace Garnet.test
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            bool skipRDBRestoreChecksumValidation = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -592,7 +593,8 @@ namespace Garnet.test
                     replicaSyncTimeout: replicaSyncTimeout,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
-                    clusterAnnounceHostname: clusterAnnounceHostname);
+                    clusterAnnounceHostname: clusterAnnounceHostname,
+                    skipRDBRestoreChecksumValidation: skipRDBRestoreChecksumValidation);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -672,7 +674,8 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            bool skipRDBRestoreChecksumValidation = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -798,6 +801,7 @@ namespace Garnet.test
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
+                SkipRDBRestoreChecksumValidation = skipRDBRestoreChecksumValidation,
             };
 
             if (lowMemory)

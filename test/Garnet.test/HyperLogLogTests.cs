@@ -1031,6 +1031,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogRestoreCorruptedDumpPayloadIsRejected()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1057,6 +1058,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogRestoreZeroCrcDumpPayloadIsRejected()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1082,6 +1084,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogRestoreCorruptedSparseRlePayloadIsRejected()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1123,6 +1126,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogValidatorRejectsMalformedSparsePayload()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1152,6 +1156,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogValidatorRejectsSparseStreamCoverageMismatch()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1182,6 +1187,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogSkipChecksumRestoreAcceptedButPfCommandsReturnWrongType()
         {
             server.Dispose();
@@ -1237,6 +1243,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void HyperLogLogDumpVariantCoverage_SparseAndDenseRepresentations()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1271,6 +1278,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("HLL_RESTORE")]
         public void ParseDumpValueLengthAndStart_Covers6Bit14BitAnd32BitBranches()
         {
             var sixBitDump = new byte[] { 0x24, 0x05, 0x00, 0x00, 0x00 };
