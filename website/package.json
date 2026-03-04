@@ -39,9 +39,6 @@
     "serialize-javascript": "7.0.4",
     "dompurify": "3.3.1"
   },
-  "resolutions": {
-    "dompurify": "3.3.1"
-  },
   "browserslist": {
     "production": [
       ">0.5%",
