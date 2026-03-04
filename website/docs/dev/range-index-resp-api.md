@@ -1804,15 +1804,17 @@ inputs already available at recovery time (key bytes, checkpoint dir, checkpoint
 > **Reference:** `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs`
 > - Eviction observer: `store.Log.SubscribeEvictions(observer)` — fires after a page
 >   is flushed to disk and before the in-memory page is freed.
-> - Deserialization observer: `store.Log.SubscribeDeserializations(observer)` — fires
->   when a page is brought back from disk into memory.
-> - See `libs/server/Storage/SizeTracker/CacheSizeTracker.cs` for existing usage of both.
+> - `ClearBitsForDiskImages()` in `RecordInfo.cs` — called when records are loaded from
+>   disk (recovery, delta log apply, scan). See also `Recovery.cs:1252`,
+>   `AllocatorScan.cs:172`, `AllocatorBase.cs:473`.
+> - See `libs/server/Storage/SizeTracker/CacheSizeTracker.cs` for existing eviction
+>   observer usage.
 
 **Problem:** When Tsavorite evicts a page containing a RangeIndex stub to disk, the
 BfTree instance remains in native memory. If the index is cold and never accessed again,
 this native memory is leaked indefinitely. We must reclaim it.
 
-**Solution — two observers working together:**
+**Solution — eviction observer + ISessionFunctions callback:**
 
 **1. Eviction observer** (`SubscribeEvictions`): When a page is evicted, snapshot and
 free each RangeIndex BfTree on that page, and remove it from `activeIndexes`.
@@ -1822,7 +1824,6 @@ free each RangeIndex BfTree on that page, and remove it from `activeIndexes`.
 internal void SubscribeToStore(TsavoriteKV<StoreFunctions, StoreAllocator> store)
 {
     store.Log.SubscribeEvictions(new RangeIndexEvictionObserver(this));
-    store.Log.SubscribeDeserializations(new RangeIndexDeserializationObserver(this));
 }
 
 private class RangeIndexEvictionObserver : ITsavoriteRecordObserver<ITsavoriteScanIterator>
@@ -1850,48 +1851,42 @@ private class RangeIndexEvictionObserver : ITsavoriteRecordObserver<ITsavoriteSc
 }
 ```
 
-**2. Deserialization observer** (`SubscribeDeserializations`): When a page is loaded
-back from disk into memory, clear the `ProcessInstanceId` in each RangeIndex stub.
-The record is now in mutable memory, so this modification persists. Later, when
-`ReadRangeIndex()` reads the stub, the cheap `ProcessInstanceId != this.processInstanceId`
-check detects it as stale and triggers restoration — no `activeIndexes` lookup needed on
-the hot path.
+**2. `OnLoadFromDisk` callback** (new `ISessionFunctions` method): When a record is
+loaded from disk into memory, Tsavorite already calls `ClearBitsForDiskImages()` to
+clear transient `RecordInfo` bits. At the same call site, introduce a new
+`ISessionFunctions` callback — `OnLoadFromDisk(ref LogRecord logRecord)` — that gives
+session functions an opportunity to inspect and modify the record value.
+
+For RangeIndex, `MainSessionFunctions.OnLoadFromDisk` checks the `RecordType` and
+clears `ProcessInstanceId` in the stub:
 
 ```csharp
-private class RangeIndexDeserializationObserver : ITsavoriteRecordObserver<ITsavoriteScanIterator>
+// In MainSessionFunctions (new ISessionFunctions callback):
+public void OnLoadFromDisk(ref LogRecord logRecord)
 {
-    private readonly RangeIndexManager manager;
-
-    public void OnNext(ITsavoriteScanIterator iter)
+    if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
     {
-        while (iter.GetNext(out var recordInfo))
-        {
-            // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
-
-            ref var value = ref iter.GetValue();
-            ReadIndex(value.AsReadOnlySpan(), out var treePtr, ..., out var pid);
-
-            // If this BfTree is not active (was evicted or from a prior process),
-            // clear ProcessInstanceId so ReadRangeIndex detects it as stale.
-            if (pid != Guid.Empty && !manager.activeIndexes.ContainsKey(treePtr))
-            {
-                ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
-                    ref MemoryMarshal.GetReference(value.AsSpan()));
-                stub.ProcessInstanceId = Guid.Empty;
-                stub.TreePtr = nint.Zero;
-            }
-        }
+        // Clear ProcessInstanceId so ReadRangeIndex detects it as stale
+        ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
+            ref MemoryMarshal.GetReference(logRecord.ValueSpan));
+        stub.ProcessInstanceId = Guid.Empty;
+        stub.TreePtr = nint.Zero;
     }
 }
 ```
 
+> **Tsavorite change required:** Add `OnLoadFromDisk(ref LogRecord logRecord)` to
+> `ISessionFunctions` and call it alongside `ClearBitsForDiskImages()` in
+> `Recovery.cs`, `AllocatorScan.cs`, and `AllocatorBase.cs` (delta log apply).
+> The default implementation should be a no-op.
+
 **Hot-path cost:** For active indexes (the common case), the `ProcessInstanceId` matches
-`this.processInstanceId` immediately — a single 16-byte comparison, no registry lookup.
-The `activeIndexes` lookup only happens inside the deserialization observer (cold path,
-when a page is brought back from disk), not on every `ReadRangeIndex` call.
+`this.processInstanceId` immediately — a single 16-byte comparison. No registry lookup.
+The `OnLoadFromDisk` callback only fires on the cold path (when a record is loaded from
+disk), not on every `ReadRangeIndex` call.
 
 **On cold read (ReadRangeIndex flow):**
-1. Tsavorite loads page from disk → deserialization observer clears `ProcessInstanceId`
+1. Tsavorite loads record from disk → `OnLoadFromDisk` clears `ProcessInstanceId`
 2. `ReadRangeIndex()` reads stub → `ProcessInstanceId == Guid.Empty` ≠ `this.processInstanceId`
 3. Promote to exclusive lock
 4. Derive snapshot path from key bytes + latest snapshot directory
