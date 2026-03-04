@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -231,7 +231,7 @@ namespace Garnet.test.cluster
                 Task.Run(
                     async () =>
                     {
-                        await sync.WaitAsync();
+                        await sync.WaitAsync().ConfigureAwait(false);
 
                         var key = new byte[4];
                         for (var i = 0; i < vectors.Length; i++)
@@ -263,7 +263,7 @@ namespace Garnet.test.cluster
                         var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
                         ClassicAssert.AreEqual("OK", readonlyOnReplica);
 
-                        await sync.WaitAsync();
+                        await sync.WaitAsync().ConfigureAwait(false);
 
                         var nonZeroReturns = 0;
                         var gotAttrs = 0;
@@ -310,13 +310,13 @@ namespace Garnet.test.cluster
                 );
 
             _ = sync.Release(2);
-            await writeTask;
+            await writeTask.ConfigureAwait(false);
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
             cts.CancelAfter(TimeSpan.FromSeconds(1));
 
-            var (searchesWithNonZeroResults, searchesWithAttrs) = await readTask;
+            var (searchesWithNonZeroResults, searchesWithAttrs) = await readTask.ConfigureAwait(false);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults > 0);
 
@@ -503,7 +503,7 @@ namespace Garnet.test.cluster
                 Task.Run(
                     async () =>
                     {
-                        await sync.WaitAsync();
+                        await sync.WaitAsync().ConfigureAwait(false);
 
                         var key = new byte[4];
                         for (var i = 0; i < vectors.Length; i++)
@@ -532,7 +532,7 @@ namespace Garnet.test.cluster
                             var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
                             ClassicAssert.AreEqual("OK", readonlyOnReplica);
 
-                            await sync.WaitAsync();
+                            await sync.WaitAsync().ConfigureAwait(false);
 
                             var nonZeroReturns = 0;
 
@@ -555,7 +555,7 @@ namespace Garnet.test.cluster
             }
 
             _ = sync.Release(secondaries.Length + 1);
-            await writeTask;
+            await writeTask.ConfigureAwait(false);
 
             for (var secondaryIndex = SecondaryStartIndex; secondaryIndex <= SecondaryEndIndex; secondaryIndex++)
             {
@@ -564,7 +564,7 @@ namespace Garnet.test.cluster
 
             cts.CancelAfter(TimeSpan.FromSeconds(1));
 
-            var searchesWithNonZeroResults = await Task.WhenAll(readTasks);
+            var searchesWithNonZeroResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
 
@@ -657,7 +657,7 @@ namespace Garnet.test.cluster
                 Task.Run(
                     async () =>
                     {
-                        await sync.WaitAsync();
+                        await sync.WaitAsync().ConfigureAwait(false);
 
                         var key = new byte[4];
                         for (var i = 0; i < vectors.Length; i++)
@@ -674,7 +674,7 @@ namespace Garnet.test.cluster
                 Task.Run(
                     async () =>
                     {
-                        await sync.WaitAsync();
+                        await sync.WaitAsync().ConfigureAwait(false);
 
                         var key = new byte[4];
 
@@ -709,7 +709,7 @@ namespace Garnet.test.cluster
                             var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
                             ClassicAssert.AreEqual("OK", readonlyOnReplica);
 
-                            await sync.WaitAsync();
+                            await sync.WaitAsync().ConfigureAwait(false);
 
                             var nonZeroReturns = 0;
 
@@ -732,8 +732,8 @@ namespace Garnet.test.cluster
             }
 
             _ = sync.Release(secondaries.Length + 2);
-            await writeTask;
-            await deleteTask;
+            await writeTask.ConfigureAwait(false);
+            await deleteTask.ConfigureAwait(false);
 
             for (var secondaryIndex = SecondaryStartIndex; secondaryIndex <= SecondaryEndIndex; secondaryIndex++)
             {
@@ -742,7 +742,7 @@ namespace Garnet.test.cluster
 
             cts.CancelAfter(TimeSpan.FromSeconds(1));
 
-            var searchesWithNonZeroResults = await Task.WhenAll(readTasks);
+            var searchesWithNonZeroResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
 
@@ -1359,23 +1359,30 @@ namespace Garnet.test.cluster
                             if (TestUtils.IsRunningAsGitHubAction)
                             {
                                 // Throw some delay in when running as a GitHub Action to work around the weak drives those VMs have
-                                await Task.Delay(1);
+                                await Task.Delay(1).ConfigureAwait(false);
                             }
 
-                            // This should follow redirects, so migration shouldn't cause any failures
+                            // This should follow redirects, so migration shouldn't cause any failures.
+                            // StackExchange.Redis 2.11.8 changed MOVED handling: when MOVED points to the same endpoint,
+                            // it reconnects before retrying, which can throw RedisConnectionException or RedisTimeoutException
+                            // instead of (or in addition to) RedisServerException("MOVED ...").
                             try
                             {
                                 var addRes = (int)readWriteDb.Execute("VADD", [new RedisKey(primary0Key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
                                 ClassicAssert.AreEqual(1, addRes);
                             }
-                            catch (RedisServerException exc)
+                            // Catch Exception (not RedisException) because RedisTimeoutException extends
+                            // TimeoutException, not RedisException. Two MOVED message formats exist:
+                            // - Server: "MOVED N host:port"
+                            // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                            catch (Exception exc) when (
+                                exc is RedisTimeoutException
+                                || exc is RedisConnectionException
+                                || (exc is RedisServerException rse && (
+                                    rse.Message.StartsWith("MOVED ")
+                                    || rse.Message.StartsWith("Key has MOVED to "))))
                             {
-                                if (exc.Message.StartsWith("MOVED "))
-                                {
-                                    continue;
-                                }
-
-                                throw;
+                                continue;
                             }
 
                             added.Add((elem.ToArray(), data.ToArray(), attr.ToArray()));
@@ -1388,7 +1395,7 @@ namespace Garnet.test.cluster
                     }
                 );
 
-            await Task.Delay(1_000);
+            await Task.Delay(1_000).ConfigureAwait(false);
 
             var lenPreMigration = added.Count;
             ClassicAssert.IsTrue(lenPreMigration > 0, "Should have seen some writes pre-migration");
@@ -1418,14 +1425,14 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(curPrimary1Slots.Contains(primary0HashSlot));
 
             var lenPrePause = added.Count;
-            await Task.Delay(5_000);
+            await Task.Delay(5_000).ConfigureAwait(false);
             var lenPostPause = added.Count;
 
             ClassicAssert.IsTrue(lenPostPause > lenPrePause, "Writes after migration did not resume");
 
             // Stop Writes and wait for replication to catch up
             cts.Cancel();
-            await writeTask;
+            await writeTask.ConfigureAwait(false);
 
             var addedLookup = added.ToFrozenDictionary(static t => t.Elem, t => t, ByteArrayComparer.Instance);
 
@@ -1718,20 +1725,28 @@ namespace Garnet.test.cluster
                                             ClassicAssert.AreEqual(1, addRes);
                                             break;
                                         }
-                                        catch (RedisServerException exc)
+                                        // Catch Exception (not RedisException) because RedisTimeoutException extends
+                                        // TimeoutException, not RedisException. Two MOVED message formats exist:
+                                        // - Server: "MOVED N host:port"
+                                        // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                                        catch (Exception exc) when (
+                                            exc is RedisTimeoutException
+                                            || exc is RedisConnectionException
+                                            || (exc is RedisServerException rse && (
+                                                rse.Message.StartsWith("MOVED ")
+                                                || rse.Message.StartsWith("Key has MOVED to "))))
                                         {
-                                            if (exc.Message.StartsWith("MOVED "))
+                                            // These are all retryable transient errors during slot migration:
+                                            // - RedisServerException("MOVED"): slot has moved, retry
+                                            // - RedisTimeoutException: server blocked in WaitForSlotToStabilize, timed out
+                                            // - RedisConnectionException: reconnect triggered by StackExchange.Redis 2.11.8+
+                                            //   MOVED-to-same-endpoint handling
+                                            if (writeCancel.IsCancellationRequested)
                                             {
-                                                // This is fine, just try again if we're not cancelled
-                                                if (writeCancel.IsCancellationRequested)
-                                                {
-                                                    return;
-                                                }
-
-                                                continue;
+                                                return;
                                             }
 
-                                            throw;
+                                            continue;
                                         }
                                     }
 
@@ -1778,13 +1793,31 @@ namespace Garnet.test.cluster
                                     var r = written.Count;
                                     if (r == 0)
                                     {
-                                        await Task.Delay(10);
+                                        await Task.Delay(10).ConfigureAwait(false);
                                         continue;
                                     }
 
                                     var (elem, data, _, _) = written.ToList()[readTaskRandom.Next(r)];
 
-                                    var emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
+                                    string[] emb;
+                                    try
+                                    {
+                                        emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
+                                    }
+                                    // Catch Exception (not RedisException) because RedisTimeoutException extends
+                                    // TimeoutException, not RedisException. Two MOVED message formats exist:
+                                    // - Server: "MOVED N host:port"
+                                    // - Client (SE.Redis 2.11.8+): "Key has MOVED to Endpoint X:port..."
+                                    catch (Exception exc) when (
+                                        exc is RedisTimeoutException
+                                        || exc is RedisConnectionException
+                                        || (exc is RedisServerException rse && (
+                                            rse.Message.StartsWith("MOVED ")
+                                            || rse.Message.StartsWith("Key has MOVED to "))))
+                                    {
+                                        // Transient errors during slot migration are expected; retry
+                                        continue;
+                                    }
 
                                     if (emb.Length == 0)
                                     {
@@ -1834,7 +1867,7 @@ namespace Garnet.test.cluster
                         );
                 }
 
-                await Task.Delay(1_000);
+                await Task.Delay(1_000).ConfigureAwait(false);
 
                 ClassicAssert.IsTrue(writeResults.All(static r => !r.IsEmpty), "Should have seen some writes pre-migration");
 
@@ -1872,7 +1905,7 @@ namespace Garnet.test.cluster
 
                             while (!migrateCancel.IsCancellationRequested)
                             {
-                                await Task.Delay(100);
+                                await Task.Delay(100).ConfigureAwait(false);
 
                                 // Don't start another migration until we get at least one successful write
                                 if (Interlocked.CompareExchange(ref mostRecentWrite, 0, 0) < mostRecentMigration)
@@ -1957,18 +1990,18 @@ namespace Garnet.test.cluster
                         }
                     );
 
-                await Task.Delay(10_000);
+                await Task.Delay(10_000).ConfigureAwait(false);
 
                 migrateCancel.Cancel();
-                var migrationTimes = await migrateTask;
+                var migrationTimes = await migrateTask.ConfigureAwait(false);
 
                 ClassicAssert.IsTrue(migrationTimes.Count > 2, "Should have moved back and forth at least twice");
 
                 writeCancel.Cancel();
-                await Task.WhenAll(writeTasks);
+                await Task.WhenAll(writeTasks).ConfigureAwait(false);
 
                 readCancel.Cancel();
-                var readResults = await Task.WhenAll(readTasks);
+                var readResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
                 ClassicAssert.IsTrue(readResults.All(static r => r > 0), "Should have successful reads on all Vector Sets");
 
                 // Check that everything written survived all the migrations
@@ -2053,7 +2086,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(1, vadd0Res);
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex);
-            await Task.Delay(10);
+            await Task.Delay(10).ConfigureAwait(false);
 
             ClassicAssert.IsFalse(primaryVectorManager.AreReplicationTasksActive);
             ClassicAssert.IsTrue(replicaVectorManager.AreReplicationTasksActive);
@@ -2061,7 +2094,7 @@ namespace Garnet.test.cluster
             context.ClusterFailoverSpinWait(ReplicaIndex, NullLogger.Instance);
 
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex);
-            await Task.Delay(10);
+            await Task.Delay(10).ConfigureAwait(false);
 
             var vectorData1 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
 

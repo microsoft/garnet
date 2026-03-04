@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -90,14 +90,14 @@ namespace Garnet.test.Resp
             c.Connect();
 
             // Initial command runs under default user
-            _ = await c.ExecuteAsync("PING");
+            _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
 
             // Auth as proper user, should get another call
             authingAsFoo = true;
-            _ = await c.ExecuteAsync("AUTH", "foo", "bar");
+            _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
             ClassicAssert.IsTrue(authedAsFoo);
 
-            _ = await c.ExecuteAsync("PING");
+            _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
 
             // Command after auth invalidation fails as no auth
 
@@ -105,7 +105,7 @@ namespace Garnet.test.Resp
             auth.IsAuthenticated = false;
             try
             {
-                _ = await c.ExecuteAsync("PING");
+                _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
                 Assert.Fail("Should be denied, user is not authed");
             }
             catch (Exception e)
@@ -113,7 +113,7 @@ namespace Garnet.test.Resp
                 ClassicAssert.AreEqual("NOAUTH Authentication required.", e.Message);
             }
 
-            _ = await c.ExecuteAsync("AUTH", "foo", "bar");
+            _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
             ClassicAssert.True(authCalls > oldAuthCalls);
         }
     }
