@@ -31,10 +31,16 @@
     "@docusaurus/module-type-aliases": "3.9.2",
     "@docusaurus/types": "3.9.2"
   },
+  "resolutions": {
+    "minimatch": "3.1.5",
+    "serialize-javascript": "7.0.4"
+  },
   "overrides": {
     "webpack-dev-server": "^5.2.1",
     "on-headers": "^1.1.0",
-    "lodash-es": "4.17.23"
+    "lodash-es": "4.17.23",
+    "minimatch": "3.1.5",
+    "serialize-javascript": "7.0.4"
   },
   "browserslist": {
     "production": [
