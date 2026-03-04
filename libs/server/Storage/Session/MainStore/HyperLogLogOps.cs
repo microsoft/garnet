@@ -122,8 +122,8 @@ namespace Garnet.server
                     sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
-                var dstMergeBuffer = new SpanByteAndMemory(srcReadBuffer, hllBufferSize);
-                var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
+                var srcMergeBuffer = new SpanByteAndMemory(srcReadBuffer, hllBufferSize);
+                var dstMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -148,12 +148,6 @@ namespace Garnet.server
 
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = sbDstHLL.ToPointer();
-
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(srcHLL, sbSrcHLL.Length))
-                    {
-                        error = true;
-                        break;
-                    }
 
                     if (!isFirst)
                     {
@@ -233,14 +227,9 @@ namespace Garnet.server
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
+
                     // Invalid Type
                     if (*(long*)readBuffer == -1)
-                    {
-                        error = true;
-                        break;
-                    }
-
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(mergeBuffer.SpanByte.ToPointer(), mergeBuffer.SpanByte.Length))
                     {
                         error = true;
                         break;
