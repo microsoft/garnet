@@ -2438,11 +2438,11 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (long)ttl);
 
             db.StringSet(key, val);
             ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (long)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
@@ -2474,7 +2474,7 @@ namespace Garnet.test
 
             db.StringSet(key, val);
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
-            var ttl = (int)db.Execute("TTL", key);
+            var ttl = (long)db.Execute("TTL", key);
             // TTL should round to nearest second (matching Redis), not floor.
             // Allow 2s tolerance for network/scheduling delays.
             ClassicAssert.GreaterOrEqual(ttl, expire - 2, $"String TTL {ttl} too low (expected near {expire})");
@@ -2484,7 +2484,7 @@ namespace Garnet.test
             var objKey = "ttlRoundObjKey";
             db.SortedSetAdd(objKey, "member", 1.0);
             db.KeyExpire(objKey, TimeSpan.FromSeconds(expire));
-            ttl = (int)db.Execute("TTL", objKey);
+            ttl = (long)db.Execute("TTL", objKey);
             ClassicAssert.GreaterOrEqual(ttl, expire - 2, $"Object TTL {ttl} too low (expected near {expire})");
             ClassicAssert.LessOrEqual(ttl, expire, $"Object TTL {ttl} exceeds {expire}");
         }
@@ -2499,11 +2499,11 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (long)ttl);
 
             db.SortedSetAdd(key, key, 1.0);
             ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (long)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
@@ -3695,11 +3695,11 @@ namespace Garnet.test
             var expireTimeInMilliseconds = 3000;
 
             var pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-2, (int)pttl);
+            ClassicAssert.AreEqual(-2, (long)pttl);
 
             db.StringSet(key, val);
             pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-1, (int)pttl);
+            ClassicAssert.AreEqual(-1, (long)pttl);
 
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
