@@ -760,15 +760,15 @@ GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanB
 GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field);
 
 GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
-    ref SpanByteAndMemory output, out RangeIndexResult result);
+    ref StringOutput output, out RangeIndexResult result);
 
 GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey,
     int count, byte returnField,
-    ref SpanByteAndMemory output, out int resultCount);
+    ref StringOutput output, out int resultCount);
 
 GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
     byte returnField,
-    ref SpanByteAndMemory output, out int resultCount);
+    ref StringOutput output, out int resultCount);
 
 GarnetStatus RangeIndexCreate(PinnedSpanByte key,
     ulong cacheSize, uint minRecord, uint maxRecord,
@@ -780,10 +780,10 @@ GarnetStatus RangeIndexDrop(PinnedSpanByte key);
 GarnetStatus RangeIndexExists(PinnedSpanByte key, out bool exists);
 
 GarnetStatus RangeIndexConfig(PinnedSpanByte key,
-    ref SpanByteAndMemory output);
+    ref StringOutput output);
 
 GarnetStatus RangeIndexMetrics(PinnedSpanByte key,
-    ref SpanByteAndMemory output);
+    ref StringOutput output);
 ```
 
 **GarnetApi.cs — add delegation** (expression-bodied):
@@ -796,7 +796,7 @@ public GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, Pinn
         field, value, out result, out errorMsg);
 
 public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
-    ref SpanByteAndMemory output, out RangeIndexResult result)
+    ref StringOutput output, out RangeIndexResult result)
     => storageSession.RangeIndexGet(
         key.ReadOnlySpan,
         field, ref output, out result);
@@ -1146,8 +1146,9 @@ public sealed partial class RangeIndexManager
 
     /// Acquire shared lock on an EXISTING range index.
     /// Returns NOTFOUND if key doesn't exist.
-    /// If stub has stale ProcessInstanceId, promotes to exclusive, recreates BfTree,
-    /// releases exclusive, re-acquires shared.
+    /// If ProcessInstanceId mismatches (evicted index whose stub was cleared by the
+    /// deserialization observer, or stale pointer after process restart), promotes to
+    /// exclusive, restores BfTree from snapshot, releases exclusive, re-acquires shared.
     internal ReadRangeIndexLock ReadRangeIndex(
         StorageSession session, PinnedSpanByte key, ref StringInput input,
         Span<byte> indexSpan, out GarnetStatus status)
@@ -1157,8 +1158,9 @@ public sealed partial class RangeIndexManager
         // 3. var indexOutput = StringOutput.FromPinnedSpan(indexSpan);
         //    session.Read_MainStore(key.ReadOnlySpan, ref input, ref indexOutput, ref session.stringBasicContext);
         // 4. If not found: status = NOTFOUND, return default lock
-        // 5. ReadIndex → check ProcessInstanceId
-        // 6. If stale: TryPromoteSharedLock → BfTreeService.Recreate() → RMW update → release exclusive, retry
+        // 5. ReadIndex → extract TreePtr, ProcessInstanceId
+        // 6. If ProcessInstanceId != this.processInstanceId:
+        //      TryPromoteSharedLock → restore from snapshot → RMW update → release exclusive, retry
         // 7. Return ReadRangeIndexLock holding shared lock
     }
 
@@ -1699,16 +1701,19 @@ from automatic checkpoint/migration handling.
   transformation or callback.
 - `RecordInfo` flags and `RecordType` byte are part of the record header
   and survive flush as-is.
-- The `TreePtr` field in the stub is a raw `nint` — it is written to disk as a meaningless
-  64-bit value. On reload, it is stale and must be fixed up via `RecreateIndex()`.
+- The `TreePtr` field in the stub is a raw `nint` — it is written to disk as a raw
+  64-bit value. After the BfTree is evicted and freed (see Page Flush below), this
+  pointer becomes stale. On re-read from disk, `ProcessInstanceId` mismatch (set to a
+  sentinel during eviction) triggers `RecreateIndex()` to restore the BfTree from its
+  snapshot.
 - There is an **observer pattern** via `store.Log.SubscribeEvictions()` that fires per-page,
-  which we use to snapshot BfTrees before their stubs become unreachable.
+  which we use to snapshot and free BfTrees whose stubs are being evicted.
 
 ### The Four Persistence Boundaries
 
 | Boundary | What happens | RangeIndex action required |
 |---|---|---|
-| **Page flush** | Tsavorite evicts a hybrid log page from memory to disk. Stub is written as raw bytes; `TreePtr` becomes stale on disk. | Snapshot the BfTree so its data is on disk. |
+| **Page flush** | Tsavorite evicts a hybrid log page from memory to disk. Stub is written as raw bytes. | Snapshot the BfTree to disk, free the native instance, and update `ProcessInstanceId` to a sentinel so the stale `TreePtr` is detected on re-read. Without this, cold BfTree instances leak native memory indefinitely. |
 | **Checkpoint** | Tsavorite takes a full or incremental checkpoint of the hybrid log. All stubs are included. | Snapshot ALL active BfTrees before checkpoint begins. |
 | **Recovery** | Tsavorite recovers from checkpoint. Stubs are loaded with stale `TreePtr` values. | Scan for `RangeIndexRecordType` records, restore each BfTree from its snapshot, update `TreePtr`. |
 | **Key migration** | Individual keys are transferred to another node during cluster slot migration. | Serialize the BfTree (full snapshot bytes) alongside the stub when transmitting. Receiver recreates the BfTree from the serialized bytes. |
@@ -1771,7 +1776,7 @@ internal static string DeriveSnapshotPath(
         $"{checkpointToken}.bftree");
 }
 
-// Overload for page-flush (uses latest checkpoint directory, no token subdirectory)
+// Overload for page-flush eviction (uses a persistent snapshot directory, no token)
 internal static string DeriveSnapshotPath(
     ReadOnlySpan<byte> keyBytes, string baseSnapshotDir)
 {
@@ -1797,58 +1802,103 @@ inputs already available at recovery time (key bytes, checkpoint dir, checkpoint
 ### A. Page Flush (Hybrid Log Eviction)
 
 > **Reference:** `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs`
-> Eviction observer: `store.Log.SubscribeEvictions(observer)` —
-> see `libs/server/Storage/SizeTracker/CacheSizeTracker.cs` lines 88, 97
+> - Eviction observer: `store.Log.SubscribeEvictions(observer)` — fires after a page
+>   is flushed to disk and before the in-memory page is freed.
+> - Deserialization observer: `store.Log.SubscribeDeserializations(observer)` — fires
+>   when a page is brought back from disk into memory.
+> - See `libs/server/Storage/SizeTracker/CacheSizeTracker.cs` for existing usage of both.
 
-**Problem:** When Tsavorite flushes a page containing a RangeIndex stub to disk, the
-`TreePtr` is written as a raw pointer. If the page is later loaded from disk (e.g., during
-a read for a cold key), the `TreePtr` is stale. But the BfTree instance may still be alive
-in memory — we just can't reach it from the deserialized stub.
+**Problem:** When Tsavorite evicts a page containing a RangeIndex stub to disk, the
+BfTree instance remains in native memory. If the index is cold and never accessed again,
+this native memory is leaked indefinitely. We must reclaim it.
 
-**Solution:** Use the `SubscribeEvictions()` observer to intercept page evictions and
-snapshot any RangeIndex stubs being evicted:
+**Solution — two observers working together:**
+
+**1. Eviction observer** (`SubscribeEvictions`): When a page is evicted, snapshot and
+free each RangeIndex BfTree on that page, and remove it from `activeIndexes`.
 
 ```csharp
 // In RangeIndexManager.cs
-internal void SubscribeToEvictions(TsavoriteKV<StoreFunctions, StoreAllocator> store)
+internal void SubscribeToStore(TsavoriteKV<StoreFunctions, StoreAllocator> store)
 {
     store.Log.SubscribeEvictions(new RangeIndexEvictionObserver(this));
+    store.Log.SubscribeDeserializations(new RangeIndexDeserializationObserver(this));
 }
 
-private class RangeIndexEvictionObserver :
-    IObserver<ITsavoriteScanIterator<StoreFunctions, StoreAllocator>>
+private class RangeIndexEvictionObserver : ITsavoriteRecordObserver<ITsavoriteScanIterator>
 {
     private readonly RangeIndexManager manager;
 
-    public void OnNext(ITsavoriteScanIterator<StoreFunctions, StoreAllocator> iter)
+    public void OnNext(ITsavoriteScanIterator iter)
     {
-        // Scan evicted records for RangeIndex RecordType
         while (iter.GetNext(out var recordInfo))
         {
-            // Check RecordType to identify RangeIndex stubs
             // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
 
-            ref var key = ref iter.GetKey();
-            ref var value = ref iter.GetValue();
-
-            ReadIndex(value.AsReadOnlySpan(), out var treePtr, ...);
+            ReadIndex(iter.GetValue().AsReadOnlySpan(), out var treePtr, ...);
             if (treePtr == nint.Zero) continue;
 
-            // Snapshot this BfTree to disk before it becomes unreachable
-            if (activeIndexes.TryGetValue(treePtr, out var entry))
+            if (manager.activeIndexes.TryRemove(treePtr, out var entry))
             {
-                var snapshotPath = DeriveSnapshotPath(entry.KeyBytes);
-                service.Snapshot(treePtr, snapshotPath);
+                // Snapshot BfTree to disk, then free native instance
+                var snapshotPath = DeriveSnapshotPath(entry.KeyBytes, manager.latestSnapshotDir);
+                manager.service.Snapshot(treePtr, snapshotPath);
+                manager.service.Drop(treePtr);
             }
         }
     }
 }
 ```
 
-**On page reload:** When Tsavorite reads a page back from disk and a read/RMW targets a
-RangeIndex key, the `ReadRangeIndex()` locking method detects the stale `ProcessInstanceId`
-and triggers `RecreateIndex()` — restoring the BfTree from its snapshot file. This is the
-same flow as recovery.
+**2. Deserialization observer** (`SubscribeDeserializations`): When a page is loaded
+back from disk into memory, clear the `ProcessInstanceId` in each RangeIndex stub.
+The record is now in mutable memory, so this modification persists. Later, when
+`ReadRangeIndex()` reads the stub, the cheap `ProcessInstanceId != this.processInstanceId`
+check detects it as stale and triggers restoration — no `activeIndexes` lookup needed on
+the hot path.
+
+```csharp
+private class RangeIndexDeserializationObserver : ITsavoriteRecordObserver<ITsavoriteScanIterator>
+{
+    private readonly RangeIndexManager manager;
+
+    public void OnNext(ITsavoriteScanIterator iter)
+    {
+        while (iter.GetNext(out var recordInfo))
+        {
+            // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
+
+            ref var value = ref iter.GetValue();
+            ReadIndex(value.AsReadOnlySpan(), out var treePtr, ..., out var pid);
+
+            // If this BfTree is not active (was evicted or from a prior process),
+            // clear ProcessInstanceId so ReadRangeIndex detects it as stale.
+            if (pid != Guid.Empty && !manager.activeIndexes.ContainsKey(treePtr))
+            {
+                ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
+                    ref MemoryMarshal.GetReference(value.AsSpan()));
+                stub.ProcessInstanceId = Guid.Empty;
+                stub.TreePtr = nint.Zero;
+            }
+        }
+    }
+}
+```
+
+**Hot-path cost:** For active indexes (the common case), the `ProcessInstanceId` matches
+`this.processInstanceId` immediately — a single 16-byte comparison, no registry lookup.
+The `activeIndexes` lookup only happens inside the deserialization observer (cold path,
+when a page is brought back from disk), not on every `ReadRangeIndex` call.
+
+**On cold read (ReadRangeIndex flow):**
+1. Tsavorite loads page from disk → deserialization observer clears `ProcessInstanceId`
+2. `ReadRangeIndex()` reads stub → `ProcessInstanceId == Guid.Empty` ≠ `this.processInstanceId`
+3. Promote to exclusive lock
+4. Derive snapshot path from key bytes + latest snapshot directory
+5. Restore BfTree: `newTreePtr = service.RestoreFromSnapshot(snapshotPath, config...)`
+6. Register `newTreePtr` in `activeIndexes`
+7. Issue RMW with `RecreateIndexArg` to update the stub's `TreePtr` and `ProcessInstanceId`
+8. Release exclusive lock, re-acquire shared, return
 
 ---
 
@@ -2222,7 +2272,7 @@ temp files — the BfTree data can be serialized directly into the migration pay
 
 ### H. Persistence Testing Plan
 
-1. **Page flush round-trip** — Insert data, force page eviction, read cold key back → BfTree restored from snapshot
+1. **Page flush round-trip** — Insert data, force page eviction → BfTree freed; read cold key back → BfTree restored from snapshot, data intact
 2. **Checkpoint + recovery** — Insert data, checkpoint, restart process, verify all RI.GET/RI.SCAN return correct results
 3. **Multiple checkpoints** — Take multiple checkpoints, verify only latest snapshot files are used
 4. **Replica sync** — Primary creates RangeIndex, inserts data, replica connects and receives checkpoint, verify RI.GET on replica returns correct data
