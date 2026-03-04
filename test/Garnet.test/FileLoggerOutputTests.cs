@@ -15,7 +15,7 @@ namespace Garnet.test
     [TestFixture]
     public class FileLoggerOutputTests : AllureTestBase
     {
-        string logFilePath;
+        private string logFilePath;
 
         [SetUp]
         public void Setup()
