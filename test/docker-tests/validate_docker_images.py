@@ -311,7 +311,7 @@ def test_default_device(images: list[ImageDef], results: TestResult, base_port: 
         )
 
         try:
-            # Phase A: Write data + BGSAVE
+            # Phase A: Write data + SAVE
             with garnet_container(img.tag, port, extra_args=dd_args,
                                   volume_dir=vol, name=container_name):
                 s = connect(port)
@@ -322,12 +322,10 @@ def test_default_device(images: list[ImageDef], results: TestResult, base_port: 
                     continue
 
                 resp_send_recv(s, "SET", "dd-key2", "default-persists")
-                resp_send_recv(s, "BGSAVE")
-                time.sleep(3)
+                resp_send_recv(s, "SAVE", timeout=30.0)
                 resp_send_recv(s, "COMMITAOF")
-                time.sleep(1)
                 s.close()
-                results.ok(f"{img.name}: default device write + BGSAVE")
+                results.ok(f"{img.name}: default device write + SAVE")
 
             # Phase B: Restart with --recover, verify data
             with garnet_container(img.tag, port, extra_args=dd_args + " --recover",
@@ -379,7 +377,7 @@ def test_native_device(images: list[ImageDef], results: TestResult, base_port: i
         )
 
         try:
-            # Phase A: Write data + BGSAVE
+            # Phase A: Write data + SAVE
             with garnet_container(img.tag, port, extra_args=nd_args,
                                   volume_dir=vol, name=container_name):
                 s = connect(port)
@@ -390,12 +388,10 @@ def test_native_device(images: list[ImageDef], results: TestResult, base_port: i
                     continue
 
                 r = resp_send_recv(s, "SET", "persist-key2", "survives-restart")
-                resp_send_recv(s, "BGSAVE")
-                time.sleep(3)
+                resp_send_recv(s, "SAVE", timeout=30.0)
                 resp_send_recv(s, "COMMITAOF")
-                time.sleep(1)
                 s.close()
-                results.ok(f"{img.name}: native device write + BGSAVE")
+                results.ok(f"{img.name}: native device write + SAVE")
 
             # Phase B: Restart with --recover, verify data
             with garnet_container(img.tag, port, extra_args=nd_args + " --recover",
