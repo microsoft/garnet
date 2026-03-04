@@ -54,7 +54,7 @@ IMAGES = [
     ImageDef("default",        "Dockerfile",            "garnet-validate:default"),
     ImageDef("noble",          "Dockerfile.ubuntu",     "garnet-validate:noble"),
     ImageDef("noble-chiseled", "Dockerfile.chiseled",   "garnet-validate:noble-chiseled", supports_shell=False),
-    ImageDef("azurelinux",     "Dockerfile.cbl-mariner","garnet-validate:azurelinux"),
+    ImageDef("azurelinux",     "Dockerfile.azurelinux", "garnet-validate:azurelinux"),
     ImageDef("alpine",         "Dockerfile.alpine",     "garnet-validate:alpine", supports_native_device=False),
 ]
 

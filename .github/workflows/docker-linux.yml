@@ -26,7 +26,7 @@ jobs:
           - dockerfile: Dockerfile.chiseled
             image: ghcr.io/${{ github.repository }}-noble-chiseled
             os: ubuntu-latest
-          - dockerfile: Dockerfile.cbl-mariner
+          - dockerfile: Dockerfile.azurelinux
             image: ghcr.io/${{ github.repository }}-azurelinux3.0
             os: ubuntu-latest
     runs-on: ${{ matrix.os }}
