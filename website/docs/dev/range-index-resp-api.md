@@ -1801,89 +1801,99 @@ inputs already available at recovery time (key bytes, checkpoint dir, checkpoint
 
 ### A. Page Flush (Hybrid Log Eviction)
 
-> **Reference:** `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs`
-> - Eviction observer: `store.Log.SubscribeEvictions(observer)` — fires after a page
->   is flushed to disk and before the in-memory page is freed.
+> **Reference:**
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs` — `EvictPage()`
+>   (line 1262) and `OnPagesClosedWorker()` (line 1330).
+> - `libs/storage/Tsavorite/cs/src/core/Index/StoreFunctions/IRecordDisposer.cs` —
+>   `DisposeOnPageEviction` property and `DisposeValueObject(IHeapObject, DisposeReason)`.
+> - `libs/storage/Tsavorite/cs/src/core/Index/StoreFunctions/DisposeReason.cs` —
+>   `DisposeReason.PageEviction` already defined.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectAllocatorImpl.cs` —
+>   `DisposeRecord(ref LogRecord, DisposeReason)` (line 240) handles per-record disposal.
 > - `ClearBitsForDiskImages()` in `RecordInfo.cs` — called when records are loaded from
->   disk (recovery, delta log apply, scan). See also `Recovery.cs:1252`,
+>   disk (recovery, delta log apply, scan). See `Recovery.cs:1252`,
 >   `AllocatorScan.cs:172`, `AllocatorBase.cs:473`.
-> - See `libs/server/Storage/SizeTracker/CacheSizeTracker.cs` for existing eviction
->   observer usage.
 
 **Problem:** When Tsavorite evicts a page containing a RangeIndex stub to disk, the
 BfTree instance remains in native memory. If the index is cold and never accessed again,
 this native memory is leaked indefinitely. We must reclaim it.
 
-**Solution — eviction observer + ISessionFunctions callback:**
+**Solution — `DisposeRecord` on eviction + `OnLoadFromDisk` on deserialization:**
 
-**1. Eviction observer** (`SubscribeEvictions`): When a page is evicted, snapshot and
-free each RangeIndex BfTree on that page, and remove it from `activeIndexes`.
+**1. Eviction via `DisposeRecord` with `DisposeReason.PageEviction`:** Tsavorite already
+has `DisposeRecord(ref LogRecord, DisposeReason)` and `DisposeReason.PageEviction`.
+Currently, `EvictPage()` defers to `OnEvictionObserver` instead of calling
+`DisposeRecord` per-record (see the TODO at `AllocatorBase.cs:1270`). The fix is to
+wire `DisposeRecord` into the eviction path so it is called per-record with
+`DisposeReason.PageEviction`.
+
+The existing `DisposeValueObject(IHeapObject, DisposeReason)` on `IRecordDisposer`
+only handles heap objects. For RangeIndex (which stores inline bytes, not heap objects),
+`DisposeRecord(ref LogRecord, DisposeReason)` is the right hook — it provides access
+to the full record including `RecordType` and inline value bytes.
+
+In the Garnet-level `DisposeRecord` implementation (or a new `IRecordDisposer` that
+replaces `DefaultRecordDisposer`), check `RecordType` and clean up the BfTree:
 
 ```csharp
-// In RangeIndexManager.cs
-internal void SubscribeToStore(TsavoriteKV<StoreFunctions, StoreAllocator> store)
+// In Garnet's record disposer (handling DisposeReason.PageEviction):
+public void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
 {
-    store.Log.SubscribeEvictions(new RangeIndexEvictionObserver(this));
-}
+    if (reason != DisposeReason.PageEviction)
+        return;
+    if (logRecord.RecordType != RangeIndexManager.RangeIndexRecordType)
+        return;
 
-private class RangeIndexEvictionObserver : ITsavoriteRecordObserver<ITsavoriteScanIterator>
-{
-    private readonly RangeIndexManager manager;
+    ReadIndex(logRecord.ValueSpan, out var treePtr, ...);
+    if (treePtr == nint.Zero) return;
 
-    public void OnNext(ITsavoriteScanIterator iter)
+    if (rangeIndexManager.activeIndexes.TryRemove(treePtr, out var entry))
     {
-        while (iter.GetNext(out var recordInfo))
-        {
-            // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
-
-            ReadIndex(iter.GetValue().AsReadOnlySpan(), out var treePtr, ...);
-            if (treePtr == nint.Zero) continue;
-
-            if (manager.activeIndexes.TryRemove(treePtr, out var entry))
-            {
-                // Snapshot BfTree to disk, then free native instance
-                var snapshotPath = DeriveSnapshotPath(entry.KeyBytes, manager.latestSnapshotDir);
-                manager.service.Snapshot(treePtr, snapshotPath);
-                manager.service.Drop(treePtr);
-            }
-        }
+        // Snapshot BfTree to disk, then free native instance
+        var snapshotPath = DeriveSnapshotPath(entry.KeyBytes,
+            rangeIndexManager.latestSnapshotDir);
+        rangeIndexManager.service.Snapshot(treePtr, snapshotPath);
+        rangeIndexManager.service.Drop(treePtr);
     }
 }
 ```
 
-**2. `OnLoadFromDisk` callback** (new `ISessionFunctions` method): When a record is
-loaded from disk into memory, Tsavorite already calls `ClearBitsForDiskImages()` to
-clear transient `RecordInfo` bits. At the same call site, introduce a new
-`ISessionFunctions` callback — `OnLoadFromDisk(ref LogRecord logRecord)` — that gives
-session functions an opportunity to inspect and modify the record value.
+> **Tsavorite change required:** Wire `DisposeRecord(ref LogRecord, DisposeReason.PageEviction)`
+> into the eviction path (`EvictPage()` / `OnPagesClosedWorker()`), iterating records on
+> the evicted page and calling `DisposeRecord` per-record. This resolves the existing
+> TODO at `AllocatorBase.cs:1270`.
 
-For RangeIndex, `MainSessionFunctions.OnLoadFromDisk` checks the `RecordType` and
-clears `ProcessInstanceId` in the stub:
+**2. `OnLoadFromDisk` callback** (new `ISessionFunctions` method): Invoked per-record
+when a record is loaded from disk into memory, at the same call site as
+`ClearBitsForDiskImages()`. Gives session functions an opportunity to inspect and modify
+the record value.
+
+For RangeIndex, `MainSessionFunctions.OnLoadFromDisk` clears the `ProcessInstanceId`
+so that `ReadRangeIndex()` detects the stub as stale and triggers restoration:
 
 ```csharp
 // In MainSessionFunctions (new ISessionFunctions callback):
 public void OnLoadFromDisk(ref LogRecord logRecord)
 {
-    if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
-    {
-        // Clear ProcessInstanceId so ReadRangeIndex detects it as stale
-        ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
-            ref MemoryMarshal.GetReference(logRecord.ValueSpan));
-        stub.ProcessInstanceId = Guid.Empty;
-        stub.TreePtr = nint.Zero;
-    }
+    if (logRecord.RecordType != RangeIndexManager.RangeIndexRecordType)
+        return;
+
+    // Clear ProcessInstanceId so ReadRangeIndex detects it as stale
+    ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
+        ref MemoryMarshal.GetReference(logRecord.ValueSpan));
+    stub.ProcessInstanceId = Guid.Empty;
+    stub.TreePtr = nint.Zero;
 }
 ```
 
 > **Tsavorite change required:** Add `OnLoadFromDisk(ref LogRecord logRecord)` to
-> `ISessionFunctions` and call it alongside `ClearBitsForDiskImages()` in
+> `ISessionFunctions` and call it per-record alongside `ClearBitsForDiskImages()` in
 > `Recovery.cs`, `AllocatorScan.cs`, and `AllocatorBase.cs` (delta log apply).
-> The default implementation should be a no-op.
+> Default implementation is a no-op.
 
 **Hot-path cost:** For active indexes (the common case), the `ProcessInstanceId` matches
 `this.processInstanceId` immediately — a single 16-byte comparison. No registry lookup.
-The `OnLoadFromDisk` callback only fires on the cold path (when a record is loaded from
-disk), not on every `ReadRangeIndex` call.
+The callbacks only fire on cold paths (page eviction / page load from disk).
 
 **On cold read (ReadRangeIndex flow):**
 1. Tsavorite loads record from disk → `OnLoadFromDisk` clears `ProcessInstanceId`
