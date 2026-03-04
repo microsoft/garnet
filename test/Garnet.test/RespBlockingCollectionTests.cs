@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -108,7 +108,7 @@ namespace Garnet.test
                     var value = $"value{i}";
                     var btExpectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
                     TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
-                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token).ConfigureAwait(false);
                 }
             }, cts.Token);
 
@@ -119,7 +119,7 @@ namespace Garnet.test
                     using var lcr = TestUtils.CreateRequest();
                     var value = $"value{i}";
                     lcr.SendCommand($"{pushCmd} {key} {value}");
-                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token).ConfigureAwait(false);
                 }
             }, cts.Token);
 
@@ -960,7 +960,7 @@ namespace Garnet.test
 
             lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
             lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
             using var lcr = TestUtils.CreateRequest();
             var response = lcr.SendCommand($"BZMPOP 1 1 {key} {mode}");
             var expectedResponse = "$-1\r\n";
@@ -1078,7 +1078,7 @@ namespace Garnet.test
 
             lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
             lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
             using var lcr = TestUtils.CreateRequest();
             var response = lcr.SendCommand($"{command} {key} 1");
             var expectedResponse = "$-1\r\n";
