@@ -62,7 +62,7 @@ namespace Garnet.server
         public class AofReplayCoordinator(GarnetServerOptions serverOptions, AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
             readonly GarnetServerOptions serverOptions = serverOptions;
-            readonly ConcurrentDictionary<BarrierKey, LeaderBarier> leaderBarriers = [];
+            readonly ConcurrentDictionary<BarrierKey, LeaderBarrier> leaderBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount);
 
@@ -424,15 +424,15 @@ namespace Garnet.server
                 aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
 
                 // Get barrier helper
-                LeaderBarier GetBarrier(int sessionId, AofTransactionHeader txnHeader)
+                LeaderBarrier GetBarrier(int sessionId, AofTransactionHeader txnHeader)
                 {
                     // Use session ID and txn ID as the barrier key to prevent conflicts between transactions from the same session that access disjoint logs
                     var barrierID = new BarrierKey() { SessionId = sessionId, txnId = txnHeader.shardedHeader.sequenceNumber };
-                    return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarier(txnHeader.participantCount));
+                    return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarrier(txnHeader.participantCount));
                 }
 
                 // Remove barrier helper
-                bool TryRemoveBarrier(int sessionId, AofTransactionHeader txnHeader, out LeaderBarier eventBarrier)
+                bool TryRemoveBarrier(int sessionId, AofTransactionHeader txnHeader, out LeaderBarrier eventBarrier)
                 {
                     var barrierID = new BarrierKey() { SessionId = sessionId, txnId = txnHeader.shardedHeader.sequenceNumber };
                     return leaderBarriers.TryRemove(barrierID, out eventBarrier);

@@ -10,7 +10,7 @@ namespace Garnet.common
     /// Synchronizes a group of participants, allowing one to act as the leader while others wait until released.
     /// </summary>
     /// <param name="participantCount"></param>
-    public class LeaderBarier(int participantCount)
+    public class LeaderBarrier(int participantCount)
     {
         readonly int participantCount = participantCount;
         int arrivedCount = participantCount;
