@@ -1202,10 +1202,10 @@ namespace Garnet.test
             const string sourceKey = "hll_sparse_stream_src";
 
             // Step 1: Clean up and create minimal sparse HLL
-            db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(sourceKey);
 
             for (int i = 0; i < 2; i++)
-                db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
 
             // Step 2: Dump and parse the structure
             var dump = db.KeyDump(sourceKey)!;
@@ -1373,6 +1373,104 @@ namespace Garnet.test
             var (lenParsed32, start32) = ParseDumpValueLengthAndStart(dump32);
             ClassicAssert.AreEqual(len32, lenParsed32);
             ClassicAssert.AreEqual(6, start32);
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogOperationsValidateStructuralIntegrity()
+        {
+            // Test verifies that even when a corrupted HLL payload passes CRC validation during RESTORE,
+            // subsequent HLL operations (PFADD, PFCOUNT, PFMERGE) properly detect structural corruption
+            // and reject the operations.
+            //
+            // This tests defense-in-depth: CRC only validates data integrity during transfer,
+            // but operations must still validate structural correctness.
+            //
+            // Steps:
+            // 1. Create a valid sparse HLL
+            // 2. Dump it and corrupt the SparseRLESize to be larger than payload
+            // 3. Recalculate CRC using Garnet's Crc64 to make corruption pass RESTORE
+            // 4. Verify RESTORE succeeds (CRC is valid)
+            // 5. Verify PFADD, PFCOUNT, PFMERGE all fail with WRONGTYPE (structural validation)
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_valid_source";
+            const string corruptedKey = "hll_corrupted_key";
+            const string validKey = "hll_valid_for_merge";
+
+            // Step 1: Create valid sparse HLL and test data
+            _ = db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(corruptedKey);
+            _ = db.KeyDelete(validKey);
+
+            for (var i = 0; i < 5; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            _ = db.HyperLogLogAdd(validKey, "test");
+
+            // Step 2: Dump and corrupt the SparseRLESize field
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            // Extract HLL value
+            var hllValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, hllValue[3], "Expected sparse HLL representation.");
+
+            // Corrupt RLE size: make it larger than actual payload
+            // This makes the declared RLE stream size exceed what's actually available
+            var originalRleSize = BinaryPrimitives.ReadUInt16LittleEndian(hllValue.AsSpan(16, 2));
+            var availablePayload = valueLength - 18; // Total length minus header (16) and RLE size field (2)
+            var corruptedRleSize = (ushort)(availablePayload + 50); // Exceeds actual available space
+            BinaryPrimitives.WriteUInt16LittleEndian(hllValue.AsSpan(16, 2), corruptedRleSize);
+
+            // Step 3: Reconstruct dump with valid CRC using Garnet.common.Crc64
+            byte[] encodedLength = hllValue.Length < 64
+                ? [(byte)(hllValue.Length & 0x3F)]
+                : hllValue.Length < 16384
+                    ? [(byte)(((hllValue.Length >> 8) & 0x3F) | 0x40), (byte)(hllValue.Length & 0xFF)]
+                    : [0x80, .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(hllValue.Length))];
+
+            var rdbVersion = dump.AsSpan(valueStart + valueLength, 2).ToArray();
+
+            // Build payload without CRC
+            var payloadWithoutCrc = new byte[1 + encodedLength.Length + hllValue.Length + rdbVersion.Length];
+            payloadWithoutCrc[0] = 0x00; // RDB type encoding
+            encodedLength.CopyTo(payloadWithoutCrc.AsSpan(1, encodedLength.Length));
+            hllValue.CopyTo(payloadWithoutCrc.AsSpan(1 + encodedLength.Length, hllValue.Length));
+            rdbVersion.CopyTo(payloadWithoutCrc.AsSpan(1 + encodedLength.Length + hllValue.Length, rdbVersion.Length));
+
+            // Calculate CRC64 using Garnet's implementation (CRC64-Jones polynomial)
+            var crc64 = Garnet.common.Crc64.Hash(payloadWithoutCrc);
+
+            // Build final dump with valid CRC
+            var craftedDump = new byte[payloadWithoutCrc.Length + 8];
+            payloadWithoutCrc.CopyTo(craftedDump, 0);
+            crc64.CopyTo(craftedDump.AsSpan(payloadWithoutCrc.Length, 8));
+
+            // Step 4: RESTORE should succeed (CRC is valid, basic validation passes)
+            db.KeyRestore(corruptedKey, craftedDump);
+            ClassicAssert.IsTrue(db.KeyExists(corruptedKey), "Corrupted HLL should be restored with valid CRC");
+
+            // Step 5: Verify operations fail due to structural validation
+
+            // PFADD should fail - structural validation detects corrupted RLE size
+            var pfaddEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogAdd(corruptedKey, "newelem"));
+            StringAssert.Contains("WRONGTYPE", pfaddEx!.Message, "PFADD should reject corrupted HLL");
+
+            // PFCOUNT should fail
+            var pfcountEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogLength(corruptedKey));
+            StringAssert.Contains("WRONGTYPE", pfcountEx!.Message, "PFCOUNT should reject corrupted HLL");
+
+            // PFMERGE should fail when corrupted HLL is source
+            var pfmergeEx1 = Assert.Throws<RedisServerException>(() =>
+                db.HyperLogLogMerge(validKey, validKey, corruptedKey));
+            StringAssert.Contains("WRONGTYPE", pfmergeEx1!.Message, "PFMERGE should reject corrupted HLL as source");
+
+            // PFMERGE should fail when corrupted HLL is destination
+            var pfmergeEx2 = Assert.Throws<RedisServerException>(() =>
+                db.HyperLogLogMerge(corruptedKey, corruptedKey, validKey));
+            StringAssert.Contains("WRONGTYPE", pfmergeEx2!.Message, "PFMERGE should reject corrupted HLL as destination");
         }
     }
 }
