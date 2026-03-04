@@ -2462,6 +2462,31 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TtlRoundingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // String key: SET + EXPIRE then immediately TTL should return the same value
+            var key = "ttlRoundKey";
+            var val = "value";
+            var expire = 10;
+
+            db.StringSet(key, val);
+            db.KeyExpire(key, TimeSpan.FromSeconds(expire));
+            var ttl = db.Execute("TTL", key);
+            // TTL should round to nearest second (matching Redis), not floor
+            ClassicAssert.AreEqual(expire, (int)ttl);
+
+            // Object key: ZADD + EXPIRE then immediately TTL should return the same value
+            var objKey = "ttlRoundObjKey";
+            db.SortedSetAdd(objKey, "member", 1.0);
+            db.KeyExpire(objKey, TimeSpan.FromSeconds(expire));
+            ttl = db.Execute("TTL", objKey);
+            ClassicAssert.AreEqual(expire, (int)ttl);
+        }
+
+        [Test]
         public void ObjectTTLTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
