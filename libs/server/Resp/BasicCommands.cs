@@ -693,7 +693,7 @@ namespace Garnet.server
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 var ok = status != GarnetStatus.NOTFOUND;
 
-                if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && output.IsOperationSkipped))
+                if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && !output.IsOperationSkipped))
                     WriteNull();
                 else
                     ProcessOutput(output.SpanByteAndMemory);
