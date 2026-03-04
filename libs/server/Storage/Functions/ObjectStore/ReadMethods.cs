@@ -38,7 +38,8 @@ namespace Garnet.server
 
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _,
+                    if (input.metaCommandInfo.MetaCommand != RespMetaCommand.None &&
+                        !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _,
                             readOnlyContext: true))
                         return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
 

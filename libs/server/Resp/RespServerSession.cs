@@ -741,6 +741,7 @@ namespace Garnet.server
                     }
 
                     outputEtag = true;
+                    etag = -1;
                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                         SendAndReset();
                 }
@@ -750,7 +751,6 @@ namespace Garnet.server
              * WARNING: Do not add any command here classified as @slow!
              * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
              */
-            etag = -1;
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),

@@ -25,12 +25,16 @@ namespace Garnet.server
                 return false;
             }
 
-            output.ETag = srcLogRecord.ETag;
-
-            if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            if (metaCmd != RespMetaCommand.None || srcLogRecord.Info.HasETag)
             {
-                output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
-                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                output.ETag = srcLogRecord.ETag;
+
+                if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+                {
+                    output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                    return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                }
             }
 
             var cmd = input.header.cmd;

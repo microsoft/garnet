@@ -62,7 +62,10 @@ namespace Garnet.server
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
-            _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedEtag, initContext: true);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            long updatedEtag = LogRecord.NoETag;
+            if (metaCmd != RespMetaCommand.None)
+                _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedEtag, initContext: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -362,7 +365,11 @@ namespace Garnet.server
             var hadETagPreMutation = logRecord.Info.HasETag;
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
+            var isETagCmd = metaCmd.IsETagCommand();
+            var updatedEtag = logRecord.ETag;
+
+            if ((metaCmd != RespMetaCommand.None || hadETagPreMutation) &&
+                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
             {
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= StringOutputFlags.OperationSkipped;
@@ -377,12 +384,12 @@ namespace Garnet.server
             }
 
             // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            if (!hadETagPreMutation && input.metaCommandInfo.MetaCommand.IsETagCommand() &&
+            if (!hadETagPreMutation && isETagCmd &&
                 !logRecord.CanAddETagInPlace(out _, out _, out _))
                 return IPUResult.Failed;
 
             var shouldCheckExpiration = true;
-            var shouldUpdateETag = hadETagPreMutation || metaCmd.IsETagCommand();
+            var shouldUpdateETag = hadETagPreMutation || isETagCmd;
 
             switch (cmd)
             {
@@ -410,7 +417,7 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return IPUResult.Failed;
 
-                    if (!metaCmd.IsETagCommand() && !logRecord.RemoveETag())
+                    if (!isETagCmd && !logRecord.RemoveETag())
                         return IPUResult.Failed;
 
                     // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
@@ -431,7 +438,7 @@ namespace Garnet.server
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!input.metaCommandInfo.MetaCommand.IsETagCommand(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!isETagCmd, "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
@@ -441,7 +448,7 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
                         return IPUResult.Failed;
 
-                    if (!metaCmd.IsETagCommand() && !logRecord.RemoveETag())
+                    if (!isETagCmd && !logRecord.RemoveETag())
                         return IPUResult.Failed;
 
                     break;
@@ -813,11 +820,16 @@ namespace Garnet.server
 
             var hadETagPreMutation = srcLogRecord.Info.HasETag;
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var shouldUpdateETag = hadETagPreMutation || metaCmd.IsETagCommand();
+            var isETagCmd = metaCmd.IsETagCommand();
+            var shouldUpdateETag = hadETagPreMutation || isETagCmd;
+            var updatedEtag = srcLogRecord.ETag;
 
-            // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
-            var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedEtag);
-            Debug.Assert(execOp);
+            if (metaCmd != RespMetaCommand.None || hadETagPreMutation)
+            {
+                // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedEtag);
+                Debug.Assert(execOp);
+            }
 
             switch (cmd)
             {
@@ -839,7 +851,7 @@ namespace Garnet.server
                     if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1 != 0 ? input.arg1 : srcLogRecord.Expiration))
                         return false;
 
-                    if (!metaCmd.IsETagCommand() && !dstLogRecord.RemoveETag())
+                    if (!isETagCmd && !dstLogRecord.RemoveETag())
                         return false;
                     break;
 
@@ -848,7 +860,7 @@ namespace Garnet.server
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!input.metaCommandInfo.MetaCommand.IsETagCommand(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!isETagCmd, "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
@@ -858,7 +870,7 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
 
-                    if (!metaCmd.IsETagCommand() && !dstLogRecord.RemoveETag())
+                    if (!isETagCmd && !dstLogRecord.RemoveETag())
                         return false;
                     break;
 

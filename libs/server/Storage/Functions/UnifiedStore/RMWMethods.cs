@@ -88,19 +88,19 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DEL:
-                    var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _);
-                    if (execOp)
+                    var metaCmd = input.metaCommandInfo.MetaCommand;
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    if (metaCmd != RespMetaCommand.None || srcLogRecord.Info.HasETag)
                     {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                    }
-                    else
-                    {
-                        functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
-                        output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                    }
+                        if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _))
+                        {
+                            functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                            output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                            rmwInfo.Action = RMWAction.CancelOperation;
+                        }
 
-                    output.ETag = srcLogRecord.ETag;
+                        output.ETag = srcLogRecord.ETag;
+                    }
 
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will short-circuit the InternalRMW code to not run CU, and return SUCCESS.
@@ -134,11 +134,17 @@ namespace Garnet.server
             }
 
             var hadETagPreMutation = srcLogRecord.Info.HasETag;
-            var shouldUpdateETag = hadETagPreMutation || input.metaCommandInfo.MetaCommand.IsETagCommand();
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var isETagCmd = metaCmd.IsETagCommand();
+            var shouldUpdateETag = hadETagPreMutation || isETagCmd;
+            var updatedEtag = srcLogRecord.ETag;
 
-            // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
-            var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedEtag);
-            Debug.Assert(execOp);
+            if (metaCmd != RespMetaCommand.None || hadETagPreMutation)
+            {
+                // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedEtag);
+                Debug.Assert(execOp);
+            }
 
             var cmd = input.header.cmd;
             var result = cmd switch
@@ -278,11 +284,13 @@ namespace Garnet.server
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
             var hadETagPreMutation = logRecord.Info.HasETag;
-            
-            var shouldUpdateETag = hadETagPreMutation || metaCmd.IsETagCommand();
+            var isETagCmd = metaCmd.IsETagCommand();
+            var shouldUpdateETag = hadETagPreMutation || isETagCmd;
             var hasExpiration = logRecord.Info.HasExpiration;
+            var updatedEtag = logRecord.ETag;
 
-            if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedEtag))
+            if ((metaCmd != RespMetaCommand.None || hadETagPreMutation) &&
+                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
             {
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
@@ -292,7 +300,7 @@ namespace Garnet.server
             }
 
             // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            if (!hadETagPreMutation && metaCmd.IsETagCommand() && !logRecord.CanAddETagInPlace(out _, out _, out _))
+            if (!hadETagPreMutation && isETagCmd && !logRecord.CanAddETagInPlace(out _, out _, out _))
                 return IPUResult.Failed;
 
             var ipuResult = IPUResult.Succeeded;
