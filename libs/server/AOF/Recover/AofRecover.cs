@@ -40,7 +40,7 @@ namespace Garnet.server
                 var GiBperSecs = aofSize / seconds / 1_000_000_000;
 
                 logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
-                logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0} bytes", total_number_of_replayed_records);
+                logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0}", total_number_of_replayed_records);
                 logger?.LogInformation("Throughput {recordsPerSec:N2} records/sec", recordsPerSec);
                 logger?.LogInformation("AOF Recovery size {aofSize:N0}", aofSize);
                 logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", GiBperSecs);
