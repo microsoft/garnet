@@ -36,7 +36,11 @@
     "on-headers": "^1.1.0",
     "lodash-es": "4.17.23",
     "minimatch": "3.1.5",
-    "serialize-javascript": "7.0.4"
+    "serialize-javascript": "7.0.4",
+    "dompurify": "3.3.1"
+  },
+  "resolutions": {
+    "dompurify": "3.3.1"
   },
   "browserslist": {
     "production": [
