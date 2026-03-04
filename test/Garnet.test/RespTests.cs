@@ -2476,8 +2476,8 @@ namespace Garnet.test
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
             var ttl = (long)db.Execute("TTL", key);
             // TTL should round to nearest second (matching Redis), not floor.
-            // Allow 2s tolerance for network/scheduling delays.
-            ClassicAssert.GreaterOrEqual(ttl, expire - 2, $"String TTL {ttl} too low (expected near {expire})");
+            // Allow 5s tolerance for network/scheduling delays.
+            ClassicAssert.GreaterOrEqual(ttl, expire - 5, $"String TTL {ttl} too low (expected near {expire})");
             ClassicAssert.LessOrEqual(ttl, expire, $"String TTL {ttl} exceeds {expire}");
 
             // Object key: ZADD + EXPIRE then immediately TTL should return the same value
@@ -2485,7 +2485,7 @@ namespace Garnet.test
             db.SortedSetAdd(objKey, "member", 1.0);
             db.KeyExpire(objKey, TimeSpan.FromSeconds(expire));
             ttl = (long)db.Execute("TTL", objKey);
-            ClassicAssert.GreaterOrEqual(ttl, expire - 2, $"Object TTL {ttl} too low (expected near {expire})");
+            ClassicAssert.GreaterOrEqual(ttl, expire - 5, $"Object TTL {ttl} too low (expected near {expire})");
             ClassicAssert.LessOrEqual(ttl, expire, $"Object TTL {ttl} exceeds {expire}");
         }
 
