@@ -294,7 +294,7 @@ context for the stub — no additional Tsavorite context type is required.
   cannot be inlined into Tsavorite's log the way a `HashObject` or `SortedSetObject` can.
 - The stub pattern cleanly separates metadata persistence (Tsavorite checkpoint) from
   index operations (Bf-Tree).
-- A 56-byte fixed-size stub is a natural fit for the string context's inline byte values,
+- A 50-byte fixed-size stub is a natural fit for the string context's inline byte values,
   avoiding the overhead of `GarnetObjectBase` serialization.
 - The `RecordInfo.ValueIsObject` bit remains `false` for RangeIndex records, distinguishing
   them from collection objects.
@@ -375,14 +375,14 @@ RESP Client ("RI.SET r1 mykey myval")
 ## The Stub (RangeIndexManager.Index.cs)
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
-> the 56-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`.
+> the 50-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`.
 
 A fixed-size struct stored as a raw-byte (non-object) value in the unified store, accessed
 via the string context. Since `RecordInfo.ValueIsObject` is `false` for these records, the
 string context's `MainSessionFunctions` handles the RMW/Read/Delete callbacks.
 
 ```csharp
-[StructLayout(LayoutKind.Explicit, Size = 56)]
+[StructLayout(LayoutKind.Explicit, Size = 50)]
 private struct RangeIndexStub
 {
     [FieldOffset(0)]  public nint TreePtr;              // Pointer to live BfTree instance
@@ -393,9 +393,7 @@ private struct RangeIndexStub
     [FieldOffset(28)] public uint LeafPageSize;         // BfTree leaf_page_size
     [FieldOffset(32)] public byte StorageBackend;       // 0=Memory, 1=Disk, 2=Cache
     [FieldOffset(33)] public byte Flags;                // bit 0: WAL enabled
-    [FieldOffset(34)] public ushort Reserved;
-    [FieldOffset(36)] public uint Reserved2;             // Reserved (was SnapshotPathHash)
-    [FieldOffset(40)] public Guid ProcessInstanceId;    // Detects stale pointers after restart
+    [FieldOffset(34)] public Guid ProcessInstanceId;    // Detects stale pointers after restart/eviction
 }
 ```
 
@@ -936,7 +934,7 @@ internal sealed unsafe partial class StorageSession
 public sealed partial class RangeIndexManager : IDisposable
 {
     // --- Constants ---
-    internal const int IndexSizeBytes = 56; // sizeof(RangeIndexStub)
+    internal const int IndexSizeBytes = 50; // sizeof(RangeIndexStub)
     internal const long RISetAppendLogArg = long.MinValue;
     internal const long DeleteAfterDropArg = RISetAppendLogArg + 1;
     internal const long RecreateIndexArg = DeleteAfterDropArg + 1;
@@ -1019,7 +1017,7 @@ public sealed partial class RangeIndexManager : IDisposable
 #### 7b. `RangeIndexManager.Index.cs` — Stub struct + serialization
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
-> 56-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`, `SetContextForMigration()`.
+> 50-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`, `SetContextForMigration()`.
 
 ```csharp
 public sealed partial class RangeIndexManager
@@ -1027,7 +1025,7 @@ public sealed partial class RangeIndexManager
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     private struct RangeIndexStub
     {
-        internal const int Size = 56;
+        internal const int Size = 50;
 
         [FieldOffset(0)]  public nint TreePtr;
         [FieldOffset(8)]  public ulong CacheSize;
@@ -1790,13 +1788,6 @@ internal static string DeriveSnapshotPath(
 > would map to the same snapshot file, causing silent data loss. Hex-encoding the key bytes
 > is deterministic, collision-free, and produces short paths for typical key names.
 
-### Design: Updated Stub Layout
-
-Since the snapshot path is now derived collision-free from the hex-encoded key bytes, the
-`SnapshotPathHash` field in the stub is **no longer needed for verification**. It can be
-repurposed as a reserved field or removed. The path derivation is fully deterministic from
-inputs already available at recovery time (key bytes, checkpoint dir, checkpoint token).
-
 ---
 
 ### A. Page Flush (Hybrid Log Eviction)
@@ -2108,7 +2099,7 @@ paths and recreates the BfTrees.
 > keys require special 2-phase migration since BfTree data lives outside Tsavorite.
 
 **Problem:** During slot migration, individual keys are transferred to the target node.
-For a RangeIndex key, we can't just send the 56-byte stub — we must also send the
+For a RangeIndex key, we can't just send the 50-byte stub — we must also send the
 entire BfTree data (all entries in the index). The target node must recreate the BfTree
 from this data.
 
@@ -2157,7 +2148,7 @@ internal bool TransmitRangeIndexKeys()
         // 3. Read snapshot file bytes
         var snapshotBytes = File.ReadAllBytes(tempSnapshotPath);
 
-        // 4. Send to target: [stub (56 bytes)] + [snapshot_length (4 bytes)]
+        // 4. Send to target: [stub (50 bytes)] + [snapshot_length (4 bytes)]
         //                   + [snapshot_bytes (N bytes)]
         var payload = new byte[stubBytes.Length + 4 + snapshotBytes.Length];
         Buffer.BlockCopy(stubBytes, 0, payload, 0, stubBytes.Length);
