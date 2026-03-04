@@ -33,7 +33,7 @@ namespace Tsavorite.core
             var allocOptions = new AllocateOptions() { recycle = true };
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
-            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
 
             stackCtx.SetNewRecord(newLogicalAddress);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);

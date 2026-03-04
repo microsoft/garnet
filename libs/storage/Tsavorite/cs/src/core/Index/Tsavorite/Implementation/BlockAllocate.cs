@@ -61,7 +61,7 @@ namespace Tsavorite.core
                 minRevivAddress = stackCtx.hei.Address;
 
             if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
-                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
+                    && GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
             {
                 new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo);
                 return true;

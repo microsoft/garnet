@@ -71,13 +71,13 @@ namespace Tsavorite.core
     /// are released as soon as possible.</remarks>
     public struct CompletedOutput<TInput, TOutput, TContext>
     {
-        private SpanByteHeapContainer keyContainer;
+        private ConditionallyHoistedKey keyContainer;
         private IHeapContainer<TInput> inputContainer;
 
         /// <summary>
         /// The key for this pending operation.
         /// </summary>
-        public readonly ReadOnlySpan<byte> Key => keyContainer.Get().ReadOnlySpan;
+        public readonly ConditionallyHoistedKey Key => keyContainer;
 
         /// <summary>
         /// The input for this pending operation.
@@ -110,7 +110,6 @@ namespace Tsavorite.core
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             keyContainer = pendingContext.requestKey;
-            pendingContext.requestKey = null;
             inputContainer = pendingContext.input;
             pendingContext.input = default;
 
@@ -124,7 +123,7 @@ namespace Tsavorite.core
         {
             var tempKeyContainer = keyContainer;
             keyContainer = default;
-            tempKeyContainer?.Dispose();
+            tempKeyContainer.Dispose();
 
             var tempInputContainer = inputContainer;
             inputContainer = default;

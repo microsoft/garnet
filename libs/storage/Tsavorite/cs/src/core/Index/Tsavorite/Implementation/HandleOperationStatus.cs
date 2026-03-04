@@ -19,7 +19,7 @@ namespace Tsavorite.core
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
+                && HandleRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
@@ -147,7 +147,7 @@ namespace Tsavorite.core
                 request.id = pendingContext.id;
 
                 // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
-                request.requestKey = pendingContext.requestKey is null ? default : pendingContext.requestKey.Get();
+                request.requestKey = pendingContext.requestKey;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;

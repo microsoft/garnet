@@ -1329,7 +1329,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord));
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     if ((pageStartLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)

@@ -13,13 +13,27 @@ namespace Tsavorite.core
     {
         #region Key Comparer
         /// <summary>Get a 64-bit hash code for a key</summary>
-        long GetKeyHashCode64(ReadOnlySpan<byte> key);
+        long GetKeyHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>Compare two keys for equality</summary>
-        bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
+        bool KeysEqual<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
         #endregion Key Comparer
 
-        #region Value Serializer
+            #region Value Serializer
         /// <summary>Creates an instance of the Value Serializer</summary>
         IObjectSerializer<IHeapObject> CreateValueObjectSerializer();
 

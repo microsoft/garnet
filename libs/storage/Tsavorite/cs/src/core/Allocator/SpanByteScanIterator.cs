@@ -220,7 +220,7 @@ namespace Tsavorite.core
                             if (currentAddress >= headAddress && store is not null)
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
-                                store.LockForScan(ref stackCtx, logRecord.Key);
+                                store.LockForScan(ref stackCtx, logRecord);
                             }
 
                             if (recordBuffer == null)
@@ -266,7 +266,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator.BeginGetPrevInMemory(ReadOnlySpan<byte> key, out LogRecord logRecord, out bool continueOnDisk)
+        bool IPushScanIterator.BeginGetPrevInMemory<TKey>(TKey key, out LogRecord logRecord, out bool continueOnDisk)
         {
             while (true)
             {
@@ -286,7 +286,7 @@ namespace Tsavorite.core
                 nextAddress = logRecord.Info.PreviousAddress;
 
                 // Do not SkipOnScan here; we Seal previous versions.
-                if (logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
+                if (logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord, key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -388,6 +388,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long CalculateHeapMemorySize() => diskLogRecord.CalculateHeapMemorySize();
         #endregion // ISourceLogRecord
+
+        #region IKey
+        /// <inheritdoc/>
+        public bool IsPinned => IsPinnedKey;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> KeyBytes => Key;
+        #endregion
 
         /// <summary>
         /// Dispose iterator

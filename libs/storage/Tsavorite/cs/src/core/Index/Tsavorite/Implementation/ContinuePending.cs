@@ -35,18 +35,18 @@ namespace Tsavorite.core
             if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
                 goto NotFound;
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, pendingContext.requestKey.Get()))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.DiskLogRecord, pendingContext.requestKey))
                 goto NotFound;
 
             SpinWaitUntilClosed(request.logicalAddress);
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(pendingContext.DiskLogRecord));
 
             while (true)
             {
                 if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 {
                     Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
-                    if (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                    if (HandleImmediateRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions, ref pendingContext))
                         continue;
                     return status;
                 }
@@ -60,7 +60,7 @@ namespace Tsavorite.core
                     LogRecord memoryRecord = default;
                     if (!pendingContext.IsReadAtAddress)
                     {
-                        if (TryFindRecordInMemory(pendingContext.Key, ref stackCtx, ref pendingContext))
+                        if (TryFindRecordInMemory(pendingContext.DiskLogRecord, ref stackCtx, ref pendingContext))
                         {
                             memoryRecord = stackCtx.recSrc.CreateLogRecord();
                             if (memoryRecord.Info.Tombstone)
@@ -85,7 +85,7 @@ namespace Tsavorite.core
                                 OperationStatus internalStatus;
                                 do
                                 {
-                                    internalStatus = InternalRead(pendingContext.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                    internalStatus = InternalRead(pendingContext.DiskLogRecord, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
                                         pendingContext.userContext, ref pendingContext, sessionFunctions);
                                 }
                                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
@@ -218,7 +218,7 @@ namespace Tsavorite.core
                 {
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
                     // the record in 'request' is stale. We only lock for tag-chain stability during search.
-                    if (TryFindRecordForPendingOperation(pendingContext.requestKey.Get(), ref stackCtx, out status, ref pendingContext))
+                    if (TryFindRecordForPendingOperation(pendingContext.requestKey, ref stackCtx, out status, ref pendingContext))
                     {
                         if (status != OperationStatus.SUCCESS)
                             goto CheckRetry;
@@ -236,13 +236,13 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-                    status = CreateNewRecordRMW(pendingContext.requestKey.Get(), in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
+                    status = CreateNewRecordRMW(pendingContext.requestKey, in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
                                                 ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !pendingContext.diskLogRecord.Info.Tombstone, ref rmwInfo);
                 }
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    sessionFunctions.PostRMWOperation(pendingContext.requestKey.Get(), ref pendingContext.input.Get(), ref rmwInfo, epoch);
+                    sessionFunctions.PostRMWOperation(pendingContext.requestKey, ref pendingContext.input.Get(), ref rmwInfo, epoch);
                     EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
 
@@ -255,7 +255,7 @@ namespace Tsavorite.core
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare.
             do
-                status = InternalRMW(pendingContext.requestKey.Get(), pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                status = InternalRMW(pendingContext.requestKey, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
             while (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext));
             return status;
         }
@@ -300,14 +300,14 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey.Get(), ref stackCtx,
+                if (TryFindRecordInMainLogForConditionalOperation<ConditionallyHoistedKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.requestKey, ref stackCtx,
                         currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
+                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
                         : ConditionalCopyToTail(sessionFunctions, ref pendingContext, in pendingContext.diskLogRecord, ref stackCtx);
                 }
             }

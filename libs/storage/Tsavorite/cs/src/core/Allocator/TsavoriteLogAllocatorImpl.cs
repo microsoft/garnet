@@ -148,7 +148,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, ReadOnlySpan<byte> key,
+        internal override bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, TKey key,
                 long beginAddress, ref TScanFunctions scanFunctions)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 

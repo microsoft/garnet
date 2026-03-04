@@ -58,7 +58,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                InternalCompletePendingRequests(sessionFunctions, completedOutputs);
+                InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, completedOutputs);
                 if (wait)
                     sessionFunctions.Ctx.WaitPending(epoch);
 
@@ -86,7 +86,7 @@ namespace Tsavorite.core
                 return;
 
             while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext request))
-                InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
+                InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, request, completedOutputs);
         }
 
         internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
@@ -96,7 +96,7 @@ namespace Tsavorite.core
             // Get and Remove this request.id pending dictionary if it is there.
             if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
             {
-                var status = InternalCompletePendingRequestFromContext(sessionFunctions, request, ref pendingContext, out _);
+                var status = InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, request, ref pendingContext, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -55,7 +56,7 @@ namespace Tsavorite.core
     ///     </item>
     /// </list>
     ///</summary>
-    public unsafe struct RecordDataHeader
+    public unsafe struct RecordDataHeader : IKey
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         // When assigning these bits, use the highest # in kReservedBitMask#
@@ -180,6 +181,30 @@ namespace Tsavorite.core
             get => *(HeaderPtr + RecordTypeOffsetInHeader);
             set => *(HeaderPtr + RecordTypeOffsetInHeader) = value;
         }
+
+        #region IKey
+
+        /// <inheritdoc/>
+        public readonly bool IsPinned => true;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> KeyBytes
+        {
+            get
+            {
+                var ptr = HeaderPtr - RecordInfo.Size;
+
+                var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
+                var offsetToKeyStart = GetOffsetToKeyStart(headerLength);
+
+                var keyStartPtr = ptr + offsetToKeyStart;
+                var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
+
+                return new ReadOnlySpan<byte>(keyStartPtr, keyLength);
+            }
+        }
+
+        #endregion
 
         internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long valueAddress)
         {

@@ -259,6 +259,13 @@ namespace Tsavorite.core
         public readonly long CalculateHeapMemorySize() => logRecord.CalculateHeapMemorySize();
         #endregion //ISourceLogRecord
 
+        #region IKey
+        public readonly bool IsPinned => IsPinnedKey;
+
+        public readonly ReadOnlySpan<byte> KeyBytes => Key;
+        #endregion
+
+
         #region Serialization to and from expanded record format
         /// <summary>
         /// Serialize a log record (which may be in-memory <see cref="LogRecord"/> or IO'd <see cref="DiskLogRecord"/>) to the <see cref="SpanByteAndMemory"/>

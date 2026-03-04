@@ -65,7 +65,7 @@ namespace Tsavorite.core
                 // Iterate all the read-only records in the store
                 scannedUntilAddressCursor = Log.SafeReadOnlyAddress;
                 var scanFunctions = new ScanPhase1Functions(streamingSnapshotIteratorFunctions, _hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, _hybridLogCheckpoint.info.nextVersion);
-                using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
+                using var s = NewSession<ITsavoriteScanIterator, Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
                 long cursor = 0;
                 _ = s.ScanCursor(ref cursor, long.MaxValue, scanFunctions, scannedUntilAddressCursor);
                 this.numberOfRecords = scanFunctions.numberOfRecords;
@@ -114,7 +114,7 @@ namespace Tsavorite.core
             {
                 // Iterate all the (v) records in the store
                 var scanFunctions = new ScanPhase2Functions(streamingSnapshotIteratorFunctions, this.numberOfRecords);
-                using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
+                using var s = NewSession<ITsavoriteScanIterator, Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
 
                 _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress, maxAddress: untilAddress);
 
