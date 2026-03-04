@@ -58,11 +58,8 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0-noble AS prep-runtime
 
 # prep-runtime image HAS /bin/sh, so we can script here
 COPY --from=libs-builder /staging/lua /lua
-COPY --from=libs-builder /staging/libaio /libaio
 RUN DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
-    && cp /lua/liblua54.so "$DN_DIR/liblua54.so" \
-    && cp /libaio/libaio.so.1t64 /usr/lib/ \
-    && ln -sf "libaio.so.1t64" /usr/lib/libaio.so.1
+    && cp /lua/liblua54.so "$DN_DIR/liblua54.so"
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled AS runtime
