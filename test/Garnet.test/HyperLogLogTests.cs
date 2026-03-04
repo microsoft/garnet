@@ -1262,15 +1262,20 @@ namespace Garnet.test
             var (sparseLen, sparseStart) = ParseDumpValueLengthAndStart(sparseDump);
             ClassicAssert.AreEqual(0, sparseDump[sparseStart + 3], "Expected sparse HLL representation type.");
 
-            int inserts = 0;
+            byte[] denseDump;
+            var inserts = 0;
             do
             {
-                db.HyperLogLogAdd(denseKey, $"d_{inserts}");
-                inserts++;
+                var batch = Math.Min(1000, 50_000 - inserts);
+                for (var j = 0; j < batch; j++)
+                {
+                    db.HyperLogLogAdd(denseKey, $"d_{inserts}");
+                    inserts++;
+                }
+                denseDump = db.KeyDump(denseKey)!;
             }
-            while (db.KeyDump(denseKey)![ParseDumpValueLengthAndStart(db.KeyDump(denseKey)!).valueStart + 3] == 0 && inserts < 50000);
+            while (denseDump[ParseDumpValueLengthAndStart(denseDump).valueStart + 3] == 0 && inserts < 50_000);
 
-            var denseDump = db.KeyDump(denseKey)!;
             var (denseLen, denseStart) = ParseDumpValueLengthAndStart(denseDump);
             ClassicAssert.AreEqual(1, denseDump[denseStart + 3], "Expected dense HLL representation type.");
 
