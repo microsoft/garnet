@@ -4,8 +4,14 @@ badrishc:
   url: https://badrish.net
   image_url: https://badrish.net/assets/icons/badrish4.jpg
 
+talzacc:
+  name: Tal Zaccai
+  title: Principal Research Software Engineer, Microsoft Research
+  url: https://github.com/TalZaccai
+  image_url: https://avatars.githubusercontent.com/u/18443527?s=400&u=3a98e37f1013aed2755a2b3ae3454478787a7c15&v=4
+
 hkhalid:
   name: Hamdaan Khalid
-  title: Software Engineer, Azure Resource Graph
-  url: https://hamdaan-rails-personal.herokuapp.com/about
-  image_url: https://hamdaan-rails-personal.herokuapp.com/assets/me-f1fa367c094eedf1c151b0b0dfbc057c2b047dec4e10f3974167ec3f803d81f0.jpg
+  title: Senior Software Engineer, Azure Resource Graph
+  url: https://github.com/hamdaankhalid
+  image_url: https://avatars.githubusercontent.com/u/42720645?v=4
