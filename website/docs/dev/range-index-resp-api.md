@@ -273,43 +273,55 @@ needing to rediscover the Garnet architecture.
 
 ## Overview
 
-RangeIndex is implemented as a **built-in Garnet type stored in the main store**, following
-the identical "stub-in-main-store" architecture used by **Vector Indexes** (`VectorManager`).
+RangeIndex is implemented as a **built-in Garnet type stored in the unified store**,
+accessed via the **string context**. A small fixed-size struct ("stub") is stored as a
+raw-byte value (not a heap object) in Tsavorite's unified store. The stub contains BfTree
+configuration metadata, a native pointer (`nint`) to the live BfTree instance, and a
+`Guid` process-instance-id for stale-pointer detection after restart. A
+`RangeIndexManager` (partial class) owns the BfTree lifecycle outside of Tsavorite.
 
-A small fixed-size struct ("stub") is stored as the `SpanByte` value in Tsavorite's main
-store. The stub contains BfTree configuration metadata, a native pointer (`nint`) to the
-live BfTree instance, and a `Guid` process-instance-id for stale-pointer detection after
-restart. A `RangeIndexManager` (partial class, analogous to `VectorManager`) owns the
-BfTree lifecycle outside of Tsavorite.
+This follows the same "stub-in-store with external data manager" pattern used by
+**VectorManager** on the
+[`vectorApiPoC-storeV2`](https://github.com/microsoft/garnet/tree/vectorApiPoC-storeV2)
+prototype branch. Implementers should cross-reference that branch for working examples
+of each pattern described below. The key difference: VectorSet stores element data inside
+Tsavorite (via a separate `VectorSessionFunctions` context), while BfTree manages **all**
+its data externally (circular buffer + disk files), so RangeIndex only needs the string
+context for the stub — no additional Tsavorite context type is required.
 
-**Why the main store and not the object store?**
+**Why the string context and not the object context?**
 - The Bf-Tree manages its own memory (circular buffer, leaf pages) and disk storage — it
-  cannot be inlined into Tsavorite's log the way a `SortedSetObject` can.
+  cannot be inlined into Tsavorite's log the way a `HashObject` or `SortedSetObject` can.
 - The stub pattern cleanly separates metadata persistence (Tsavorite checkpoint) from
   index operations (Bf-Tree).
-- This is the same trade-off made for DiskANN vector indexes.
+- A 56-byte fixed-size stub is a natural fit for the string context's inline byte values,
+  avoiding the overhead of `GarnetObjectBase` serialization.
+- The `RecordInfo.ValueIsObject` bit remains `false` for RangeIndex records, distinguishing
+  them from collection objects.
 
 ---
 
-## Reference: VectorManager Architecture (the template)
+## Proposed File Layout
 
-The entire RangeIndex implementation mirrors VectorManager file-by-file. The table below
-maps each VectorManager file to its RangeIndex counterpart and explains the role:
+The RangeIndex implementation is organized as a partial class (`RangeIndexManager`) split
+across multiple files, plus supporting files for RESP handlers, storage session wrappers,
+and native interop. Each file mirrors a corresponding VectorManager file on the
+[`vectorApiPoC-storeV2`](https://github.com/microsoft/garnet/tree/vectorApiPoC-storeV2)
+prototype branch.
 
-| VectorManager File | RangeIndex Counterpart | Role |
-|---|---|---|
-| `libs/server/Resp/Vector/VectorManager.cs` | `libs/server/Resp/RangeIndex/RangeIndexManager.cs` | Main class: constants, `processInstanceId`, `IsEnabled`, initialization, `TryAdd`/`TryRemove`/`TryRead`/`TryScan`/`TryRange` methods, `ResumePostRecovery()` |
-| `libs/server/Resp/Vector/VectorManager.Index.cs` | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | Stub struct definition, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()` |
-| `libs/server/Resp/Vector/VectorManager.Locking.cs` | `libs/server/Resp/RangeIndex/RangeIndexManager.Locking.cs` | `ReadRangeIndexLock` ref struct, `ReadRangeIndex()`, `ReadOrCreateRangeIndex()` — shared/exclusive lock management |
-| `libs/server/Resp/Vector/VectorManager.Cleanup.cs` | `libs/server/Resp/RangeIndex/RangeIndexManager.Cleanup.cs` | Post-drop async cleanup: background task that scans and removes orphaned data |
-| `libs/server/Resp/Vector/VectorManager.Callbacks.cs` | *(not needed initially)* | DiskANN uses callbacks so it can call back into Garnet storage. BfTree does not need this — all operations are initiated from Garnet's side. |
-| `libs/server/Resp/Vector/VectorManager.Migration.cs` | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | *(future)* Replication/migration support |
-| `libs/server/Resp/Vector/VectorManager.Replication.cs` | `libs/server/Resp/RangeIndex/RangeIndexManager.Replication.cs` | *(future)* Primary→replica replication |
-| `libs/server/Resp/Vector/DiskANNService.cs` | `libs/server/Resp/RangeIndex/BfTreeService.cs` | Wraps native BfTree library via P/Invoke |
-| `libs/server/Resp/Vector/RespServerSessionVectors.cs` | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | RESP command handlers (`NetworkRISET`, `NetworkRIGET`, etc.) |
-| `libs/server/Storage/Session/MainStore/VectorStoreOps.cs` | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | Storage session wrappers that acquire locks via manager and call `Try*` methods |
-| `libs/server/API/IGarnetApi.cs` (vector methods) | `libs/server/API/IGarnetApi.cs` (range index methods) | Interface declarations |
-| `libs/server/API/GarnetApi.cs` (vector delegation) | `libs/server/API/GarnetApi.cs` (range index delegation) | `ArgSlice` → `SpanByte` delegation to `StorageSession` |
+| # | New File | Prototype reference (`vectorApiPoC-storeV2`) | Role |
+|---|---|---|---|
+| 1 | `libs/server/Resp/RangeIndex/RangeIndexManager.cs` | [`VectorManager.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.cs) | Main class: constants, `processInstanceId`, `IsEnabled`, initialization, `TryInsert`/`TryRead`/`TryScan`/`TryRange` methods, `ResumePostRecovery()` |
+| 2 | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) | Stub struct definition, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()` |
+| 3 | `libs/server/Resp/RangeIndex/RangeIndexManager.Locking.cs` | [`VectorManager.Locking.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Locking.cs) | `ReadRangeIndexLock` ref struct, `ReadRangeIndex()`, `ReadOrCreateRangeIndex()` — shared/exclusive lock management via `ReadOptimizedLock` |
+| 4 | `libs/server/Resp/RangeIndex/RangeIndexManager.Cleanup.cs` | [`VectorManager.Cleanup.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Cleanup.cs) | Post-drop async cleanup: background task that scans and removes orphaned data |
+| 5 | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | [`VectorManager.Migration.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Migration.cs) | *(future)* Replication/migration support |
+| 6 | `libs/server/Resp/RangeIndex/RangeIndexManager.Replication.cs` | [`VectorManager.Replication.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Replication.cs) | *(future)* Primary→replica replication |
+| 7 | `libs/server/Resp/RangeIndex/BfTreeService.cs` | [`DiskANNService.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/DiskANNService.cs) | Wraps native BfTree library via P/Invoke |
+| 8 | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | [`RespServerSessionVectors.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/RespServerSessionVectors.cs) | RESP command handlers (`NetworkRISET`, `NetworkRIGET`, etc.) |
+| 9 | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | *(inline in VectorManager methods)* | Storage session wrappers that acquire locks via manager and call `Try*` methods |
+
+Additionally, several existing files are modified (see [Complete File Inventory](#complete-file-inventory)).
 
 ---
 
@@ -331,7 +343,7 @@ RESP Client ("RI.SET r1 mykey myval")
 │    Parses args from parseState, calls storageApi.RangeIndexSet(...)    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 4. IGarnetApi / GarnetApi (API/IGarnetApi.cs, API/GarnetApi.cs)        │
-│    Thin delegation: converts ArgSlice → SpanByte, forwards to          │
+│    Thin delegation: converts PinnedSpanByte → ReadOnlySpan<byte>, forwards to │
 │    storageSession.RangeIndexSet(...)                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 5. Storage Session (Storage/Session/MainStore/RangeIndexOps.cs)        │
@@ -355,18 +367,19 @@ RESP Client ("RI.SET r1 mykey myval")
 - It promotes the shared lock to exclusive, creates a new BfTree via
   `BfTreeService.CreateIndex()`, and issues an RMW with the new stub
 - The RMW hits `InitialUpdater` in `RMWMethods.cs` which writes the stub and
-  sets `recordInfo.RangeIndexSet = true`
+  sets the `RecordType` to `RangeIndexManager.RangeIndexRecordType` on the record
 - Lock is released, then re-acquired as shared for the actual operation
 
 ---
 
 ## The Stub (RangeIndexManager.Index.cs)
 
-A fixed-size struct stored as the SpanByte value in the main store.
+> **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
+> the 56-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`.
 
-> **Reference:** `VectorManager.Index` struct is defined in
-> `libs/server/Resp/Vector/VectorManager.Index.cs` lines 22-45 (56 bytes,
-> `[StructLayout(LayoutKind.Explicit, Size = 56)]`).
+A fixed-size struct stored as a raw-byte (non-object) value in the unified store, accessed
+via the string context. Since `RecordInfo.ValueIsObject` is `false` for these records, the
+string context's `MainSessionFunctions` handles the RMW/Read/Delete callbacks.
 
 ```csharp
 [StructLayout(LayoutKind.Explicit, Size = 56)]
@@ -401,32 +414,43 @@ private struct RangeIndexStub
 
 ## Step-by-Step Implementation
 
-### Step 1: Add `RecordInfo.RangeIndexSet` bit flag
+### Step 1: Type discrimination for RangeIndex records
 
-> **Reference:** `RecordInfo.VectorSet` property in
-> `libs/storage/Tsavorite/cs/src/core/Index/Common/RecordInfo.cs`.
-> Search for `VectorSet` to find the bit position and property pattern.
+> **Reference:** `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` —
+> `RecordType` is a `byte` field in the `RecordDataHeader` (offset 2 in the header),
+> accessible via `LogRecord.RecordType` and `srcLogRecord.RecordType` in session function
+> callbacks. Currently `LogRecord.InitializeRecord()` hardcodes `recordType: 0` (with
+> a TODO to pass in the actual type).
+>
+> See also: `RecordDataHeader.cs` — `RecordTypeOffsetInHeader = 2`,
+> `ISourceLogRecord.RecordType` property.
 
-Add a new single-bit flag property. This enables:
-- **ReadMethods.cs** — type safety: RI commands rejected on non-RI keys, non-RI commands
-  rejected on RI keys (same pattern as `VectorSet` checks at lines 28-45 and 240-257)
-- **DeleteMethods.cs** — blocking deletion while stub is non-zero (same as VectorSet
-  guard at line 17-31)
+RangeIndex records need to be distinguishable from regular string records so that:
+- **ReadMethods.cs** — RI commands are rejected on non-RI keys, and non-RI commands
+  are rejected on RI keys (type safety)
+- **DeleteMethods.cs** — deletion is blocked while stub is non-zero (BfTree still alive)
 - **RMWMethods.cs** — no guard needed; the command itself determines behavior
 
+**Approach:** Use the `RecordType` byte on each `LogRecord`. Define a constant
+`RangeIndexRecordType` (e.g., `2`, reserving `1` for VectorSet). This byte is set when
+the stub record is first created and checked in `Reader`/`Deleter` callbacks for type
+safety.
+
 ```csharp
-// In RecordInfo.cs — add alongside VectorSet:
-public bool RangeIndexSet
-{
-    readonly get => IsSet(RANGE_INDEX_SET_BIT);
-    set => Set(RANGE_INDEX_SET_BIT, value);
-}
+// In RangeIndexManager.cs:
+internal const byte RangeIndexRecordType = 2;
 ```
+
+**Tsavorite plumbing required:** The `RecordDataHeader.Initialize()` method and
+`LogRecord.InitializeRecord()` currently hardcode `recordType: 0`. These need to be
+updated to accept and propagate a `recordType` parameter from the session function
+callbacks (e.g., `InitialUpdater` sets the record type when creating a new record).
+This is a one-time infrastructure change that also unblocks VectorSet.
 
 Also add a helper in `RespCommand` extensions:
 
 ```csharp
-// In RespCommandExtensions.cs — analogous to IsLegalOnVectorSet():
+// In RespCommandExtensions.cs:
 public static bool IsLegalOnRangeIndex(this RespCommand cmd)
     => cmd is RespCommand.RISET or RespCommand.RIDEL or RespCommand.RIGET
        or RespCommand.RIMSET or RespCommand.RIMDEL or RespCommand.RIMGET
@@ -440,11 +464,11 @@ public static bool IsLegalOnRangeIndex(this RespCommand cmd)
 ### Step 2: Add RESP commands to the parser
 
 > **Reference:** `libs/server/Resp/Parser/RespCommand.cs`
-> - Read commands are defined before `APPEND` (lines ~96-117)
-> - Write commands are defined after `APPEND` (lines ~210-228)
+> - Read commands are defined before `APPEND` (the last read command is just before `APPEND`)
+> - Write commands are defined starting at `APPEND`
 > - Read/write classification uses enum ordering: `cmd <= LastReadCommand` ⟹ read-only
-> - Fast parsing: `FastParseArrayCommand()` (lines ~1006-1019) uses `ulong` pointer
->   comparisons for 4-char commands like `ZADD`
+> - Fast parsing: `FastParseArrayCommand()` uses `ulong` pointer comparisons for short
+>   fixed-length commands
 > - Longer/unusual commands fall through to `SlowParseCommand()`
 
 **Add enum values:**
@@ -512,8 +536,9 @@ private static RespCommand ParseRangeIndexCommand(byte* ptr, int length)
 ### Step 3: Add command dispatch in `RespServerSession`
 
 > **Reference:** `libs/server/Resp/RespServerSession.cs`
-> Vector commands are dispatched in a switch expression like:
-> `RespCommand.VADD => NetworkVADD(ref storageApi),`
+> Commands are dispatched via switch expressions in `ProcessBasicCommands` and
+> `ProcessArrayCommands`. Each maps a `RespCommand` enum to a handler method.
+> Example: `RespCommand.GET => NetworkGET(ref storageApi),`
 
 Add RangeIndex dispatch entries:
 
@@ -539,8 +564,11 @@ RespCommand.RIKEYS   => NetworkRIKEYS(ref storageApi),
 
 ### Step 4: Implement RESP command handlers
 
-> **Reference:** `libs/server/Resp/Vector/RespServerSessionVectors.cs`
-> Pattern: `private bool NetworkVADD<TGarnetApi>(ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi`
+> **Reference:** RESP handler pattern used throughout `libs/server/Resp/` (e.g.,
+> `BasicCommands.cs`, `Objects/HashCommands.cs`).
+> **Prototype reference:** [`RespServerSessionVectors.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/RespServerSessionVectors.cs) —
+> vector RESP handlers (`NetworkVADD`, `NetworkVGET`, etc.) follow the same pattern.
+> Pattern: `private bool NetworkXXX<TGarnetApi>(ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi`
 > - Parse arguments from `parseState.GetArgSliceByRef(idx)`
 > - Call `storageApi.RangeIndex*(...)` with parsed args
 > - Write RESP response via `RespWriteUtils.TryWrite*(..., ref dcurr, dend)`
@@ -717,8 +745,8 @@ internal sealed unsafe partial class RespServerSession
 
 ### Step 5: Add `IGarnetApi` and `GarnetApi` interface methods
 
-> **Reference:** `libs/server/API/IGarnetApi.cs` — vector methods declared here.
-> `libs/server/API/GarnetApi.cs` — delegation: `ArgSlice` → `SpanByte.FromPinnedPointer()`
+> **Reference:** `libs/server/API/IGarnetApi.cs` — declares storage API methods.
+> `libs/server/API/GarnetApi.cs` — delegation: `PinnedSpanByte` → `.ReadOnlySpan`
 > then forward to `storageSession.RangeIndex*()`.
 
 **IGarnetApi.cs — add:**
@@ -726,51 +754,51 @@ internal sealed unsafe partial class RespServerSession
 ```csharp
 // --- RangeIndex operations ---
 
-GarnetStatus RangeIndexSet(ArgSlice key, ArgSlice field, ArgSlice value,
+GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
     out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
 
-GarnetStatus RangeIndexDel(ArgSlice key, ArgSlice field);
+GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field);
 
-GarnetStatus RangeIndexGet(ArgSlice key, ArgSlice field,
+GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
     ref SpanByteAndMemory output, out RangeIndexResult result);
 
-GarnetStatus RangeIndexScan(ArgSlice key, ArgSlice startKey,
+GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey,
     int count, byte returnField,
     ref SpanByteAndMemory output, out int resultCount);
 
-GarnetStatus RangeIndexRange(ArgSlice key, ArgSlice startKey, ArgSlice endKey,
+GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
     byte returnField,
     ref SpanByteAndMemory output, out int resultCount);
 
-GarnetStatus RangeIndexCreate(ArgSlice key,
+GarnetStatus RangeIndexCreate(PinnedSpanByte key,
     ulong cacheSize, uint minRecord, uint maxRecord,
     uint maxKeyLen, uint leafPageSize, byte storageBackend,
     out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
 
-GarnetStatus RangeIndexDrop(ArgSlice key);
+GarnetStatus RangeIndexDrop(PinnedSpanByte key);
 
-GarnetStatus RangeIndexExists(ArgSlice key, out bool exists);
+GarnetStatus RangeIndexExists(PinnedSpanByte key, out bool exists);
 
-GarnetStatus RangeIndexConfig(ArgSlice key,
+GarnetStatus RangeIndexConfig(PinnedSpanByte key,
     ref SpanByteAndMemory output);
 
-GarnetStatus RangeIndexMetrics(ArgSlice key,
+GarnetStatus RangeIndexMetrics(PinnedSpanByte key,
     ref SpanByteAndMemory output);
 ```
 
-**GarnetApi.cs — add delegation** (expression-bodied, like vector methods):
+**GarnetApi.cs — add delegation** (expression-bodied):
 
 ```csharp
-public unsafe GarnetStatus RangeIndexSet(ArgSlice key, ArgSlice field, ArgSlice value,
+public GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
     out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
     => storageSession.RangeIndexSet(
-        SpanByte.FromPinnedPointer(key.ptr, key.length),
+        key.ReadOnlySpan,
         field, value, out result, out errorMsg);
 
-public unsafe GarnetStatus RangeIndexGet(ArgSlice key, ArgSlice field,
+public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
     ref SpanByteAndMemory output, out RangeIndexResult result)
     => storageSession.RangeIndexGet(
-        SpanByte.FromPinnedPointer(key.ptr, key.length),
+        key.ReadOnlySpan,
         field, ref output, out result);
 
 // ... same pattern for all methods
@@ -780,7 +808,9 @@ public unsafe GarnetStatus RangeIndexGet(ArgSlice key, ArgSlice field,
 
 ### Step 6: Implement Storage Session layer (`RangeIndexOps.cs`)
 
-> **Reference:** `libs/server/Storage/Session/MainStore/VectorStoreOps.cs`
+> **Reference:** `libs/server/Storage/Session/MainStore/` — contains string-context
+> storage operations (e.g., `MainStoreOps.cs`). RangeIndex follows the same pattern
+> with a new file `RangeIndexOps.cs`.
 > - Write ops: marshal args → `ReadOrCreateRangeIndex()` → `TryInsert()` → replicate
 > - Read ops: `ReadRangeIndex()` → `TryRead()` / `TryScan()` / `TryRange()`
 > - Lock pattern: `using (rangeIndexManager.ReadOrCreateRangeIndex(this, ...))` — the
@@ -795,22 +825,19 @@ public unsafe GarnetStatus RangeIndexGet(ArgSlice key, ArgSlice field,
 internal sealed unsafe partial class StorageSession
 {
     /// RI.SET — insert/update a field in the range index
-    public GarnetStatus RangeIndexSet(SpanByte key, ArgSlice field, ArgSlice value,
+    public GarnetStatus RangeIndexSet(ReadOnlySpan<byte> key, PinnedSpanByte field, PinnedSpanByte value,
         out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
     {
         errorMsg = default;
 
         // Marshal field + value into parseState for replication log
-        parseState.InitializeWithArguments([
-            ArgSlice.FromPinnedSpan(field.ReadOnlySpan),
-            ArgSlice.FromPinnedSpan(value.ReadOnlySpan)
-        ]);
-        var input = new RawStringInput(RespCommand.RISET, ref parseState);
+        parseState.InitializeWithArguments(field, value);
+        var input = new StringInput(RespCommand.RISET, ref parseState);
 
         // Acquire lock + create-if-needed
         Span<byte> indexSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
         using (rangeIndexManager.ReadOrCreateRangeIndex(
-            this, ref key, ref input, indexSpan, out var status))
+            this, key, ref input, indexSpan, out var status))
         {
             if (status != GarnetStatus.OK)
             {
@@ -825,22 +852,22 @@ internal sealed unsafe partial class StorageSession
 
             if (result == RangeIndexResult.OK)
                 rangeIndexManager.ReplicateRangeIndexSet(
-                    ref key, ref input, ref basicContext);
+                    key, ref input, ref stringBasicContext);
 
             return GarnetStatus.OK;
         }
     }
 
     /// RI.GET — point read
-    public GarnetStatus RangeIndexGet(SpanByte key, ArgSlice field,
-        ref SpanByteAndMemory output, out RangeIndexResult result)
+    public GarnetStatus RangeIndexGet(ReadOnlySpan<byte> key, PinnedSpanByte field,
+        ref StringOutput output, out RangeIndexResult result)
     {
-        parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
-        var input = new RawStringInput(RespCommand.RIGET, ref parseState);
+        parseState.InitializeWithArgument(field);
+        var input = new StringInput(RespCommand.RIGET, ref parseState);
 
         Span<byte> indexSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
         using (rangeIndexManager.ReadRangeIndex(
-            this, ref key, ref input, indexSpan, out var status))
+            this, key, ref input, indexSpan, out var status))
         {
             if (status != GarnetStatus.OK)
             {
@@ -855,37 +882,37 @@ internal sealed unsafe partial class StorageSession
     }
 
     /// RI.DEL — delete a field
-    public GarnetStatus RangeIndexDel(SpanByte key, ArgSlice field)
+    public GarnetStatus RangeIndexDel(ReadOnlySpan<byte> key, PinnedSpanByte field)
     {
-        parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(field.ReadOnlySpan));
-        var input = new RawStringInput(RespCommand.RIDEL, ref parseState);
+        parseState.InitializeWithArgument(field);
+        var input = new StringInput(RespCommand.RIDEL, ref parseState);
 
         Span<byte> indexSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
         using (rangeIndexManager.ReadRangeIndex(
-            this, ref key, ref input, indexSpan, out var status))
+            this, key, ref input, indexSpan, out var status))
         {
             if (status != GarnetStatus.OK) return status;
 
             rangeIndexManager.TryDelete(indexSpan, field.ReadOnlySpan);
             rangeIndexManager.ReplicateRangeIndexDel(
-                ref key, ref input, ref basicContext);
+                key, ref input, ref stringBasicContext);
             return GarnetStatus.OK;
         }
     }
 
     /// RI.SCAN — range scan with count
-    public GarnetStatus RangeIndexScan(SpanByte key, ArgSlice startKey,
+    public GarnetStatus RangeIndexScan(ReadOnlySpan<byte> key, PinnedSpanByte startKey,
         int count, byte returnField,
-        ref SpanByteAndMemory output, out int resultCount)
+        ref StringOutput output, out int resultCount)
     {
         // ... same lock pattern, then:
         // rangeIndexManager.TryScanWithCount(indexSpan, startKey, count, returnField, ref output, out resultCount)
     }
 
     /// RI.RANGE — range scan with end key
-    public GarnetStatus RangeIndexRange(SpanByte key, ArgSlice startKey,
-        ArgSlice endKey, byte returnField,
-        ref SpanByteAndMemory output, out int resultCount)
+    public GarnetStatus RangeIndexRange(ReadOnlySpan<byte> key, PinnedSpanByte startKey,
+        PinnedSpanByte endKey, byte returnField,
+        ref StringOutput output, out int resultCount)
     {
         // ... same lock pattern, then:
         // rangeIndexManager.TryScanWithEndKey(indexSpan, startKey, endKey, returnField, ref output, out resultCount)
@@ -897,15 +924,18 @@ internal sealed unsafe partial class StorageSession
 
 ### Step 7: Implement `RangeIndexManager` (partial class)
 
-> **Reference:** `VectorManager` is split across 8 files. We start with 4 core files;
-> migration and replication are deferred.
+> `RangeIndexManager` is a new partial class split across multiple files.
+> We start with 4 core files; migration and replication are deferred.
 
 #### 7a. `RangeIndexManager.cs` — Main class
+
+> **Prototype reference:** [`VectorManager.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.cs) —
+> constants, `processInstanceId`, `TryAdd`/`TryRemove`, `Initialize()`, `ResumePostRecovery()`, `Dispose()`.
 
 ```csharp
 public sealed partial class RangeIndexManager : IDisposable
 {
-    // --- Constants (mirrors VectorManager constants) ---
+    // --- Constants ---
     internal const int IndexSizeBytes = 56; // sizeof(RangeIndexStub)
     internal const long RISetAppendLogArg = long.MinValue;
     internal const long DeleteAfterDropArg = RISetAppendLogArg + 1;
@@ -979,7 +1009,7 @@ public sealed partial class RangeIndexManager : IDisposable
             ref output, out resultCount);
     }
 
-    /// Recovery entry point (analogous to VectorManager.ResumePostRecovery)
+    /// Recovery entry point: scans store for stale stubs, recreates BfTrees
     internal void ResumePostRecovery() { /* scan for stale stubs, RecreateIndex */ }
 
     public void Dispose() { service.Dispose(); }
@@ -987,6 +1017,9 @@ public sealed partial class RangeIndexManager : IDisposable
 ```
 
 #### 7b. `RangeIndexManager.Index.cs` — Stub struct + serialization
+
+> **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
+> 56-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`, `SetContextForMigration()`.
 
 ```csharp
 public sealed partial class RangeIndexManager
@@ -1009,15 +1042,15 @@ public sealed partial class RangeIndexManager
         [FieldOffset(40)] public Guid ProcessInstanceId;
     }
 
-    /// Write a new stub into the main store value.
+    /// Write a new stub into the value span of a LogRecord.
     /// Called from InitialUpdater via RMWMethods.cs.
     internal void CreateIndex(uint cacheSize, uint minRecordSize,
         uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
-        byte storageBackend, nint treePtr, ref SpanByte value)
+        byte storageBackend, nint treePtr, Span<byte> valueSpan)
     {
-        value.ShrinkSerializedLength(RangeIndexStub.Size);
+        Debug.Assert(valueSpan.Length >= RangeIndexStub.Size);
         ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
-            ref MemoryMarshal.GetReference(value.AsSpan()));
+            ref MemoryMarshal.GetReference(valueSpan));
         stub.TreePtr = treePtr;
         stub.CacheSize = cacheSize;
         stub.MinRecordSize = minRecordSize;
@@ -1049,19 +1082,19 @@ public sealed partial class RangeIndexManager
     }
 
     /// Update TreePtr after recovery (old pointer is stale).
-    internal void RecreateIndex(nint newTreePtr, ref SpanByte value)
+    internal void RecreateIndex(nint newTreePtr, Span<byte> valueSpan)
     {
-        ReadIndex(value.AsReadOnlySpan(), out _, out _, out _, out _,
+        ReadIndex(valueSpan, out _, out _, out _, out _,
             out _, out _, out _, out _, out var indexPid);
         Debug.Assert(processInstanceId != indexPid,
             "Shouldn't recreate an index from the same process instance");
         ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
-            ref MemoryMarshal.GetReference(value.AsSpan()));
+            ref MemoryMarshal.GetReference(valueSpan));
         stub.TreePtr = newTreePtr;
         stub.ProcessInstanceId = processInstanceId;
     }
 
-    /// Zero-check for safe deletion (analogous to VectorManager pattern).
+    /// Zero-check for safe deletion.
     internal void DropIndex(ReadOnlySpan<byte> indexValue)
     {
         ReadIndex(indexValue, out var treePtr, out _, out _, out _,
@@ -1075,13 +1108,27 @@ public sealed partial class RangeIndexManager
 
 #### 7c. `RangeIndexManager.Locking.cs` — Lock management
 
-> **Reference:** `VectorManager.Locking.cs` lines 25-49 (`ReadVectorLock`),
-> lines 103-235 (`ReadVectorIndex`), lines 242-431 (`ReadOrCreateVectorIndex`)
+> The locking pattern uses a striped `ReadOptimizedLock` for concurrent access, with
+> stripe count based on `Environment.ProcessorCount`. Key hash (via
+> `unifiedBasicContext.GetKeyHash(key)`) selects the stripe.
+> `ReadRangeIndex()` acquires a shared lock; `ReadOrCreateRangeIndex()` promotes to
+> exclusive if the key doesn't exist, creates the BfTree, then downgrades to shared.
+>
+> **Note:** `ReadOptimizedLock` does not yet exist on the dev branch. It needs to be
+> ported from the VectorSet prototype branch
+> [`vectorApiPoC-storeV2`](https://github.com/microsoft/garnet/tree/vectorApiPoC-storeV2):
+> - **Implementation:** [`libs/server/Resp/Vector/VectorManager.Locking.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Locking.cs)
+>   (the `ReadOptimizedLock` struct and `ReadVectorLock`/`ExclusiveVectorLock` ref structs)
+> - **Tests:** [`test/Garnet.test/ReadOptimizedLockTests.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/test/Garnet.test/ReadOptimizedLockTests.cs)
+>
+> It provides shared/exclusive locking with `AcquireSharedLock(keyHash, out token)`,
+> `TryPromoteSharedLock(keyHash, sharedToken, out exclusiveToken)`,
+> `ReleaseSharedLock(token)`, and `ReleaseExclusiveLock(token)` methods.
 
 ```csharp
 public sealed partial class RangeIndexManager
 {
-    private ReadOptimizedLock[] rangeIndexLocks; // Striped lock array
+    private readonly ReadOptimizedLock rangeIndexLocks; // Striped lock (ProcessorCount stripes)
 
     /// RAII lock holder — disposed at end of `using` block
     internal readonly ref struct ReadRangeIndexLock : IDisposable
@@ -1102,29 +1149,30 @@ public sealed partial class RangeIndexManager
     /// If stub has stale ProcessInstanceId, promotes to exclusive, recreates BfTree,
     /// releases exclusive, re-acquires shared.
     internal ReadRangeIndexLock ReadRangeIndex(
-        StorageSession session, ref SpanByte key, ref RawStringInput input,
+        StorageSession session, PinnedSpanByte key, ref StringInput input,
         Span<byte> indexSpan, out GarnetStatus status)
     {
-        // 1. Hash key → pick lock stripe
-        // 2. AcquireSharedLock
-        // 3. session.Read_MainStore(ref key) → copy value into indexSpan
+        // 1. var keyHash = session.unifiedBasicContext.GetKeyHash(key);
+        // 2. rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
+        // 3. var indexOutput = StringOutput.FromPinnedSpan(indexSpan);
+        //    session.Read_MainStore(key.ReadOnlySpan, ref input, ref indexOutput, ref session.stringBasicContext);
         // 4. If not found: status = NOTFOUND, return default lock
         // 5. ReadIndex → check ProcessInstanceId
-        // 6. If stale: promote to exclusive, BfTreeService.Recreate(), RMW update, release exclusive, retry
+        // 6. If stale: TryPromoteSharedLock → BfTreeService.Recreate() → RMW update → release exclusive, retry
         // 7. Return ReadRangeIndexLock holding shared lock
     }
 
     /// Acquire shared lock, CREATE the range index if key doesn't exist.
     /// Used by RI.SET and RI.CREATE.
     internal ReadRangeIndexLock ReadOrCreateRangeIndex(
-        StorageSession session, ref SpanByte key, ref RawStringInput input,
+        StorageSession session, PinnedSpanByte key, ref StringInput input,
         Span<byte> indexSpan, out GarnetStatus status)
     {
         // 1. Same as ReadRangeIndex
-        // 2. If not found: promote to exclusive
+        // 2. If not found: TryPromoteSharedLock to exclusive
         // 3. Create BfTree: var treePtr = service.CreateIndex(config...)
         // 4. Inject treePtr into input.parseState (arg slot for InitialUpdater)
-        // 5. Issue RMW → hits InitialUpdater which calls CreateIndex(ref value)
+        // 5. Issue RMW_MainStore → hits InitialUpdater which writes stub to logRecord
         // 6. Release exclusive lock, re-acquire shared
         // 7. Read the stub into indexSpan
         // 8. Return ReadRangeIndexLock holding shared lock
@@ -1137,9 +1185,11 @@ public sealed partial class RangeIndexManager
 ### Step 8: Wire into Main Store RMW callbacks
 
 > **Reference:** `libs/server/Storage/Functions/MainStore/RMWMethods.cs`
-> - `InitialUpdater()` at line 79 (VADD case: lines 247-275)
-> - `InPlaceUpdaterWorker()` at line 360 (VADD case: lines 831-854)
-> - `CopyUpdater()` (VADD case: lines 1406-1420)
+> - `InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)`
+> - `InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)`
+> - `CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)`
+> Add new cases for `RespCommand.RICREATE`, `RISET`, and `RIDEL` in each method.
+> Access command via `input.header.cmd`. Access/modify value via `logRecord.ValueSpan` / `logRecord.TrySetValueSpan(...)`.
 
 #### InitialUpdater
 
@@ -1155,24 +1205,25 @@ case RespCommand.RISET:
     // Extract config + treePtr from parseState
     // (injected by ReadOrCreateRangeIndex before issuing RMW)
     var cacheSize = MemoryMarshal.Read<uint>(
-        input.parseState.GetArgSliceByRef(0).Span);
+        input.parseState.GetArgSliceByRef(0).ReadOnlySpan);
     var minRecordSize = MemoryMarshal.Read<uint>(
-        input.parseState.GetArgSliceByRef(1).Span);
+        input.parseState.GetArgSliceByRef(1).ReadOnlySpan);
     var maxRecordSize = MemoryMarshal.Read<uint>(
-        input.parseState.GetArgSliceByRef(2).Span);
+        input.parseState.GetArgSliceByRef(2).ReadOnlySpan);
     var maxKeyLen = MemoryMarshal.Read<uint>(
-        input.parseState.GetArgSliceByRef(3).Span);
+        input.parseState.GetArgSliceByRef(3).ReadOnlySpan);
     var leafPageSize = MemoryMarshal.Read<uint>(
-        input.parseState.GetArgSliceByRef(4).Span);
-    var storageBackend = input.parseState.GetArgSliceByRef(5).Span[0];
+        input.parseState.GetArgSliceByRef(4).ReadOnlySpan);
+    var storageBackend = input.parseState.GetArgSliceByRef(5).ReadOnlySpan[0];
     var treePtr = MemoryMarshal.Read<nint>(
-        input.parseState.GetArgSliceByRef(6).Span);
+        input.parseState.GetArgSliceByRef(6).ReadOnlySpan);
 
-    recordInfo.RangeIndexSet = true;
+    // Set RecordType to identify this as a RangeIndex stub
+    // logRecord.RecordType = RangeIndexManager.RangeIndexRecordType;
     functionsState.rangeIndexManager.CreateIndex(
         cacheSize, minRecordSize, maxRecordSize,
         maxKeyLen, leafPageSize, storageBackend,
-        treePtr, ref value);
+        treePtr, logRecord.ValueSpan);
 }
 break;
 ```
@@ -1185,20 +1236,20 @@ case RespCommand.RIDEL:
 case RespCommand.RICREATE:
     if (input.arg1 == RangeIndexManager.DeleteAfterDropArg)
     {
-        value.AsSpan().Clear();
+        logRecord.ValueSpan.Clear();
     }
     else if (input.arg1 == RangeIndexManager.RecreateIndexArg)
     {
         var newTreePtr = MemoryMarshal.Read<nint>(
-            input.parseState.GetArgSliceByRef(6).Span);
+            input.parseState.GetArgSliceByRef(6).ReadOnlySpan);
         functionsState.rangeIndexManager.RecreateIndex(
-            newTreePtr, ref value);
+            newTreePtr, logRecord.ValueSpan);
     }
     // All other operations (insert/delete/scan) are handled OUTSIDE
     // of Tsavorite's RMW — they happen in the StorageSession layer
     // while holding the shared lock. The RMW path here is only for
     // stub lifecycle (create/recreate/drop).
-    return IPUResult.Succeeded;
+    return true;
 ```
 
 #### CopyUpdater
@@ -1209,19 +1260,19 @@ case RespCommand.RIDEL:
 case RespCommand.RICREATE:
     if (input.arg1 == RangeIndexManager.DeleteAfterDropArg)
     {
-        newValue.AsSpan().Clear();
+        dstLogRecord.ValueSpan.Clear();
     }
     else if (input.arg1 == RangeIndexManager.RecreateIndexArg)
     {
         var newTreePtr = MemoryMarshal.Read<nint>(
-            input.parseState.GetArgSliceByRef(6).Span);
-        oldValue.CopyTo(ref newValue);
+            input.parseState.GetArgSliceByRef(6).ReadOnlySpan);
+        srcLogRecord.ValueSpan.CopyTo(dstLogRecord.ValueSpan);
         functionsState.rangeIndexManager.RecreateIndex(
-            newTreePtr, ref newValue);
+            newTreePtr, dstLogRecord.ValueSpan);
     }
     else
     {
-        oldValue.CopyTo(ref newValue);
+        srcLogRecord.ValueSpan.CopyTo(dstLogRecord.ValueSpan);
     }
     break;
 ```
@@ -1231,19 +1282,21 @@ case RespCommand.RICREATE:
 ### Step 9: Wire into Main Store Read Methods
 
 > **Reference:** `libs/server/Storage/Functions/MainStore/ReadMethods.cs`
-> - `SingleReader()` lines 28-45: VectorSet type checking
-> - `ConcurrentReader()` lines 240-257: same pattern
+> - `SingleReader()` — validates record type before allowing reads
+> - `ConcurrentReader()` — same pattern for concurrent access
+> Currently, `ReadMethods.cs` checks `ValueIsObject` to reject string commands on
+> object records. Add analogous guards using the `RecordType` byte.
 
 Add type-safety guards in both `SingleReader` and `ConcurrentReader`:
 
 ```csharp
-// After the existing VectorSet checks:
-if (readInfo.RecordInfo.RangeIndexSet && !cmd.IsLegalOnRangeIndex())
+// Add RangeIndex type-safety checks:
+if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType && !cmd.IsLegalOnRangeIndex())
 {
     readInfo.Action = ReadAction.CancelOperation;
     return false;
 }
-else if (!readInfo.RecordInfo.RangeIndexSet && cmd.IsLegalOnRangeIndex())
+else if (srcLogRecord.RecordType != RangeIndexManager.RangeIndexRecordType && cmd.IsLegalOnRangeIndex())
 {
     readInfo.Action = ReadAction.CancelOperation;
     return false;
@@ -1260,11 +1313,13 @@ Tsavorite's `Read()` path for data access. The storage session reads the stub vi
 
 ### Step 10: Delete/Drop handling
 
-> **Reference:** `libs/server/Storage/Functions/MainStore/DeleteMethods.cs` lines 17-31
+> **Reference:** `libs/server/Storage/Functions/MainStore/DeleteMethods.cs`
+> Add a guard to prevent deletion of RangeIndex keys while the stub is non-zero
+> (BfTree still alive). The `RI.DROP` command explicitly zeroes the stub before deleting.
 
 ```csharp
 // In SingleDeleter and ConcurrentDeleter:
-if (recordInfo.RangeIndexSet
+if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType
     && value.AsReadOnlySpan().ContainsAnyExcept((byte)0))
 {
     // Stub not yet zeroed — BfTree still alive, block deletion
@@ -1288,14 +1343,15 @@ if (recordInfo.RangeIndexSet
 
 ### Step 11: Implement `BfTreeService` (native interop)
 
-> **Reference:** `libs/server/Resp/Vector/DiskANNService.cs` — wraps unmanaged DiskANN
-> library. RangeIndex follows the same pattern with P/Invoke to a Rust shared library.
+> **Prototype reference:** [`DiskANNService.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/DiskANNService.cs) —
+> wraps the unmanaged DiskANN library. BfTreeService follows the same pattern with
+> P/Invoke to a Rust shared library instead.
 
 **File:** `libs/server/Resp/RangeIndex/BfTreeService.cs` (new)
 
 ```csharp
 /// Wraps the native Bf-Tree library (bftree.dll / libbftree.so).
-/// Analogous to DiskANNService for Vector Indexes.
+/// Provides managed C# interface for BfTree lifecycle and operations.
 internal sealed class BfTreeService : IDisposable
 {
     /// Create a new BfTree instance. Returns native pointer.
@@ -1514,20 +1570,27 @@ pub extern "C" fn bftree_drop(tree: *mut BfTree) {
 ### Step 12: Add `RangeIndexManager` to `FunctionsState`
 
 > **Reference:** `libs/server/Storage/Functions/FunctionsState.cs`
-> `vectorManager` is declared and initialized here.
+> This class holds shared state accessible from Tsavorite session function callbacks
+> (e.g., `appendOnlyFile`, `watchVersionMap`, `objectStoreSizeTracker`).
+>
+> **Prototype reference:** On `vectorApiPoC-storeV2`, `FunctionsState` has a
+> [`vectorManager` field](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Storage/Functions/FunctionsState.cs)
+> and [`StorageSession`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Storage/Session/StorageSession.cs)
+> has a matching `vectorManager` field — follow the same pattern for `rangeIndexManager`.
 
 ```csharp
 // Add field:
 internal readonly RangeIndexManager rangeIndexManager;
 
-// Initialize in constructor alongside vectorManager:
+// Initialize in constructor:
 this.rangeIndexManager = new RangeIndexManager(logger);
 ```
 
 Also add `rangeIndexManager` to `StorageSession` so that `RangeIndexOps.cs` can access it:
 
 > **Reference:** `libs/server/Storage/Session/StorageSession.cs`
-> `vectorManager` is passed to the session and stored as a field.
+> The session holds context fields (`stringBasicContext`, `objectBasicContext`,
+> `unifiedBasicContext`) and shared state. Add the manager as a field.
 
 ```csharp
 internal readonly RangeIndexManager rangeIndexManager;
@@ -1537,9 +1600,10 @@ internal readonly RangeIndexManager rangeIndexManager;
 
 ### Step 13: Checkpoint & Recovery
 
-> **Reference:** VectorManager doesn't use explicit checkpoint callbacks. Instead:
-> - The stub in the main store is automatically serialized by Tsavorite during checkpoint
-> - On recovery, `ResumePostRecovery()` scans for stale stubs and recreates BfTrees
+> The stub in the store is automatically serialized by Tsavorite during checkpoint
+> (as part of the hybrid log). On recovery, `ResumePostRecovery()` scans for stale
+> stubs (identified by `RecordType == RangeIndexRecordType`) and recreates BfTrees from
+> their snapshot files.
 
 **Checkpoint:** Before Garnet checkpoint, call `RangeIndexManager.PrepareCheckpoint()`:
 
@@ -1557,7 +1621,7 @@ internal void PrepareCheckpoint()
 ```csharp
 internal void ResumePostRecovery()
 {
-    // Iterate main store for all records with RangeIndexSet == true.
+    // Iterate main store for all records with RecordType == RangeIndexRecordType.
     // For each:
     //   1. ReadIndex → extract config + ProcessInstanceId
     //   2. If ProcessInstanceId != this.processInstanceId → stale
@@ -1601,45 +1665,44 @@ public enum RangeIndexResult
 | 9 | `bf-tree/src/ffi.rs` | Rust C FFI exports | ~200 |
 | 10 | `test/Garnet.test/RangeIndexTests.cs` | Integration tests | ~300 |
 
-### Modified Files (8 files)
+### Modified Files (9 files)
 
 | # | File Path | Change | Scope |
 |---|---|---|---|
-| 1 | `libs/storage/Tsavorite/.../RecordInfo.cs` | Add `RangeIndexSet` bit flag | ~5 lines |
+| 1 | `libs/storage/Tsavorite/.../LogRecord.cs` | Wire `RecordType` propagation through `InitializeRecord()` | ~15 lines |
 | 2 | `libs/server/Resp/Parser/RespCommand.cs` | Add RI* enum values + `ParseRangeIndexCommand()` | ~50 lines |
 | 3 | `libs/server/Resp/RespServerSession.cs` | Add RI* command dispatch entries | ~15 lines |
 | 4 | `libs/server/Storage/Functions/MainStore/RMWMethods.cs` | Add RICREATE/RISET/RIDEL cases in InitialUpdater, InPlaceUpdater, CopyUpdater | ~60 lines |
-| 5 | `libs/server/Storage/Functions/MainStore/ReadMethods.cs` | Add RangeIndexSet type guards in SingleReader + ConcurrentReader | ~20 lines |
-| 6 | `libs/server/Storage/Functions/MainStore/DeleteMethods.cs` | Add RangeIndexSet deletion guard | ~10 lines |
+| 5 | `libs/server/Storage/Functions/MainStore/ReadMethods.cs` | Add `RecordType` type guards in Reader | ~20 lines |
+| 6 | `libs/server/Storage/Functions/MainStore/DeleteMethods.cs` | Add `RecordType` deletion guard | ~10 lines |
 | 7 | `libs/server/Storage/Functions/FunctionsState.cs` | Add `rangeIndexManager` field | ~5 lines |
-| 8 | `libs/server/API/IGarnetApi.cs` + `GarnetApi.cs` | Add RangeIndex* method declarations + delegation | ~60 lines |
+| 8 | `libs/server/Storage/Session/StorageSession.cs` | Add `rangeIndexManager` field | ~5 lines |
+| 9 | `libs/server/API/IGarnetApi.cs` + `GarnetApi.cs` | Add RangeIndex* method declarations + delegation | ~60 lines |
 
 ---
 
 ## Persistence, Checkpoint, Migration, and Replication
 
 This section covers how BfTree data survives page flush, checkpoint, recovery, replica
-sync, and key migration. This is the **critical difference from VectorSet**: VectorSet
-stores all element data inside Tsavorite (in a separate namespace), so Tsavorite's own
-checkpoint/migration machinery handles it automatically. BfTree stores its data entirely
-**outside** Tsavorite (in its own circular buffer + disk files). The stub in Tsavorite is
-just a pointer + config — the actual data must be managed separately at every persistence
-boundary.
+sync, and key migration. The **critical design consideration** is that BfTree stores its
+data entirely **outside** Tsavorite (in its own circular buffer + disk files). The stub in
+Tsavorite is just a pointer + config — the actual data must be managed separately at every
+persistence boundary. This is fundamentally different from built-in object types (Hash,
+List, Set, SortedSet) which serialize their data directly into Tsavorite's log and benefit
+from automatic checkpoint/migration handling.
 
-### Background: How Tsavorite Persists SpanByte Records
+### Background: How Tsavorite Persists Records
 
-> **Reference:** `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs` lines 479-500;
-> `libs/storage/Tsavorite/cs/src/core/Allocator/SpanByteAllocatorImpl.cs` lines 252-272
+> **Reference:** `libs/storage/Tsavorite/cs/src/core/Allocator/AllocatorBase.cs`
 
 - Tsavorite writes hybrid log pages **verbatim to disk** — raw memory bytes, no per-record
   transformation or callback.
-- `RecordInfo` flags (including our `RangeIndexSet` bit) are part of the 8-byte record
-  header and survive flush as-is.
+- `RecordInfo` flags and `RecordType` byte are part of the record header
+  and survive flush as-is.
 - The `TreePtr` field in the stub is a raw `nint` — it is written to disk as a meaningless
   64-bit value. On reload, it is stale and must be fixed up via `RecreateIndex()`.
-- There is **no per-record callback** during page flush (`DisposeOnPageEviction` is `false`
-  for `SpanByteRecordDisposer`). However, there is an **observer pattern** via
-  `store.Log.SubscribeEvictions()` that fires per-page.
+- There is an **observer pattern** via `store.Log.SubscribeEvictions()` that fires per-page,
+  which we use to snapshot BfTrees before their stubs become unreachable.
 
 ### The Four Persistence Boundaries
 
@@ -1647,7 +1710,7 @@ boundary.
 |---|---|---|
 | **Page flush** | Tsavorite evicts a hybrid log page from memory to disk. Stub is written as raw bytes; `TreePtr` becomes stale on disk. | Snapshot the BfTree so its data is on disk. |
 | **Checkpoint** | Tsavorite takes a full or incremental checkpoint of the hybrid log. All stubs are included. | Snapshot ALL active BfTrees before checkpoint begins. |
-| **Recovery** | Tsavorite recovers from checkpoint. Stubs are loaded with stale `TreePtr` values. | Scan for `RangeIndexSet` records, restore each BfTree from its snapshot, update `TreePtr`. |
+| **Recovery** | Tsavorite recovers from checkpoint. Stubs are loaded with stale `TreePtr` values. | Scan for `RangeIndexRecordType` records, restore each BfTree from its snapshot, update `TreePtr`. |
 | **Key migration** | Individual keys are transferred to another node during cluster slot migration. | Serialize the BfTree (full snapshot bytes) alongside the stub when transmitting. Receiver recreates the BfTree from the serialized bytes. |
 | **Replica sync** | Full checkpoint is sent to a replica. | Send BfTree snapshot files alongside the Tsavorite checkpoint files. Replica recovery restores BfTrees from those files. |
 
@@ -1747,22 +1810,23 @@ snapshot any RangeIndex stubs being evicted:
 
 ```csharp
 // In RangeIndexManager.cs
-internal void SubscribeToEvictions(TsavoriteKV<SpanByte, SpanByte, ...> store)
+internal void SubscribeToEvictions(TsavoriteKV<StoreFunctions, StoreAllocator> store)
 {
     store.Log.SubscribeEvictions(new RangeIndexEvictionObserver(this));
 }
 
 private class RangeIndexEvictionObserver :
-    IObserver<ITsavoriteScanIterator<SpanByte, SpanByte>>
+    IObserver<ITsavoriteScanIterator<StoreFunctions, StoreAllocator>>
 {
     private readonly RangeIndexManager manager;
 
-    public void OnNext(ITsavoriteScanIterator<SpanByte, SpanByte> iter)
+    public void OnNext(ITsavoriteScanIterator<StoreFunctions, StoreAllocator> iter)
     {
-        // Scan evicted records for RangeIndexSet flag
+        // Scan evicted records for RangeIndex RecordType
         while (iter.GetNext(out var recordInfo))
         {
-            if (!recordInfo.RangeIndexSet) continue;
+            // Check RecordType to identify RangeIndex stubs
+            // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
 
             ref var key = ref iter.GetKey();
             ref var value = ref iter.GetValue();
@@ -1790,10 +1854,10 @@ same flow as recovery.
 
 ### B. Checkpoint
 
-> **Reference:** `libs/server/Databases/DatabaseManagerBase.cs` line 634:
-> `IClusterProvider.OnCheckpointInitiated()` fires before checkpoint state machine starts.
-> `libs/server/Databases/SingleDatabaseManager.cs` line 112: recovery calls
-> `VectorManager.Initialize()` post-recovery.
+> **Reference:** `libs/server/Databases/DatabaseManagerBase.cs` —
+> `InitiateCheckpointAsync()` orchestrates the checkpoint state machine.
+> The `RangeIndexManager.PrepareCheckpoint()` hook should be called before the
+> state machine starts, to snapshot all active BfTrees.
 
 **Pre-checkpoint hook:** Before Tsavorite begins the checkpoint state machine, snapshot
 all active BfTrees:
@@ -1833,24 +1897,25 @@ db.StateMachineDriver.RunAsync();
 
 ### C. Recovery
 
-> **Reference:** `libs/server/Databases/SingleDatabaseManager.cs` `RecoverCheckpoint()`
-> lines 57-113. `VectorManager.Initialize()` + `ResumePostRecovery()` called post-recovery.
+> **Reference:** `libs/server/Databases/SingleDatabaseManager.cs` — `RecoverCheckpoint()`
+> restores the store from a checkpoint. After Tsavorite recovery completes,
+> `RangeIndexManager.ResumePostRecovery()` should be called to restore BfTrees.
 
 **Post-recovery scan:** After Tsavorite recovery loads all records from the checkpoint,
-scan the main store for all records with `RangeIndexSet == true` and recreate their
-BfTrees:
+scan the store for all records with `RecordType == RangeIndexRecordType` and recreate their BfTrees:
 
 ```csharp
 // In RangeIndexManager.cs:
 internal void ResumePostRecovery(
-    TsavoriteKV<SpanByte, SpanByte, ...> store,
+    TsavoriteKV<StoreFunctions, StoreAllocator> store,
     string checkpointDir, Guid checkpointToken)
 {
-    // 1. Iterate main store for RangeIndexSet records
+    // 1. Iterate main store for RangeIndex records (by RecordType)
     using var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress);
     while (iter.GetNext(out var recordInfo))
     {
-        if (!recordInfo.RangeIndexSet) continue;
+        // Filter by RecordType to find RangeIndex stubs
+        // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
         ref var key = ref iter.GetKey();
         ref var value = ref iter.GetValue();
 
@@ -1895,12 +1960,12 @@ internal void ResumePostRecovery(
     }
 }
 
-private void IssueRecreateRMW(ref SpanByte key, nint newTreePtr,
+private void IssueRecreateRMW(ReadOnlySpan<byte> key, nint newTreePtr,
     TsavoriteKV<...> store)
 {
     // Build parseState with newTreePtr at arg slot 6
     // Set input.arg1 = RecreateIndexArg
-    // Call basicContext.RMW(ref key, ref input)
+    // Call stringBasicContext.RMW(key, ref input)
     // This triggers InPlaceUpdater/CopyUpdater which calls RecreateIndex()
 }
 ```
@@ -1908,19 +1973,21 @@ private void IssueRecreateRMW(ref SpanByte key, nint newTreePtr,
 **Call site:**
 
 ```csharp
-// In SingleDatabaseManager.RecoverCheckpoint(), after line 112:
+// In SingleDatabaseManager.RecoverCheckpoint(), after Tsavorite recovery completes:
 defaultDatabase.RangeIndexManager.Initialize();
 defaultDatabase.RangeIndexManager.ResumePostRecovery(
-    MainStore, checkpointDir, recoveredToken);
+    defaultDatabase.Store, checkpointDir, recoveredToken);
 ```
 
 ---
 
 ### D. Replica Sync (Sending Checkpoint to Replica)
 
-> **Reference:** `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs`
-> `SendCheckpoint()` lines 101-346. Sends files by `CheckpointFileType` enum.
-> `libs/cluster/Server/Replication/CheckpointFileType.cs` lines 12-58.
+> **Reference:** `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` —
+> `SendCheckpoint()` sends checkpoint files categorized by `CheckpointFileType` enum.
+> `libs/cluster/Server/Replication/CheckpointFileType.cs` — currently defines types for
+> `STORE_HLOG`, `STORE_HLOG_OBJ`, `STORE_DLOG`, `STORE_INDEX`, `STORE_SNAPSHOT`,
+> `STORE_SNAPSHOT_OBJ`. A new `RANGEINDEX_SNAPSHOT` type must be added.
 
 **Problem:** The Tsavorite checkpoint files contain stubs with stale `TreePtr` values. The
 actual BfTree data is in separate snapshot files that are not part of Tsavorite's file set.
@@ -1938,7 +2005,7 @@ RANGEINDEX_SNAPSHOT = 11,  // BfTree snapshot file
 #### 2. Extend `SendCheckpoint()` to send BfTree snapshots
 
 ```csharp
-// In ReplicaSyncSession.cs, inside SendCheckpoint(), after sending object store files:
+// In ReplicaSyncSession.cs, inside SendCheckpoint(), after sending store files:
 
 // Send RangeIndex snapshot files
 var riSnapshotDir = Path.Combine(checkpointDir, "rangeindex");
@@ -1978,25 +2045,27 @@ paths and recreates the BfTrees.
 
 ### E. Key Migration (Cluster Slot Migration)
 
-> **Reference:** `libs/cluster/Server/Migration/MigrateSessionKeys.cs` lines 23-147.
-> VectorSet 2-phase migration: `VectorManager.Migration.cs`.
-> Key scanning: `MigrateScanFunctions.cs` line 54 checks `RecordInfo.VectorSet`.
+> **Reference:** `libs/cluster/Server/Migration/MigrateSessionKeys.cs` —
+> migrates individual keys during cluster slot migration via `MigrateKeysFromStore()`.
+> Key scanning: `MigrateScanFunctions.cs` — iterates store records for slot matching.
 > Receiver: `libs/cluster/Session/RespClusterMigrateCommands.cs`.
+> Currently, migration handles only standard string and object records. RangeIndex
+> keys require special 2-phase migration since BfTree data lives outside Tsavorite.
 
 **Problem:** During slot migration, individual keys are transferred to the target node.
 For a RangeIndex key, we can't just send the 56-byte stub — we must also send the
 entire BfTree data (all entries in the index). The target node must recreate the BfTree
 from this data.
 
-**Solution: 2-Phase Migration (analogous to VectorSet)**
+**Solution: 2-Phase Migration**
 
 #### Phase 1: Serialize BfTree data
 
-When the migration scanner encounters a `RangeIndexSet` record:
+When the migration scanner encounters a RangeIndex record (identified by `RecordType`):
 
 ```csharp
-// In MigrateScanFunctions.cs (add alongside VectorSet detection):
-if (recordMetadata.RecordInfo.RangeIndexSet)
+// In MigrateScanFunctions.cs (add RangeIndex detection):
+if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
 {
     mss.EncounteredRangeIndex(ref key, ref value);
     return; // Don't transmit the stub yet — Phase 2
@@ -2005,7 +2074,7 @@ if (recordMetadata.RecordInfo.RangeIndexSet)
 
 ```csharp
 // In MigrateSessionKeys.cs (new method):
-internal void EncounteredRangeIndex(ref SpanByte key, ref SpanByte value)
+internal void EncounteredRangeIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
 {
     // Save key + value for Phase 2
     rangeIndexKeysToMigrate.Add((key.ToByteArray(), value.ToByteArray()));
@@ -2081,7 +2150,7 @@ case "RISTORE":
     stub.CopyTo(newStubBytes);
     rangeIndexManager.UpdateStubPointer(newStubBytes, newTreePtr);
 
-    // 5. Insert into local main store with RangeIndexSet flag
+    // 5. Insert into local main store with RangeIndex RecordType
     InsertRangeIndexKey(keyBytes, newStubBytes);
     break;
 ```
@@ -2145,8 +2214,8 @@ temp files — the BfTree data can be serialized directly into the migration pay
 | MOD | `libs/cluster/Server/Replication/CheckpointFileType.cs` | Add `RANGEINDEX_SNAPSHOT` enum value |
 | MOD | `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` | Send BfTree snapshot files during replica sync |
 | MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Handle `RISTORE` type during key migration |
-| MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | Detect `RangeIndexSet`, serialize BfTree, 2-phase transmit |
-| MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | Check `RangeIndexSet` flag during slot scan |
+| MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | Detect RangeIndex `RecordType`, serialize BfTree, 2-phase transmit |
+| MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | Check `RecordType` during slot scan |
 | MOD | `bf-tree/src/ffi.rs` | Add `bftree_snapshot_to_path`, `bftree_serialize_to_buffer`, `bftree_deserialize_from_buffer` |
 
 ---
