@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using Allure.NUnit;
@@ -1012,6 +1013,464 @@ namespace Garnet.test
             double error = ((double)Math.Abs(cardinality - estimate) / (double)cardinality) * 100;
             error = (double)(int)(error * 10000) / (double)10000;
             return error;
+        }
+
+        private static (int valueLength, int valueStart) ParseDumpValueLengthAndStart(byte[] dump)
+        {
+            if (dump[1] < 0x40)
+            {
+                return (dump[1], 2);
+            }
+
+            if (dump[1] < 0x80)
+            {
+                return (((dump[1] & 0x3F) << 8) | dump[2], 3);
+            }
+
+            return (BinaryPrimitives.ReadInt32BigEndian(dump.AsSpan(2, 4)), 6);
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogRestoreCorruptedDumpPayloadIsRejected()
+        {
+            // Test verifies that RESTORE command properly rejects a dump payload when the CRC checksum
+            // doesn't match due to corruption. This ensures data integrity by preventing restoration
+            // of corrupted HLL data.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_dump_source";
+            const string restoredKey = "hll_dump_restored";
+
+            // Step 1: Clean up and create source HLL
+            _ = db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(restoredKey);
+
+            for (var i = 0; i < 2; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            // Step 2: Dump the HLL
+            var dump = db.KeyDump(sourceKey)!;
+            var corruptedDump = (byte[])dump.Clone();
+
+            // Step 3: Corrupt the dump by flipping a bit (avoiding the last 8 bytes which are CRC)
+            var corruptIndex = Math.Min(20, corruptedDump.Length - 11);
+            corruptedDump[corruptIndex] ^= 0x01;
+
+            // Step 4 & 5: Attempt restore and verify it fails with checksum error
+            var ex = Assert.Throws<RedisServerException>(() => db.KeyRestore(restoredKey, corruptedDump));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", ex!.Message);
+
+            // Step 6: Verify key was not created
+            ClassicAssert.IsFalse(db.KeyExists(restoredKey));
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogRestoreZeroCrcDumpPayloadIsRejected()
+        {
+            // Test verifies that RESTORE command rejects a payload when the CRC checksum is zeroed out.
+            // This prevents accepting invalid dumps that might bypass checksum validation.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_zero_crc_source";
+            const string restoredKey = "hll_zero_crc_restored";
+
+            // Step 1: Clean up and create source HLL
+            _ = db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(restoredKey);
+
+            for (var i = 0; i < 20; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            // Step 2: Dump the HLL
+            var dump = db.KeyDump(sourceKey)!;
+            var zeroCrcDump = (byte[])dump.Clone();
+
+            // Step 3: Zero out the last 8 bytes (CRC64 checksum)
+            Array.Fill(zeroCrcDump, (byte)0, zeroCrcDump.Length - 8, 8);
+
+            // Step 4 & 5: Attempt restore and verify it fails with checksum error
+            var ex = Assert.Throws<RedisServerException>(() => db.KeyRestore(restoredKey, zeroCrcDump));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", ex!.Message);
+
+            // Step 6: Verify key was not created
+            ClassicAssert.IsFalse(db.KeyExists(restoredKey));
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogRestoreCorruptedSparseRlePayloadIsRejected()
+        {
+            // Test verifies that RESTORE command properly validates sparse HLL representation
+            // by rejecting payloads with corrupted RLE (Run-Length Encoding) metadata.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_sparse_source";
+            const string restoredKey = "hll_sparse_restored";
+
+            // Step 1: Clean up and create sparse HLL
+            _ = db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(restoredKey);
+
+            for (var i = 0; i < 20; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            // Step 2: Dump and parse the structure
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            // Step 3: Extract and corrupt the HLL value
+            var hllValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            // Corrupt sparse stream length at offset 16-17
+            BinaryPrimitives.WriteUInt16LittleEndian(hllValue.AsSpan(16, 2), 65000);
+            // Corrupt cardinality cache at offset 8-15
+            BinaryPrimitives.WriteInt64LittleEndian(hllValue.AsSpan(8, 8), long.MinValue);
+
+            // Step 4: Reconstruct the dump with RDB encoding
+            // Encode the length using Redis RDB string encoding format
+            byte[] encodedLength = hllValue.Length < 64
+                ? [(byte)(hllValue.Length & 0x3F)]
+                : hllValue.Length < 16384
+                    ? [(byte)(((hllValue.Length >> 8) & 0x3F) | 0x40), (byte)(hllValue.Length & 0xFF)]
+                    : [0x80, .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(hllValue.Length))];
+
+            var rdbVersion = dump.AsSpan(valueStart + valueLength, 2).ToArray();
+            var crafted = new byte[1 + encodedLength.Length + hllValue.Length + rdbVersion.Length + 8];
+            crafted[0] = 0x00; // RDB type encoding
+            encodedLength.CopyTo(crafted.AsSpan(1, encodedLength.Length));
+            hllValue.CopyTo(crafted.AsSpan(1 + encodedLength.Length, hllValue.Length));
+            rdbVersion.CopyTo(crafted.AsSpan(1 + encodedLength.Length + hllValue.Length, rdbVersion.Length));
+
+            // Step 5 & 6: Attempt restore and verify it fails
+            var ex = Assert.Throws<RedisServerException>(() => db.KeyRestore(restoredKey, crafted));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", ex!.Message);
+
+            // Step 7: Verify key was not created
+            ClassicAssert.IsFalse(db.KeyExists(restoredKey));
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogValidatorRejectsMalformedSparsePayload()
+        {
+            // Test verifies that the HLL validator correctly identifies and rejects sparse HLL
+            // payloads where the declared stream length doesn't match the actual payload size.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_malformed_source";
+
+            // Step 1: Clean up and create sparse HLL
+            _ = db.KeyDelete(sourceKey);
+
+            for (var i = 0; i < 20; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            // Step 2: Dump and parse the structure
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            // Step 3: Extract the HLL value and verify it's sparse
+            var malformedValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, malformedValue[3], "Expected sparse HLL representation for malformed payload test.");
+
+            // Step 4: Corrupt the sparse stream length (bytes 16-17) to exceed actual size
+            BinaryPrimitives.WriteUInt16LittleEndian(malformedValue.AsSpan(16, 2), (ushort)(valueLength + 100));
+
+            // Steps 5 & 6: Validate original passes and malformed fails
+            fixed (byte* validPtr = dump.AsSpan(valueStart, valueLength))
+            fixed (byte* malformedPtr = malformedValue)
+            {
+                ClassicAssert.IsTrue(HyperLogLog.DefaultHLL.IsValidHYLL(validPtr, valueLength));
+                ClassicAssert.IsFalse(HyperLogLog.DefaultHLL.IsValidHYLL(malformedPtr, malformedValue.Length));
+            }
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogValidatorRejectsSparseStreamCoverageMismatch()
+        {
+            // Test verifies that the validator rejects sparse HLL payloads where the RLE stream
+            // doesn't cover all expected register positions (16384 registers total).
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_sparse_stream_src";
+
+            // Step 1: Clean up and create minimal sparse HLL
+            _ = db.KeyDelete(sourceKey);
+
+            for (int i = 0; i < 2; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            // Step 2: Dump and parse the structure
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            // Step 3: Extract the HLL value and verify it's sparse
+            var malformedValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, malformedValue[3], "Expected sparse HLL representation for stream coverage test.");
+
+            // Step 4: Corrupt the first RLE opcode (offset 18) to create coverage gap
+            // Setting to 0x80 (ZERO opcode with invalid parameters)
+            var rleStart = 18;
+            malformedValue[rleStart] = 0x80;
+
+            // Steps 5 & 6: Validate original passes and malformed fails
+            fixed (byte* validPtr = dump.AsSpan(valueStart, valueLength))
+            fixed (byte* malformedPtr = malformedValue)
+            {
+                ClassicAssert.IsTrue(HyperLogLog.DefaultHLL.IsValidHYLL(validPtr, valueLength));
+                ClassicAssert.IsFalse(HyperLogLog.DefaultHLL.IsValidHYLL(malformedPtr, malformedValue.Length));
+            }
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogChecksumMalformedOnRestore()
+        {
+            // Test verifies that RESTORE properly validates checksums even when the HLL payload
+            // contains malformed sparse metadata. Ensures checksum validation happens before
+            // structural validation.
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_skip_src";
+            const string malformedKey = "hll_skip_bad";
+            const string mergeDst = "hll_skip_dst";
+
+            // Step 2: Clean up and create sparse HLL
+            _ = db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(malformedKey);
+            _ = db.KeyDelete(mergeDst);
+
+            for (var i = 0; i < 2; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            // Step 3: Dump and parse the structure
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            // Step 4: Extract and corrupt the sparse stream length
+            var hllValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, hllValue[3], "Expected sparse HLL representation for checksum-skip malformed payload test.");
+            BinaryPrimitives.WriteUInt16LittleEndian(hllValue.AsSpan(16, 2), (ushort)(valueLength + 100));
+
+            // Step 5: Reconstruct the dump with RDB encoding (CRC will be zeros)
+            // Encode the length using Redis RDB string encoding format
+            byte[] encodedLength = hllValue.Length < 64
+                ? [(byte)(hllValue.Length & 0x3F)]
+                : hllValue.Length < 16384
+                    ? [(byte)(((hllValue.Length >> 8) & 0x3F) | 0x40), (byte)(hllValue.Length & 0xFF)]
+                    : [0x80, .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(hllValue.Length))];
+
+            var rdbVersion = dump.AsSpan(valueStart + valueLength, 2).ToArray();
+            var crafted = new byte[1 + encodedLength.Length + hllValue.Length + rdbVersion.Length + 8];
+            crafted[0] = 0x00; // RDB type encoding
+            encodedLength.CopyTo(crafted.AsSpan(1, encodedLength.Length));
+            hllValue.CopyTo(crafted.AsSpan(1 + encodedLength.Length, hllValue.Length));
+            rdbVersion.CopyTo(crafted.AsSpan(1 + encodedLength.Length + hllValue.Length, rdbVersion.Length));
+            // Note: Last 8 bytes (CRC) remain as zeros
+
+            // Steps 6 & 7: Attempt restore and verify checksum error (not structural error)
+            var restoreEx = Assert.Throws<RedisServerException>(() => db.KeyRestore(malformedKey, crafted));
+            StringAssert.Contains("ERR DUMP payload version or checksum are wrong", restoreEx!.Message);
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogDumpVariantCoverage_SparseAndDenseRepresentations()
+        {
+            // Test verifies that HLL dumps correctly handle both sparse and dense representations,
+            // and that the encoding type byte correctly identifies each format.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sparseKey = "hll_variant_sparse";
+            const string denseKey = "hll_variant_dense";
+
+            // Step 1: Create sparse HLL with minimal elements
+            _ = db.KeyDelete(sparseKey);
+            _ = db.KeyDelete(denseKey);
+
+            for (var i = 0; i < 2; i++)
+                _ = db.HyperLogLogAdd(sparseKey, $"s_{i}");
+
+            // Step 2: Dump and verify sparse encoding (type byte = 0 at offset 3)
+            var sparseDump = db.KeyDump(sparseKey)!;
+            var (sparseLen, sparseStart) = ParseDumpValueLengthAndStart(sparseDump);
+            ClassicAssert.AreEqual(0, sparseDump[sparseStart + 3], "Expected sparse HLL representation type.");
+
+            // Step 3: Create dense HLL by adding elements until sparse->dense conversion
+            // HLL converts to dense when sparse representation becomes inefficient
+            byte[] denseDump;
+            var inserts = 0;
+            do
+            {
+                var batch = Math.Min(1000, 50_000 - inserts);
+                for (var j = 0; j < batch; j++)
+                {
+                    _ = db.HyperLogLogAdd(denseKey, $"d_{inserts}");
+                    inserts++;
+                }
+                denseDump = db.KeyDump(denseKey)!;
+            }
+            while (denseDump[ParseDumpValueLengthAndStart(denseDump).valueStart + 3] == 0 && inserts < 50_000);
+
+            // Step 4: Verify dense encoding (type byte = 1 at offset 3)
+            var (denseLen, denseStart) = ParseDumpValueLengthAndStart(denseDump);
+            ClassicAssert.AreEqual(1, denseDump[denseStart + 3], "Expected dense HLL representation type.");
+
+            // Step 5: Verify dense representation is larger
+            ClassicAssert.Greater(denseLen, sparseLen);
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void ParseDumpValueLengthAndStart_Covers6Bit14BitAnd32BitBranches()
+        {
+            // Test verifies that the RDB length encoding parser correctly handles all three
+            // Redis RDB string length encoding formats: 6-bit, 14-bit, and 32-bit.
+            //
+            // RDB Length Encoding Format:
+            // - 6-bit:  First byte[1] < 0x40, length in lower 6 bits, value starts at byte 2
+            // - 14-bit: First byte[1] < 0x80, length in 14 bits (6 bits + 8 bits), value starts at byte 3
+            // - 32-bit: First byte[1] = 0x80, length in next 4 bytes (big-endian), value starts at byte 6
+            //
+            // Steps:
+            // 1. Test 6-bit encoding: length = 5 (< 64)
+            // 2. Test 14-bit encoding: length = 400 (< 16384)
+            // 3. Test 32-bit encoding: length = 70000 (>= 16384)
+
+            // Step 1: Test 6-bit encoding
+            // Format: [type_byte, 0x05, ...] where 0x05 encodes length 5
+            var sixBitDump = new byte[] { 0x24, 0x05, 0x00, 0x00, 0x00 };
+            var (len6, start6) = ParseDumpValueLengthAndStart(sixBitDump);
+            ClassicAssert.AreEqual(5, len6);
+            ClassicAssert.AreEqual(2, start6);
+
+            // Step 2: Test 14-bit encoding
+            // Format: [type_byte, (upper_6_bits | 0x40), lower_8_bits, ...]
+            var len14 = 400;
+            var dump14 = new byte[] { 0x24, (byte)(((len14 >> 8) & 0x3F) | 0x40), (byte)(len14 & 0xFF), 0x00, 0x00 };
+            var (lenParsed14, start14) = ParseDumpValueLengthAndStart(dump14);
+            ClassicAssert.AreEqual(len14, lenParsed14);
+            ClassicAssert.AreEqual(3, start14);
+
+            // Step 3: Test 32-bit encoding
+            // Format: [type_byte, 0x80, 4_bytes_big_endian, ...]
+            // 70000 = 0x00011170 in big-endian
+            var len32 = 70000;
+            var dump32 = new byte[] { 0x24, 0x80, 0x00, 0x01, 0x11, 0x70, 0x00 };
+            var (lenParsed32, start32) = ParseDumpValueLengthAndStart(dump32);
+            ClassicAssert.AreEqual(len32, lenParsed32);
+            ClassicAssert.AreEqual(6, start32);
+        }
+
+        [Test]
+        [Category("HLL_RESTORE")]
+        public void HyperLogLogOperationsValidateStructuralIntegrity()
+        {
+            // Test verifies that even when a corrupted HLL payload passes CRC validation during RESTORE,
+            // subsequent HLL operations (PFADD, PFCOUNT, PFMERGE) properly detect structural corruption
+            // and reject the operations.
+            //
+            // This tests defense-in-depth: CRC only validates data integrity during transfer,
+            // but operations must still validate structural correctness.
+            //
+            // Steps:
+            // 1. Create a valid sparse HLL
+            // 2. Dump it and corrupt the SparseRLESize to be larger than payload
+            // 3. Recalculate CRC using Garnet's Crc64 to make corruption pass RESTORE
+            // 4. Verify RESTORE succeeds (CRC is valid)
+            // 5. Verify PFADD, PFCOUNT, PFMERGE all fail with WRONGTYPE (structural validation)
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string sourceKey = "hll_valid_source";
+            const string corruptedKey = "hll_corrupted_key";
+            const string validKey = "hll_valid_for_merge";
+
+            // Step 1: Create valid sparse HLL and test data
+            _ = db.KeyDelete(sourceKey);
+            _ = db.KeyDelete(corruptedKey);
+            _ = db.KeyDelete(validKey);
+
+            for (var i = 0; i < 5; i++)
+                _ = db.HyperLogLogAdd(sourceKey, $"elem_{i}");
+
+            _ = db.HyperLogLogAdd(validKey, "test");
+
+            // Step 2: Dump and corrupt the SparseRLESize field
+            var dump = db.KeyDump(sourceKey)!;
+            var (valueLength, valueStart) = ParseDumpValueLengthAndStart(dump);
+
+            // Extract HLL value
+            var hllValue = dump.AsSpan(valueStart, valueLength).ToArray();
+            ClassicAssert.AreEqual(0, hllValue[3], "Expected sparse HLL representation.");
+
+            // Corrupt RLE size: make it larger than actual payload
+            // This makes the declared RLE stream size exceed what's actually available
+            var originalRleSize = BinaryPrimitives.ReadUInt16LittleEndian(hllValue.AsSpan(16, 2));
+            var availablePayload = valueLength - 18; // Total length minus header (16) and RLE size field (2)
+            var corruptedRleSize = (ushort)(availablePayload + 50); // Exceeds actual available space
+            BinaryPrimitives.WriteUInt16LittleEndian(hllValue.AsSpan(16, 2), corruptedRleSize);
+
+            // Step 3: Reconstruct dump with valid CRC using Garnet.common.Crc64
+            byte[] encodedLength = hllValue.Length < 64
+                ? [(byte)(hllValue.Length & 0x3F)]
+                : hllValue.Length < 16384
+                    ? [(byte)(((hllValue.Length >> 8) & 0x3F) | 0x40), (byte)(hllValue.Length & 0xFF)]
+                    : [0x80, .. BitConverter.GetBytes(System.Net.IPAddress.HostToNetworkOrder(hllValue.Length))];
+
+            var rdbVersion = dump.AsSpan(valueStart + valueLength, 2).ToArray();
+
+            // Build payload without CRC
+            var payloadWithoutCrc = new byte[1 + encodedLength.Length + hllValue.Length + rdbVersion.Length];
+            payloadWithoutCrc[0] = 0x00; // RDB type encoding
+            encodedLength.CopyTo(payloadWithoutCrc.AsSpan(1, encodedLength.Length));
+            hllValue.CopyTo(payloadWithoutCrc.AsSpan(1 + encodedLength.Length, hllValue.Length));
+            rdbVersion.CopyTo(payloadWithoutCrc.AsSpan(1 + encodedLength.Length + hllValue.Length, rdbVersion.Length));
+
+            // Calculate CRC64 using Garnet's implementation (CRC64-Jones polynomial)
+            var crc64 = Garnet.common.Crc64.Hash(payloadWithoutCrc);
+
+            // Build final dump with valid CRC
+            var craftedDump = new byte[payloadWithoutCrc.Length + 8];
+            payloadWithoutCrc.CopyTo(craftedDump, 0);
+            crc64.CopyTo(craftedDump.AsSpan(payloadWithoutCrc.Length, 8));
+
+            // Step 4: RESTORE should succeed (CRC is valid, basic validation passes)
+            db.KeyRestore(corruptedKey, craftedDump);
+            ClassicAssert.IsTrue(db.KeyExists(corruptedKey), "Corrupted HLL should be restored with valid CRC");
+
+            // Step 5: Verify operations fail due to structural validation
+
+            // PFADD should fail - structural validation detects corrupted RLE size
+            var pfaddEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogAdd(corruptedKey, "newelem"));
+            StringAssert.Contains("WRONGTYPE", pfaddEx!.Message, "PFADD should reject corrupted HLL");
+
+            // PFCOUNT should fail
+            var pfcountEx = Assert.Throws<RedisServerException>(() => db.HyperLogLogLength(corruptedKey));
+            StringAssert.Contains("WRONGTYPE", pfcountEx!.Message, "PFCOUNT should reject corrupted HLL");
+
+            // PFMERGE should fail when corrupted HLL is source
+            var pfmergeEx1 = Assert.Throws<RedisServerException>(() =>
+                db.HyperLogLogMerge(validKey, validKey, corruptedKey));
+            StringAssert.Contains("WRONGTYPE", pfmergeEx1!.Message, "PFMERGE should reject corrupted HLL as source");
+
+            // PFMERGE should fail when corrupted HLL is destination
+            var pfmergeEx2 = Assert.Throws<RedisServerException>(() =>
+                db.HyperLogLogMerge(corruptedKey, corruptedKey, validKey));
+            StringAssert.Contains("WRONGTYPE", pfmergeEx2!.Message, "PFMERGE should reject corrupted HLL as destination");
         }
     }
 }
