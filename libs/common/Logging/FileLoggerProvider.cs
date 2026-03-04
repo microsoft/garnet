@@ -72,12 +72,18 @@ namespace Garnet.common
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception,
             Func<TState, Exception, string> formatter, string categoryName)
         {
+            // Sanitize formatted message to prevent log injection via embedded newlines
+            var formattedMessage = formatter(state, exception)
+                .Replace("\r\n", "\\r\\n")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+
             var msg = string.Format("[{0:D3}.{1}] ({2}) <{3}> {4}",
                 eventId.Id,
                 LogFormatter.FormatDate(DateTime.UtcNow),
                 logLevel,
                 categoryName,
-                formatter(state, exception));
+                formattedMessage);
 
             if (exception != null)
             {
