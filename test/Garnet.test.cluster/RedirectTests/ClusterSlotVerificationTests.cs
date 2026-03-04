@@ -332,7 +332,14 @@ namespace Garnet.test.cluster
                 {
                     try
                     {
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
+                        if (command.RequiresObjectParameters)
+                        {
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotObjectRequest());
+                        }
+                        else
+                        {
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -346,10 +353,13 @@ namespace Garnet.test.cluster
                     var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                     try
                     {
-                        if (command.ArrayResponse)
-                            _ = client.ExecuteForArrayAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
-                        else
-                            _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                        if (!command.RequiresObjectParameters)
+                        {
+                            if (command.ArrayResponse)
+                                _ = client.ExecuteForArrayAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                            else
+                                _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                        }
                     }
                     catch (Exception ex)
                     {
