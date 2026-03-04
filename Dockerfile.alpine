@@ -36,6 +36,9 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
+# Remove glibc-compiled Lua bundled by KeraLua NuGet; Alpine uses musl-compiled system Lua instead
+RUN rm -f /app/liblua54.so
+
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0-alpine AS runtime
 
