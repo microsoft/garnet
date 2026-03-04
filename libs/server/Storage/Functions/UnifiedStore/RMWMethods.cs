@@ -311,11 +311,8 @@ namespace Garnet.server
                     HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateETag, ref output);
                     break;
                 case RespCommand.DELIFEXPIM:
-                    if (!logRecord.Info.ValueIsObject)
-                    {
-                        // this is the case where it isn't expired
-                        shouldUpdateETag = false;
-                    }
+                    // this is the case where it isn't expired
+                    shouldUpdateETag = false;
                     break;
                 default:
                     throw new NotImplementedException();

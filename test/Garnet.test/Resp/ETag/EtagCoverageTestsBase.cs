@@ -11,7 +11,6 @@ using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ETag
 {
-    [TestFixture]
     public abstract class ETagCoverageTestsBase : AllureTestBase
     {
         protected GarnetServer server;

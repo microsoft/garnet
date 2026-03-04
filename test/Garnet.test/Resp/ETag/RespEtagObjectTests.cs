@@ -2,12 +2,14 @@
 // Licensed under the MIT license.
 
 using System.Linq;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ETag
 {
+    [AllureNUnit]
     [TestFixture]
     public class RespETagObjectTests : AllureTestBase
     {

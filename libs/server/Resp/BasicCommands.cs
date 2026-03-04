@@ -132,6 +132,13 @@ namespace Garnet.server
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.GET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var key = parseState.GetArgSliceByRef(0);
             // Optimistically ask storage to write output to network buffer
             var output = GetStringOutput();
@@ -168,6 +175,13 @@ namespace Garnet.server
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.GET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var key = parseState.GetArgSliceByRef(0);
             StringInput input = default;
             var firstPending = -1;

@@ -265,7 +265,7 @@ namespace Garnet.server
                 Debug.Assert(execOp);
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                shouldUpdateETag |= (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
+                shouldUpdateETag |= hadETagPreMutation &&  (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
                     return true;
