@@ -40,24 +40,29 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
-# --- Lua builder stage ---
-FROM ubuntu:24.04 AS lua-builder
+# --- Lua and libaio builder stage ---
+FROM ubuntu:24.04 AS libs-builder
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends liblua5.4-0 \
+    && apt-get install -y --no-install-recommends liblua5.4-0 libaio1t64 \
     && ARCH="$(uname -m)" \
     && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
-    && mkdir -p /lua \
-    && cp "/usr/lib/${MULTIARCH}/liblua5.4.so.0" /lua/ \
-    && ln -sf "liblua5.4.so.0" /lua/liblua54.so \
+    && mkdir -p /staging/lua /staging/libaio \
+    && cp "/usr/lib/${MULTIARCH}/liblua5.4.so.0" /staging/lua/ \
+    && ln -sf "liblua5.4.so.0" /staging/lua/liblua54.so \
+    && cp "/usr/lib/${MULTIARCH}/libaio.so.1t64" /staging/libaio/ \
+    && ln -sf "libaio.so.1t64" /staging/libaio/libaio.so.1 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- .NET build and layout prep ---
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble AS prep-runtime
 
 # prep-runtime image HAS /bin/sh, so we can script here
-COPY --from=lua-builder /lua /lua
+COPY --from=libs-builder /staging/lua /lua
+COPY --from=libs-builder /staging/libaio /libaio
 RUN DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
-    && cp /lua/liblua54.so "$DN_DIR/liblua54.so"
+    && cp /lua/liblua54.so "$DN_DIR/liblua54.so" \
+    && cp /libaio/libaio.so.1t64 /usr/lib/ \
+    && ln -sf "libaio.so.1t64" /usr/lib/libaio.so.1
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled AS runtime
@@ -66,6 +71,9 @@ WORKDIR /app
 COPY --from=build --chown=$APP_UID:$APP_UID /data /data
 # Copy the pre-symlinked .NET shared directory from prep-runtime
 COPY --from=prep-runtime /usr/share/dotnet/shared /usr/share/dotnet/shared
+# Copy libaio for native device support (copy the real file, then symlink in the chiseled image via prep-runtime)
+COPY --from=libs-builder /staging/libaio/libaio.so.1t64 /usr/lib/libaio.so.1t64
+COPY --from=libs-builder /staging/libaio/libaio.so.1 /usr/lib/libaio.so.1
 COPY --from=build /app .
 
 VOLUME /data
