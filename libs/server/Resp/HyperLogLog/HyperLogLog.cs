@@ -207,15 +207,19 @@ namespace Garnet.server
 
         private bool IsValidHLLLength(byte* ptr, int length)
         {
+            // Dense HLL must match exact byte count (12,304 bytes)
             if (IsDense(ptr))
                 return length == this.DenseBytes;
 
+            // Must be valid HLL type (sparse or dense)
             if (!IsSparse(ptr))
                 return false;
 
+            // Sparse length must be within [min initial size, 4096 byte cap]
             if (length < SparseInitialLength(1) || length > SparseSizeMaxCap)
                 return false;
 
+            // RLE stream must fit within available payload and be structurally valid
             var sparsePayloadBytes = length - SparseHeaderSize;
             return GetSparseRLESize(ptr) <= sparsePayloadBytes && IsValidSparseStream(ptr);
         }
