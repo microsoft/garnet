@@ -89,16 +89,6 @@ namespace Garnet.server
         public readonly int SparseBytes;
 
         /// <summary>
-        /// Return bits used for indexing
-        /// </summary>
-        public byte PBit => pbit;
-
-        /// <summary>
-        /// Return bits used for clz
-        /// </summary>
-        public byte QBit => qbit;
-
-        /// <summary>
         /// Default hyperloglog instance
         /// </summary>        
         public static readonly HyperLogLog DefaultHLL = new();
@@ -113,7 +103,7 @@ namespace Garnet.server
         /// Custom Garnet HyperLogLog Constructor
         /// </summary>
         /// <param name="pbit"></param>
-        public HyperLogLog(byte pbit)
+        private HyperLogLog(byte pbit)
         {
             this.pbit = pbit;
             this.qbit = (byte)(hbit - pbit);
