@@ -36,26 +36,13 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Delete xmldoc files
 RUN find /app -name '*.xml' -delete
 
-# --- Lua builder stage ---
-FROM ubuntu:24.04 AS lua-builder
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends liblua5.4-0 \
-    && ARCH="$(uname -m)" \
-    && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
-    && mkdir -p /lua \
-    && cp "/usr/lib/${MULTIARCH}/liblua5.4.so.0" /lua/ \
-    && ln -sf "liblua5.4.so.0" /lua/liblua54.so \
-    && rm -rf /var/lib/apt/lists/*
-
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0-azurelinux3.0 AS runtime
 
-COPY --from=lua-builder /lua /lua
-RUN DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
-    && cp /lua/liblua54.so "$DN_DIR/liblua54.so"
-
-# Install libaio
-RUN tdnf install -y libaio && tdnf clean all
+# Install libaio; lua-libs is already present in the base image
+RUN tdnf install -y libaio && tdnf clean all \
+    && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
+    && ln -sf "/usr/lib/liblua-5.4.so" "$DN_DIR/liblua54.so"
 
 RUN mkdir /data /app \
     && chown -R $APP_UID:$APP_UID /data /app
