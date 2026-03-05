@@ -759,11 +759,16 @@ namespace Garnet.server
                 // TODO: these stackallocs are dangerous, need logic to avoid stack overflow
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];
                 Span<float> distanceSpace = stackalloc float[DefaultResultSetSize];
-                Span<byte> attributeSpace = withAttributes.Value ? stackalloc byte[(DefaultResultSetSize * DefaultAttributeSize) + (DefaultResultSetSize * sizeof(int))] : default;
+                var needFilter = filter.Value.Length > 0;
+                var needAttributes = withAttributes.Value || needFilter;
+                Span<byte> attributeSpace = needAttributes ? stackalloc byte[(DefaultResultSetSize * DefaultAttributeSize) + (DefaultResultSetSize * sizeof(int))] : default;
 
                 var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
                 var distanceResult = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(distanceSpace));
                 var attributeResult = SpanByteAndMemory.FromPinnedSpan(attributeSpace);
+                // Bitmap: 1 bit per result. DefaultResultSetSize results = 8 bytes on stack.
+                Span<byte> bitmapSpace = needFilter ? stackalloc byte[(DefaultResultSetSize + 7) >> 3] : default;
+                var filterBitmapResult = SpanByteAndMemory.FromPinnedSpan(bitmapSpace);
                 try
                 {
 
@@ -772,11 +777,11 @@ namespace Garnet.server
                     VectorIdFormat idFormat;
                     if (!element.HasValue)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
+                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
                     }
                     else
                     {
-                        res = storageApi.VectorSetElementSimilarity(key, element.Value, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
+                        res = storageApi.VectorSetElementSimilarity(key, element.Value, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
                     }
 
                     if (res == GarnetStatus.NOTFOUND)
@@ -804,22 +809,39 @@ namespace Garnet.server
                             {
                                 var remainingIds = idResult.AsReadOnlySpan();
                                 var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
-                                var remaininingAttributes = withAttributes.Value ? attributeResult.AsReadOnlySpan() : default;
+                                var hasFilter = filterBitmapResult.Length > 0;
+                                var filterBitmap = hasFilter ? filterBitmapResult.AsReadOnlySpan() : default;
+                                var remaininingAttributes = (withAttributes.Value || hasFilter) ? attributeResult.AsReadOnlySpan() : default;
 
-                                var arrayItemCount = distancesSpan.Length;
+                                var totalFound = distancesSpan.Length;
+
+                                // Compute output count: if bitmap is present, popcount it; otherwise all results
+                                int outputCount;
+                                if (hasFilter)
+                                {
+                                    outputCount = 0;
+                                    for (var b = 0; b < filterBitmap.Length; b++)
+                                        outputCount += System.Numerics.BitOperations.PopCount(filterBitmap[b]);
+                                }
+                                else
+                                {
+                                    outputCount = totalFound;
+                                }
+
+                                var arrayItemCount = outputCount;
                                 if (withScores.Value)
                                 {
-                                    arrayItemCount += distancesSpan.Length;
+                                    arrayItemCount += outputCount;
                                 }
                                 if (withAttributes.Value)
                                 {
-                                    arrayItemCount += distancesSpan.Length;
+                                    arrayItemCount += outputCount;
                                 }
 
                                 while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref dcurr, dend))
                                     SendAndReset();
 
-                                for (var resultIndex = 0; resultIndex < distancesSpan.Length; resultIndex++)
+                                for (var resultIndex = 0; resultIndex < totalFound; resultIndex++)
                                 {
                                     ReadOnlySpan<byte> elementData;
 
@@ -855,6 +877,18 @@ namespace Garnet.server
                                         throw new GarnetException($"Unexpected id format: {idFormat}");
                                     }
 
+                                    // Check filter bitmap — skip results that didn't pass the filter
+                                    if (hasFilter && (filterBitmap[resultIndex >> 3] & (1 << (resultIndex & 7))) == 0)
+                                    {
+                                        // Advance attribute reader for skipped results (attributes are always present when bitmap exists)
+                                        if (!remaininingAttributes.IsEmpty)
+                                        {
+                                            var skipAttrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                                            remaininingAttributes = remaininingAttributes[(sizeof(int) + skipAttrLen)..];
+                                        }
+                                        continue;
+                                    }
+
                                     while (!RespWriteUtils.TryWriteBulkString(elementData, ref dcurr, dend))
                                         SendAndReset();
 
@@ -879,6 +913,12 @@ namespace Garnet.server
 
                                         while (!RespWriteUtils.TryWriteBulkString(attr, ref dcurr, dend))
                                             SendAndReset();
+                                    }
+                                    else if (!remaininingAttributes.IsEmpty)
+                                    {
+                                        // Attributes fetched for filtering but not requested — advance reader
+                                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
                                     }
                                 }
                             }
@@ -908,6 +948,7 @@ namespace Garnet.server
                     idResult.Memory?.Dispose();
                     distanceResult.Memory?.Dispose();
                     attributeResult.Memory?.Dispose();
+                    filterBitmapResult.Memory?.Dispose();
                 }
             }
             finally

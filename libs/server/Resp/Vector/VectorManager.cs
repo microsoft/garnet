@@ -491,7 +491,8 @@ namespace Garnet.server
             ref SpanByteAndMemory outputIds,
             out VectorIdFormat outputIdFormat,
             ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes
+            ref SpanByteAndMemory outputAttributes,
+            ref SpanByteAndMemory filterBitmap
         )
         {
             AssertHaveStorageSession();
@@ -560,7 +561,7 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            if (includeAttributes)
+            if (includeAttributes || !filter.IsEmpty)
             {
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
             }
@@ -568,25 +569,7 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                if (includeAttributes)
-                {
-                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
-                }
-                else
-                {
-                    // Fetch attributes internally for filtering even when not returning them.
-                    // FetchVectorElementAttributes will resize the buffer dynamically if needed.
-                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
-                    try
-                    {
-                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
-                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
-                    }
-                    finally
-                    {
-                        tempAttributes.Memory?.Dispose();
-                    }
-                }
+                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan());
             }
 
             if (continuation != 0)
@@ -625,7 +608,8 @@ namespace Garnet.server
             ref SpanByteAndMemory outputIds,
             out VectorIdFormat outputIdFormat,
             ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes
+            ref SpanByteAndMemory outputAttributes,
+            ref SpanByteAndMemory filterBitmap
         )
         {
             AssertHaveStorageSession();
@@ -686,7 +670,7 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            if (includeAttributes)
+            if (includeAttributes || !filter.IsEmpty)
             {
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
             }
@@ -694,25 +678,7 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                if (includeAttributes)
-                {
-                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
-                }
-                else
-                {
-                    // Fetch attributes internally for filtering even when not returning them.
-                    // FetchVectorElementAttributes will resize the buffer dynamically if needed.
-                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
-                    try
-                    {
-                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
-                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
-                    }
-                    finally
-                    {
-                        tempAttributes.Memory?.Dispose();
-                    }
-                }
+                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan());
             }
 
             if (continuation != 0)
@@ -954,17 +920,21 @@ namespace Garnet.server
         ///    using a stack-based VM (ExprRunner) with on-demand field extraction (AttributeExtractor).
         /// 3. No JsonDocument DOM is allocated — fields are extracted directly from the raw bytes.
         ///
+        /// The <paramref name="filterBitmap"/> is populated with one bit per result:
+        /// bit i = 1 means result i passed the filter. Caller can test with:
+        ///   (filterBitmap[i >> 3] &amp; (1 &lt;&lt; (i &amp; 7))) != 0
+        ///
+        /// No in-place compaction — the caller skips non-matching results using the bitmap.
         /// </summary>
-        private int ApplyPostFilter(
+        private static int ApplyPostFilter(
             ReadOnlySpan<byte> filter,
             int numResults,
-            ref SpanByteAndMemory outputIds,
-            ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes)
+            ReadOnlySpan<byte> attributesSpan,
+            Span<byte> filterBitmap)
         {
             if (numResults == 0)
             {
-                return numResults;
+                return 0;
             }
 
             // Compile the filter expression (UTF-8 bytes) into a flat postfix program.
@@ -975,28 +945,19 @@ namespace Garnet.server
                 return 0; // If the filter doesn't compile, treat it as filtering out all results (matches Redis behavior)
             }
 
+            // Clear the bitmap
+            filterBitmap.Clear();
+
             var filteredCount = 0;
 
             // Allocate the evaluation stack once and reuse it across all candidate evaluations
             var stack = ExprRunner.CreateStack();
 
-            var idsSpan = outputIds.AsSpan();
-            var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
-            var attributesSpan = outputAttributes.AsSpan();
-
-            var idReadPos = 0;
             var attrReadPos = 0;
-            var idWritePos = 0;
-            var distWritePos = 0;
-            var attrWritePos = 0;
 
             for (var i = 0; i < numResults; i++)
             {
-                // Read ID
-                var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
-                var idTotalLen = sizeof(int) + idLen;
-
-                // Read attribute
+                // Read attribute length-prefix + data
                 var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
                 var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
 
@@ -1004,38 +965,12 @@ namespace Garnet.server
                 // No JsonDocument DOM allocation — AttributeExtractor extracts fields on demand.
                 if (ExprRunner.Run(program, attrData, stack))
                 {
-                    // Copy ID if not already in place
-                    if (idReadPos != idWritePos)
-                    {
-                        idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
-                    }
-
-                    // Copy distance if not already in place
-                    if (i != distWritePos)
-                    {
-                        distancesSpan[distWritePos] = distancesSpan[i];
-                    }
-
-                    // Copy attribute if not already in place
-                    if (attrReadPos != attrWritePos)
-                    {
-                        attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
-                    }
-
-                    idWritePos += idTotalLen;
-                    distWritePos++;
-                    attrWritePos += sizeof(int) + attrLen;
+                    filterBitmap[i >> 3] |= (byte)(1 << (i & 7));
                     filteredCount++;
                 }
 
-                idReadPos += idTotalLen;
                 attrReadPos += sizeof(int) + attrLen;
             }
-
-            // Update lengths
-            outputIds.Length = idWritePos;
-            outputDistances.Length = distWritePos * sizeof(float);
-            outputAttributes.Length = attrWritePos;
 
             return filteredCount;
         }
