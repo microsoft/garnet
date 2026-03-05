@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
@@ -96,7 +97,7 @@ namespace Tsavorite.core
         public bool IsBeyondSizeLimitAndCanEvict(bool addingPage = false)
         {
             var headPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.HeadAddress);
-            var tailPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.UnstableGetTailAddress());
+            var tailPage = logAccessor.allocatorBase.GetPage(logAccessor.allocatorBase.UnstableGetTailAddress(out _));
 
             // The number of pages we have is untilPage - headPage + 1. If we're called here when allocating a new page, see if the new page
             // would put us over the maximum count.
@@ -288,7 +289,7 @@ namespace Tsavorite.core
             var allocator = logAccessor.allocatorBase;
             headAddress = allocator.HeadAddress;
             var headPage = allocator.GetPage(headAddress);
-            var untilAddress = allocator.UnstableGetTailAddress();
+            var untilAddress = allocator.UnstableGetTailAddress(out _);
             var untilPage = allocator.GetPage(untilAddress);
 
             // The number of pages we have is untilPage - headPage + 1.
@@ -303,7 +304,26 @@ namespace Tsavorite.core
                 var isComplete = overSize <= evictableSize;
                 if (!isComplete)
                     overSize = evictableSize;
-                headAddress += overSize;
+                headAddress = RoundUp(headAddress + overSize, Constants.kRecordAlignment);
+
+                // Scan from head of page to snap headAddress to the next record boundary.
+                var pageIndex = allocator.GetPage(headAddress);
+                var pageStartAddress = allocator.GetLogicalAddressOfStartOfPage(pageIndex);
+                var offset = headAddress - pageStartAddress;
+                if (offset <= PageHeader.Size)
+                    headAddress = pageStartAddress;
+                else
+                {
+                    var currentAddress = pageStartAddress + PageHeader.Size;
+                    var physicalAddress = allocator.GetPhysicalAddress(currentAddress);
+                    while (currentAddress < headAddress)
+                    {
+                        var allocatedSize = new LogRecord(physicalAddress).AllocatedSize;
+                        currentAddress += allocatedSize;
+                        physicalAddress += allocatedSize;
+                    }
+                }
+
                 allocatedPageCount -= (int)(allocator.GetPage(headAddress) - headPage);
                 return isComplete;
             }

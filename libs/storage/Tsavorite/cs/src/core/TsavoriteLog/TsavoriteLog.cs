@@ -1163,7 +1163,7 @@ namespace Tsavorite.core
                 // We are holding the TsavoriteLog's epoch; release and then reacquire it. And if the caller's epoch is
                 // also held, suspend and reacquire it as well.
                 epoch.Suspend();
-                var released = epochAccessor.ReleaseIfHeld();
+                var released = epochAccessor.TrySuspend();
                 try
                 {
                     if (cannedException != null)

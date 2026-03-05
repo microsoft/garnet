@@ -238,7 +238,7 @@ namespace Tsavorite.core
             waitForTransitionOut = new SemaphoreSlim(0);
             waitForTransitionIn = new SemaphoreSlim(0);
 
-            logger?.LogTrace("Moved to {0}, {1}", nextState.Phase, nextState.Version);
+            logger?.LogTrace("SMD: Moved to {0}, {1}", nextState.Phase, nextState.Version);
 
             Debug.Assert(!epoch.ThisInstanceProtected());
             try

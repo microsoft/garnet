@@ -11,7 +11,7 @@ namespace Tsavorite.core
 {
     public interface IEpochAccessor
     {
-        bool ReleaseIfHeld();
+        bool TrySuspend();
         void Resume();
     }
 
@@ -170,11 +170,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ReleaseIfHeld()
+        public bool TrySuspend()
         {
             if (ThisInstanceProtected())
             {
-                Release();
+                Suspend();
                 return true;
             }
             return false;
@@ -227,18 +227,6 @@ namespace Tsavorite.core
             if (ThisInstanceProtected())
                 return false;
             Resume();
-            return true;
-        }
-
-        /// <summary>
-        /// Thread resumes its epoch entry if it has not already been acquired
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SuspendIfProtected()
-        {
-            if (!ThisInstanceProtected())
-                return false;
-            Suspend();
             return true;
         }
 

@@ -174,8 +174,12 @@ namespace Tsavorite.core
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
                 if (endIterationAddress < pageEndAddress)
                     pageEndAddress = endIterationAddress;
-                if (headAddress < pageEndAddress)
-                    pageEndAddress = headAddress;
+
+                // With HeadAddress now possibly in the middle of the page, we have to ensure we handle re-entering with the same currentFrame while
+                // a previous request on currentFrame is ongoing; this is ensured by CalculateReadOnlyAddress. So just read the entire page regardless
+                // of headAddress; the entire page will have been flushed to disk already. TODO Leaving this here in case we change to record-aligned ReadOnlyAddress.
+                //if (headAddress < pageEndAddress)
+                //    pageEndAddress = headAddress;
 
                 // Calculate the nextFrame we will load nextPage into
                 var nextFrame = (currentFrame + i) % frameSize;
@@ -195,21 +199,23 @@ namespace Tsavorite.core
                         Debug.Assert(loadCompletionEvents[nextFrame] is null || loadCompletionEvents[nextFrame].IsSet,
                             $"i {i}, currentAddress {currentIterationAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
                         var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
-                        if (epoch != null)
-                            epoch.BumpCurrentEpoch(() => DoReadPage());
-                        else
-                            DoReadPage();
 
-                        void DoReadPage()
+                        var frameIndex = i;
+                        if (epoch != null)
+                            epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
+                        else
+                            DoReadPage(frameIndex);
+
+                        void DoReadPage(int frameIndex)
                         {
-                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: i + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
+                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
                                 context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
                     else
                     {
-                        // Someone else already incremented nextLoadedPage[nextFrame], so give them a chance to work, then try again.
+                        // Someone else incremented nextLoadedPage[nextFrame] or the BumpCE has not completed and set loadedPages, so give things a chance to work and try again.
                         epoch?.ProtectAndDrain();
                     }
                 }

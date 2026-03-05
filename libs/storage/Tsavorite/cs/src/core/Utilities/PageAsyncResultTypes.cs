@@ -164,11 +164,8 @@ namespace Tsavorite.core
         internal long fromAddress;
         internal long untilAddress;
 
+        /// <summary>Identifes the operation that triggered the flush.</summary>
         internal FlushRequestState flushRequestState;
-
-        /// <summary>If true, we are called from Checkpoint via FlushPagesForSnapshot, so the object log files have already been written; we must reuse the
-        /// deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
-        internal bool isForSnapshot;
 
         /// <summary>The record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.</summary>
         internal SectorAlignedMemory freeBuffer1;

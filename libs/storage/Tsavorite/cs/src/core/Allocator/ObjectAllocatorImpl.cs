@@ -34,6 +34,23 @@ namespace Tsavorite.core
         /// <summary>The position information for the next write to the object log.</summary>
         ObjectLogFilePositionInfo objectLogTail;
 
+        /// <summary>
+        /// We use the LastIssued here because we don't want <see cref="OnPagesMarkedReadOnlyWorker"/> to wait for IO to complete which is when
+        /// FlushedUntilAddress is updated. Instead, LastIssuedFlushedUntilAddress is the proxy for it: it's updated with the flushEndAddress
+        /// after the flush has been issued, without waiting for it to complete.
+        /// </summary>
+        long LastIssuedFlushedUntilAddress;
+
+        /// <summary>
+        /// Dynamically extended Flush end address, used by <see cref="OnPagesMarkedReadOnlyWorker"/>
+        /// </summary>
+        long OngoingFlushedUntilAddress;
+
+        /// <summary>
+        /// If the "noFlush" option on <see cref="AllocatorBase{TStoreFunctions, TAllocator}.ShiftReadOnlyAddress(long, bool)"/> is true, we won't try to flush anything below that.
+        /// </summary>
+        long NoFlushUntilAddress;
+
         /// <summary>The lowest object-log segment in use; adjusted with Truncate to remain consistent with BeginAddress.</summary>
         internal int lowestObjectLogSegmentInUse = 0;
 
@@ -52,11 +69,8 @@ namespace Tsavorite.core
         /// <summary>Segment size</summary>
         private long ObjectLogSegmentSize;
 
-        /// <summary>
-        /// This is the last "until address" for which <see cref="AsyncFlushPagesForReadOnly(long, long, bool)"/> was called; we need to track this to linearize
-        /// multiple calls to AsyncFlushPagesForReadOnly, to ensure that object log indexes are consistent in the main log records that reference them.
-        /// </summary>
-        long lastROIssuedFlushedUntilAddress = PageHeader.Size;
+        /// <inheritdoc/>
+        public override string ToString() => BaseToString($" (LI {LastIssuedFlushedUntilAddress}, OG {OngoingFlushedUntilAddress}, No {NoFlushUntilAddress})");
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, transientObjectIdMap: new ObjectIdMap())
@@ -86,6 +100,16 @@ namespace Tsavorite.core
             objectPages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
                 objectPages[ii] = new();
+        }
+
+        /// <summary>Initialize allocator</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        protected internal override void Initialize()
+        {
+            base.Initialize();
+            LastIssuedFlushedUntilAddress = FlushedUntilAddress;
+            OngoingFlushedUntilAddress = 0;
+            NoFlushUntilAddress = 0;
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -126,12 +150,16 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = freePagePool.TryAdd(new()
+                var enqueued = freePagePool.TryAdd(new()
                 {
                     array = pageArrays[index],
                     pointer = pagePointers[index],
                     value = objectPages[index]
                 });
+
+                // We only need to clear the page if it's enqueued; otherwise we don't reuese the page
+                if (enqueued)
+                    ClearPage(index, 0);
                 pageArrays[index] = default;
                 pagePointers[index] = default;
                 objectPages[index].Clear();
@@ -406,28 +434,21 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public override void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
+        protected internal override void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             base.RecoveryReset(tailAddress, headAddress, beginAddress, readonlyAddress);
-            lastROIssuedFlushedUntilAddress = FlushedUntilAddress;
+            LastIssuedFlushedUntilAddress = readonlyAddress;
+            OngoingFlushedUntilAddress = 0;
+            NoFlushUntilAddress = 0;
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal override void AsyncFlushPagesForReadOnly(long fromAddress, long untilAddress, bool noFlush = false)
         {
-            // TODO: Wait for any executing AsyncFlushPagesForReadOnly to complete, to linearize object log file updates and their addresses in the main-log records.
-            // If we have concurrent AsyncFlushPagesForReadOnly calls executing we would have to manage CircularDiskWriteBuffer's block writes (such as by chaining)
-            // which would be difficult and inefficient. Multiple AsyncFlushPagesForReadOnly calls should be rare.
-            while (lastROIssuedFlushedUntilAddress < fromAddress)
-            {
-                // We don't need to worry about the epoch because flush writes occur outside the epoch.
-                _ = Thread.Yield(); // TODO replace with a .Wait()
-            }
-
             // We do not need to ensure page alignment of the ReadOnlyAddres for correctness, and in fact that is impossible since we support setting it to whatever
             // the current TailAddress is, but for normal flush operations we do set it to page alignment to eliminate concerns about rewriting partial sectors.
-            GetFLushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
+            GetFlushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
 
             // Create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
             var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
@@ -445,10 +466,8 @@ namespace Tsavorite.core
                     Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
                         $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
 
-                    // Once we have issued this write we can update lastROIssuedFlushUntilAddress; the flush write completes in the background as we move to the next page.
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
                 }
-                lastROIssuedFlushedUntilAddress = asyncResult.untilAddress;
             }
         }
 
@@ -562,7 +581,7 @@ namespace Tsavorite.core
             // so the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush. So we release the epoch if we have it;
             // we don't need it and don't want to hold it during the time-consuming actual flush.
             var pulseEpoch = asyncResult.flushRequestState == FlushRequestState.Snapshot;
-            var protectEpochWhenDone = epoch.SuspendIfProtected();
+            var protectEpochWhenDone = epoch.TrySuspend();
 
             // Overflow Keys and Values are written to, and Object values are serialized to, this Stream, if we have flushBuffers.
             ObjectLogWriter<TStoreFunctions> logWriter = null;
@@ -744,6 +763,83 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Action to be performed when pages move into the immutable region.
+        /// Seal: make sure there are no longer any threads writing to the page
+        /// Flush: send page to secondary store
+        /// </summary>
+        internal override void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
+        {
+            Debug.Assert(newSafeReadOnlyAddress > HeadAddress);
+            Debug.Assert(newSafeReadOnlyAddress <= GetTailAddress());
+            if (noFlush)
+                _ = MonotonicUpdate(ref NoFlushUntilAddress, newSafeReadOnlyAddress, out _);
+            if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out var oldSafeReadOnlyAddress))
+            {
+                // This thread is responsible for [oldSafeReadOnlyAddress -> newSafeReadOnlyddress]
+                while (true)
+                {
+                    var _ongoingFlushedUntilAddress = OngoingFlushedUntilAddress;
+
+                    // If we are closing in the middle of an ongoing OPMROWorker loop, exit.
+                    if (_ongoingFlushedUntilAddress >= newSafeReadOnlyAddress)
+                        break;
+
+                    // We'll continue the loop if we fail the CAS here; that means another thread extended the Ongoing range.
+                    if (Interlocked.CompareExchange(ref OngoingFlushedUntilAddress, newSafeReadOnlyAddress, _ongoingFlushedUntilAddress) == _ongoingFlushedUntilAddress)
+                    {
+                        // If _ongoingFlushedUntilAddress != 0 then another thread is runnning the OPMROWorker loop and will see the OnGoingFlushedUntilAddress increment to
+                        // include newSafeReadOnlyAddress so we are done here. Otherwise, this thread is responsible for flushing [LastIssuedFlushedUntilAddress -> newSafeHeadAddress]
+                        // and any other ranges that OnGoingFlushedUntilAddress is incremented to, and we are done here when that concludes.
+                        if (_ongoingFlushedUntilAddress == 0)
+                            OnPagesMarkedReadOnlyWorker();
+                        return;
+                    }
+                    _ = Thread.Yield();
+                }
+            }
+        }
+
+        private void OnPagesMarkedReadOnlyWorker()
+        {
+            while (true)
+            {
+                var flushStartAddress = LastIssuedFlushedUntilAddress;
+                var flushEndAddress = OngoingFlushedUntilAddress;
+
+                // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
+                if (onReadOnlyObserver != null)
+                {
+                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
+                    // will have seen a record below the new ReadOnlyAddress as "in mutable region".
+                    using var iter = Scan(store: null, flushStartAddress, flushEndAddress, DiskScanBufferingMode.NoBuffering);
+                    onReadOnlyObserver?.OnNext(iter);
+                }
+
+                var noFlushUntilAddress = NoFlushUntilAddress;
+                if (flushEndAddress > noFlushUntilAddress && flushStartAddress < noFlushUntilAddress)
+                {
+                    // NoFlushUntilAddress is in the middle of the flush range, so we flush in two parts: <= NoFUA (noFlush) and > NoFUA (!noFlush)
+                    AsyncFlushPagesForReadOnly(flushStartAddress, noFlushUntilAddress, noFlush: true);
+                    AsyncFlushPagesForReadOnly(noFlushUntilAddress, flushEndAddress, noFlush: false);
+                }
+                else
+                {
+                    // We're entirely above or below NoFUA, so we can flush in one go with the appropriate noFlush value
+                    AsyncFlushPagesForReadOnly(flushStartAddress, flushEndAddress, noFlush: flushEndAddress <= NoFlushUntilAddress);
+                }
+
+                var updatedLIFUA = MonotonicUpdate(ref LastIssuedFlushedUntilAddress, flushEndAddress, out var oldLastIssuedFlushedUntilAddress);
+                Debug.Assert(updatedLIFUA, $"Failed to update LIFUA");
+                Debug.Assert(oldLastIssuedFlushedUntilAddress == flushStartAddress, $"Expected LastIssuedFlushedUntilAddress to be {flushStartAddress} but was {oldLastIssuedFlushedUntilAddress}");
+
+                // End if we have exhausted co-operative work. This includes the case where OngoingFUA and flushEndAddress are already 0.
+                if (Interlocked.CompareExchange(ref OngoingFlushedUntilAddress, 0, flushEndAddress) == flushEndAddress)
+                    break;
+                _ = Thread.Yield();
+            }
+        }
+
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
@@ -882,7 +978,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeClosedRecords)
+                long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false)
             => new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
 
         /// <summary>

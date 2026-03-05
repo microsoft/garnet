@@ -144,10 +144,17 @@ namespace Tsavorite.core
         long OngoingCloseUntilAddress;
 
         /// <inheritdoc/>
-        public override string ToString()
-            => $"TA {AddressString(GetTailAddress())}, ROA {AddressString(ReadOnlyAddress)}, SafeROA {AddressString(SafeReadOnlyAddress)}, HA {AddressString(HeadAddress)},"
-             + $" SafeHA {AddressString(SafeHeadAddress)}, CUA {AddressString(ClosedUntilAddress)}, FUA {AddressString(FlushedUntilAddress)}, BA {AddressString(BeginAddress)},"
-             + $" PgSz {PageSize}, BufSz {BufferSize}, APC {AllocatedPageCount}, MAPC {MaxAllocatedPageCount}";
+        public override string ToString() => BaseToString();
+
+        protected string BaseToString(string fuaDetails = "")
+        {
+            var tailAddress = UnstableGetTailAddress(out var isUnstable);
+            var unstableTailStr = isUnstable ? "(u)" : "";
+            return $"TA {AddressString(tailAddress)}{unstableTailStr}, ROA {AddressString(ReadOnlyAddress)}, SafeROA {AddressString(SafeReadOnlyAddress)}, HA {AddressString(HeadAddress)},"
+                     + $" SafeHA {AddressString(SafeHeadAddress)}, CUA {AddressString(ClosedUntilAddress)},"
+                     + $" FUA {AddressString(FlushedUntilAddress)}{fuaDetails},"
+                     + $" BA {AddressString(BeginAddress)}, PgSz {PageSize}, BufSz {BufferSize}, APC {AllocatedPageCount}, MAPC {MaxAllocatedPageCount}";
+        }
         #endregion
 
         #region Protected device info
@@ -690,10 +697,9 @@ namespace Tsavorite.core
             // segment range necessary for recovery to given checkpoint
 
             var diskBeginAddress = recoveredHLCInfo.info.beginAddress;
-            var diskFlushedUntilAddress =
-                recoveredHLCInfo.info.useSnapshotFile == 0 ?
-                recoveredHLCInfo.info.finalLogicalAddress :
-                recoveredHLCInfo.info.flushedLogicalAddress;
+            var diskFlushedUntilAddress = recoveredHLCInfo.info.useSnapshotFile == 0
+                ? recoveredHLCInfo.info.finalLogicalAddress
+                : recoveredHLCInfo.info.flushedLogicalAddress;
 
             // Delete disk segments until specified disk begin address
 
@@ -861,11 +867,12 @@ namespace Tsavorite.core
         /// whether we must evict, which we may not be able to do; if <see cref="GetTailAddress()"/> is called on the thread that owns the tail-address
         /// stabilization, it will infinite-loop.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long UnstableGetTailAddress()
+        internal long UnstableGetTailAddress(out bool isUnstable)
         {
             var local = TailPageOffset;
             var address = GetLogicalAddressOfStartOfPage(local.Page);
-            if (local.Offset < PageSize)
+            isUnstable = local.Offset >= PageSize;
+            if (!isUnstable)
                 return address | (uint)local.Offset;
 
             // It is unstable so stay on the same page, because we will likely restabilize before size tracker evictions commence.
@@ -986,6 +993,8 @@ namespace Tsavorite.core
         /// <param name="waitForEviction">Wait for operation to complete (may involve page flushing and closing)</param>
         public void ShiftAddressesWithWait(long newReadOnlyAddress, long newHeadAddress, bool waitForEviction)
         {
+            Debug.Assert(newHeadAddress <= newReadOnlyAddress, $"new HeadAddress {newHeadAddress} must not be ahead of newReadOnlyAddress {newReadOnlyAddress}");
+
             // First shift read-only; force wait so that we do not close unflushed page
             ShiftReadOnlyAddressWithWait(newReadOnlyAddress, wait: true);
 
@@ -1041,6 +1050,8 @@ namespace Tsavorite.core
 
             // Check whether we need to shift ROA based on desiredHeadAddress.
             var desiredReadOnlyAddress = CalculateReadOnlyAddress(shiftAddress, desiredHeadAddress);
+            if (desiredReadOnlyAddress > tailAddress)
+                desiredReadOnlyAddress = tailAddress;
             return desiredReadOnlyAddress > ReadOnlyAddress;
         }
 
@@ -1065,7 +1076,8 @@ namespace Tsavorite.core
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
                 {
-                    desiredHeadAddress = GetFirstValidLogicalAddressOnPage(headPage + 1);
+                    // Snapping to start of page rather than PageHeader.Size means that HA being middle-of-page implies a partial page.
+                    desiredHeadAddress = GetLogicalAddressOfStartOfPage(headPage + 1);
                     if (desiredHeadAddress > tailAddress)
                         desiredHeadAddress = tailAddress;
                 }
@@ -1073,6 +1085,8 @@ namespace Tsavorite.core
 
             // Check whether we need to shift ROA based on desiredHeadAddress.
             var desiredReadOnlyAddress = CalculateReadOnlyAddress(shiftAddress, desiredHeadAddress);
+            if (desiredReadOnlyAddress > tailAddress)
+                desiredReadOnlyAddress = tailAddress;
             if (desiredReadOnlyAddress > ReadOnlyAddress)
                 _ = ShiftReadOnlyAddress(desiredReadOnlyAddress);
 
@@ -1082,11 +1096,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Throw Tsavorite exception with message. We use a method wrapper so that
-        /// the caller method can execute inlined.
+        /// Throw Tsavorite exception with message. We use a method wrapper so the caller method can execute inlined.
         /// </summary>
-        /// <param name="message"></param>
-        /// <exception cref="TsavoriteException"></exception>
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void ThrowTsavoriteException(string message) => throw new TsavoriteException(message);
 
@@ -1261,13 +1272,38 @@ namespace Tsavorite.core
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
             // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in. If this is below HeadAddress,
-            // then make it HeadAddress; doing it this way instead of at the end of the HeadAddress page allows the first entered records to remain
-            // mutable even with a low mutableFraction. And the HeadAddress page is always calculated to be below the TailAddress page, so we know we
-            // will not exceed TailAddress.
+            // then make it the end of the HeadAddress page. If tailAddress is still on the first page, return HeadAddress.
+            if (tailAddress <= PageSize + PageHeader.Size)
+                return headAddress;
+
+            // First we try to set ReadOnlyAddress to the lower page boundary, to maximize mutable space.
             var readOnlyAddress = RoundDown(headAddress + (long)((1.0 - logMutableFraction) * (tailAddress - headAddress)), PageSize);
-            if (readOnlyAddress < headAddress)
-                readOnlyAddress = headAddress;
+
+            // If are at the beginning we will have only a small number of pages, so it's even more important to maximize mutable space.
+            // If the new readOnlyAddress is less than or equal to the current one, make sure we have handled the boundary case where
+            // we had to tweak it to handle this.
+            // TODO: Currently we keep ReadOnlyAddress at page boundaries unless we can't (HeadAddress has grown but TailAddress is still
+            // on the first page); consider changing to fine-grained ReadOnlyAddress.
+            if (readOnlyAddress <= headAddress)
+            {
+                var headPage = GetPage(headAddress);
+
+                // If HeadAddress hasn't moved, currentReadOnlyAddress is either HeadAddress or at a page boundary, unless we have the case where
+                // we've gone beyond size budget on a single page; in that case we must remain at headAddress.
+                if ((headAddress == PageHeader.Size) || GetPage(tailAddress) == headPage)
+                    readOnlyAddress = headAddress;
+                else
+                {
+                    // HeadAddress has moved and tailAddress is on another page.
+                    readOnlyAddress = GetLogicalAddressOfStartOfPage(headPage + 1);
+                }
+            }
+
+            // The HeadAddress page is always calculated to be below the TailAddress page once we have more than a page of records.
             Debug.Assert(readOnlyAddress <= tailAddress, $"ReadOnlyAddress {readOnlyAddress} must not exceed TailAddress {tailAddress}");
+            Debug.Assert(readOnlyAddress >= headAddress, $"ReadOnlyAddress {readOnlyAddress} must not be less than HeadAddress {headAddress}");
+
+            //Debug.WriteLine($"Calcalating ROA: tailAddress={tailAddress}, headAddress={headAddress}, readOnlyAddress={readOnlyAddress}");
             return readOnlyAddress;
         }
 
@@ -1370,10 +1406,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Action to be performed when pages move into the immutable region.
         /// Seal: make sure there are no longer any threads writing to the page
         /// Flush: send page to secondary store
         /// </summary>
-        private void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
+        internal virtual void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
         {
             if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out var oldSafeReadOnlyAddress))
             {
@@ -1389,11 +1426,11 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Action to be performed for when all threads have agreed that a page range is closed.</summary>
+        /// <summary>Action to be performed when all threads have agreed that a page range is closed.</summary>
         private void OnPagesClosed(long newSafeHeadAddress)
         {
             Debug.Assert(newSafeHeadAddress > 0);
-            if (MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _))
+            if (MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _ /*oldSafeHeadAddress*/))
             {
                 // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
                 while (true)
@@ -1407,16 +1444,11 @@ namespace Tsavorite.core
                     // We'll continue the loop if we fail the CAS here; that means another thread extended the Ongoing range.
                     if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, newSafeHeadAddress, _ongoingCloseUntilAddress) == _ongoingCloseUntilAddress)
                     {
+                        // If _ongoingCloseUntilAddress != 0 then another thread is runnning the OPCWorker loop and will see the OngoingCloseUntilAddress increment to
+                        // include newSafeHeadAddress so we are done here. Otherwise, this thread is responsible for closing [ClosedUntilAddress -> newSafeHeadAddress]
+                        // and any other ranges that OngoingCloseUntilAddress is incremented to, and we are done here when that concludes.
                         if (_ongoingCloseUntilAddress == 0)
-                        {
-                            // There was no other thread running the OPCWorker loop, so this thread is responsible for closing [ClosedUntilAddress -> newSafeHeadAddress]
                             OnPagesClosedWorker();
-                        }
-                        else
-                        {
-                            // There was another thread runnning the OPCWorker loop, and its ongoing close operation was successfully extended to include the new safe
-                            // head address; we have no further work here.
-                        }
                         return;
                     }
                     _ = Thread.Yield();
@@ -1457,7 +1489,7 @@ namespace Tsavorite.core
                     _ = MonotonicUpdate(ref ClosedUntilAddress, end, out _);
                 }
 
-                // End if we have exhausted co-operative work
+                // End if we have exhausted co-operative work. This includes the case where OngoingCloseUntilAddress and closeEndAddress are already 0.
                 if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, 0, closeEndAddress) == closeEndAddress)
                     break;
                 _ = Thread.Yield();
@@ -1569,7 +1601,7 @@ namespace Tsavorite.core
 
         /// <summary>Reset for recovery</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public virtual void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
+        protected internal virtual void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             long tailPage = GetPage(tailAddress);
             long offsetInPage = GetOffsetOnPage(tailAddress);
@@ -1711,7 +1743,7 @@ namespace Tsavorite.core
         internal virtual void AsyncFlushPagesForReadOnly(long fromAddress, long untilAddress, bool noFlush = false)
         {
             // This is the base implementation, used by TsavoriteLog and SpanByteAllocator; it is overridden by ObjectAllocatorImpl to handle object log flushes.
-            GetFLushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
+            GetFlushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
 
             // Write each page (or partial page) in the range.
             for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
@@ -1743,15 +1775,14 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                // Write the entire page up to asyncResult.untilAddress.
-                Debug.Assert(PendingFlush[index].list.Count == 0, $"Expected PendingFlush count {PendingFlush[index].list.Count} to be 0 when writing full pages");
-
-                // This will issue a write that completes in the background as we move to the next page.
+                // This is the start of a possibly partial page range; if partial, there may be elements in the PendingFlush array for this index.
+                // The flush will issue a write that completes in the background as we move to the next range to flush; if this was a partial range
+                // then the PendingFlush list will be drained via chained WriteAsync in the callbacks.
                 WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class
             }
         }
 
-        private protected void GetFLushPageRange(long fromAddress, long untilAddress, out long startPage, out long numPages)
+        private protected void GetFlushPageRange(long fromAddress, long untilAddress, out long startPage, out long numPages)
         {
             startPage = GetPage(fromAddress);
             var endPage = GetPage(untilAddress);
@@ -1812,13 +1843,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Flush pages asynchronously for recovery (such as when we have invalidated v+1 records).
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <param name="flushPageStart"></param>
-        /// <param name="numPages"></param>
-        /// <param name="callback"></param>
-        /// <param name="context"></param>
-        public void AsyncFlushPagesForRecovery<TContext>(long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
+        public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
         {
+            Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var asyncResult = new PageAsyncFlushResult<TContext>()
@@ -1827,7 +1854,7 @@ namespace Tsavorite.core
                     context = context,
                     count = 1,
                     partial = false,
-                    fromAddress = GetLogicalAddressOfStartOfPage(flushPage),
+                    fromAddress = Math.Max(scanFromAddress, GetLogicalAddressOfStartOfPage(flushPage)),
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushRequestState = FlushRequestState.Recovery
                 };

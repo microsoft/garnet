@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -27,8 +28,12 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
+        //[Repeat(3000)]
         public async ValueTask FlakyLogTestCleanFailure([Values] bool isAsync)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
+
             var errorOptions = new ErrorSimulationOptions
             {
                 readTransientErrorRate = 0,
@@ -39,7 +44,7 @@ namespace Tsavorite.test
             device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
             var logSettings = new TsavoriteLogSettings
-            { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager };
+                { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager };
             log = new TsavoriteLog(logSettings);
 
             byte[] entry = new byte[entryLength];
@@ -52,9 +57,7 @@ namespace Tsavorite.test
                 for (int j = 0; j < 100; j++)
                 {
                     for (int i = 0; i < numEntries; i++)
-                    {
                         _ = log.Enqueue(entry);
-                    }
 
                     if (isAsync)
                         await log.CommitAsync();

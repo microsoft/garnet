@@ -188,6 +188,7 @@ namespace Tsavorite.core
             FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
 
             // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
+            // If the write in FlushToMainLogDeviced completed fast, this decrement here may be the final one.
             _ = countdownCallbackAndContext.Decrement();
         }
 
