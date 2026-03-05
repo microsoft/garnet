@@ -1762,15 +1762,18 @@ The three inputs to the derivation are:
 3. **Checkpoint token** (`Guid`) — known from Tsavorite's recovery metadata
    (`store.RecoveredToken` after `RecoverCheckpoint()`).
 
+The key bytes are hashed to a 128-bit value (formatted as a `Guid`) to produce a
+fixed-length, filesystem-safe folder name. A 128-bit hash has negligible collision
+probability (~50% at 2⁶⁴ keys), far beyond any realistic number of RangeIndexes.
+
 ```csharp
 // In RangeIndexManager.Persistence.cs
 internal static string DeriveSnapshotPath(
     ReadOnlySpan<byte> keyBytes, string checkpointDir, Guid checkpointToken)
 {
-    // Hex-encode the key bytes for a collision-free, filesystem-safe directory name.
-    // RangeIndex keys are typically short (e.g., "r1"), so path length is not a concern.
-    var keyHex = Convert.ToHexString(keyBytes);
-    return Path.Combine(checkpointDir, "rangeindex", keyHex,
+    // Hash key bytes to a 128-bit Guid for a fixed-length, collision-resistant folder name.
+    var keyHash = HashKeyToGuid(keyBytes);
+    return Path.Combine(checkpointDir, "rangeindex", keyHash.ToString("N"),
         $"{checkpointToken}.bftree");
 }
 
@@ -1778,15 +1781,19 @@ internal static string DeriveSnapshotPath(
 internal static string DeriveSnapshotPath(
     ReadOnlySpan<byte> keyBytes, string baseSnapshotDir)
 {
-    var keyHex = Convert.ToHexString(keyBytes);
-    return Path.Combine(baseSnapshotDir, "rangeindex", keyHex, "latest.bftree");
+    var keyHash = HashKeyToGuid(keyBytes);
+    return Path.Combine(baseSnapshotDir, "rangeindex", keyHash.ToString("N"),
+        "latest.bftree");
+}
+
+// 128-bit hash of key bytes, formatted as a Guid.
+private static Guid HashKeyToGuid(ReadOnlySpan<byte> keyBytes)
+{
+    Span<byte> hash = stackalloc byte[16];
+    System.IO.Hashing.XxHash128.Hash(keyBytes, hash);
+    return new Guid(hash);
 }
 ```
-
-> **Why hex-encoding instead of hashing?** A 32-bit hash (e.g., FNV-1a) is susceptible to
-> collisions via the birthday paradox (~50% at ~77K keys). Two RangeIndex keys that collide
-> would map to the same snapshot file, causing silent data loss. Hex-encoding the key bytes
-> is deterministic, collision-free, and produces short paths for typical key names.
 
 ---
 
