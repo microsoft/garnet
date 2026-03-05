@@ -89,16 +89,6 @@ namespace Garnet.server
         public readonly int SparseBytes;
 
         /// <summary>
-        /// Return bits used for indexing
-        /// </summary>
-        public byte PBit => pbit;
-
-        /// <summary>
-        /// Return bits used for clz
-        /// </summary>
-        public byte QBit => qbit;
-
-        /// <summary>
         /// Default hyperloglog instance
         /// </summary>        
         public static readonly HyperLogLog DefaultHLL = new();
@@ -113,7 +103,7 @@ namespace Garnet.server
         /// Custom Garnet HyperLogLog Constructor
         /// </summary>
         /// <param name="pbit"></param>
-        public HyperLogLog(byte pbit)
+        private HyperLogLog(byte pbit)
         {
             this.pbit = pbit;
             this.qbit = (byte)(hbit - pbit);
@@ -217,8 +207,63 @@ namespace Garnet.server
 
         private bool IsValidHLLLength(byte* ptr, int length)
         {
-            return (IsSparse(ptr) && SparseInitialLength(1) <= length || length <= SparseSizeMaxCap) ||
-                (IsDense(ptr) && length == this.DenseBytes);
+            // Dense HLL must match exact byte count (12,304 bytes)
+            if (IsDense(ptr))
+                return length == this.DenseBytes;
+
+            // Must be valid HLL type (sparse or dense)
+            if (!IsSparse(ptr))
+                return false;
+
+            // Sparse length must be within [min initial size, 4096 byte cap]
+            if (length < SparseInitialLength(1) || length > SparseSizeMaxCap)
+                return false;
+
+            // RLE stream must fit within available payload and be structurally valid
+            var sparsePayloadBytes = length - SparseHeaderSize;
+            return GetSparseRLESize(ptr) <= sparsePayloadBytes && IsValidSparseStream(ptr);
+        }
+
+        /// <summary>
+        /// Validates sparse opcode stream semantics.
+        /// Ensures each opcode is well-formed, register values are in range,
+        /// and total sparse coverage matches the expected register count.
+        /// </summary>
+        /// <param name="ptr">Pointer to HLL value bytes.</param>
+        /// <returns>True if sparse stream is structurally valid; otherwise false.</returns>
+        private bool IsValidSparseStream(byte* ptr)
+        {
+            var rleSize = GetSparseRLESize(ptr);
+            var curr = ptr + SparseHeaderSize;
+            var end = curr + rleSize;
+
+            var coveredRegisters = 0;
+
+            while (curr != end)
+            {
+                if (IsZeroRange(curr))
+                {
+                    coveredRegisters += ZeroRangeLen(curr);
+                }
+                else
+                {
+                    var nonZero = GetNonZero(curr);
+                    // Non-zero opcode encodes leading-zero count in [1, qbit + 1].
+                    if (nonZero == 0 || nonZero > (qbit + 1))
+                        return false;
+
+                    coveredRegisters += 1;
+                }
+
+                // Reject streams that advance beyond logical register space.
+                if (coveredRegisters > mcnt)
+                    return false;
+
+                curr++;
+            }
+
+            // Sparse stream must cover all registers exactly once.
+            return coveredRegisters == mcnt;
         }
 
         /// <summary>
