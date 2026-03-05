@@ -263,6 +263,7 @@ namespace Tsavorite.core
             // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
             *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (sizeInfo.FieldInfo.ExtendedNamespaceSize & NamespaceIndicatorMask)) : 0);
+            namespaceAddress = (long)HeaderPtr + NamespaceOffsetInHeader;
             *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
@@ -290,9 +291,6 @@ namespace Tsavorite.core
 
             keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart(headerLength);
             valueAddress = keyAddress + keyLength;
-
-            // TODO: Variable length namespace logic, for now we always assume 1-byte
-            namespaceAddress = (long)RecordInfoPtr + NamespaceOffsetInHeader;
 
             return headerLength;
         }
