@@ -56,7 +56,9 @@ namespace Garnet.server
         {
             var offset = args.offset;
             var bitCount = (byte)(args.typeInfo & 0x7F);
-            return LengthInBytes(offset + bitCount - 1);
+            if (!TryValidateBitfieldOffset(offset, bitCount, multiplyOffset: false, out _, out var endOffset))
+                throw new GarnetException("BIT offset is out of range");
+            return LengthInBytes(endOffset);
         }
 
         /// <summary>
@@ -313,8 +315,11 @@ namespace Garnet.server
         /// <returns></returns>
         private static long GetBitfield(byte* bitmap, long bitmapLength, long offset, byte encoding, bool signed)
         {
+            if (!TryValidateBitfieldOffset(offset, encoding, multiplyOffset: false, out offset, out var endOffset))
+                throw new GarnetException("BIT offset is out of range");
+
             var byteIndexStart = Index(offset);
-            var byteIndexEnd = Index(offset + encoding) + 1;
+            var byteIndexEnd = Index(endOffset) + 1;
             var buf = stackalloc byte[8];
             *(ulong*)buf = 0;
 
@@ -343,8 +348,11 @@ namespace Garnet.server
         /// <exception cref="GarnetException"></exception>
         private static (long, bool) SetBitfield(byte* bitmap, long bitmapLength, long offset, byte encoding, bool signed, long newValue, byte overflowType)
         {
+            if (!TryValidateBitfieldOffset(offset, encoding, multiplyOffset: false, out offset, out var endOffset))
+                throw new GarnetException("BIT offset is out of range");
+
             var byteIndexStart = Index(offset);
-            var byteIndexEnd = Index(offset + encoding) + 1;
+            var byteIndexEnd = Index(endOffset) + 1;
             var buf = stackalloc byte[8];
             *(ulong*)buf = 0;
 
@@ -390,8 +398,11 @@ namespace Garnet.server
         /// <exception cref="GarnetException"></exception>
         private static (long, bool) IncrementBitfield(byte* value, long valLen, long offset, byte encoding, bool signed, long incrementByValue, byte overflowType)
         {
+            if (!TryValidateBitfieldOffset(offset, encoding, multiplyOffset: false, out offset, out var endOffset))
+                throw new GarnetException("BIT offset is out of range");
+
             var byteIndexStart = Index(offset);
-            var byteIndexEnd = Index(offset + encoding) + 1;
+            var byteIndexEnd = Index(endOffset) + 1;
             var buf = stackalloc byte[8];
             *(ulong*)buf = 0;
 

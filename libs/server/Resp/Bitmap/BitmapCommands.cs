@@ -138,7 +138,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0) || !BitmapManager.IsValidBitOffset(offset))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
             }
@@ -178,7 +178,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0) || !BitmapManager.IsValidBitOffset(offset))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
             }
@@ -385,17 +385,23 @@ namespace Garnet.server
 
                 // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
                 // Process encoding argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out var bitCount, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE);
                 }
                 var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // Process offset argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out var offset, out var multiplyOffset))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
                 }
+
+                if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out _, out _))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
+                }
+
                 var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // GET Subcommand takes 2 args, encoding and offset
@@ -467,17 +473,23 @@ namespace Garnet.server
                 // GET Subcommand takes 2 args, encoding and offset
 
                 // Process encoding argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out var bitCount, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE);
                 }
                 var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // Process offset argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out var offset, out var multiplyOffset))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
                 }
+
+                if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out _, out _))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
+                }
+
                 var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));

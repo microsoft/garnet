@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
+using Garnet.common;
 
 #pragma warning disable IDE0054 // Use compound assignment
 #pragma warning disable IDE1006 // Naming Styles
@@ -14,12 +16,67 @@ namespace Garnet.server
     public unsafe partial class BitmapManager
     {
         static readonly byte[] lookup = [0x0, 0x8, 0x4, 0xc, 0x2, 0xa, 0x6, 0xe, 0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf];
+        internal const int MaxBitmapPayloadBytes = 512 * 1024 * 1024;
+        internal const long MaxOffsetForBitmapLength = (MaxBitmapPayloadBytes * 8L) - 1;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int Index(long offset) => (int)(offset >> 3);
+        internal static bool IsValidBitOffset(long offset)
+            => (ulong)offset <= (ulong)MaxOffsetForBitmapLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int LengthInBytes(long offset) => (int)((offset >> 3) + 1);
+        internal static bool TryValidateLengthInBytes(long offset, out int lengthInBytes)
+        {
+            lengthInBytes = default;
+            if (!IsValidBitOffset(offset))
+                return false;
+
+            lengthInBytes = (int)((offset >> 3) + 1);
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool TryValidateBitfieldOffset(long offset, byte bitCount, bool multiplyOffset, out long normalizedOffset, out long endOffset)
+        {
+            normalizedOffset = default;
+            endOffset = default;
+
+            if (bitCount == 0)
+                return false;
+
+            try
+            {
+                normalizedOffset = multiplyOffset
+                    ? checked(offset * bitCount)
+                    : offset;
+
+                if (normalizedOffset < 0)
+                    return false;
+
+                endOffset = checked(normalizedOffset + bitCount - 1);
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+
+            return IsValidBitOffset(endOffset);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int Index(long offset)
+        {
+            if (!IsValidBitOffset(offset))
+                throw new GarnetException("BIT offset is out of range");
+            return (int)(offset >> 3);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int LengthInBytes(long offset)
+        {
+            if (!TryValidateLengthInBytes(offset, out var lengthInBytes))
+                throw new GarnetException("BIT offset is out of range");
+            return lengthInBytes;
+        }
 
         /// <summary>
         /// Check to see if offset contained by value size

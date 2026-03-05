@@ -811,8 +811,8 @@ namespace Garnet.server
             // Calculate number offset from bitCount if offsetArg starts with #
             var offsetParsed = input.parseState.TryGetBitfieldOffset(currTokenIdx++, out var offset, out var multiplyOffset);
             Debug.Assert(offsetParsed);
-            if (multiplyOffset)
-                offset *= bitCount;
+            if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out offset, out _))
+                throw new GarnetException("ERR bit offset is not an integer or out of range");
 
             long value = default;
             if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
