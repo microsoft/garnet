@@ -197,6 +197,7 @@ namespace Garnet.test.cluster
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             var expectedKeys = (string[])primaryServer.Execute("KEYS", ["*"]);
+            context.nodes[primaryNodeIndex].Store.CommitAOF();
 
             // Shutdown node
             context.nodes[primaryNodeIndex].Dispose(false);
@@ -240,9 +241,6 @@ namespace Garnet.test.cluster
                 sublogCount: 1,
                 replayTaskCount: TestReplayTaskCount);
             context.CreateConnection(useTLS: useTLS);
-
-            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
-            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
             // Setup cluster
             context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
