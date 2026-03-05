@@ -705,152 +705,124 @@ namespace Garnet.server
         {
             var ptr = recvBufferPtr + readHead;
             var remainingBytes = bytesRead - readHead;
+            var skipCountParse = count != -1;
 
-            // Declare locals used by the shared MatchCommand switch below
-            ulong lastWord;
-            byte* commandStart;
-            int length;
-            int oldReadHead;
-
-            if (count == -1)
+            // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
+            // i.e. an array with a single-digit length and single-digit first string length.
+            if ((!skipCountParse && (remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) ||
+                (skipCountParse && ((remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))))
             {
-                // Standard path: expect "*N\r\n$M\r\nCOMMAND\r\n"
-                // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
-                // i.e. an array with a single-digit length and single-digit first string length.
-                if ((remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8))
+                // Extract total element count from the array header.
+                // NOTE: Subtracting one to account for first token being parsed.
+                count = !skipCountParse ? ptr[1] - '1' : count - 1;
+
+                // Extract length of the first string header
+                var lengthIdx = skipCountParse ? 1 : 5;
+                var length = ptr[lengthIdx] - '0';
+                Debug.Assert(length is > 0 and <= 9);
+
+                var oldReadHead = readHead;
+
+                // Ensure that the complete command string is contained in the package. Otherwise exit early.
+                // Include 10 bytes to account for array and command string headers, and terminator
+                // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
+                var lenWithoutCommand = skipCountParse ? 6 : 10;
+                var totalLen = length + lenWithoutCommand;
+                if (remainingBytes >= totalLen)
                 {
-                    // Extract total element count from the array header.
-                    // NOTE: Subtracting one to account for first token being parsed.
-                    count = ptr[1] - '1';
-                    length = ptr[5] - '0';
-                    Debug.Assert(length is > 0 and <= 9);
+                    // Optimistically advance read head to the end of the command name
+                    readHead += totalLen;
 
-                    oldReadHead = readHead;
+                    // Last 8 byte word of the command name, for quick comparison
+                    var lastWord = *(ulong*)(ptr + length + (lenWithoutCommand - 8));
 
-                    // Ensure that the complete command string is contained in the package. Otherwise exit early.
-                    // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
-                    if (remainingBytes >= length + 10)
+                    // Pointer to the start of the command
+                    var commandStart = ptr + lenWithoutCommand - 2;
+
+                    //
+                    // Fast path for common commands with fixed numbers of arguments
+                    //
+
+                    // Only check against commands with the correct count and length.
+
+                    return ((count << 4) | length) switch
                     {
-                        readHead += length + 10;
-                        lastWord = *(ulong*)(ptr + length + 2);
-                        commandStart = ptr + 8;
-                        goto MatchCommand;
+                        // Commands without arguments
+                        4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8) => RespCommand.PING,
+                        4 when lastWord == MemoryMarshal.Read<ulong>("\r\nEXEC\r\n"u8) => RespCommand.EXEC,
+                        5 when lastWord == MemoryMarshal.Read<ulong>("\nMULTI\r\n"u8) => RespCommand.MULTI,
+                        6 when lastWord == MemoryMarshal.Read<ulong>("ASKING\r\n"u8) => RespCommand.ASKING,
+                        7 when lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && *commandStart == 'D' => RespCommand.DISCARD,
+                        7 when lastWord == MemoryMarshal.Read<ulong>("NWATCH\r\n"u8) && *commandStart == 'U' => RespCommand.UNWATCH,
+                        8 when lastWord == MemoryMarshal.Read<ulong>("ADONLY\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.READONLY,
+                        9 when lastWord == MemoryMarshal.Read<ulong>("DWRITE\r\n"u8) && *(uint*)(commandStart) == MemoryMarshal.Read<uint>("READ"u8) => RespCommand.READWRITE,
+
+                        // Commands with fixed number of arguments
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDUMP\r\n"u8) => RespCommand.DUMP,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8) => RespCommand.EXISTS,
+                        (1 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8) => RespCommand.GETDEL,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && *commandStart == 'P' => RespCommand.PERSIST,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("PFCOUNT\r\n"u8) && *commandStart == 'P' => RespCommand.PFCOUNT,
+                        (2 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SET,
+                        (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *commandStart == 'P' => RespCommand.PUBLISH,
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && *commandStart == 'P' => RespCommand.PFMERGE,
+                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("SP"u8) => RespCommand.SPUBLISH,
+                        (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETNX\r\n"u8) => RespCommand.SETNX,
+                        (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SUBSTR\r\n"u8) => RespCommand.SUBSTR,
+                        (3 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8) && *commandStart == 'R' => RespCommand.RESTORE,
+                        (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
+                        (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
+
+                        _ => ((length << 4) | count) switch
+                        {
+                            // Commands with dynamic number of arguments
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
+                            >= ((8 << 4) | 2) and <= ((8 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
+                            >= ((3 << 4) | 3) and <= ((3 << 4) | 7) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
+                            >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
+                            >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && *commandStart == 'P' => RespCommand.PEXPIRE,
+                            >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
+                            _ => MatchedNone(this, oldReadHead)
+                        }
+                    };
+
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    static RespCommand MatchedNone(RespServerSession session, int oldReadHead)
+                    {
+                        // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
+                        session.readHead = oldReadHead;
+
+                        return RespCommand.NONE;
                     }
-                }
-                else
-                {
-                    return FastParseInlineCommand(ref count);
                 }
             }
             else
             {
-                // Nested command path (inside meta-command): expect "$M\r\nCOMMAND\r\n" (no array header)
-                if ((remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))
-                {
-                    count--;
-                    length = ptr[1] - '0';
-                    Debug.Assert(length is > 0 and <= 9);
-
-                    oldReadHead = readHead;
-
-                    // 6 bytes = "$_\r\n" (4 bytes) + "\r\n" (2 bytes) at end of command name
-                    if (remainingBytes >= length + 6)
-                    {
-                        readHead += length + 6;
-                        lastWord = *(ulong*)(ptr + length - 2);
-                        commandStart = ptr + 4;
-                        goto MatchCommand;
-                    }
-                }
-                else
-                {
-                    // Multi-digit command length or insufficient data — decrement count
-                    // (will be restored by caller via count++) and fall through to slow path.
-                    count--;
-                }
-
-                return RespCommand.NONE;
+                count = !skipCountParse ? 0 : count - 1;
+                return FastParseInlineCommand(ref count);
             }
 
             // Couldn't find a matching command in this pass
             count = -1;
             return RespCommand.NONE;
-
-        MatchCommand:
-
-            //
-            // Fast path for common commands with fixed numbers of arguments
-            //
-
-            // Only check against commands with the correct count and length.
-
-            return ((count << 4) | length) switch
-            {
-                // Commands without arguments
-                4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8) => RespCommand.PING,
-                4 when lastWord == MemoryMarshal.Read<ulong>("\r\nEXEC\r\n"u8) => RespCommand.EXEC,
-                5 when lastWord == MemoryMarshal.Read<ulong>("\nMULTI\r\n"u8) => RespCommand.MULTI,
-                6 when lastWord == MemoryMarshal.Read<ulong>("ASKING\r\n"u8) => RespCommand.ASKING,
-                7 when lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && *commandStart == 'D' => RespCommand.DISCARD,
-                7 when lastWord == MemoryMarshal.Read<ulong>("NWATCH\r\n"u8) && *commandStart == 'U' => RespCommand.UNWATCH,
-                8 when lastWord == MemoryMarshal.Read<ulong>("ADONLY\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.READONLY,
-                9 when lastWord == MemoryMarshal.Read<ulong>("DWRITE\r\n"u8) && *(uint*)(commandStart) == MemoryMarshal.Read<uint>("READ"u8) => RespCommand.READWRITE,
-
-                // Commands with fixed number of arguments
-                (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
-                (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
-                (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
-                (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDUMP\r\n"u8) => RespCommand.DUMP,
-                (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
-                (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
-                (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
-                (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8) => RespCommand.EXISTS,
-                (1 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8) => RespCommand.GETDEL,
-                (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && *commandStart == 'P' => RespCommand.PERSIST,
-                (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("PFCOUNT\r\n"u8) && *commandStart == 'P' => RespCommand.PFCOUNT,
-                (2 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SET,
-                (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
-                (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
-                (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
-                (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
-                (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
-                (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
-                (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *commandStart == 'P' => RespCommand.PUBLISH,
-                (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && *commandStart == 'P' => RespCommand.PFMERGE,
-                (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("SP"u8) => RespCommand.SPUBLISH,
-                (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETNX\r\n"u8) => RespCommand.SETNX,
-                (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
-                (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
-                (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
-                (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SUBSTR\r\n"u8) => RespCommand.SUBSTR,
-                (3 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8) && *commandStart == 'R' => RespCommand.RESTORE,
-                (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
-                (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
-
-                _ => ((length << 4) | count) switch
-                {
-                    // Commands with dynamic number of arguments
-                    >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
-                    >= ((8 << 4) | 2) and <= ((8 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
-                    >= ((3 << 4) | 3) and <= ((3 << 4) | 7) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
-                    >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
-                    >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
-                    >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
-                    >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
-                    >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && *commandStart == 'P' => RespCommand.PEXPIRE,
-                    >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(commandStart) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
-                    _ => MatchedNone(this, oldReadHead)
-                }
-            };
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            static RespCommand MatchedNone(RespServerSession session, int oldReadHead)
-            {
-                // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
-                session.readHead = oldReadHead;
-
-                return RespCommand.NONE;
-            }
         }
 
         /// <summary>
@@ -2794,12 +2766,46 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
-            // Meta-commands are only returned by the slow path (ArrayParseCommand) — never by FastParseCommand.
-            // Keep this check out-of-line so the JIT produces a compact inlined body for the common case.
             if (cmd.IsMetaCommand())
             {
-                cmd = ParseNestedMetaCommand(cmd, writeErrorOnFailure, ref count, ref success);
-                if (!success) return cmd;
+                // Get the meta command and its argument count
+                var (metaCmd, metaCmdArgCount) = GetMetaCommandAndArgumentCount(cmd);
+                count -= metaCmdArgCount;
+
+                metaCommandInfo.MetaCommand = metaCmd;
+
+                // Set up meta command parse state
+                metaCommandInfo.MetaCommandParseState.Initialize(metaCmdArgCount);
+                var currPtr = recvBufferPtr + readHead;
+
+                if (metaCmdArgCount > 0)
+                {
+                    for (var i = 0; i < metaCmdArgCount; i++)
+                    {
+                        if (!metaCommandInfo.MetaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
+                            return RespCommand.INVALID;
+                    }
+
+                    // Move read head to the start of the main command
+                    readHead = (int)(currPtr - recvBufferPtr);
+                }
+
+                // Attempt parsing nested main command
+                cmd = FastParseCommand(ref count);
+                if (cmd == RespCommand.SET)
+                    cmd = RespCommand.SETEXNX;
+
+                // If we have not found a command, continue parsing on slow path
+                if (cmd == RespCommand.NONE)
+                {
+                    count++;
+                    cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
+                    if (!success) return cmd;
+                }
+            }
+            else
+            {
+                metaCommandInfo.MetaCommand = RespMetaCommand.None;
             }
 
             // Set up parse state
@@ -2842,53 +2848,6 @@ namespace Garnet.server
             };
 
             return (metaCommand, argCount);
-        }
-
-        /// <summary>
-        /// Parses a meta-command's arguments and its nested main command.
-        /// Kept out-of-line so the JIT can produce a compact inlined body for <see cref="ParseCommand"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ParseNestedMetaCommand(RespCommand metaCmdEnum, bool writeErrorOnFailure, ref int count, ref bool success)
-        {
-            // Get the meta command and its argument count
-            var (metaCmd, metaCmdArgCount) = GetMetaCommandAndArgumentCount(metaCmdEnum);
-            count -= metaCmdArgCount;
-
-            metaCommandInfo.MetaCommand = metaCmd;
-
-            // Set up meta command parse state
-            metaCommandInfo.MetaCommandParseState.Initialize(metaCmdArgCount);
-            var currPtr = recvBufferPtr + readHead;
-
-            if (metaCmdArgCount > 0)
-            {
-                for (var i = 0; i < metaCmdArgCount; i++)
-                {
-                    if (!metaCommandInfo.MetaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
-                    {
-                        success = false;
-                        return RespCommand.INVALID;
-                    }
-                }
-
-                // Move read head to the start of the main command
-                readHead = (int)(currPtr - recvBufferPtr);
-            }
-
-            // Attempt parsing nested main command
-            var cmd = FastParseCommand(ref count);
-            if (cmd == RespCommand.SET)
-                cmd = RespCommand.SETEXNX;
-
-            // If we have not found a command, continue parsing on slow path
-            if (cmd == RespCommand.NONE)
-            {
-                count++;
-                cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
-            }
-
-            return cmd;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
