@@ -12,7 +12,7 @@ namespace Tsavorite.benchmark
     /// A key in <see cref="SpanByteYcsbBenchmark{TAllocator}"/>.
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = DataSize)]
-    public struct KeySpanByte
+    public struct KeySpanByte : IKey
     {
         internal const int DataSize = 12;
         internal const int TotalSize = DataSize + (sizeof(int));
@@ -39,11 +39,14 @@ namespace Tsavorite.benchmark
         /// </summary>
         public override readonly string ToString() => "{ " + value + " }";
 
-        /// <summary>
-        /// Represent the key as a <see cref="ReadOnlySpan{_byte_}"/>
-        /// </summary>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe ReadOnlySpan<byte> AsReadOnlySpan() => new(Unsafe.AsPointer(ref this), DataSize);
+        /// <inheritdoc/>
+        public readonly bool IsPinned => false;
+
+        /// <inheritdoc/>
+        public unsafe ReadOnlySpan<byte> KeyBytes
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => new(Unsafe.AsPointer(ref this), DataSize);
+        }
     }
 }

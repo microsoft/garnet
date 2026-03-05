@@ -94,7 +94,12 @@ namespace Tsavorite.benchmark
             where TSourceLogRecord : ISourceLogRecord
             => true;
 
-        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref Input input, ref Output output, ref RMWInfo rmwInfo) => true;
+        public readonly bool NeedInitialUpdate<TKey>(TKey key, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => true;
 
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo) { }
 
@@ -107,17 +112,35 @@ namespace Tsavorite.benchmark
              => GetFieldInfo();
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
-        public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref Input input) => GetFieldInfo();
+        public readonly RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref Input input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => GetFieldInfo();
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref Input input) => GetFieldInfo();
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref Input input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => GetFieldInfo();
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref Input input)
+        public unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref Input input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => new() { KeySize = sizeof(FixedLengthKey), ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
 
         /// <summary>Length of value object, when populated by Upsert using given log record and input</summary>
-        public readonly unsafe RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref Input input)
+        public readonly unsafe RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref Input input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
             => throw new NotImplementedException("GetUpsertFieldInfo(TSourceLogRecord)");
 
@@ -133,10 +156,30 @@ namespace Tsavorite.benchmark
             where TSourceLogRecord : ISourceLogRecord
         { }
 
-        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref Input input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
-        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref Input input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
-        public readonly void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref Input input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
-        public readonly void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref Input input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref Input input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref Input input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor { }
 
         public readonly void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
