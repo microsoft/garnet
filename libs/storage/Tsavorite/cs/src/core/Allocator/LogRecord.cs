@@ -395,7 +395,7 @@ namespace Tsavorite.core
 #endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
+            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
 
             // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
             // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
@@ -405,8 +405,6 @@ namespace Tsavorite.core
             {
                 InfoRef.SetKeyIsInline();
                 key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
-
-                // TODO: Namespace!
             }
             else
             {
@@ -414,12 +412,20 @@ namespace Tsavorite.core
                 var overflow = new OverflowByteArray(key.KeyBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
                 key.KeyBytes.CopyTo(overflow.Span);
 
-                // TODO: Namespace!
-
                 // This is record initialization so no object has been allocated for this field yet.
                 var objectId = objectIdMap.Allocate();
                 *(int*)keyAddress = objectId;
                 objectIdMap.Set(objectId, overflow);
+            }
+
+            // Serialize namespace, if any
+            //
+            // Since TKey is generic, the hope is this whole branch gets elided when using a no-namespace key type
+            if (key.HasNamespace)
+            {
+                var namespaceBytes = key.NamespaceBytes;
+                Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
+                namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
 
             // Initialize Value metadata (but we don't have the value here to set yet; that's done in ISessionFunctions).
@@ -461,14 +467,22 @@ namespace Tsavorite.core
 #endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
+            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
 
             InfoRef.SetKeyAndValueInline();
 
             // Serialize Key. Do nothing for the value; we've set it inline and the actual value setting is done in ISessionFunctions).
             key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
 
-            // TODO: Namespace!
+            // Serialize namespace, if any
+            //
+            // Since TKey is generic, the hope is this whole branch gets elided when using a no-namespace key type
+            if (key.HasNamespace)
+            {
+                var namespaceBytes = key.NamespaceBytes;
+                Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
+                namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
+            }
         }
 
         /// <summary>A ref to the record header</summary>
@@ -776,7 +790,7 @@ namespace Tsavorite.core
             // caller. So all we need to do is initialize it to a consistent RecordLength state. We could make this a little leaner for this case but this is
             // called only on recovery from a failed TryAllocate (e.g. HeadAddress moved up so we couldn't complete the allocation), so it's not perf-critical.
             InfoRef = RecordInfo.InitialValid;
-            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, recordType: 0, out _ /*keyAddress*/, out _ /*valueAddress*/);
+            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, recordType: 0, out _ /*keyAddress*/, out _ /*namespaceAddress*/, out _ /*valueAddress*/);
         }
 
         /// <summary>

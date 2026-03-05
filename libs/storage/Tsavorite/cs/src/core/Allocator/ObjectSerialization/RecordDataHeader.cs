@@ -238,7 +238,7 @@ namespace Tsavorite.core
 
         #endregion
 
-        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long valueAddress)
+        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long namespaceAddress, out long valueAddress)
         {
             // Format of indicator byte is high->low: <2 bits reserved><2 bits encoded filler length><2 bits key length byte count - 1><2 bits record length byte count - 1>
             var keyLength = sizeInfo.InlineKeySize;
@@ -290,6 +290,10 @@ namespace Tsavorite.core
 
             keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart(headerLength);
             valueAddress = keyAddress + keyLength;
+
+            // TODO: Variable length namespace logic, for now we always assume 1-byte
+            namespaceAddress = (long)RecordInfoPtr + NamespaceOffsetInHeader;
+
             return headerLength;
         }
 
