@@ -114,7 +114,7 @@ namespace Garnet.server
 
             var output = new StringOutput();
             var status = storageApi.SET_Conditional(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status is GarnetStatus.NOTFOUND)
             {
@@ -152,7 +152,7 @@ namespace Garnet.server
             var output = StringOutput.FromPinnedSpan(scratchBufferBuilder.ViewRemainingArgSlice());
 
             var status = storageApi.GET(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status is GarnetStatus.NOTFOUND || output.IsOperationSkipped)
             {
@@ -266,7 +266,7 @@ namespace Garnet.server
             var output = isNx ? GetUnifiedOutput() : default;
 
             var status = storageApi.RENAME(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -308,7 +308,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GETDEL, ref metaCommandInfo);
             var output = GetStringOutput();
             var status = garnetApi.GETDEL(sbKey, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -367,7 +367,7 @@ namespace Garnet.server
             }
 
             if (metaCommandInfo.MetaCommand.IsETagCommand())
-                etag = output.ETag;
+                Etag = output.ETag;
 
             if (output.IsOperationSkipped)
             {
@@ -469,7 +469,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -507,7 +507,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -545,7 +545,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.TTL(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -586,7 +586,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {

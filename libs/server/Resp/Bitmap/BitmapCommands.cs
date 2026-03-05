@@ -154,7 +154,7 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.StringSetBit(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (output.IsOperationSkipped)
                 WriteNull();
@@ -187,7 +187,7 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.StringGetBit(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -228,7 +228,7 @@ namespace Garnet.server
             var output = GetStringOutput();
 
             var status = storageApi.StringBitCount(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -292,7 +292,7 @@ namespace Garnet.server
             var output = GetStringOutput();
 
             var status = storageApi.StringBitPosition(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -528,7 +528,7 @@ namespace Garnet.server
                 var output = GetStringOutput();
                 var status = storageApi.StringBitField(sbKey, ref input, opCode,
                     ref output);
-                etag = output.ETag;
+                Etag = output.ETag;
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {

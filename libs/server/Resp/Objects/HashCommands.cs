@@ -48,7 +48,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.HashSet(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -86,7 +86,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashGet(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -128,7 +128,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashGetAll(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -170,7 +170,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashGetMultiple(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -255,7 +255,7 @@ namespace Garnet.server
                 // Prepare output
                 output = GetObjectOutput();
                 status = storageApi.HashRandomField(key, ref input, ref output);
-                etag = output.ETag;
+                Etag = output.ETag;
             }
 
             switch (status)
@@ -305,7 +305,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.HashLength(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -346,7 +346,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.HashStrLength(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -387,7 +387,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.HashDelete(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -427,7 +427,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.HashExists(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -482,7 +482,7 @@ namespace Garnet.server
             var status = command == RespCommand.HKEYS
                 ? storageApi.HashKeys(key, ref input, ref output)
                 : storageApi.HashVals(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -549,7 +549,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashIncrement(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -631,7 +631,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashExpire(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -718,7 +718,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashTimeToLive(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {
@@ -777,7 +777,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.HashPersist(key, ref input, ref output);
-            etag = output.ETag;
+            Etag = output.ETag;
 
             switch (status)
             {

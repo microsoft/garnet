@@ -294,8 +294,7 @@ namespace Garnet.server
         public ObjectInput(GarnetObjectType type, ref MetaCommandInfo metaCommandInfo, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
             : this(type, arg1, arg2, flags)
         {
-            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
-                this.metaCommandInfo = metaCommandInfo;
+            this.metaCommandInfo = metaCommandInfo;
         }
 
         /// <inheritdoc />
@@ -425,8 +424,7 @@ namespace Garnet.server
         public StringInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, long arg1 = 0, RespInputFlags flags = 0)
             : this(cmd, arg1, flags)
         {
-            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
-                this.metaCommandInfo = metaCommandInfo;
+            this.metaCommandInfo = metaCommandInfo;
         }
 
         /// <summary>
@@ -584,8 +582,7 @@ namespace Garnet.server
         public UnifiedInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, long arg1 = 0, RespInputFlags flags = 0)
             : this(cmd, arg1, flags)
         {
-            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
-                this.metaCommandInfo = metaCommandInfo;
+            this.metaCommandInfo = metaCommandInfo;
         }
 
         /// <summary>

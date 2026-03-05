@@ -449,8 +449,8 @@ namespace Garnet.test
         {
             var lightClientRequest = TestUtils.CreateRequest();
 
-            var expectedResponse = ":1\r\n";
-            var response = lightClientRequest.SendCommand("EXECWITHETAG SET key1 value1");
+            var expectedResponse = "*2\r\n$-1\r\n:1\r\n";
+            var response = lightClientRequest.SendCommand("EXECWITHETAG SET key1 value1", 3);
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             expectedResponse = "+OK\r\n";
@@ -492,7 +492,7 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("EXEC");
 
-            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:1\r\n*2\r\n$6\r\nvalue2\r\n:1\r\n*2\r\n$-1\r\n:1\r\n*2\r\n$-1\r\n:2\r\n:3\r\n";
+            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n*2\r\n$-1\r\n:1\r\n*2\r\n$6\r\nvalue2\r\n:1\r\n*2\r\n$-1\r\n:1\r\n*2\r\n$-1\r\n:2\r\n*2\r\n$-1\r\n:3";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // check if we still have the appropriate etag on the key we had set

@@ -58,6 +58,24 @@ namespace Garnet.server
         internal MetaCommandInfo metaCommandInfo;
         private long etag;
 
+        /// <summary>
+        /// ETag output from the last storage operation. The setter is guarded so that the
+        /// field is only written when a meta-command is active, avoiding a dead store on the
+        /// hot path of every regular command.
+        /// </summary>
+        private long Etag
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => etag;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+                    etag = value;
+            }
+        }
+
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -728,23 +746,8 @@ namespace Garnet.server
             var outputEtag = false;
             if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
             {
-                if (!IsMetaCommandInfoValid())
+                if (!ValidateAndPrepareMetaCommand(cmd, ref outputEtag))
                     return true;
-
-                if (metaCommandInfo.MetaCommand.IsETagCommand())
-                {
-                    if (!cmd.IsDataCommand())
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    outputEtag = true;
-                    etag = -1;
-                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                        SendAndReset();
-                }
             }
 
             /*
@@ -808,8 +811,35 @@ namespace Garnet.server
             };
 
             if (outputEtag)
-                while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt64(Etag, ref dcurr, dend))
                     SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Validates the meta-command info and prepares the RESP output prefix (array header)
+        /// when an ETag meta-command is active. 
+        /// </summary>
+        private bool ValidateAndPrepareMetaCommand(RespCommand cmd, ref bool outputEtag)
+        {
+            if (!IsMetaCommandInfoValid())
+                return false;
+
+            if (metaCommandInfo.MetaCommand.IsETagCommand())
+            {
+                if (!cmd.IsDataCommand())
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
+                        SendAndReset();
+                    return false;
+                }
+
+                outputEtag = true;
+                etag = -1;
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
