@@ -27,7 +27,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.GETETAG(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             if (status != GarnetStatus.OK || output.IsOperationSkipped)
                 WriteNull();

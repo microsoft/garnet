@@ -58,24 +58,6 @@ namespace Garnet.server
         internal MetaCommandInfo metaCommandInfo;
         private long etag;
 
-        /// <summary>
-        /// ETag output from the last storage operation. The setter is guarded so that the
-        /// field is only written when a meta-command is active, avoiding a dead store on the
-        /// hot path of every regular command.
-        /// </summary>
-        private long Etag
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => etag;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
-                    etag = value;
-            }
-        }
-
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -811,7 +793,7 @@ namespace Garnet.server
             };
 
             if (outputEtag)
-                while (!RespWriteUtils.TryWriteInt64(Etag, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
                     SendAndReset();
 
             return true;
@@ -821,6 +803,7 @@ namespace Garnet.server
         /// Validates the meta-command info and prepares the RESP output prefix (array header)
         /// when an ETag meta-command is active. 
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ValidateAndPrepareMetaCommand(RespCommand cmd, ref bool outputEtag)
         {
             if (!IsMetaCommandInfoValid())

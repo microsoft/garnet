@@ -39,7 +39,7 @@ namespace Garnet.server
 
 
             var status = storageApi.SetAdd(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -360,7 +360,7 @@ namespace Garnet.server
 
 
             var status = storageApi.SetRemove(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -402,7 +402,7 @@ namespace Garnet.server
             var output = new ObjectOutput();
 
             var status = storageApi.SetLength(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -446,7 +446,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SetMembers(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -497,7 +497,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SetIsMember(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -575,7 +575,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SetPop(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -695,7 +695,7 @@ namespace Garnet.server
             var output = GetObjectOutput();
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {

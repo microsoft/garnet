@@ -128,7 +128,7 @@ namespace Garnet.server
 
                 var key = parseState.GetArgSliceByRef(0);
                 var status = storageApi.DEL_Conditional(key, ref input, ref output);
-                Etag = output.ETag;
+                etag = output.ETag;
 
                 if (output.IsOperationSkipped)
                 {
@@ -401,7 +401,7 @@ namespace Garnet.server
             var output = GetUnifiedOutput();
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -530,7 +530,7 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             if (output.IsOperationSkipped)
                 WriteNull();

@@ -35,7 +35,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -110,7 +110,7 @@ namespace Garnet.server
 
             var output = GetStringOutput();
             var status = storageApi.GETEX(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {
@@ -339,7 +339,7 @@ namespace Garnet.server
 
             _ = storageApi.SETRANGE(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
-            Etag = stringOutput.ETag;
+            etag = stringOutput.ETag;
 
             if (!stringOutput.IsOperationSkipped)
             {
@@ -371,7 +371,7 @@ namespace Garnet.server
             var output = GetStringOutput();
 
             var status = storageApi.GETRANGE(key, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -426,7 +426,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, arg1: valMetadata);
             _ = storageApi.SET(key, ref input, ref output, value);
 
-            Etag = output.ETag;
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -451,7 +451,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, startIdx: 1);
             var status = storageApi.SET_Conditional(key, ref input, ref output);
 
-            Etag = output.ETag;
+            etag = output.ETag;
 
             if (output.IsOperationSkipped)
             {
@@ -628,7 +628,7 @@ namespace Garnet.server
             var output = GetStringOutput();
 
             storageApi.SET(key, ref input, ref output, val);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -688,7 +688,7 @@ namespace Garnet.server
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 var output = GetStringOutput();
                 var status = storageApi.SET_Conditional(key, ref input, ref output);
-                Etag = output.ETag;
+                etag = output.ETag;
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 var ok = status != GarnetStatus.NOTFOUND;
@@ -730,7 +730,7 @@ namespace Garnet.server
             var input = new StringInput(cmd, ref metaCommandInfo, arg1: incrByValue, flags: RespInputFlags.SkipRespOutput);
             _ = storageApi.Increment(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
-            Etag = stringOutput.ETag;
+            etag = stringOutput.ETag;
 
             if (stringOutput.IsOperationSkipped)
             {
@@ -777,7 +777,7 @@ namespace Garnet.server
 
             _ = storageApi.IncrementByFloat(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
-            Etag = stringOutput.ETag;
+            etag = stringOutput.ETag;
 
             if (stringOutput.IsOperationSkipped)
             {
@@ -822,7 +822,7 @@ namespace Garnet.server
             var output = StringOutput.FromPinnedSpan(outputBuffer);
 
             storageApi.APPEND(sbKey, ref input, ref output);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             if (!output.IsOperationSkipped)
             {
@@ -970,7 +970,7 @@ namespace Garnet.server
             var output = GetStringOutput();
 
             var status = storageApi.STRLEN(key, ref output, ref input);
-            Etag = output.ETag;
+            etag = output.ETag;
 
             switch (status)
             {

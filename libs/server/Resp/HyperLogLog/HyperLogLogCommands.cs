@@ -34,7 +34,7 @@ namespace Garnet.server
             {
                 input.parseState = parseState.Slice(i, 1);
                 storageApi.HyperLogLogAdd(key, ref input, ref stringOutput);
-                Etag = stringOutput.ETag;
+                etag = stringOutput.ETag;
 
                 if (stringOutput.IsOperationSkipped)
                 {
