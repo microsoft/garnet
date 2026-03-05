@@ -327,39 +327,32 @@ Additionally, several existing files are modified (see [Complete File Inventory]
 
 ## Architecture (data flow)
 
-```
-RESP Client ("RI.SET r1 mykey myval")
-  │
-  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ 1. RESP Parser (Resp/Parser/RespCommand.cs)                            │
-│    Tokenizes "RI.SET" → RespCommand.RISET enum value                  │
-│    Read/write classification by enum position (reads < APPEND)         │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 2. Command Dispatch (Resp/RespServerSession.cs)                        │
-│    Switch on RespCommand → calls NetworkRISET<TGarnetApi>(ref api)     │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 3. RESP Handler (Resp/RangeIndex/RespServerSessionRangeIndex.cs)       │
-│    Parses args from parseState, calls storageApi.RangeIndexSet(...)    │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 4. IGarnetApi / GarnetApi (API/IGarnetApi.cs, API/GarnetApi.cs)        │
-│    Thin delegation: converts PinnedSpanByte → ReadOnlySpan<byte>, forwards to │
-│    storageSession.RangeIndexSet(...)                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 5. Storage Session (Storage/Session/MainStore/RangeIndexOps.cs)        │
-│    Acquires index lock via rangeIndexManager.ReadOrCreateRangeIndex()   │
-│    Calls rangeIndexManager.TryInsert(indexSpan, field, value)          │
-│    Replicates on success via rangeIndexManager.Replicate*(...)         │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 6. RangeIndexManager (Resp/RangeIndex/RangeIndexManager.cs)            │
-│    TryInsert: ReadIndex(stub) → extract TreePtr → BfTreeService.Insert │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 7. BfTreeService / BfTreeInterop (Resp/RangeIndex/BfTreeService.cs)    │
-│    P/Invoke call: bftree_insert(treePtr, key, keyLen, val, valLen)     │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 8. Bf-Tree Rust library (bftree.dll / libbftree.so)                    │
-│    BfTree::insert(key, value) → LeafInsertResult::Success              │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Client["RESP Client: RI.SET r1 mykey myval"]
+    Parser["1. RESP Parser — Resp/Parser/RespCommand.cs
+    Tokenizes RI.SET → RespCommand.RISET
+    Read/write classification by enum position"]
+    Dispatch["2. Command Dispatch — Resp/RespServerSession.cs
+    Switch on RespCommand → NetworkRISET‹TGarnetApi›(ref api)"]
+    Handler["3. RESP Handler — Resp/RangeIndex/RespServerSessionRangeIndex.cs
+    Parses args from parseState
+    Calls storageApi.RangeIndexSet(...)"]
+    API["4. IGarnetApi / GarnetApi — API/IGarnetApi.cs, GarnetApi.cs
+    Thin delegation: PinnedSpanByte → ReadOnlySpan‹byte›
+    Forwards to storageSession.RangeIndexSet(...)"]
+    Storage["5. Storage Session — Storage/Session/MainStore/RangeIndexOps.cs
+    Acquires lock via rangeIndexManager.ReadOrCreateRangeIndex()
+    Calls rangeIndexManager.TryInsert(indexSpan, field, value)
+    Replicates on success"]
+    Manager["6. RangeIndexManager — Resp/RangeIndex/RangeIndexManager.cs
+    TryInsert: ReadIndex(stub) → extract TreePtr → BfTreeService.Insert"]
+    Service["7. BfTreeService — Resp/RangeIndex/BfTreeService.cs
+    P/Invoke: bftree_insert(treePtr, key, keyLen, val, valLen)"]
+    Native["8. Bf-Tree Rust library — bftree.dll / libbftree.so
+    BfTree::insert(key, value) → LeafInsertResult::Success"]
+
+    Client --> Parser --> Dispatch --> Handler --> API --> Storage --> Manager --> Service --> Native
 ```
 
 **On first write (key doesn't exist yet):**
