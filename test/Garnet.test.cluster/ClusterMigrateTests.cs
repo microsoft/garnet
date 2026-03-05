@@ -1854,6 +1854,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(sourceNodeIndex, sourceNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
