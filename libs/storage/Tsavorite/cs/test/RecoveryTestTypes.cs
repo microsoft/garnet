@@ -26,7 +26,7 @@ namespace Tsavorite.test.recovery.sumstore
         public struct Comparer : IKeyComparer
         {
             public long GetHashCode64<TKey>(TKey key)
-                where TKey: IKey
+                where TKey : IKey
 #if NET9_0_OR_GREATER
                     , allows ref struct
 #endif

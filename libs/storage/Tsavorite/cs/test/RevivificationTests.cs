@@ -44,7 +44,7 @@ namespace Tsavorite.test.Revivification
 
         // The hash code ends with 0 so mod Ten isn't so helpful, so shift
         public long GetHashCode64<TKey>(TKey k)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

@@ -26,7 +26,7 @@ namespace Tsavorite.test
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TSecondKey :IKey
+            where TSecondKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
@@ -34,7 +34,7 @@ namespace Tsavorite.test
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

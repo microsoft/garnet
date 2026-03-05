@@ -27,7 +27,7 @@ namespace Tsavorite.test.spanbyte
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TSecondKey: IKey
+            where TSecondKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
@@ -124,9 +124,9 @@ namespace Tsavorite.test.spanbyte
             {
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
-                
+
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                
+
                 fixed (byte* keyPtr = key)
                 {
                     _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);

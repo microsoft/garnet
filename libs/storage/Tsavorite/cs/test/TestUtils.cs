@@ -355,7 +355,7 @@ namespace Tsavorite.test
 #endif
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
-            /// <inheritdoc />
+        /// <inheritdoc />
         public long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -408,7 +408,7 @@ namespace Tsavorite.test
 #endif
             => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
-            // Force collisions to create a chain
+        // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
 #if NET9_0_OR_GREATER

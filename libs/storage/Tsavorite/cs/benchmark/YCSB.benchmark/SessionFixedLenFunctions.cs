@@ -161,25 +161,29 @@ namespace Tsavorite.benchmark
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor { }
+            where TEpochAccessor : IEpochAccessor
+        { }
         public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref Input input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor { }
+            where TEpochAccessor : IEpochAccessor
+        { }
         public readonly void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref Input input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor { }
+            where TEpochAccessor : IEpochAccessor
+        { }
         public readonly void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            where TEpochAccessor : IEpochAccessor { }
+            where TEpochAccessor : IEpochAccessor
+        { }
 
         public readonly void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }

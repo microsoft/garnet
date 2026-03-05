@@ -224,7 +224,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool IterateKeyVersions<TKey, TScanFunctions>(ref TScanFunctions scanFunctions, TKey key)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

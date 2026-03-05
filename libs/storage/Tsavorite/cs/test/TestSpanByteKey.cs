@@ -36,7 +36,7 @@ namespace Tsavorite.test
         public static TestSpanByteKey CopySpan(ReadOnlySpan<byte> key)
         {
             var arr = key.ToArray();
-            
+
             return new(arr, null, arr.Length);
         }
 

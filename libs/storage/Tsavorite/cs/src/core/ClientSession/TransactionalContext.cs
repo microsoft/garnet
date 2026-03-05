@@ -350,7 +350,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public long GetKeyHash<TOpKey>(TOpKey key)
-            where TOpKey: IKey
+            where TOpKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
@@ -647,7 +647,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
-            where TOpKey: IKey
+            where TOpKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

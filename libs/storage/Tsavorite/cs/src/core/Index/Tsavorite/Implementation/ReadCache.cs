@@ -193,7 +193,7 @@ namespace Tsavorite.core
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool EnsureNoNewMainLogRecordWasSpliced<TKey>(TKey key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestSearchedAddress, ref OperationStatus failStatus)
-            where TKey: IKey
+            where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif

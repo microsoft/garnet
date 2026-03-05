@@ -30,7 +30,7 @@ namespace Tsavorite.test
         public struct Comparer : IKeyComparer
         {
             public readonly long GetHashCode64<TKey>(TKey key)
-                where TKey: IKey
+                where TKey : IKey
 #if NET9_0_OR_GREATER
                     , allows ref struct
 #endif

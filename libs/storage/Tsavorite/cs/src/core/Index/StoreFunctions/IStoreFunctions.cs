@@ -33,7 +33,7 @@ namespace Tsavorite.core
             ;
         #endregion Key Comparer
 
-            #region Value Serializer
+        #region Value Serializer
         /// <summary>Creates an instance of the Value Serializer</summary>
         IObjectSerializer<IHeapObject> CreateValueObjectSerializer();
 
