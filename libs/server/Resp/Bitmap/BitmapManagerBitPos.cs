@@ -69,11 +69,11 @@ namespace Garnet.server
         {
             var searchBit = searchFor == 1;
             var invalidPayload = (byte)(searchBit ? 0x00 : 0xff);
-            var currentBitOffset = (int)startBitOffset;
+            var currentBitOffset = startBitOffset;
             while (currentBitOffset <= endBitOffset)
             {
-                var byteIndex = currentBitOffset >> 3;
-                var leftBitOffset = currentBitOffset & 7;
+                var byteIndex = (int)(currentBitOffset >> 3);
+                var leftBitOffset = (int)(currentBitOffset & 7);
                 var boundary = 8 - leftBitOffset;
                 var rightBitOffset = currentBitOffset + boundary <= endBitOffset ? leftBitOffset + boundary : (int)(endBitOffset & 7) + 1;
 

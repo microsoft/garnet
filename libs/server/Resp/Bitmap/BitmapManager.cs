@@ -63,6 +63,32 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool TryValidateBitPosOffsets(long startOffset, long endOffset, byte offsetType, bool hasStartOffset, bool hasEndOffset, out bool isOutOfRange)
+        {
+            isOutOfRange = false;
+
+            // BYTE mode uses byte index bounds; BIT mode uses bit index bounds.
+            var maxOffset = offsetType == 0x1
+                ? MaxOffsetForBitmapLength
+                : MaxBitmapPayloadBytes - 1L;
+
+            if (hasStartOffset && (startOffset < -maxOffset || startOffset > maxOffset))
+            {
+                isOutOfRange = true;
+                return true;
+            }
+
+            if (hasEndOffset && (endOffset < -maxOffset || endOffset > maxOffset))
+            {
+                isOutOfRange = true;
+                return true;
+            }
+
+            // Validation itself succeeded; caller decides response based on isOutOfRange.
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int Index(long offset)
         {
             if (!IsValidBitOffset(offset))

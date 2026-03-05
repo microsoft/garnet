@@ -172,15 +172,15 @@ namespace Garnet.server
 
                 case RespCommand.BITPOS:
                     var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(0).ReadOnlySpan[0] - '0');
-                    var bpStartOffset = 0;
-                    var bpEndOffset = -1;
+                    long bpStartOffset = 0;
+                    long bpEndOffset = -1;
                     byte bpOffsetType = 0x0;
                     if (input.parseState.Count > 1)
                     {
-                        bpStartOffset = input.parseState.GetInt(1);
+                        bpStartOffset = input.parseState.GetLong(1);
                         if (input.parseState.Count > 2)
                         {
-                            bpEndOffset = input.parseState.GetInt(2);
+                            bpEndOffset = input.parseState.GetLong(2);
                             if (input.parseState.Count > 3)
                             {
                                 var sbOffsetType = input.parseState.GetArgSliceByRef(3).ReadOnlySpan;

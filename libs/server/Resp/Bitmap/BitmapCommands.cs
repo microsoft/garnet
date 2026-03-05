@@ -251,7 +251,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
-            if (count < 2 || count > 5)
+            if (count is < 2 or > 5)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
             }
@@ -266,31 +266,62 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER);
             }
 
-            // Validate start & end offsets, if exist
-            if (parseState.Count > 2)
+            long startOffset = 0;
+            long endOffset = -1;
+            byte offsetType = 0x0;
+            var hasStartOffset = false;
+            var hasEndOffset = false;
+
+            // Extract parameters in command order, consistent with PrivateMethods BITPOS decoding:
+            // bit, start, end, [BIT|BYTE]
+            if (count > 2)
             {
-                if (!parseState.TryGetInt(2, out _) ||
-                    (parseState.Count > 3 && !parseState.TryGetInt(3, out _)))
+                // start
+                if (!parseState.TryGetLong(2, out startOffset))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
-            }
+                hasStartOffset = true;
 
-            // Validate offset range type (BIT / BYTE), if exists
-            if (parseState.Count > 4)
-            {
-                var sbOffsetType = parseState.GetArgSliceByRef(4).ReadOnlySpan;
-                if (!sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) &&
-                    !sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                if (count > 3)
                 {
-                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    // end
+                    if (!parseState.TryGetLong(3, out endOffset))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    }
+                    hasEndOffset = true;
+
+                    if (count > 4)
+                    {
+                        // Optional index type (default BYTE)
+                        var sbOffsetType = parseState.GetArgSliceByRef(4).ReadOnlySpan;
+                        if (sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8))
+                        {
+                            offsetType = 0x1;
+                        }
+                        else if (!sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                        }
+                    }
                 }
             }
 
+            if (!BitmapManager.TryValidateBitPosOffsets(startOffset, endOffset, offsetType, hasStartOffset, hasEndOffset, out var isOutOfRange))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (isOutOfRange)
+            {
+                while (!RespWriteUtils.TryWriteInt64(-1, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var input = new RawStringInput(RespCommand.BITPOS, ref parseState, startIdx: 1);
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-
             var status = storageApi.StringBitPosition(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)

@@ -2187,6 +2187,62 @@ namespace Garnet.test
             ClassicAssert.AreEqual(8, pos);
         }
 
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosLongBitOffsetParsingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosLongBitOffsetParsingTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var longOffset = (long)int.MaxValue + 1;
+            var pos = (long)db.Execute("BITPOS", key, "1", longOffset.ToString(), longOffset.ToString(), "BIT");
+
+            ClassicAssert.AreEqual(-1, pos);
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosLongOffsetBoundaryValidationTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosLongOffsetBoundaryValidationTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var maxBitOffset = BitmapManager.MaxOffsetForBitmapLength;
+            var maxByteOffset = BitmapManager.MaxBitmapPayloadBytes - 1L;
+
+            var pos = (long)db.Execute("BITPOS", key, "1", (maxBitOffset + 1).ToString(), (maxBitOffset + 1).ToString(), "BIT");
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (maxByteOffset + 1).ToString(), (maxByteOffset + 1).ToString(), "BYTE");
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (-maxBitOffset - 1).ToString(), "-1", "BIT");
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (-maxByteOffset - 1).ToString(), "-1", "BYTE");
+            ClassicAssert.AreEqual(-1, pos);
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitModifierRequiresStartAndEndTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosBitModifierRequiresStartAndEndTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BITPOS", key, "1", "0", "BIT"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
+        }
+
         [Test, Order(35)]
         [Category("BITOP")]
         public void BitmapOperationNonExistentSourceKeys()
