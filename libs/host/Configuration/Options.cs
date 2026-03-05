@@ -607,10 +607,6 @@ namespace Garnet
         public bool? FailOnRecoveryError { get; set; }
 
         [OptionValidation]
-        [Option("skip-rdb-restore-checksum-validation", Required = false, HelpText = "Skip RDB restore checksum validation")]
-        public bool? SkipRDBRestoreChecksumValidation { get; set; }
-
-        [OptionValidation]
         [Option("lua-memory-management-mode", Required = false, HelpText = "Memory management mode for Lua scripts, must be set to Tracked or Managed to impose script limits")]
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
 
@@ -956,7 +952,6 @@ namespace Garnet
                 IndexResizeThreshold = IndexResizeThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
-                SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,

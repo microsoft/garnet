@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -390,7 +390,7 @@ namespace Garnet.test
                     using var client = TestUtils.GetGarnetClientSession();
                     client.Connect();
                     client.Execute("MULTI");
-                    var result = await client.ExecuteAsync([.. command]);
+                    var result = await client.ExecuteAsync([.. command]).ConfigureAwait(false);
                     ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " failed transaction coverage");
                     client.Execute("DISCARD");
                 }
@@ -422,7 +422,7 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SET key2 value2");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => updateKey("key1", "value1_updated"));
+            await Task.Run(() => updateKey("key1", "value1_updated")).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -466,7 +466,7 @@ namespace Garnet.test
                 using var lightClientRequestCopy = TestUtils.CreateRequest();
                 string command = "SET key1 value1_updated WITHETAG";
                 lightClientRequestCopy.SendCommand(command);
-            });
+            }).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -518,7 +518,7 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SET key3 value3");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => updateKey("key1", "value1"));
+            await Task.Run(() => updateKey("key1", "value1")).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -562,7 +562,7 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SET key901 value901_updated");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => updateKey("key1", "value1_updated"));
+            await Task.Run(() => updateKey("key1", "value1_updated")).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
