@@ -21,7 +21,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus GeoAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+          where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
           => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -36,7 +36,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus GeoCommands<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+          where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace Garnet.server
                                                       ref ObjectInput input,
                                                       ref SpanByteAndMemory output,
                                                       ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+          where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var createTransaction = false;
 
@@ -116,7 +116,7 @@ namespace Garnet.server
                                                                   ref ObjectInput input,
                                                                   ref SpanByteAndMemory output,
                                                                   ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+          where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var createTransaction = false;
 
@@ -175,7 +175,7 @@ namespace Garnet.server
                         return GarnetStatus.OK;
                     }
 
-                    _ = geoObjectTransactionalContext.Delete(destination.ReadOnlySpan);
+                    _ = geoObjectTransactionalContext.Delete((FixedSpanByteKey)destination);
 
                     _ = RespReadUtils.TryReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 

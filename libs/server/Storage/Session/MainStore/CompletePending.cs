@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -12,14 +13,14 @@ namespace Garnet.server
         /// Handles the complete pending status for Session Store
         /// </summary>
         internal static void CompletePendingForSession<TStringContext>(ref Status status, ref StringOutput output, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => CompletePendingForSession(ref status, ref output, ref context, out _);
 
         /// <summary>
         /// Handles the complete pending status for Session Store
         /// </summary>
         static void CompletePendingForSession<TStringContext>(ref Status status, ref StringOutput output, ref TStringContext stringContext, out RecordMetadata recordMetadata)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             stringContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
@@ -36,7 +37,7 @@ namespace Garnet.server
         /// Handles the complete pending status for Session Store, without outputs.
         /// </summary>
         static void CompletePendingForSession<TContext>(ref TContext context)
-            where TContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         => context.CompletePending(wait: true);
     }
 }

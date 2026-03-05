@@ -25,7 +25,7 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
         ref
 #endif
-        struct MGetReadArgBatch<TGarnetApi>(ref TGarnetApi storageApi, RespServerSession session) : IReadArgBatch<StringInput, StringOutput>
+        struct MGetReadArgBatch<TGarnetApi>(ref TGarnetApi storageApi, RespServerSession session) : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
         where TGarnetApi : IGarnetAdvancedApi
     {
         private Status currentStatus;
@@ -49,8 +49,8 @@ namespace Garnet.server
         => input = default;
 
         /// <inheritdoc/>
-        public readonly void GetKey(int i, out PinnedSpanByte key)
-        => key = session.parseState.GetArgSliceByRef(i);
+        public readonly void GetKey(int i, out FixedSpanByteKey key)
+        => key = (FixedSpanByteKey)session.parseState.GetArgSliceByRef(i);
 
         /// <inheritdoc/>
         public readonly unsafe void GetOutput(int i, out StringOutput output)
@@ -119,7 +119,7 @@ namespace Garnet.server
     /// For commands that are served entirely out of memory, writes results directly into the output buffer if possible.
     /// If operation would complete asynchronously, moves onto the next one and buffers results for later writing.
     /// </summary>
-    internal struct MGetReadArgBatch_SG(RespServerSession session) : IReadArgBatch<StringInput, StringOutput>
+    internal struct MGetReadArgBatch_SG(RespServerSession session) : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
     {
         private bool pendingNullWrite;
         private Memory<(Status Status, StringOutput Output)> runningStatus;
@@ -141,8 +141,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly void GetKey(int i, out PinnedSpanByte key)
-        => key = session.parseState.GetArgSliceByRef(i);
+        public readonly void GetKey(int i, out FixedSpanByteKey key)
+        => key = (FixedSpanByteKey)session.parseState.GetArgSliceByRef(i);
 
         /// <inheritdoc/>
         public readonly void GetOutput(int i, out StringOutput output)

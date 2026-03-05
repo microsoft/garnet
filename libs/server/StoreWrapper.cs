@@ -829,7 +829,7 @@ namespace Garnet.server
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
                     var objStoreFunctions = new ObjectSessionFunctions(functionsState);
-                    using var objectStoreSession = store?.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
+                    using var objectStoreSession = store?.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
                     using var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext())
                     {

@@ -34,7 +34,7 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="input">Input</param>
         /// <param name="writer">Output</param>
-        public virtual bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer) => true;
+        public virtual bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer) => true;
 
         /// <summary>
         /// Whether we need to need to perform an update, given old value and input
