@@ -260,9 +260,17 @@ namespace Tsavorite.core
         #endregion //ISourceLogRecord
 
         #region IKey
+        /// <inheritdoc/>
         public readonly bool IsPinned => IsPinnedKey;
 
+        /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public readonly bool HasNamespace => logRecord.HasNamespace;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes => logRecord.NamespaceBytes;
         #endregion
 
 

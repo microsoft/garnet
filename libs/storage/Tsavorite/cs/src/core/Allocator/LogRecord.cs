@@ -726,9 +726,34 @@ namespace Tsavorite.core
         public readonly int OptionalLength => ETagLen + ExpirationLen + ObjectLogPositionLen;
 
         #region IKey
+        /// <inheritdoc/>
         public readonly bool IsPinned => IsPinnedKey;
 
+        /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public readonly bool HasNamespace
+        {
+            get
+            {
+                // A 1-byte 0 values namespace is the "default" and should be ignored.
+                // Any non-zero value (including the ExtendedNamespaceIndicatorBit being set) means we have a namespace.
+                var indicator = *(byte*)NamespaceAddress;
+                return indicator != 0;
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes
+        {
+            get
+            {
+                Debug.Assert(HasNamespace, "Shouldn't call if !HasNamespace");
+
+                return Namespace;
+            }
+        }
         #endregion
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

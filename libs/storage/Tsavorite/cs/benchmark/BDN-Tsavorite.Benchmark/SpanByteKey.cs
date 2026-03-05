@@ -48,5 +48,11 @@ namespace BenchmarkDotNetTests
             }
 #endif
         }
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
     }
 }

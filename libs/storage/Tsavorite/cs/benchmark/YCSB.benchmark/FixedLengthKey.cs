@@ -48,5 +48,11 @@ namespace Tsavorite.benchmark
 #endif
                 => key1.KeyBytes.AsRef<FixedLengthKey>().value == key2.KeyBytes.AsRef<FixedLengthKey>().value;
         }
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
     }
 }

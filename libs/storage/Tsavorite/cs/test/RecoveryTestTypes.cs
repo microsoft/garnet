@@ -21,6 +21,12 @@ namespace Tsavorite.test.recovery.sumstore
         [UnscopedRef]
         public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.AsBytes<long>(new(in adId));
 
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
         public override string ToString() => adId.ToString();
 
         public struct Comparer : IKeyComparer

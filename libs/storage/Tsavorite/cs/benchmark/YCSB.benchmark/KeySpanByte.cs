@@ -48,5 +48,11 @@ namespace Tsavorite.benchmark
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => new(Unsafe.AsPointer(ref this), DataSize);
         }
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
     }
 }

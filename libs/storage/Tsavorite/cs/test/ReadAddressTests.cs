@@ -26,6 +26,12 @@ namespace Tsavorite.test.readaddress
         [UnscopedRef]
         public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(new(in key));
 
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
         public override readonly string ToString() => key.ToString();
     }
 

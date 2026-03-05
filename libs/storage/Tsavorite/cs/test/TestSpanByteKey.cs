@@ -18,6 +18,12 @@ namespace Tsavorite.test
 
         public readonly ReadOnlySpan<byte> KeyBytes => arr == null ? new(ptr, len) : arr.AsSpan();
 
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
         private TestSpanByteKey(byte[] arr, void* ptr, int len)
         {
             this.arr = arr;

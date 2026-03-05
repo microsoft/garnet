@@ -25,6 +25,12 @@ namespace Tsavorite.test
         public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<int, byte>(new ReadOnlySpan<int>(in key));
 
         /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
+        /// <inheritdoc/>
         public override readonly string ToString() => key.ToString();
 
         public struct Comparer : IKeyComparer

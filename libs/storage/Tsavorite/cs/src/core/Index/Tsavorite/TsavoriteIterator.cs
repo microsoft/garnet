@@ -352,6 +352,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public bool HasNamespace => CurrentIter.HasNamespace;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => CurrentIter.NamespaceBytes;
         #endregion
     }
 }

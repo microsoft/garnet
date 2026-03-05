@@ -204,6 +204,38 @@ namespace Tsavorite.core
             }
         }
 
+        /// <inheritdoc/>
+        public readonly bool HasNamespace
+        {
+            get
+            {
+                // True if non-0 OR ExtendedNamespaceIndicatorBit is et
+                var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
+                return nameSpace != 0;
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes
+        {
+            get
+            {
+                Debug.Assert(HasNamespace, "Should call if !HasNamespace");
+
+                var nameSpacePtr = (HeaderPtr + NamespaceOffsetInHeader);
+
+                if (((*nameSpacePtr) & ExtendedNamespaceIndicatorBit) == 0)
+                {
+                    // Single byte namespace
+                    return new ReadOnlySpan<byte>(nameSpacePtr, 1);
+                }
+                else
+                {
+                    throw new TsavoriteException($"Extended namespaces not yet implemented");
+                }
+            }
+        }
+
         #endregion
 
         internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long valueAddress)

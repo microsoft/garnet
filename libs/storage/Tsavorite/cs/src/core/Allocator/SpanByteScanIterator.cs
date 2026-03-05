@@ -395,6 +395,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public bool HasNamespace => diskLogRecord.HasNamespace;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => diskLogRecord.NamespaceBytes;
         #endregion
 
         /// <summary>

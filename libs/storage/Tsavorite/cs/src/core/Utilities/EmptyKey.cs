@@ -20,5 +20,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public ReadOnlySpan<byte> KeyBytes => [];
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
     }
 }

@@ -31,5 +31,20 @@ namespace Tsavorite.core
         /// </summary>
         [UnscopedRef]
         ReadOnlySpan<byte> KeyBytes { get; }
+
+        /// <summary>
+        /// True if this <see cref="IKey"/> has a namespace associated with it.
+        /// 
+        /// Namespaces are not visible parts of a key, but are used in hashing and equality.
+        /// </summary>
+        bool HasNamespace { get; }
+
+        /// <summary>
+        /// If <see cref="HasNamespace"/> returns true, called to get the contents of the namespace.
+        /// 
+        /// The special value [0] is reserved and should never be returned.
+        /// </summary>
+        [UnscopedRef]
+        ReadOnlySpan<byte> NamespaceBytes { get; }
     }
 }
