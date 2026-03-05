@@ -44,7 +44,7 @@ namespace Tsavorite.test
             device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
             var logSettings = new TsavoriteLogSettings
-                { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager };
+            { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager };
             log = new TsavoriteLog(logSettings);
 
             byte[] entry = new byte[entryLength];
