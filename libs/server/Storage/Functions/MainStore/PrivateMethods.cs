@@ -150,20 +150,24 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    var bcStartOffset = 0;
-                    var bcEndOffset = -1;
+                    long bcStartOffset = 0;
+                    long bcEndOffset = -1;
                     byte bcOffsetType = 0x0;
 
-                    if (input.parseState.Count > 1)
+                    if (input.parseState.Count > 0 && input.parseState.TryGetLong(0, out var parsedBcStartOffset))
                     {
-                        bcStartOffset = input.parseState.GetInt(0);
-                        bcEndOffset = input.parseState.GetInt(1);
+                        bcStartOffset = parsedBcStartOffset;
+                    }
 
-                        if (input.parseState.Count > 2)
-                        {
-                            var spanOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
-                            bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
-                        }
+                    if (input.parseState.Count > 1 && input.parseState.TryGetLong(1, out var parsedBcEndOffset))
+                    {
+                        bcEndOffset = parsedBcEndOffset;
+                    }
+
+                    if (input.parseState.Count > 2)
+                    {
+                        var spanOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
+                        bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
                     }
 
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);

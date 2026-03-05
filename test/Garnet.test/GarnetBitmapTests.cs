@@ -2136,6 +2136,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual(14, count);
         }
 
+        [Test]
+        [Category("BITCOUNT")]
+        public void BitmapBitCountLongBitOffsetParsingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitCountLongBitOffsetParsingTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var offset = (long)int.MaxValue + 1024;
+            var count = (long)db.Execute("BITCOUNT", key, (-offset).ToString(), "-1", "BIT");
+
+            ClassicAssert.AreEqual(8, count);
+        }
+
         [Test, Order(34)]
         [Category("BITPOS")]
         public void BitmapBitPosFixedTests()

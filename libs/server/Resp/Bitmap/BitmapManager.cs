@@ -89,6 +89,25 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void NormalizeBitCountOffsets(ref long startOffset, ref long endOffset, byte offsetType)
+        {
+            // BYTE mode uses byte index bounds; BIT mode uses bit index bounds.
+            var maxOffset = offsetType == 0x1
+                ? MaxOffsetForBitmapLength
+                : MaxBitmapPayloadBytes - 1L;
+
+            if (startOffset < -maxOffset)
+                startOffset = -maxOffset;
+            else if (startOffset > maxOffset)
+                startOffset = maxOffset;
+
+            if (endOffset < -maxOffset)
+                endOffset = -maxOffset;
+            else if (endOffset > maxOffset)
+                endOffset = maxOffset;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int Index(long offset)
         {
             if (!IsValidBitOffset(offset))

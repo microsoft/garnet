@@ -213,21 +213,36 @@ namespace Garnet.server
             // <[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
-            // Validate start & end offsets, if exist
-            if (parseState.Count > 1)
+            // Extract parameters in command order:
+            // start, end, [BIT|BYTE]
+            if (count > 1)
             {
-                if (!parseState.TryGetInt(1, out _) || (parseState.Count > 2 && !parseState.TryGetInt(2, out _)))
+                if (!parseState.TryGetLong(1, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
+
+                if (count > 2)
+                {
+                    if (!parseState.TryGetLong(2, out _))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    }
+
+                    if (count > 3)
+                    {
+                        var spanOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
+                        if (!spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) && !spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                        }
+                    }
                 }
             }
 
             var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1);
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-
             var status = storageApi.StringBitCount(ref sbKey, ref input, ref o);
-
             if (status == GarnetStatus.OK)
             {
                 if (!o.IsSpanByte)
