@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -79,12 +79,12 @@ namespace Garnet.test
                 parameters.Add(item.Element);
             }
 
-            await db.ExecuteForMemoryResultAsync("ZADD", parameters);
+            await db.ExecuteForMemoryResultAsync("ZADD", parameters).ConfigureAwait(false);
 
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
 
             // 10 entries are added
-            var result = await db.ExecuteForMemoryResultAsync(ZCARD, "leaderboard");
+            var result = await db.ExecuteForMemoryResultAsync(ZCARD, "leaderboard").ConfigureAwait(false);
 
             ClassicAssert.AreEqual("10", Encoding.ASCII.GetString(result.Span));
 
@@ -140,7 +140,7 @@ namespace Garnet.test
             waiter.Reset();
 
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
-            var result = await db.ExecuteForMemoryResultAsync(ZCARD, "myzset1");
+            var result = await db.ExecuteForMemoryResultAsync(ZCARD, "myzset1").ConfigureAwait(false);
 
             ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(result.Span));
 
@@ -189,12 +189,12 @@ namespace Garnet.test
                             parameters.Add(item.Element);
                         }
 
-                        await db.ExecuteForMemoryResultAsync("ZADD", parameters);
-                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
+                        await db.ExecuteForMemoryResultAsync("ZADD", parameters).ConfigureAwait(false);
+                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50)).ConfigureAwait(false);
 
                         parameters = [name, "-inf", "+inf"];
 
-                        var result = await db.ExecuteForMemoryResultArrayAsync("ZRANGEBYSCORE", parameters);
+                        var result = await db.ExecuteForMemoryResultArrayAsync("ZRANGEBYSCORE", parameters).ConfigureAwait(false);
 
                         // assert the elements
                         foreach (var item in leaderBoard)
@@ -206,24 +206,24 @@ namespace Garnet.test
                         Memory<byte> ZREM = Encoding.ASCII.GetBytes("$4\r\nZREM\r\n");
                         foreach (SortedSetEntry item in leaderBoard)
                         {
-                            await db.ExecuteForMemoryResultAsync(ZREM, name, item.Element);
+                            await db.ExecuteForMemoryResultAsync(ZREM, name, item.Element).ConfigureAwait(false);
                         }
 
                         foreach (var item in result) item.Dispose();
 
-                        await Task.Delay(millisecondsDelay: 3000);
+                        await Task.Delay(millisecondsDelay: 3000).ConfigureAwait(false);
                     }
                 });
             }
             Task.WaitAll(tasks);
 
             //checkpoint
-            await db.ExecuteForMemoryResultAsync("SAVE");
+            await db.ExecuteForMemoryResultAsync("SAVE").ConfigureAwait(false);
 
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
             foreach (var i in ss)
             {
-                var n = await db.ExecuteForMemoryResultAsync(ZCARD, i.Key);
+                var n = await db.ExecuteForMemoryResultAsync(ZCARD, i.Key).ConfigureAwait(false);
                 ClassicAssert.AreEqual("0", Encoding.ASCII.GetString(n.Span));
                 n.Dispose();
             }
@@ -248,10 +248,10 @@ namespace Garnet.test
                 parameters.Add(item.Element);
             }
 
-            await db.ExecuteForMemoryResultAsync("ZADD", parameters);
+            await db.ExecuteForMemoryResultAsync("ZADD", parameters).ConfigureAwait(false);
 
             parameters = ["leaderboard", "-inf", "+inf"];
-            var result = await db.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", parameters);
+            var result = await db.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", parameters).ConfigureAwait(false);
 
             // assert the elements
             foreach (var item in leaderBoard)
@@ -269,16 +269,16 @@ namespace Garnet.test
             List<string> parameters = [];
             parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
 
-            var result = await db.ExecuteForStringResultAsync("ZADD", parameters);
+            var result = await db.ExecuteForStringResultAsync("ZADD", parameters).ConfigureAwait(false);
             ClassicAssert.AreEqual("2", result);
 
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
-            result = await db.ExecuteForStringResultAsync(ZCARD, "myzset1");
+            result = await db.ExecuteForStringResultAsync(ZCARD, "myzset1").ConfigureAwait(false);
             ClassicAssert.AreEqual("2", result);
 
 
             Memory<byte> key = Encoding.ASCII.GetBytes("myzset1");
-            result = await db.ExecuteForStringResultAsync(ZCARD, key);
+            result = await db.ExecuteForStringResultAsync(ZCARD, key).ConfigureAwait(false);
             ClassicAssert.AreEqual("2", result);
         }
 
@@ -299,7 +299,7 @@ namespace Garnet.test
                 parameters.Add(item.Element);
             }
 
-            await db.ExecuteForMemoryResultAsync("ZADD", parameters);
+            await db.ExecuteForMemoryResultAsync("ZADD", parameters).ConfigureAwait(false);
 
             var tokenSource = new CancellationTokenSource();
             var token = tokenSource.Token;
@@ -339,7 +339,7 @@ namespace Garnet.test
                 parameters.Add(item.Element);
             }
 
-            await db.ExecuteForMemoryResultAsync("ZADD", parameters);
+            await db.ExecuteForMemoryResultAsync("ZADD", parameters).ConfigureAwait(false);
 
             var tokenSource = new CancellationTokenSource();
             var token = tokenSource.Token;
@@ -378,7 +378,7 @@ namespace Garnet.test
 
             for (int i = 0; i <= maxIterations; i++)
             {
-                var result = await db.ExecuteForStringArrayResultWithCancellationAsync("ZRANGEBYSCORE", parameters, ct);
+                var result = await db.ExecuteForStringArrayResultWithCancellationAsync("ZRANGEBYSCORE", parameters, ct).ConfigureAwait(false);
                 foreach (var item in leaderBoard)
                 {
                     var found = result.FirstOrDefault(t => t.Equals(item.Element));
@@ -425,19 +425,19 @@ namespace Garnet.test
                 pairs.AddSortedSetEntry(Encoding.ASCII.GetBytes(item.Element.ToString()), item.Score);
             }
 
-            var added = await db.SortedSetAddAsync("leaderboard", pairs);
+            var added = await db.SortedSetAddAsync("leaderboard", pairs).ConfigureAwait(false);
             ClassicAssert.IsTrue(added == leaderBoard.Length);
 
             //just update
-            added = await db.SortedSetAddAsync("leaderboard", pairs);
+            added = await db.SortedSetAddAsync("leaderboard", pairs).ConfigureAwait(false);
             ClassicAssert.IsTrue(added == 0);
 
             //remove
-            var removed = await db.SortedSetRemoveAsync("leaderboard", pairs);
+            var removed = await db.SortedSetRemoveAsync("leaderboard", pairs).ConfigureAwait(false);
             ClassicAssert.IsTrue(removed == 10);
 
             //length should be 0
-            var len = await db.SortedSetLengthAsync("leaderboard");
+            var len = await db.SortedSetLengthAsync("leaderboard").ConfigureAwait(false);
             ClassicAssert.IsTrue(len == 0);
         }
 
@@ -509,7 +509,7 @@ namespace Garnet.test
             e.Wait(); e.Reset();
 
             //ZCARD async non existing key
-            var len = await db.SortedSetLengthAsync("nokey");
+            var len = await db.SortedSetLengthAsync("nokey").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedValue, len);
 
             // add a new Sorted Set
@@ -524,11 +524,11 @@ namespace Garnet.test
                 parameters.Add(item.Element);
             }
 
-            var added = await db.ExecuteForMemoryResultAsync("ZADD", parameters);
+            var added = await db.ExecuteForMemoryResultAsync("ZADD", parameters).ConfigureAwait(false);
             ClassicAssert.AreEqual("10", Encoding.ASCII.GetString(added.Span));
 
             //ZCARD async
-            len = await db.SortedSetLengthAsync("leaderboard");
+            len = await db.SortedSetLengthAsync("leaderboard").ConfigureAwait(false);
             ClassicAssert.AreEqual(10, len);
 
             expectedValue = 10;

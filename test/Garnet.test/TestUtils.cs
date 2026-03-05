@@ -367,7 +367,7 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
-                EnableVectorSetPreview = enableVectorSetPreview,
+                EnableVectorSetPreview = enableVectorSetPreview
             };
 
             if (!string.IsNullOrEmpty(memorySize))
@@ -795,7 +795,7 @@ namespace Garnet.test
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
-                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
+                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs
             };
 
             if (lowMemory)

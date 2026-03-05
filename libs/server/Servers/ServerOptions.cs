@@ -111,11 +111,6 @@ namespace Garnet.server
         public bool FailOnRecoveryError = false;
 
         /// <summary>
-        /// Skip RDB restore checksum validation
-        /// </summary>
-        public bool SkipRDBRestoreChecksumValidation = false;
-
-        /// <summary>
         /// Logger
         /// </summary>
         public ILogger logger;
