@@ -174,7 +174,7 @@ namespace Garnet.test
             };
 
             store = new(kvSettings
-                , Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(), () => new MyGarnetObjectSerializer())
+                , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(), () => new MyGarnetObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }

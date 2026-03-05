@@ -24,7 +24,6 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            // TODO: Namespace!
              => StaticGetHashCode64(key.KeyBytes);
 
         /// <summary>
@@ -44,7 +43,6 @@ namespace Tsavorite.core
 #if NET9_0_OR_GREATER
                 , allows ref struct
 #endif
-            // TODO: Namespaces!
             => StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         /// <summary>

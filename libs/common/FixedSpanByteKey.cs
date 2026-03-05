@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 #if !NET9_0_OR_GREATER
 using System.Runtime.InteropServices;
@@ -42,7 +43,7 @@ namespace Garnet.common
         }
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> KeyBytes
+        public readonly ReadOnlySpan<byte> KeyBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #if NET9_0_OR_GREATER
@@ -56,6 +57,22 @@ namespace Garnet.common
                 }
             }
 #endif
+        }
+
+        /// <inheritdoc/>
+        public readonly bool HasNamespace
+        {
+            get => false;
+        }
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes
+        {
+            get
+            {
+                Debug.Fail("Should never be called on FixedSpanByteKey");
+                return [];
+            }
         }
 
         private FixedSpanByteKey(ReadOnlySpan<byte> key)
