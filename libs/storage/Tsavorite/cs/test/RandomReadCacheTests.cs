@@ -103,7 +103,7 @@ namespace Tsavorite.test.ReadCacheTests
             store = default;
             log?.Dispose();
             log = default;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test]

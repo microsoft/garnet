@@ -57,6 +57,7 @@ namespace Tsavorite.test.ModifiedBit
             store = null;
             log?.Dispose();
             log = null;
+            OnTearDown();
         }
 
         void Populate()

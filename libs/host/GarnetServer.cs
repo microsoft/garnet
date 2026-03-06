@@ -48,6 +48,7 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
+        protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -131,6 +132,11 @@ namespace Garnet
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
             this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
             this.InitializeServer();
         }
 
@@ -147,7 +153,22 @@ namespace Garnet
             this.opts = opts;
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
-            this.InitializeServer();
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
+            try
+            {
+                this.InitializeServer();
+            }
+            catch
+            {
+                storeEpoch?.Dispose();
+                aofEpoch?.Dispose();
+                pubSubEpoch?.Dispose();
+                throw;
+            }
         }
 
         private void InitializeServer()
@@ -225,7 +246,7 @@ namespace Garnet
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, startFresh: true, logger);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, startFresh: true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
@@ -289,10 +310,10 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, out var epoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var (aofDevice, aof) = CreateAOF(dbId);
 
-            return new GarnetDatabase(kvSettings, dbId, store, epoch, stateMachineDriver, sizeTracker, aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -319,11 +340,10 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            out LightEpoch epoch, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
-            epoch = new LightEpoch();
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
             kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
@@ -360,7 +380,7 @@ namespace Garnet
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
-            opts.GetAofSettings(dbId, out var aofSettings);
+            opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
             var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
 
@@ -414,6 +434,9 @@ namespace Garnet
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Dispose();
             subscribeBroker?.Dispose();
+            storeEpoch?.Dispose();
+            aofEpoch?.Dispose();
+            pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();

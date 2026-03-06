@@ -24,6 +24,7 @@ namespace Tsavorite.core
 
         readonly TsavoriteLogAllocatorImpl allocator;
         readonly LightEpoch epoch;
+        readonly bool isEpochOwned;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
         readonly GetMemory getMemory;
@@ -201,7 +202,14 @@ namespace Tsavorite.core
             logChecksum = logSettings.LogChecksum;
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
-            epoch = new LightEpoch();
+            if (logSettings.Epoch == null)
+            {
+                epoch = new LightEpoch();
+                isEpochOwned = true;
+            }
+            else
+                epoch = logSettings.Epoch;
+
             CommittedUntilAddress = FirstValidAddress;
             CommittedBeginAddress = FirstValidAddress;
             SafeTailAddress = FirstValidAddress;
@@ -299,6 +307,10 @@ namespace Tsavorite.core
                     else
                         await safeTailRefreshEntryEnqueued.WaitAsync().ConfigureAwait(false);
                 }
+            }
+            catch (TaskCanceledException) when (safeTailRefreshTaskCts.Token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled due to TsavoriteLog disposal or refresh task cancellation
             }
             catch (Exception e)
             {
@@ -514,7 +526,8 @@ namespace Tsavorite.core
             commitQueue.Dispose();
             _ = commitTcs.TrySetException(new ObjectDisposedException("TsavoriteLog has been disposed"));
             allocator.Dispose();
-            epoch.Dispose();
+            if (isEpochOwned)
+                epoch.Dispose();
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
@@ -1163,7 +1176,7 @@ namespace Tsavorite.core
                 // We are holding the TsavoriteLog's epoch; release and then reacquire it. And if the caller's epoch is
                 // also held, suspend and reacquire it as well.
                 epoch.Suspend();
-                var released = epochAccessor.TrySuspend();
+                var suspended = epochAccessor.TrySuspend();
                 try
                 {
                     if (cannedException != null)
@@ -1172,7 +1185,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    if (released)
+                    if (suspended)
                         epochAccessor.Resume();
                     epoch.Resume();
                 }

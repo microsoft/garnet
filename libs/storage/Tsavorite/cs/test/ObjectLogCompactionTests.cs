@@ -68,7 +68,7 @@ namespace Tsavorite.test
             objlog?.Dispose();
             objlog = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         // Basic test that where shift begin address to untilAddress after compact

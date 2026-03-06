@@ -27,7 +27,7 @@ namespace Garnet.test
         {
             server.Dispose();
             server = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         /// <summary>

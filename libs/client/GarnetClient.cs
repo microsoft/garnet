@@ -42,11 +42,15 @@ namespace Garnet.client
         static readonly Memory<byte> DECRBY = "$6\r\nDECRBY\r\n"u8.ToArray();
         static readonly Memory<byte> QUIT = "$4\r\nQUIT\r\n"u8.ToArray();
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
+        static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
+        static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetClient"u8.ToArray()];
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
         readonly int sendPageSize;
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
+        readonly LightEpoch epoch;
+        readonly bool isEpochOwned;
         NetworkWriter networkWriter;
 
         readonly TcsWrapper[] tcsArray;
@@ -89,6 +93,11 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Client name to send to server for identification.
+        /// </summary>
+        readonly Memory<byte>[] clientName = null;
+
+        /// <summary>
         /// Exception to throw to ongoing tasks when disposed
         /// </summary>
         static readonly Exception disposeException = new GarnetClientDisposedException();
@@ -120,19 +129,23 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
+        /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
         /// <param name="sendPageSize">Size of pages where requests are written to be sent, determines max request size (rounds down to previous power of 2)</param>
+        /// <param name="bufferSize">Network writer buffer size</param>
         /// <param name="maxOutstandingTasks">Maximum outstanding tasks before client throttles new requests (rounds down to previous power of 2), default 32K</param>
         /// <param name="timeoutMilliseconds">Timeout (in milliseconds) after which client disposes itself and throws exception on all active tasks</param>
         /// <param name="memoryPool">Pool for Memory based response buffers</param>
         /// <param name="recordLatency">Record latency using client internal histogram</param>
         /// <param name="useTimeoutChecker"></param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
         public GarnetClient(
             EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
+            string clientName = null,
             int sendPageSize = 1 << 21,
             int bufferSize = 1 << 17,
             int maxOutstandingTasks = 1 << 19,
@@ -141,6 +154,7 @@ namespace Garnet.client
             bool recordLatency = false,
             bool useTimeoutChecker = true,
             int networkSendThrottleMax = 8,
+            LightEpoch epoch = null,
             ILogger logger = null)
         {
             EndPoint = endpoint;
@@ -148,6 +162,7 @@ namespace Garnet.client
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
             if (maxOutstandingTasks > PageOffset.kTaskMask + 1)
             {
@@ -172,6 +187,13 @@ namespace Garnet.client
             this.networkSendThrottleMax = networkSendThrottleMax;
             for (int i = 0; i < maxOutstandingTasks; i++)
                 tcsArray[i].nextTaskId = i;
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                isEpochOwned = true;
+            }
+            else
+                this.epoch = epoch;
         }
 
         /// <summary>
@@ -188,7 +210,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocketAsync(timeoutMilliseconds).ConfigureAwait(false).GetAwaiter().GetResult();
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
             networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
 
             if (timeoutMilliseconds > 0)
@@ -212,6 +234,20 @@ namespace Garnet.client
                 logger?.LogError(e, "AUTH returned error");
                 throw;
             }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false).GetAwaiter().GetResult();
+                    _ = ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
+                throw;
+            }
         }
 
         /// <summary>
@@ -220,7 +256,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -242,6 +278,20 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false);
+                    _ = await ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }
@@ -419,6 +469,8 @@ namespace Garnet.client
             socket?.Dispose();
             networkWriter?.Dispose();
             latency?.Return();
+            if (isEpochOwned)
+                epoch.Dispose();
         }
 
         void CheckLength(int totalLen, TcsWrapper tcs)

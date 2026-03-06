@@ -286,6 +286,18 @@ namespace Tsavorite.test
             return success;
         }
 
+        internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null)
+        {
+            DeleteDirectory(MethodTestDir, wait: waitForDelete);
+            var count = LightEpoch.ActiveInstanceCount();
+            if (count != 0)
+            {
+                // Reset all instances to avoid impacting other tests
+                LightEpoch.ResetAllInstances();
+                logger?.LogError("LightEpoch instances still active: {count}", count);
+                Assert.Fail($"LightEpoch instances still active: {count}");
+            }
+        }
     }
 
     /// <summary>Deterministic equality comparer for ints</summary>

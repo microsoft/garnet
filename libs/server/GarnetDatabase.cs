@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -90,17 +91,17 @@ namespace Garnet.server
 
         internal StorageSession HybridLogStatScanStorageSession;
 
-        private KVSettings kvSettings;
+        private KVSettings KvSettings;
 
         bool disposed = false;
 
-        public GarnetDatabase(KVSettings kvSettings, int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+        public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
                 CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut)
             : this()
         {
-            this.kvSettings = kvSettings;
             Id = id;
             Store = store;
+            KvSettings = kvSettings;
             Epoch = epoch;
             StateMachineDriver = stateMachineDriver;
             SizeTracker = sizeTracker;
@@ -111,9 +112,9 @@ namespace Garnet.server
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
         {
-            kvSettings = srcDb.kvSettings;
             Id = id;
             Store = srcDb.Store;
+            KvSettings = srcDb.KvSettings;
             Epoch = srcDb.Epoch;
             StateMachineDriver = srcDb.StateMachineDriver;
             SizeTracker = srcDb.SizeTracker;
@@ -145,16 +146,16 @@ namespace Garnet.server
             disposed = true;
 
             // Wait for checkpoints to complete and disable checkpointing
-            CheckpointingLock.CloseLock();
+            while (!CheckpointingLock.TryWriteLock())
+                _ = Thread.Yield();
 
             Store?.Dispose();
+            KvSettings?.LogDevice?.Dispose();
+            KvSettings?.ObjectLogDevice?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
             StoreCollectionDbStorageSession?.Dispose();
             StoreExpiredKeyDeletionDbStorageSession?.Dispose();
-
-            kvSettings?.LogDevice?.Dispose();
-            kvSettings?.ObjectLogDevice?.Dispose();
 
             SizeTracker?.Stop();
         }

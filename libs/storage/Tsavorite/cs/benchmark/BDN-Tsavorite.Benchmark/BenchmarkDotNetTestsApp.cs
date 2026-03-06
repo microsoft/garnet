@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#if DEBUG
+using BenchmarkDotNet.Configs;
+#endif
 using BenchmarkDotNet.Running;
 
 namespace BenchmarkDotNetTests
@@ -50,8 +53,12 @@ namespace BenchmarkDotNetTests
                 return;
             }
 
-            // Do regular invocation.
-            BenchmarkSwitcher.FromAssembly(typeof(BenchmarkDotNetTestsApp).Assembly).Run(args);
+            BenchmarkSwitcher.FromAssembly(typeof(BenchmarkDotNetTestsApp).Assembly)
+#if DEBUG
+                .Run(args, new DebugInProcessConfig());
+#else
+                .Run(args);
+#endif
         }
     }
 }

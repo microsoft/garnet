@@ -32,7 +32,7 @@ namespace Tsavorite.test.recovery.objects
         [TearDown]
         public void TearDown()
         {
-            DeleteDirectory(MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

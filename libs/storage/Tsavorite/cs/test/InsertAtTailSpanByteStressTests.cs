@@ -94,7 +94,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
