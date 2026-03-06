@@ -2801,6 +2801,8 @@ namespace Garnet.server
                     count++;
                     cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
                     if (!success) return cmd;
+                    if (cmd == RespCommand.SET)
+                        cmd = RespCommand.SETEXNX;
                 }
             }
             else
@@ -2884,7 +2886,9 @@ namespace Garnet.server
                     count = -1;
                 cmd = FastParseCommand(ref count);
                 if (cmd != RespCommand.NONE)
+                {
                     return cmd;
+                }
 
                 if (skipReadCount)
                     count++;
