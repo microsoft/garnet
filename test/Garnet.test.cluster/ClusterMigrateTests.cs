@@ -1968,7 +1968,7 @@ namespace Garnet.test.cluster
             }
 
             var newKeys = context.GenerateKeysWithPrefix(keyPrefix, keyCount, suffixLength: 32);
-            using var gcs = context.clusterTestUtils.CreateGarnetClientSession(sourceNodeIndex);
+            using var gcs = context.clusterTestUtils.CreateGarnetClientSession(sourceNodeIndex, useTLS: UseTLS);
             gcs.Connect();
             // Ensure we are redirected for non-existent keys
             var expectedException = $"ASK {slot} 127.0.0.1:{context.clusterTestUtils.GetPortFromNodeIndex(targetNodeIndex)}";
