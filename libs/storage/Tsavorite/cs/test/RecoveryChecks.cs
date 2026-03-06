@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -148,8 +148,8 @@ namespace Tsavorite.test.recovery
 
             if (isAsync)
             {
-                var (status, token) = await task;
-                _ = await store2.RecoverAsync(default, token);
+                var (status, token) = await task.ConfigureAwait(false);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
             }
             else
             {
@@ -250,8 +250,8 @@ namespace Tsavorite.test.recovery
 
                 if (isAsync)
                 {
-                    var (status, token) = await task;
-                    _ = await store2.RecoverAsync(default, token);
+                    var (status, token) = await task.ConfigureAwait(false);
+                    _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
                 }
                 else
                 {
@@ -551,8 +551,8 @@ namespace Tsavorite.test.recovery
 
                 if (isAsync)
                 {
-                    var (status, token) = await task;
-                    _ = await store2.RecoverAsync(default, token);
+                    var (status, token) = await task.ConfigureAwait(false);
+                    _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
                 }
                 else
                 {
@@ -657,8 +657,8 @@ namespace Tsavorite.test.recovery
 
                 if (isAsync)
                 {
-                    var (status, token) = await task;
-                    _ = await store2.RecoverAsync(default, token);
+                    var (status, token) = await task.ConfigureAwait(false);
+                    _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
                 }
                 else
                 {
@@ -741,7 +741,7 @@ namespace Tsavorite.test.recovery
                 _ = bc1.CompletePending(true);
             }
 
-            var result = await store1.GrowIndexAsync();
+            var result = await store1.GrowIndexAsync().ConfigureAwait(false);
             ClassicAssert.IsTrue(result);
 
             for (long key = 0; key < 1000; key++)
@@ -773,8 +773,8 @@ namespace Tsavorite.test.recovery
 
             if (isAsync)
             {
-                var (status, token) = await task;
-                _ = await store2.RecoverAsync(default, token);
+                var (status, token) = await task.ConfigureAwait(false);
+                _ = await store2.RecoverAsync(default, token).ConfigureAwait(false);
             }
             else
             {
@@ -834,7 +834,7 @@ namespace Tsavorite.test.recovery
                     new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 
-            await IncrSnapshotRecoveryCheck(checkpointManager);
+            await IncrSnapshotRecoveryCheck(checkpointManager).ConfigureAwait(false);
             checkpointManager.PurgeAll();
             checkpointManager.Dispose();
         }
@@ -859,14 +859,14 @@ namespace Tsavorite.test.recovery
                 _ = bc1.Upsert(ref key, ref key);
 
             var task = store1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
-            var (success, token) = await task;
+            var (success, token) = await task.ConfigureAwait(false);
 
             for (long key = 950; key < 1000; key++)
                 _ = bc1.Upsert(key, key + 1);
 
             var version1 = store1.CurrentVersion;
             var _result1 = store1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
-            await store1.CompleteCheckpointAsync();
+            await store1.CompleteCheckpointAsync().ConfigureAwait(false);
 
             ClassicAssert.IsTrue(_result1);
             ClassicAssert.AreEqual(token, _token1);
@@ -876,7 +876,7 @@ namespace Tsavorite.test.recovery
 
             var version2 = store1.CurrentVersion;
             var _result2 = store1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
-            await store1.CompleteCheckpointAsync();
+            await store1.CompleteCheckpointAsync().ConfigureAwait(false);
 
             ClassicAssert.IsTrue(_result2);
             ClassicAssert.AreEqual(token, _token2);
@@ -894,7 +894,7 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            await store2.RecoverAsync(default, _token2);
+            await store2.RecoverAsync(default, _token2).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
 
@@ -925,7 +925,7 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            _ = await store3.RecoverAsync(recoverTo: version1);
+            _ = await store3.RecoverAsync(recoverTo: version1).ConfigureAwait(false);
 
             ClassicAssert.IsTrue(store3.EntryCount == 1000);
             using var s3 = store3.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
@@ -1069,7 +1069,7 @@ namespace Tsavorite.test.recovery
             var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: iterator);
             if (isAsync)
             {
-                var (status, token) = await task;
+                var (status, token) = await task.ConfigureAwait(false);
             }
             else
             {

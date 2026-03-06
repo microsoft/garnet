@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -317,7 +317,7 @@ namespace Tsavorite.test.UnsafeContext
                 else
                 {
                     uContext.EndUnsafe();
-                    await uContext.CompletePendingAsync();
+                    await uContext.CompletePendingAsync().ConfigureAwait(false);
                     uContext.BeginUnsafe();
                 }
 
@@ -344,7 +344,7 @@ namespace Tsavorite.test.UnsafeContext
                 else
                 {
                     uContext.EndUnsafe();
-                    outputs = await uContext.CompletePendingWithOutputsAsync();
+                    outputs = await uContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
                     uContext.BeginUnsafe();
                 }
 

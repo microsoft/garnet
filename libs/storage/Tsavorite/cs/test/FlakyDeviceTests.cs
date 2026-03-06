@@ -57,7 +57,7 @@ namespace Tsavorite.test
                     }
 
                     if (isAsync)
-                        await log.CommitAsync();
+                        await log.CommitAsync().ConfigureAwait(false);
                     else
                         log.Commit();
                 }
@@ -168,7 +168,7 @@ namespace Tsavorite.test
                 try
                 {
                     if (IsAsync(iteratorType))
-                        await log.CommitAsync();
+                        await log.CommitAsync().ConfigureAwait(false);
                     else
                         log.Commit();
                 }

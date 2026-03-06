@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
@@ -194,7 +194,7 @@ namespace Tsavorite.test
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if ((key & 1) == 0)
-                            completedOutputs = await bContext.CompletePendingWithOutputsAsync();
+                            completedOutputs = await bContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
                         else
                             _ = bContext.CompletePendingWithOutputs(out completedOutputs, wait: true);
                         ProcessPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
@@ -218,7 +218,7 @@ namespace Tsavorite.test
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if ((key & 1) == 0)
-                            completedOutputs = await bContext.CompletePendingWithOutputsAsync();
+                            completedOutputs = await bContext.CompletePendingWithOutputsAsync().ConfigureAwait(false);
                         else
                             _ = bContext.CompletePendingWithOutputs(out completedOutputs, wait: true);
                         processPending.Process(completedOutputs, useRMW ? rmwCopyUpdatedAddresses : null);

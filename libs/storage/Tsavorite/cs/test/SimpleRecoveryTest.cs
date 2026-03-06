@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -91,7 +91,7 @@ namespace Tsavorite.test.recovery.sumstore
                 testCommitCookie,
                 TestUtils.AzureStorageNamedDeviceFactoryCreator,
                 new AzureCheckpointNamingScheme($"{AzureTestContainer}/{AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
+            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie).ConfigureAwait(false);
             checkpointManager.PurgeAll();
         }
 
@@ -109,7 +109,7 @@ namespace Tsavorite.test.recovery.sumstore
                 testCommitCookie,
                 new LocalStorageNamedDeviceFactoryCreator(),
                 new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "chkpt")));
-            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
+            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie).ConfigureAwait(false);
             checkpointManager.PurgeAll();
         }
 
@@ -158,13 +158,13 @@ namespace Tsavorite.test.recovery.sumstore
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             else
-                await store1.CompleteCheckpointAsync();
+                await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
                 _ = store2.Recover(token);
             else
-                _ = await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             if (testCommitCookie)
                 ClassicAssert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(checkpointManager.Cookie));
@@ -244,7 +244,7 @@ namespace Tsavorite.test.recovery.sumstore
             if (completionSyncMode == CompletionSyncMode.Sync)
                 _ = store2.Recover(token);
             else
-                _ = await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext2 = session1.BasicContext;
@@ -311,13 +311,13 @@ namespace Tsavorite.test.recovery.sumstore
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             else
-                await store1.CompleteCheckpointAsync();
+                await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
                 _ = store2.Recover(token);
             else
-                _ = await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(address, store2.Log.BeginAddress);
         }
@@ -375,13 +375,13 @@ namespace Tsavorite.test.recovery.sumstore
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             else
-                await store1.CompleteCheckpointAsync();
+                await store1.CompleteCheckpointAsync().ConfigureAwait(false);
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
                 _ = store2.Recover(token);
             else
-                _ = await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token).ConfigureAwait(false);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions2);
             var bContext2 = session2.BasicContext;

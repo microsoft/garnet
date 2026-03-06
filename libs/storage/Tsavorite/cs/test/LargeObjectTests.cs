@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -67,7 +67,7 @@ namespace Tsavorite.test.largeobjects
                 }
 
                 _ = store.TryInitiateFullCheckpoint(out token, checkpointType);
-                await store.CompleteCheckpointAsync();
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
             }
 
             // Step 1: Create and recover store.

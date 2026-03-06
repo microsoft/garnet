@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -56,11 +56,11 @@ namespace Tsavorite.test.recovery
         {
             using var device = Devices.CreateLogDevice(deviceName);
             var logSettings = new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9, TryRecoverLatest = false };
-            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             await Task.WhenAll(ProducerAsync(log, cts),
                                CommitterAsync(log, cts.Token),
-                               ReadOnlyConsumerAsync(deviceName, isAsync, cts.Token));
+                               ReadOnlyConsumerAsync(deviceName, isAsync, cts.Token)).ConfigureAwait(false);
         }
 
         private async Task ProducerAsync(TsavoriteLog log, CancellationTokenSource cts)
@@ -68,10 +68,10 @@ namespace Tsavorite.test.recovery
             for (var i = 0L; i < NumElements; ++i)
             {
                 log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
-                await Task.Delay(TimeSpan.FromMilliseconds(ProducerPauseMs));
+                await Task.Delay(TimeSpan.FromMilliseconds(ProducerPauseMs)).ConfigureAwait(false);
             }
             // Ensure the reader had time to see all data
-            await done.WaitAsync();
+            await done.WaitAsync().ConfigureAwait(false);
             cts.Cancel();
         }
 
@@ -81,8 +81,8 @@ namespace Tsavorite.test.recovery
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs), cancellationToken);
-                    await log.CommitAsync(token: cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(CommitPeriodMs), cancellationToken).ConfigureAwait(false);
+                    await log.CommitAsync(token: cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) { }
@@ -94,7 +94,7 @@ namespace Tsavorite.test.recovery
         {
             using var device = Devices.CreateLogDevice(deviceName);
             var logSettings = new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 };
-            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings, cancellationToken) : new TsavoriteLog(logSettings);
+            using var log = isAsync ? await TsavoriteLog.CreateAsync(logSettings, cancellationToken).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             var _ = BeginRecoverAsyncLoop();
 
@@ -121,7 +121,7 @@ namespace Tsavorite.test.recovery
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     // Delay for a while before recovering to the last commit by the primary TsavoriteLog instance.
-                    await Task.Delay(TimeSpan.FromMilliseconds(RestorePeriodMs), cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(RestorePeriodMs), cancellationToken).ConfigureAwait(false);
                     if (cancellationToken.IsCancellationRequested)
                         break;
                     long startTime = DateTimeOffset.UtcNow.Ticks;
@@ -131,7 +131,7 @@ namespace Tsavorite.test.recovery
                         {
                             if (isAsync)
                             {
-                                await log.RecoverReadOnlyAsync(cancellationToken);
+                                await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
                             }
                             else
                                 log.RecoverReadOnly();
