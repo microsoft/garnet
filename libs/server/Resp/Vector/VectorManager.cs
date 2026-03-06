@@ -953,13 +953,13 @@ namespace Garnet.server
             // Allocate the evaluation stack once and reuse it across all candidate evaluations
             var stack = ExprRunner.CreateStack();
 
-            var attrReadPos = 0;
+            var remaining = attributesSpan;
 
             for (var i = 0; i < numResults; i++)
             {
                 // Read attribute length-prefix + data
-                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
-                var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
+                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                var attrData = remaining.Slice(sizeof(int), attrLen);
 
                 // Execute the compiled filter program against raw JSON bytes.
                 // No JsonDocument DOM allocation — AttributeExtractor extracts fields on demand.
@@ -969,7 +969,7 @@ namespace Garnet.server
                     filteredCount++;
                 }
 
-                attrReadPos += sizeof(int) + attrLen;
+                remaining = remaining[(sizeof(int) + attrLen)..];
             }
 
             return filteredCount;

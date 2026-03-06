@@ -25,159 +25,160 @@ namespace Garnet.server.Vector.Filter
         /// </summary>
         public static ExprToken ExtractField(ReadOnlySpan<byte> json, string fieldName)
         {
-            var p = 0;
-            SkipWhiteSpace(json, ref p);
-            if (p >= json.Length || json[p] != (byte)'{') return default;
-            p++; // Skip '{'
+            var s = TrimWhiteSpace(json);
+            if (s.IsEmpty || s[0] != (byte)'{') return default;
+            s = s[1..]; // Skip '{'
 
             while (true)
             {
-                SkipWhiteSpace(json, ref p);
-                if (p >= json.Length) return default;
-                if (json[p] == (byte)'}') return default; // End of object, field not found
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+                if (s[0] == (byte)'}') return default; // End of object, field not found
 
                 // Expect a key string
-                if (json[p] != (byte)'"') return default;
+                if (s[0] != (byte)'"') return default;
 
-                var keyStart = p + 1;
-                if (!SkipString(json, ref p)) return default;
-                var keyEnd = p - 1; // p is now past the closing quote
+                // Extract key content (between quotes)
+                var afterOpenQuote = s[1..];
+                if (!SkipString(ref s)) return default;
+                // Key content is between afterOpenQuote and s (minus the closing quote byte)
+                var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
 
-                // Compare key with field name
-                var match = MatchKey(json, keyStart, keyEnd, fieldName);
+                var match = MatchKey(keyContent, fieldName);
 
                 // Expect ':'
-                SkipWhiteSpace(json, ref p);
-                if (p >= json.Length || json[p] != (byte)':') return default;
-                p++; // Skip ':'
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty || s[0] != (byte)':') return default;
+                s = s[1..]; // Skip ':'
 
-                SkipWhiteSpace(json, ref p);
-                if (p >= json.Length) return default;
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
 
                 if (match)
                 {
                     // Found the field — parse the value into a token
-                    return ParseValueToken(json, ref p);
+                    return ParseValueToken(json, ref s);
                 }
                 else
                 {
                     // Skip the value
-                    if (!SkipValue(json, ref p)) return default;
+                    if (!SkipValue(ref s)) return default;
                 }
 
                 // Look for ',' or '}'
-                SkipWhiteSpace(json, ref p);
-                if (p >= json.Length) return default;
-                if (json[p] == (byte)',') { p++; continue; }
-                if (json[p] == (byte)'}') return default; // End of object, not found
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)'}') return default; // End of object, not found
                 return default; // Malformed JSON
             }
         }
 
         // ======================== Value parsing (allocating) ========================
 
-        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref int p)
+        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
         {
-            SkipWhiteSpace(json, ref p);
-            if (p >= json.Length) return default;
+            s = TrimWhiteSpace(s);
+            if (s.IsEmpty) return default;
 
-            var c = json[p];
-            if (c == (byte)'"') return ParseStringToken(json, ref p);
-            if (c == (byte)'[') return ParseArrayToken(json, ref p);
+            var c = s[0];
+            if (c == (byte)'"') return ParseStringToken(json, ref s);
+            if (c == (byte)'[') return ParseArrayToken(json, ref s);
             if (c == (byte)'{') return default; // Nested objects not supported
-            if (c == (byte)'t') return ParseLiteralToken(json, ref p, "true"u8, ExprTokenType.Num, 1);
-            if (c == (byte)'f') return ParseLiteralToken(json, ref p, "false"u8, ExprTokenType.Num, 0);
-            if (c == (byte)'n') return ParseLiteralToken(json, ref p, "null"u8, ExprTokenType.Null, 0);
-            if ((c >= (byte)'0' && c <= (byte)'9') || c == (byte)'-' || c == (byte)'+')
-                return ParseNumberToken(json, ref p);
+            if (c == (byte)'t') return ParseLiteralToken(ref s, "true"u8, ExprTokenType.Num, 1);
+            if (c == (byte)'f') return ParseLiteralToken(ref s, "false"u8, ExprTokenType.Num, 0);
+            if (c == (byte)'n') return ParseLiteralToken(ref s, "null"u8, ExprTokenType.Null, 0);
+            if (IsDigit(c) || c == (byte)'-' || c == (byte)'+')
+                return ParseNumberToken(ref s);
 
             return default;
         }
 
-        private static ExprToken ParseStringToken(ReadOnlySpan<byte> json, ref int p)
+        private static ExprToken ParseStringToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
         {
-            if (p >= json.Length || json[p] != (byte)'"') return default;
-            p++; // Skip opening quote
-            var start = p;
+            if (s.IsEmpty || s[0] != (byte)'"') return default;
+            s = s[1..]; // Skip opening quote
+            var body = s;
             var hasEscape = false;
 
-            while (p < json.Length)
+            while (!s.IsEmpty)
             {
-                if (json[p] == (byte)'\\')
+                if (s[0] == (byte)'\\')
                 {
                     hasEscape = true;
-                    p += 2; // Skip escape sequence
+                    s = s[2..]; // Skip escape sequence
                     continue;
                 }
-                if (json[p] == (byte)'"')
+                if (s[0] == (byte)'"')
                 {
+                    var content = body[..(body.Length - s.Length)];
                     if (!hasEscape)
                     {
                         // Zero-allocation: store byte offset+length into the source JSON
-                        var len = p - start;
-                        p++; // Skip closing quote
-                        return ExprToken.NewJsonStr(start, len);
+                        var absoluteStart = json.Length - body.Length;
+                        s = s[1..]; // Skip closing quote
+                        return ExprToken.NewJsonStr(absoluteStart, content.Length);
                     }
                     else
                     {
                         // Escaped strings must be materialized (rare path)
-                        var value = UnescapeJsonString(json, start, p);
-                        p++; // Skip closing quote
+                        var value = UnescapeJsonString(content);
+                        s = s[1..]; // Skip closing quote
                         return ExprToken.NewStr(value);
                     }
                 }
-                p++;
+                s = s[1..];
             }
             return default; // Unterminated string
         }
 
-        private static ExprToken ParseNumberToken(ReadOnlySpan<byte> json, ref int p)
+        private static ExprToken ParseNumberToken(ref ReadOnlySpan<byte> s)
         {
-            var start = p;
-            while (p < json.Length && IsNumberChar(json[p])) p++;
-            if (p == start) return default;
+            var original = s;
+            while (!s.IsEmpty && IsNumberChar(s[0])) s = s[1..];
 
-            var numSpan = json.Slice(start, p - start);
+            var numSpan = original[..(original.Length - s.Length)];
+            if (numSpan.IsEmpty) return default;
+
             if (!Utf8Parser.TryParse(numSpan, out double value, out var bytesConsumed) || bytesConsumed != numSpan.Length)
             {
-                p = start;
+                s = original;
                 return default;
             }
             return ExprToken.NewNum(value);
         }
 
-        private static ExprToken ParseLiteralToken(ReadOnlySpan<byte> json, ref int p,
+        private static ExprToken ParseLiteralToken(ref ReadOnlySpan<byte> s,
             ReadOnlySpan<byte> literal, ExprTokenType type, double num)
         {
-            if (p + literal.Length > json.Length) return default;
-            if (!json.Slice(p, literal.Length).SequenceEqual(literal)) return default;
+            if (s.Length < literal.Length) return default;
+            if (!s[..literal.Length].SequenceEqual(literal)) return default;
 
             // Verify delimiter follows (space, comma, bracket, brace, or end)
-            if (p + literal.Length < json.Length)
+            if (s.Length > literal.Length)
             {
-                var next = (char)json[p + literal.Length];
+                var next = (char)s[literal.Length];
                 if (!char.IsWhiteSpace(next) && next != ',' && next != ']' && next != '}')
                     return default;
             }
 
-            p += literal.Length;
-            var t = type == ExprTokenType.Null ? ExprToken.NewNull() : ExprToken.NewNum(num);
-            return t;
+            s = s[literal.Length..];
+            return type == ExprTokenType.Null ? ExprToken.NewNull() : ExprToken.NewNum(num);
         }
 
         /// <summary>Max array elements before rejecting.</summary>
         private const int MaxArrayElements = 64;
 
-        private static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref int p)
+        private static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
         {
-            if (p >= json.Length || json[p] != (byte)'[') return default;
-            p++; // Skip '['
-            SkipWhiteSpace(json, ref p);
+            if (s.IsEmpty || s[0] != (byte)'[') return default;
+            s = s[1..]; // Skip '['
+            s = TrimWhiteSpace(s);
 
             // Handle empty array
-            if (p < json.Length && json[p] == (byte)']')
+            if (!s.IsEmpty && s[0] == (byte)']')
             {
-                p++;
+                s = s[1..];
                 return ExprToken.NewTuple([], 0);
             }
 
@@ -189,17 +190,17 @@ namespace Garnet.server.Vector.Filter
             {
                 while (true)
                 {
-                    SkipWhiteSpace(json, ref p);
-                    if (p >= json.Length || count >= MaxArrayElements) return default;
+                    s = TrimWhiteSpace(s);
+                    if (s.IsEmpty || count >= MaxArrayElements) return default;
 
-                    var ele = ParseValueToken(json, ref p);
+                    var ele = ParseValueToken(json, ref s);
                     if (ele.IsNone) return default;
                     elements[count++] = ele;
 
-                    SkipWhiteSpace(json, ref p);
-                    if (p >= json.Length) return default;
-                    if (json[p] == (byte)',') { p++; continue; }
-                    if (json[p] == (byte)']') { p++; break; }
+                    s = TrimWhiteSpace(s);
+                    if (s.IsEmpty) return default;
+                    if (s[0] == (byte)',') { s = s[1..]; continue; }
+                    if (s[0] == (byte)']') { s = s[1..]; break; }
                     return default; // Malformed
                 }
 
@@ -215,68 +216,67 @@ namespace Garnet.server.Vector.Filter
 
         // ======================== Fast skipping (non-allocating) ========================
 
-        private static bool SkipValue(ReadOnlySpan<byte> json, ref int p)
+        private static bool SkipValue(ref ReadOnlySpan<byte> s)
         {
-            SkipWhiteSpace(json, ref p);
-            if (p >= json.Length) return false;
+            s = TrimWhiteSpace(s);
+            if (s.IsEmpty) return false;
 
-            var c = (char)json[p];
-            return c switch
+            return (char)s[0] switch
             {
-                '"' => SkipString(json, ref p),
-                '{' => SkipBracketed(json, ref p, (byte)'{', (byte)'}'),
-                '[' => SkipBracketed(json, ref p, (byte)'[', (byte)']'),
-                't' => SkipLiteral(json, ref p, "true"u8),
-                'f' => SkipLiteral(json, ref p, "false"u8),
-                'n' => SkipLiteral(json, ref p, "null"u8),
-                _ => SkipNumber(json, ref p),
+                '"' => SkipString(ref s),
+                '{' => SkipBracketed(ref s, (byte)'{', (byte)'}'),
+                '[' => SkipBracketed(ref s, (byte)'[', (byte)']'),
+                't' => SkipLiteral(ref s, "true"u8),
+                'f' => SkipLiteral(ref s, "false"u8),
+                'n' => SkipLiteral(ref s, "null"u8),
+                _ => SkipNumber(ref s),
             };
         }
 
-        private static bool SkipString(ReadOnlySpan<byte> json, ref int p)
+        private static bool SkipString(ref ReadOnlySpan<byte> s)
         {
-            if (p >= json.Length || json[p] != (byte)'"') return false;
-            p++; // Skip opening quote
-            while (p < json.Length)
+            if (s.IsEmpty || s[0] != (byte)'"') return false;
+            s = s[1..]; // Skip opening quote
+            while (!s.IsEmpty)
             {
-                if (json[p] == (byte)'\\') { p += 2; continue; }
-                if (json[p] == (byte)'"') { p++; return true; }
-                p++;
+                if (s[0] == (byte)'\\') { s = s[2..]; continue; }
+                if (s[0] == (byte)'"') { s = s[1..]; return true; }
+                s = s[1..];
             }
             return false; // Unterminated
         }
 
-        private static bool SkipBracketed(ReadOnlySpan<byte> json, ref int p, byte opener, byte closer)
+        private static bool SkipBracketed(ref ReadOnlySpan<byte> s, byte opener, byte closer)
         {
             var depth = 1;
-            p++; // Skip opener
-            while (p < json.Length && depth > 0)
+            s = s[1..]; // Skip opener
+            while (!s.IsEmpty && depth > 0)
             {
-                if (json[p] == (byte)'"')
+                if (s[0] == (byte)'"')
                 {
-                    if (!SkipString(json, ref p)) return false;
+                    if (!SkipString(ref s)) return false;
                     continue;
                 }
-                if (json[p] == opener) depth++;
-                else if (json[p] == closer) depth--;
-                p++;
+                if (s[0] == opener) depth++;
+                else if (s[0] == closer) depth--;
+                s = s[1..];
             }
             return depth == 0;
         }
 
-        private static bool SkipLiteral(ReadOnlySpan<byte> json, ref int p, ReadOnlySpan<byte> literal)
+        private static bool SkipLiteral(ref ReadOnlySpan<byte> s, ReadOnlySpan<byte> literal)
         {
-            if (p + literal.Length > json.Length) return false;
-            if (!json.Slice(p, literal.Length).SequenceEqual(literal)) return false;
-            p += literal.Length;
+            if (s.Length < literal.Length) return false;
+            if (!s[..literal.Length].SequenceEqual(literal)) return false;
+            s = s[literal.Length..];
             return true;
         }
 
-        private static bool SkipNumber(ReadOnlySpan<byte> json, ref int p)
+        private static bool SkipNumber(ref ReadOnlySpan<byte> s)
         {
-            var start = p;
-            while (p < json.Length && IsNumberChar(json[p])) p++;
-            return p > start;
+            var original = s;
+            while (!s.IsEmpty && IsNumberChar(s[0])) s = s[1..];
+            return s.Length < original.Length;
         }
 
         // ======================== Shared byte-level helpers ========================
@@ -290,38 +290,42 @@ namespace Garnet.server.Vector.Filter
 
         internal static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
 
-        internal static void SkipWhiteSpace(ReadOnlySpan<byte> s, ref int p)
+        /// <summary>
+        /// Returns the span with leading whitespace removed.
+        /// </summary>
+        internal static ReadOnlySpan<byte> TrimWhiteSpace(ReadOnlySpan<byte> s)
         {
-            while (p < s.Length && IsWhiteSpace(s[p])) p++;
+            var i = 0;
+            while (i < s.Length && IsWhiteSpace(s[i])) i++;
+            return s[i..];
         }
 
         private static bool IsNumberChar(byte b) =>
             IsDigit(b) || b == (byte)'-' || b == (byte)'+' ||
             b == (byte)'.' || b == (byte)'e' || b == (byte)'E';
 
-        private static bool MatchKey(ReadOnlySpan<byte> json, int keyStart, int keyEnd, string fieldName)
+        private static bool MatchKey(ReadOnlySpan<byte> key, string fieldName)
         {
-            var keyLen = keyEnd - keyStart;
-            if (keyLen != fieldName.Length) return false;
-            for (var i = 0; i < keyLen; i++)
+            if (key.Length != fieldName.Length) return false;
+            for (var i = 0; i < key.Length; i++)
             {
-                if (json[keyStart + i] != (byte)fieldName[i]) return false;
+                if (key[i] != (byte)fieldName[i]) return false;
             }
             return true;
         }
 
-        private static string UnescapeJsonString(ReadOnlySpan<byte> json, int start, int end)
+        private static string UnescapeJsonString(ReadOnlySpan<byte> content)
         {
             // Worst case: each byte is a character
-            var chars = new char[end - start];
+            var chars = new char[content.Length];
             var len = 0;
-            var i = start;
-            while (i < end)
+            var i = 0;
+            while (i < content.Length)
             {
-                if (json[i] == (byte)'\\' && i + 1 < end)
+                if (content[i] == (byte)'\\' && i + 1 < content.Length)
                 {
                     i++;
-                    chars[len++] = (char)json[i] switch
+                    chars[len++] = (char)content[i] switch
                     {
                         'n' => '\n',
                         'r' => '\r',
@@ -329,13 +333,13 @@ namespace Garnet.server.Vector.Filter
                         '\\' => '\\',
                         '"' => '"',
                         '/' => '/',
-                        _ => (char)json[i],
+                        _ => (char)content[i],
                     };
                     i++;
                 }
                 else
                 {
-                    chars[len++] = (char)json[i];
+                    chars[len++] = (char)content[i];
                     i++;
                 }
             }
