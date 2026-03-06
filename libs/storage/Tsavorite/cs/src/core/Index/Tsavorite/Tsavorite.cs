@@ -75,7 +75,7 @@ namespace Tsavorite.core
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
-        internal ManualResetEventSlim pauseRevivEvent = new(false);
+        internal readonly ManualResetEventSlim pauseRevivEvent = new(false);
 
         /// <summary>
         /// Pause Revivification
@@ -771,7 +771,7 @@ namespace Tsavorite.core
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
-            pauseRevivEvent.Dispose();
+            pauseRevivEvent?.Dispose();
         }
 
         /// <summary>
