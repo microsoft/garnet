@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -73,7 +73,7 @@ namespace Tsavorite.test
             //** Give it some time to run a bit
             //** Acceptable use of using sleep for this spot
             //** Similar to waiting for things to run before manually hitting cancel from a command prompt
-            await Task.Delay(3000, cts.Token);
+            await Task.Delay(3000, cts.Token).ConfigureAwait(false);
             cts.Cancel();
 
             await producer.ConfigureAwait(false);
@@ -89,8 +89,8 @@ namespace Tsavorite.test
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
-                    await log.CommitAsync(token: cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken).ConfigureAwait(false);
+                    await log.CommitAsync(token: cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -110,7 +110,7 @@ namespace Tsavorite.test
 
                     i++;
 
-                    await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -131,7 +131,7 @@ namespace Tsavorite.test
             {
                 using (var iter = logReadOnly.Scan(logReadOnly.BeginAddress, long.MaxValue))
                 {
-                    await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+                    await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken).ConfigureAwait(false))
                     {
                     }
                 }
@@ -153,8 +153,8 @@ namespace Tsavorite.test
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     // Delay for a while before checking again.
-                    await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
-                    await log.RecoverReadOnlyAsync(cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken).ConfigureAwait(false);
+                    await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
