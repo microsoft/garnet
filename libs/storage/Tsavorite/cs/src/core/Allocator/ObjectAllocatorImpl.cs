@@ -520,6 +520,20 @@ namespace Tsavorite.core
                 return;
             }
 
+            var pageStart = GetLogicalAddressOfStartOfPage(asyncResult.page);
+            var logPagePointer = (byte*)pagePointers[flushPage % BufferSize];
+
+            // asyncResult.fromAddress is either start of page or start of a record past the page header
+            Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
+            int startOffset = (int)(asyncResult.fromAddress - pageStart), endOffset = startOffset + (int)numBytesToWrite;
+            var isFirstRecordOnPage = startOffset <= PageHeader.Size;
+
+            // Write the object log position into the header if this is the first record on the page. If there are no records on the page, we will
+            // call through to WriteInlinePageAsync so we want the header updated regardless of whether we have objects (this may be a page with no
+            // objects after some pages with objects, and so we want Truncate() to know it has to preserve those object log segments).
+            if (isFirstRecordOnPage)
+                ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
+
             // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes).
             if (asyncResult.flushBuffers is null)
             {
@@ -537,11 +551,7 @@ namespace Tsavorite.core
             // in the allocator page (including the objectId space for Overflow and Heap Objects). Note: "Aligned" in this discussion refers to sector (as opposed to record) alignment.
 
             // Initialize offsets into the allocator page based on full-page (including the page header), then override them if partial.
-            // asyncResult.fromAddress is either start of page or start of a record past the page header
-            var pageStart = GetLogicalAddressOfStartOfPage(asyncResult.page);
-            Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
             Debug.Assert(asyncResult.untilAddress - pageStart >= PageHeader.Size, $"untilAddress ({asyncResult.untilAddress}, offset {asyncResult.untilAddress - pageStart}) must be past PageHeader {flushPage}");
-            int startOffset = (int)(asyncResult.fromAddress - pageStart), endOffset = startOffset + (int)numBytesToWrite;
             if (asyncResult.partial)
             {
                 // We're writing only a subset of the page.
@@ -551,7 +561,6 @@ namespace Tsavorite.core
 
             // Adjust so the first record on the page includes the page header. We've already asserted fromAddress such that startOffset is either 0 or >= PageHeader.
             var logicalAddress = asyncResult.fromAddress;
-            var isFirstRecordOnPage = startOffset <= PageHeader.Size;
             var firstRecordOffset = startOffset;
             if (isFirstRecordOnPage)
             {
@@ -563,7 +572,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    startOffset = 0;    // Include the PageHeader
+                    startOffset = 0;    // Include the PageHeader in the page output
                     numBytesToWrite = (uint)(endOffset - startOffset);
                 }
             }
@@ -616,7 +625,7 @@ namespace Tsavorite.core
                         epoch.Resume();
 
                     // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
-                    var allocatorPageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
+                    var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
                     allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
                     srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
                 }
@@ -641,6 +650,7 @@ namespace Tsavorite.core
                 // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
                 // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
                 ref var pageHeader = ref *(PageHeader*)srcBuffer.GetValidPointer();
+
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
                 var endLogicalAddress = logicalAddress + (endPhysicalAddress - physicalAddress);
                 while (physicalAddress < endPhysicalAddress)
@@ -665,8 +675,8 @@ namespace Tsavorite.core
                                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                                 {
                                     var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                    if (isFirstRecordOnPage)
-                                        pageHeader.SetLowestObjectLogPosition(recordStartPosition);
+                                    Debug.Assert(asyncResult.flushRequestState != FlushRequestState.ReadOnly || !isFirstRecordOnPage || recordStartPosition.CurrentAddress == objectLogTail.CurrentAddress,
+                                        $"ObjectLogPosition mismatch on first record for ReadOnly flush: rec {recordStartPosition.CurrentAddress}, tail {objectLogTail.CurrentAddress}");
 
                                     OverflowByteArray keyOverflow = default, valueOverflow = default;
                                     IHeapObject valueObject = default;
@@ -731,8 +741,8 @@ namespace Tsavorite.core
                         }
                     } // endif record id Valid
 
-                    logicalAddress += logRecordSize;    // advance in main log
-                    physicalAddress += logRecordSize;   // advance in source buffer
+                    logicalAddress += logRecordSize + extraRecordOffset;    // advance in main log
+                    physicalAddress += logRecordSize + extraRecordOffset;   // advance in source buffer
                 }
 
             WritePage:

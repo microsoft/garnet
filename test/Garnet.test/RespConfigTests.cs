@@ -384,7 +384,6 @@ namespace Garnet.test
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         [Test]
         [TestCase("4m")]
-        [Explicit("Temporary")]
         public void ConfigSetMemorySizeRecoveryTest(string largerSize)
         {
             var option = "memory";

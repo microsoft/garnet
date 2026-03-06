@@ -336,7 +336,6 @@ namespace Garnet.test
         [TestCase(16, 16, 1)]
         [TestCase(5, 64, 1)]
         //[Repeat(3000)]
-        [Explicit("Temporary while I figure out why Invalid records are in the hash chain on pending ops")]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
@@ -392,7 +391,6 @@ namespace Garnet.test
         [TestCase("16k", "16k")]
         [TestCase("5k", "8k")]
         [TestCase("5k", "64k")]
-        [Explicit("Temporary")]
         public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
             bool disableObj = true;

@@ -1432,7 +1432,6 @@ namespace Garnet.test.cluster
 
         [Test, Order(26)]
         [Category("REPLICATION")]
-        [Explicit("TODO: fix Dispose() sequencing")]
         public async Task ClusterReplicationMultiRestartRecover()
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)

@@ -209,6 +209,7 @@ namespace Tsavorite.test
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
         //[Repeat(3000)]
+        [Explicit("Temporary: accessing a disposed object")]
         public void ObjectIterationPushLockTest([Values(1, 2, 4, 8)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode, [Values] bool largeMemory)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)

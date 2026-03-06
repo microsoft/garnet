@@ -37,6 +37,9 @@ namespace Tsavorite.core
 
         internal readonly int Length => Array.Length - StartOffset - EndOffset;
 
+        /// <inheritdoc/>
+        public override string ToString() => $"Len {Length}, IsEmpty {IsEmpty}, sOffset {StartOffset}, eOffset {EndOffset}, HeapMemSize {HeapMemorySize}, TotSize {TotalSize}";
+
         /// <summary>ReadOnlySpan of data between offsets</summary>
         internal readonly ReadOnlySpan<byte> ReadOnlySpan => Array.AsSpan(StartOffset, Length);
         /// <summary>ReadOnlySpan of data between offsets</summary>

@@ -936,7 +936,6 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        [Explicit("Dispose() sequencing issues result free pagePointers while operations are ongoing")]
         public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType, [Values] TestDeviceType deviceType)
         {
             string filename = Path.Join(MethodTestDir, "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log");
