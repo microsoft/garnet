@@ -104,7 +104,7 @@ namespace Tsavorite.test.recovery
             var prevValue = -1L;
             try
             {
-                await foreach (var (result, _, _, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+                await foreach (var (result, _, _, nextAddress) in iter.GetAsyncEnumerable(cancellationToken).ConfigureAwait(false))
                 {
                     var value = long.Parse(Encoding.UTF8.GetString(result));
                     ClassicAssert.AreEqual(prevValue + 1, value);

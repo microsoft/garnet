@@ -177,7 +177,7 @@ namespace Tsavorite.test
                     using var recoveredIterator = l.Scan(recoveredAddress, l.TailAddress);
 
                     int count = 0;
-                    await foreach (var item in recoveredIterator.GetAsyncEnumerable())
+                    await foreach (var item in recoveredIterator.GetAsyncEnumerable().ConfigureAwait(false))
                     {
                         if (count == 0) // resumed iterator will start at item2
                             ClassicAssert.True(input2.SequenceEqual(item.entry), $"Original: {input2[0]}, Recovered: {item.entry[0]}");
