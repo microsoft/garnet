@@ -205,7 +205,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
-            if (count < 1 || count > 4)
+            if (count is not 1 and not 3 and not 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
             }
@@ -222,20 +222,17 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
-                if (count > 2)
+                if (!parseState.TryGetLong(2, out _))
                 {
-                    if (!parseState.TryGetLong(2, out _))
-                    {
-                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                    }
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
 
-                    if (count > 3)
+                if (count > 3)
+                {
+                    var spanOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
+                    if (!spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) && !spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
                     {
-                        var spanOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
-                        if (!spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) && !spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
-                        {
-                            return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
-                        }
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
                 }
             }
@@ -323,12 +320,7 @@ namespace Garnet.server
                 }
             }
 
-            if (!BitmapManager.TryValidateBitPosOffsets(startOffset, endOffset, offsetType, hasStartOffset, hasEndOffset, out var isOutOfRange))
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-            }
-
-            if (isOutOfRange)
+            if (BitmapManager.TryValidateBitPosOffsets(startOffset, endOffset, offsetType, hasStartOffset, hasEndOffset))
             {
                 while (!RespWriteUtils.TryWriteInt64(-1, ref dcurr, dend))
                     SendAndReset();

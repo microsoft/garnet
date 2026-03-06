@@ -2152,6 +2152,17 @@ namespace Garnet.test
             ClassicAssert.AreEqual(8, count);
         }
 
+        [Test]
+        [Category("BITCOUNT")]
+        public void BitmapBitCountInvalidArityTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BITCOUNT", "mykey", "0"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'BITCOUNT' command", ex.Message);
+        }
+
         [Test, Order(34)]
         [Category("BITPOS")]
         public void BitmapBitPosFixedTests()

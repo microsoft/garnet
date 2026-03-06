@@ -86,8 +86,8 @@ namespace Garnet.server
                 if (bitLen == 0)
                     return 0;
 
-                startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, (int)bitLen) : startOffset;
-                endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, (int)bitLen) : endOffset;
+                startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, bitLen) : startOffset;
+                endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, bitLen) : endOffset;
 
                 if (startOffset >= bitLen)
                     return 0;

@@ -57,7 +57,7 @@ namespace Garnet.server
             var offset = args.offset;
             var bitCount = (byte)(args.typeInfo & 0x7F);
             if (!TryValidateBitfieldOffset(offset, bitCount, multiplyOffset: false, out _, out var endOffset))
-                throw new GarnetException("BIT offset is out of range");
+                throw new GarnetException("ERR value is not an integer or out of range.");
             return LengthInBytes(endOffset);
         }
 
@@ -316,7 +316,7 @@ namespace Garnet.server
         private static long GetBitfield(byte* bitmap, long bitmapLength, long offset, byte encoding, bool signed)
         {
             if (!TryValidateBitfieldOffset(offset, encoding, multiplyOffset: false, out offset, out var endOffset))
-                throw new GarnetException("BIT offset is out of range");
+                throw new GarnetException("ERR value is not an integer or out of range.");
 
             var byteIndexStart = Index(offset);
             var byteIndexEnd = Index(endOffset) + 1;
@@ -349,7 +349,7 @@ namespace Garnet.server
         private static (long, bool) SetBitfield(byte* bitmap, long bitmapLength, long offset, byte encoding, bool signed, long newValue, byte overflowType)
         {
             if (!TryValidateBitfieldOffset(offset, encoding, multiplyOffset: false, out offset, out var endOffset))
-                throw new GarnetException("BIT offset is out of range");
+                throw new GarnetException("ERR value is not an integer or out of range.");
 
             var byteIndexStart = Index(offset);
             var byteIndexEnd = Index(endOffset) + 1;
@@ -399,7 +399,7 @@ namespace Garnet.server
         private static (long, bool) IncrementBitfield(byte* value, long valLen, long offset, byte encoding, bool signed, long incrementByValue, byte overflowType)
         {
             if (!TryValidateBitfieldOffset(offset, encoding, multiplyOffset: false, out offset, out var endOffset))
-                throw new GarnetException("BIT offset is out of range");
+                throw new GarnetException("ERR value is not an integer or out of range.");
 
             var byteIndexStart = Index(offset);
             var byteIndexEnd = Index(endOffset) + 1;

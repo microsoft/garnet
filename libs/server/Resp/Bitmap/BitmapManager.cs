@@ -63,29 +63,20 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool TryValidateBitPosOffsets(long startOffset, long endOffset, byte offsetType, bool hasStartOffset, bool hasEndOffset, out bool isOutOfRange)
+        internal static bool TryValidateBitPosOffsets(long startOffset, long endOffset, byte offsetType, bool hasStartOffset, bool hasEndOffset)
         {
-            isOutOfRange = false;
-
             // BYTE mode uses byte index bounds; BIT mode uses bit index bounds.
             var maxOffset = offsetType == 0x1
                 ? MaxOffsetForBitmapLength
                 : MaxBitmapPayloadBytes - 1L;
 
             if (hasStartOffset && (startOffset < -maxOffset || startOffset > maxOffset))
-            {
-                isOutOfRange = true;
                 return true;
-            }
 
             if (hasEndOffset && (endOffset < -maxOffset || endOffset > maxOffset))
-            {
-                isOutOfRange = true;
                 return true;
-            }
 
-            // Validation itself succeeded; caller decides response based on isOutOfRange.
-            return true;
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -111,7 +102,7 @@ namespace Garnet.server
         private static int Index(long offset)
         {
             if (!IsValidBitOffset(offset))
-                throw new GarnetException("BIT offset is out of range");
+                throw new GarnetException("ERR value is not an integer or out of range.");
             return (int)(offset >> 3);
         }
 
@@ -119,7 +110,7 @@ namespace Garnet.server
         private static int LengthInBytes(long offset)
         {
             if (!TryValidateLengthInBytes(offset, out var lengthInBytes))
-                throw new GarnetException("BIT offset is out of range");
+                throw new GarnetException("ERR value is not an integer or out of range.");
             return lengthInBytes;
         }
 
@@ -203,8 +194,8 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long ProcessNegativeOffset(long offset, int valLen)
-            => (offset % valLen) + valLen;
+        private static long ProcessNegativeOffset(long offset, long valLen)
+            => valLen <= 0 ? 0 : (offset % valLen) + valLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static byte reverse(byte n)
