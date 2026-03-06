@@ -1920,7 +1920,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
-            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);            
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
 
             var keyCount = 10;
             var keyPrefix = "myKey";
@@ -1928,8 +1928,8 @@ namespace Garnet.test.cluster
             var keys = context.GenerateKeysWithPrefix(keyPrefix, keyCount, suffixLength: 12);
             var values = context.GenerateKeysWithPrefix(valuePrefix, keyCount, suffixLength: 8);
             var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(keyPrefix));
-            var migrateTargetInfo = new string[]{slot.ToString(), "<", sourceNodeId};
-            var migrateSourceInfo = new string[]{slot.ToString(), ">", targetNodeId};
+            var migrateTargetInfo = new string[] { slot.ToString(), "<", sourceNodeId };
+            var migrateSourceInfo = new string[] { slot.ToString(), ">", targetNodeId };
 
             for (var i = 0; i < keyCount; i++)
             {
@@ -1950,7 +1950,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("4. Set slot {_slot} to MIGRATING state on node {port}", slot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
             migrateInfo = context.clusterTestUtils.SlotState(sourceNodeIndex, slot, logger: context.logger);
             ClassicAssert.AreEqual(migrateSourceInfo, migrateInfo, $"{migrateTargetInfo} {migrateInfo}");
-            
+
             // Ensure we can read
             for (var i = 0; i < keyCount; i++)
             {
