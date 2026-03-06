@@ -2245,5 +2245,84 @@ namespace Garnet.test.cluster
                     $"Expected hostname resolution error or unknown endpoint error, got: {ex.Message}");
             }
         }
+
+        [Test, Order(26)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSlotWithTombstones()
+        {
+            var shards = defaultShards;
+            context.CreateInstances(shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keyCount = 100;
+            var keys = context.GenerateKeysWithPrefix("abc", keyCount, suffixLength: 16).ToArray();
+            var slot = ClusterTestUtils.HashSlot(keys[0]);
+            foreach (var key in keys)
+                ClassicAssert.AreEqual(slot, ClusterTestUtils.HashSlot(key));
+
+            var sourceNodeIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
+            var targetNodeIndex = (sourceNodeIndex + 1) % shards;
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
+            var targetEndPoint = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+
+            foreach (var key in keys)
+            {
+                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, key, key, out var _, out var _, logger: context.logger);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
+            }
+
+            var deletedCount = keys.Length / 2;
+            var db = context.clusterTestUtils.GetMultiplexer().GetDatabase(0);
+
+            var keysSpan = keys.AsSpan();
+            var deletedKeys = keysSpan.Slice(0, deletedCount);
+            var liveKeys = keysSpan.Slice(deletedCount);
+
+            foreach (var key in deletedKeys)
+                _ = db.KeyDelete(key);
+
+            foreach (var key in deletedKeys)
+                ClassicAssert.IsTrue(db.StringGet(key).IsNull, "Deleted key should be absent before migration");
+
+            ClassicAssert.Greater(deletedKeys.Length, 0, "Expected at least one deleted key to create tombstones");
+            ClassicAssert.Greater(liveKeys.Length, 0, "Expected at least one live key to remain for migration");
+
+            context.clusterTestUtils.MigrateSlots(sourceEndPoint, targetEndPoint, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
+
+            foreach (var probeLiveKey in liveKeys)
+            {
+                var value = context.clusterTestUtils.GetKey(targetEndPoint, probeLiveKey, out var migratedSlot, out var migratedEndPoint, out var responseState);
+                while (responseState != ResponseState.OK || value == null)
+                {
+                    _ = Thread.Yield();
+                    value = context.clusterTestUtils.GetKey(targetEndPoint, probeLiveKey, out migratedSlot, out migratedEndPoint, out responseState);
+                }
+
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(slot, migratedSlot);
+                ClassicAssert.AreEqual(targetEndPoint.Port, migratedEndPoint.Port);
+                ClassicAssert.IsNotNull(value, "Existing key should be migrated with a non-null value");
+            }
+
+            var deletedSampleCount = Math.Min(32, deletedKeys.Length);
+            for (var i = 0; i < deletedSampleCount; i++)
+            {
+                var key = deletedKeys[i];
+                var value = context.clusterTestUtils.GetKey(targetEndPoint, key, out var migratedSlot, out var migratedEndPoint, out var responseState);
+                while (responseState != ResponseState.OK)
+                {
+                    _ = Thread.Yield();
+                    value = context.clusterTestUtils.GetKey(targetEndPoint, key, out migratedSlot, out migratedEndPoint, out responseState);
+                }
+
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(slot, migratedSlot);
+                ClassicAssert.AreEqual(targetEndPoint.Port, migratedEndPoint.Port);
+                ClassicAssert.IsNull(value, "Deleted key should not be transmitted during migration");
+            }
+        }
     }
 }

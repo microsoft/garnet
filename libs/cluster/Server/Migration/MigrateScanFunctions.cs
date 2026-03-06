@@ -33,7 +33,8 @@ namespace Garnet.cluster
                 mss.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                if (ClusterSession.Expired(ref value))
+                // NOTE: Value might be null (because scan executes includingTombstones) so skip expiration validation until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendMainStoreKeyValuePair).
+                if (!recordMetadata.RecordInfo.Tombstone && ClusterSession.Expired(ref value))
                     return true;
 
                 // TODO: Some other way to detect namespaces
@@ -99,7 +100,8 @@ namespace Garnet.cluster
                 mss.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                if (ClusterSession.Expired(ref value))
+                // NOTE: Value might be null (because scan executes includingTombstones) so skip expiration validation until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendObjectStoreKeyValuePair).
+                if (!recordMetadata.RecordInfo.Tombstone && ClusterSession.Expired(ref value))
                     return true;
 
                 var s = HashSlotUtils.HashSlot(key);
