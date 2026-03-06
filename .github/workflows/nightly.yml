@@ -268,8 +268,9 @@ jobs:
           git rm -rf .
 
           # The generated allure-report/history is untracked and survives git rm.
-          # Move it into the expected path for the allure_data_history branch.
-          Move-Item -Path "${{ github.workspace }}/test/Allure/allure-report/history" -Destination "${{ github.workspace }}/test/Allure/history" -Force
+          # Copy (not move) so the subsequent artifact upload and website publish
+          # steps still have the history directory in allure-report/.
+          Copy-Item -Path "${{ github.workspace }}/test/Allure/allure-report/history" -Destination "${{ github.workspace }}/test/Allure/history" -Recurse -Force
 
           git add test/Allure/history
           git commit -m "Update Allure history [CI]"

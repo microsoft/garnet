@@ -39,4 +39,4 @@ jobs:
           git checkout --orphan squashed-temp
           git add -A
           git commit -m "Squash ${{ matrix.branch }} to single commit [CI]"
-          git push origin squashed-temp:${{ matrix.branch }} --force
+          git push origin squashed-temp:${{ matrix.branch }} --force-with-lease
