@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.test;
@@ -14,9 +16,21 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.readaddress
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
-    public struct KeyStruct(long first)
+    public struct KeyStruct(long first) : IKey
     {
         public long key = first;
+
+        /// Not always pinned, so don't assume it is
+        public readonly bool IsPinned => false;
+
+        [UnscopedRef]
+        public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(new(in key));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
 
         public override readonly string ToString() => key.ToString();
     }
@@ -123,11 +137,11 @@ namespace Tsavorite.test.readaddress
             public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ValueStruct input)
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
             /// <inheritdoc/>
-            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref ValueStruct input)
-                => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref ValueStruct input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ValueStruct input)
-                => new() { KeySize = key.Length, ValueSize = value.Length, ValueIsObject = false };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref ValueStruct input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
 
             public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -192,7 +206,7 @@ namespace Tsavorite.test.readaddress
             internal async Task Populate(bool useRMW, bool preserveCopyUpdaterSource = false)
             {
                 var functions = new Functions(preserveCopyUpdaterSource);
-                using var session = store.NewSession<ValueStruct, Output, Empty, Functions>(functions);
+                using var session = store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(functions);
                 var bContext = session.BasicContext;
 
                 var prevLap = 0;
@@ -211,8 +225,8 @@ namespace Tsavorite.test.readaddress
                     var value = new ValueStruct(key.key + LapOffset(lap));
 
                     var status = useRMW
-                        ? bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value)
-                        : bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                        ? bContext.RMW(key, ref value)
+                        : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref value));
 
                     if (status.IsPending)
                         await bContext.CompletePendingAsync();
@@ -222,7 +236,7 @@ namespace Tsavorite.test.readaddress
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
                     if (lap == DeleteLap)
-                        _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+                        _ = bContext.Delete(key);
                 }
 
                 await Flush();
@@ -278,7 +292,7 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -295,8 +309,8 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var status = readAtAddress == 0
-                        ? bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out _)
-                        : bContext.ReadAtAddress(readAtAddress, SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out _);
+                        ? bContext.Read(key, ref input, ref output, ref readOptions, out _)
+                        : bContext.ReadAtAddress(readAtAddress, key, ref input, ref output, ref readOptions, out _);
 
                     if (status.IsPending)
                     {
@@ -351,7 +365,7 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore);
-                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, SpanByte.FromPinnedVariable(ref key)));
+                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, key));
                 ClassicAssert.AreEqual(MaxLap, scanFunctions.numRecords);
             }
         }
@@ -370,7 +384,7 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore) { stopAt = 4 };
-                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, SpanByte.FromPinnedVariable(ref key)));
+                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, key));
                 ClassicAssert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
             }
         }
@@ -389,7 +403,7 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -405,7 +419,7 @@ namespace Tsavorite.test.readaddress
                 for (int lap = MaxLap - 1; /* tested in loop */; --lap)
                 {
                     var status = readAtAddress == 0
-                        ? bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out recordMetadata)
+                        ? bContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata)
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                     {
@@ -435,7 +449,7 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW);
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -451,7 +465,7 @@ namespace Tsavorite.test.readaddress
                 {
                     Output output = new();
                     Status status = readAtAddress == 0
-                        ? bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out recordMetadata)
+                        ? bContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata)
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult(out recordMetadata);
@@ -478,7 +492,7 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW);
-            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.

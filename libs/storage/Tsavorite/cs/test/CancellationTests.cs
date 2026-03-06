@@ -37,7 +37,7 @@ namespace Tsavorite.test.Cancellation
             internal CancelLocation cancelLocation = CancelLocation.None;
             internal CancelLocation lastFunc = CancelLocation.None;
 
-            public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool NeedInitialUpdate<TKey>(TKey key, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.NeedInitialUpdate;
                 if (cancelLocation == CancelLocation.NeedInitialUpdate)
@@ -123,21 +123,21 @@ namespace Tsavorite.test.Cancellation
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input)
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(int) };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref int input)
-                => new() { KeySize = key.Length, ValueSize = sizeof(int) };
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int) };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref int input)
-                => new() { KeySize = key.Length, ValueSize = value.Length };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref int input)
-                => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 
         IDevice log;
         CancellationFunctions functions;
         TsavoriteKV<IntStoreFunctions, IntAllocator> store;
-        ClientSession<int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
-        BasicContext<int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
+        ClientSession<TestSpanByteKey, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
+        BasicContext<TestSpanByteKey, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
 
         const int NumRecs = 100;
 
@@ -158,7 +158,7 @@ namespace Tsavorite.test.Cancellation
             );
 
             functions = new CancellationFunctions();
-            session = store.NewSession<int, int, Empty, CancellationFunctions>(functions);
+            session = store.NewSession<TestSpanByteKey, int, int, Empty, CancellationFunctions>(functions);
             bContext = session.BasicContext;
         }
 
@@ -180,7 +180,7 @@ namespace Tsavorite.test.Cancellation
             for (int keyNum = 0; keyNum < NumRecs; keyNum++)
             {
                 var valueNum = keyNum * NumRecs * 10;
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum));
             }
         }
 
@@ -192,7 +192,7 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs, valueNum = keyNum * NumRecs * 10;
-            var key = SpanByte.FromPinnedVariable(ref keyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
 
             functions.cancelLocation = CancelLocation.NeedInitialUpdate;
             var status = bContext.RMW(key, ref valueNum);
@@ -217,7 +217,7 @@ namespace Tsavorite.test.Cancellation
 
             void do_it()
             {
-                var key = SpanByte.FromPinnedVariable(ref keyNum);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
                 for (int lap = 0; lap < 2; ++lap)
                 {
                     functions.cancelLocation = CancelLocation.NeedCopyUpdate;
@@ -248,7 +248,7 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
-            var key = SpanByte.FromPinnedVariable(ref keyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
 
             // Note: ExpirationTests tests the combination of CancelOperation and DeleteRecord
             functions.cancelLocation = CancelLocation.InPlaceUpdater;
@@ -265,7 +265,7 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs + 1, valueNum = keyNum * NumRecs * 10;
-            var key = SpanByte.FromPinnedVariable(ref keyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
             var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             functions.cancelLocation = CancelLocation.InitialWriter;
@@ -282,7 +282,7 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
-            var key = SpanByte.FromPinnedVariable(ref keyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
             var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             functions.cancelLocation = CancelLocation.InPlaceWriter;

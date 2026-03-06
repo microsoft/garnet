@@ -359,7 +359,7 @@ namespace Garnet
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
-                , Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(),
+                , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 

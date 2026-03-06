@@ -67,8 +67,8 @@ namespace Tsavorite.core
                 bool needIO;
                 do
                 {
-                    if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                            sessionFunctions, srcLogRecord.Key, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
+                    if (TryFindRecordInMainLogForConditionalOperation<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                            sessionFunctions, srcLogRecord, ref stackCtx2, stackCtx.recSrc.LogicalAddress, minAddress, maxAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
                 while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
@@ -81,7 +81,7 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(ref pendingContext, in srcLogRecord, ref stackCtx2, minAddress, maxAddress);
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx2, minAddress, maxAddress);
             }
         }
 
@@ -92,32 +92,34 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
-            PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord));
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             OperationStatus status;
             bool needIO;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord, ref stackCtx, currentAddress, minAddress, maxAddress, out status, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(ref pendingContext, in srcLogRecord, ref stackCtx, minAddress, maxAddress);
+                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx, minAddress, maxAddress);
             else
                 status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in srcLogRecord, ref stackCtx, maxAddress: maxAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSourceLogRecord>(
+        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                                        TSessionFunctionsWrapper sessionFunctions,
                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, in TSourceLogRecord srcLogRecord,
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, OperationType opType = OperationType.CONDITIONAL_INSERT)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            pendingContext.CopyKey(srcLogRecord.Key, hlogBase.bufferPool);
+            pendingContext.CopyKey(srcLogRecord, hlogBase.bufferPool, sessionFunctions);
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
             pendingContext.maxAddress = maxAddress;

@@ -37,11 +37,25 @@ namespace Tsavorite.core
         #region Key Comparer
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetKeyHashCode64(ReadOnlySpan<byte> key) => keyComparer.GetHashCode64(key);
+        public readonly long GetKeyHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => keyComparer.GetHashCode64(key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => keyComparer.Equals(k1, k2);
+        public readonly bool KeysEqual<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => keyComparer.Equals(k1, k2);
         #endregion Key Comparer
 
         #region Value Serializer

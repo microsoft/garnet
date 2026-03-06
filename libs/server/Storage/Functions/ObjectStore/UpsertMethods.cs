@@ -148,19 +148,27 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
-                WriteLogUpsert(key, ref input, valueSpan, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+                WriteLogUpsert(key.KeyBytes, ref input, valueSpan, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
         }
 
         /// <inheritdoc />
-        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
-                WriteLogUpsert(key, ref input, (IGarnetObject)valueObject, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+                WriteLogUpsert(key.KeyBytes, ref input, (IGarnetObject)valueObject, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
         }
     }
 }

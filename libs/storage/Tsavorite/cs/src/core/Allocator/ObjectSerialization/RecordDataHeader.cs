@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -55,7 +56,7 @@ namespace Tsavorite.core
     ///     </item>
     /// </list>
     ///</summary>
-    public unsafe struct RecordDataHeader
+    public unsafe struct RecordDataHeader : IKey
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         // When assigning these bits, use the highest # in kReservedBitMask#
@@ -181,7 +182,63 @@ namespace Tsavorite.core
             set => *(HeaderPtr + RecordTypeOffsetInHeader) = value;
         }
 
-        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long valueAddress)
+        #region IKey
+
+        /// <inheritdoc/>
+        public readonly bool IsPinned => true;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> KeyBytes
+        {
+            get
+            {
+                var ptr = HeaderPtr - RecordInfo.Size;
+
+                var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
+                var offsetToKeyStart = GetOffsetToKeyStart(headerLength);
+
+                var keyStartPtr = ptr + offsetToKeyStart;
+                var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
+
+                return new ReadOnlySpan<byte>(keyStartPtr, keyLength);
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly bool HasNamespace
+        {
+            get
+            {
+                // True if non-0 OR ExtendedNamespaceIndicatorBit is et
+                var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
+                return nameSpace != 0;
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes
+        {
+            get
+            {
+                Debug.Assert(HasNamespace, "Should call if !HasNamespace");
+
+                var nameSpacePtr = (HeaderPtr + NamespaceOffsetInHeader);
+
+                if (((*nameSpacePtr) & ExtendedNamespaceIndicatorBit) == 0)
+                {
+                    // Single byte namespace
+                    return new ReadOnlySpan<byte>(nameSpacePtr, 1);
+                }
+                else
+                {
+                    throw new TsavoriteException($"Extended namespaces not yet implemented");
+                }
+            }
+        }
+
+        #endregion
+
+        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long namespaceAddress, out long valueAddress)
         {
             // Format of indicator byte is high->low: <2 bits reserved><2 bits encoded filler length><2 bits key length byte count - 1><2 bits record length byte count - 1>
             var keyLength = sizeInfo.InlineKeySize;
@@ -206,6 +263,7 @@ namespace Tsavorite.core
             // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
             *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (sizeInfo.FieldInfo.ExtendedNamespaceSize & NamespaceIndicatorMask)) : 0);
+            namespaceAddress = (long)HeaderPtr + NamespaceOffsetInHeader;
             *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
@@ -233,6 +291,7 @@ namespace Tsavorite.core
 
             keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart(headerLength);
             valueAddress = keyAddress + keyLength;
+
             return headerLength;
         }
 

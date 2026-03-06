@@ -25,13 +25,26 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         internal int maxSleepMs;
         readonly Random rng = new(101);
 
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
+        public bool Equals<TKeyFirst, TKeySecond>(TKeyFirst k1, TKeySecond k2)
+            where TKeyFirst : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TKeySecond : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
-        public long GetHashCode64(ReadOnlySpan<byte> k)
+        public long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             if (maxSleepMs > 0)
                 Thread.Sleep(rng.Next(maxSleepMs));
-            return Utility.GetHashCode(k.AsRef<long>());
+            return Utility.GetHashCode(k.KeyBytes.AsRef<long>());
         }
     }
 }
@@ -156,8 +169,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         TransactionalUnsafeComparer comparer;
 
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
-        private ClientSession<long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
-        private BasicContext<long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
+        private ClientSession<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
+        private BasicContext<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -206,7 +219,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            session = store.NewSession<long, long, Empty, TransactionalUnsafeFunctions>(functions);
+            session = store.NewSession<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions>(functions);
             bContext = session.BasicContext;
         }
 
@@ -233,7 +246,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             for (long key = 0; key < NumRecords; key++)
             {
                 var value = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value)).IsPending);
             }
         }
 
@@ -252,14 +265,14 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 store.Log.FlushAndEvict(wait: true);
         }
 
-        static void ClearCountsOnError(ClientSession<long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> luContext)
+        static void ClearCountsOnError(ClientSession<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        static void ClearCountsOnError<TFunctions>(ClientSession<long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext)
+        static void ClearCountsOnError<TFunctions>(ClientSession<TestSpanByteKey, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext)
             where TFunctions : ISessionFunctions<long, long, Empty>
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
@@ -371,12 +384,12 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 {
                     long rand = rng.Next(RandRange);
                     keyVec[0] = new(SpanByte.FromPinnedVariable(ref rand), LockType.Exclusive, luContext);
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    luContext.Lock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
-                    var value = keyVec[0].Key.ReadOnlySpan.AsRef<long>() + NumRecords;
-                    _ = luContext.Upsert(keyVec[0].Key.ReadOnlySpan, SpanByte.FromPinnedVariable(ref value), Empty.Default);
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    var value = keyVec[0].Key.KeyBytes.AsRef<long>() + NumRecords;
+                    _ = luContext.Upsert(keyVec[0].Key, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
 
@@ -389,13 +402,13 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 {
                     long rand = rng.Next(RandRange);
                     keyVec[0] = new(SpanByte.FromPinnedVariable(ref rand), LockType.Shared, luContext);
-                    var value = keyVec[0].Key.ReadOnlySpan.AsRef<long>() + NumRecords;
+                    var value = keyVec[0].Key.KeyBytes.AsRef<long>() + NumRecords;
                     long output = 0;
 
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    luContext.Lock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 1);
-                    Status status = luContext.Read(keyVec[0].Key.ReadOnlySpan, ref input, ref output, Empty.Default);
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    Status status = luContext.Read(keyVec[0].Key, ref input, ref output, Empty.Default);
+                    luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                     ClassicAssert.IsFalse(status.IsPending);
                 }
@@ -432,8 +445,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                                              return new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref lockLongs[ii]), LockType.Shared, luContext);
                                          }).ToArray();
 
-                luContext.SortKeyHashes<FixedLengthTransactionalKeyStruct>(lockKeys);
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(lockKeys);
+                luContext.SortKeyHashes(lockKeys);
+                luContext.Lock(lockKeys);
 
                 var expectedS = 0;
                 foreach (var idx in EnumActionKeyIndices(lockKeys, LockOperationType.Lock))
@@ -441,7 +454,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     ++expectedS;
                     long output = 0;
                     blt.IncrementS(ref lockKeys[idx]);
-                    Status foundStatus = luContext.Read(lockKeys[idx].Key.ReadOnlySpan, ref input, ref output, Empty.Default);
+                    Status foundStatus = luContext.Read(lockKeys[idx].Key, ref input, ref output, Empty.Default);
                     ClassicAssert.IsTrue(foundStatus.IsPending);
                 }
 
@@ -473,7 +486,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 while (outputs.Next())
                 {
                     count++;
-                    ClassicAssert.AreEqual(outputs.Current.Key.AsRef<long>() + NumRecords, outputs.Current.Output);
+                    ClassicAssert.AreEqual(outputs.Current.Key.KeyBytes.AsRef<long>() + NumRecords, outputs.Current.Output);
                 }
                 outputs.Dispose();
                 ClassicAssert.AreEqual(expectedS, count);
@@ -513,17 +526,17 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref readKey51), LockType.Shared, luContext),      // Source, shared
                 new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref resultKey), LockType.Exclusive, luContext),   // Destination, exclusive
             };
-            luContext.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
+            luContext.SortKeyHashes(keys);
 
             try
             {
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(keys);
+                luContext.Lock(keys);
 
                 // Verify locks. Note that while we do not increment lock counts for multiple keys (each bucket gets a single lock per thread,
                 // shared or exclusive), each key mapping to that bucket will report 'locked'.
                 foreach (var key in keys)
                 {
-                    if (key.Key.ReadOnlySpan.AsRef<long>() == resultKey)
+                    if (key.Key.KeyBytes.AsRef<long>() == resultKey)
                         AssertIsLocked(key, xlock: true, slock: false);
                     else
                         AssertIsLocked(key, xlock: false, slock: true);
@@ -537,7 +550,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 // Re-get source values, to verify (e.g. they may be in readcache now).
                 // We just locked this above, but for FlushMode.OnDisk it will be in the LockTable and will still be PENDING.
                 long output = -1;
-                status = luContext.Read(SpanByte.FromPinnedVariable(ref readKey24), ref output);
+                status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref readKey24)), ref output);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     if (status.IsPending)
@@ -555,7 +568,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
-                status = luContext.Read(SpanByte.FromPinnedVariable(ref readKey51), ref output);
+                status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref readKey51)), ref output);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     if (status.IsPending)
@@ -577,8 +590,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 long dummyInOut = 0;
                 status = useRMW
-                    ? luContext.RMW(SpanByte.FromPinnedVariable(ref resultKey), ref expectedResult, ref dummyInOut)
-                    : luContext.Upsert(SpanByte.FromPinnedVariable(ref resultKey), ref dummyInOut, SpanByte.FromPinnedVariable(ref expectedResult), ref dummyInOut);
+                    ? luContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref expectedResult, ref dummyInOut)
+                    : luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref dummyInOut, SpanByte.FromPinnedVariable(ref expectedResult), ref dummyInOut);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     if (status.IsPending)
@@ -597,7 +610,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 }
 
                 // Reread the destination to verify
-                status = luContext.Read(SpanByte.FromPinnedVariable(ref resultKey), ref resultValue);
+                status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 ClassicAssert.AreEqual(expectedResult, resultValue);
 
@@ -619,7 +632,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             }
 
             // Verify reading the destination from the BasicContext.
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref resultKey), ref resultValue);
+            status = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
             ClassicAssert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
@@ -653,19 +666,19 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref resultKey), LockType.Exclusive, luContext),   // Destination, exclusive
             };
 
-            luContext.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
+            luContext.SortKeyHashes(keys);
 
             var buckets = keys.Select(key => store.LockTable.GetBucketIndex(key.KeyHash)).ToArray();
 
             try
             {
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(keys);
+                luContext.Lock(keys);
 
                 // Verify locks. Note that while we do not increment lock counts for multiple keys (each bucket gets a single lock per thread,
                 // shared or exclusive), each key mapping to that bucket will report 'locked'.
                 foreach (var key in keys)
                 {
-                    if (key.Key.ReadOnlySpan.AsRef<long>() == resultKey)
+                    if (key.Key.KeyBytes.AsRef<long>() == resultKey)
                         AssertIsLocked(key, xlock: true, slock: false);
                     else
                         AssertIsLocked(key, xlock: false, slock: true);
@@ -677,7 +690,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 long read24Output = 0, read51Output = 0;
-                status = luContext.Read(SpanByte.FromPinnedVariable(ref readKey24), ref read24Output);
+                status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref readKey24)), ref read24Output);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     ClassicAssert.IsTrue(status.IsPending, status.ToString());
@@ -690,7 +703,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 ClassicAssert.AreEqual(readKey24 * ValueMult, read24Output);
 
                 // We just locked this above, but for FlushMode.OnDisk it will still be PENDING.
-                status = luContext.Read(SpanByte.FromPinnedVariable(ref readKey51), ref read51Output);
+                status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref readKey51)), ref read51Output);
                 if (flushMode == FlushMode.OnDisk)
                 {
                     ClassicAssert.IsTrue(status.IsPending, status.ToString());
@@ -707,7 +720,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 if (!initialDestWillBeLockTable)
                 {
                     long initialResultValue = 0;
-                    status = luContext.Read(SpanByte.FromPinnedVariable(ref resultKey), ref initialResultValue);
+                    status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref initialResultValue);
                     if (flushMode == FlushMode.OnDisk)
                     {
                         ClassicAssert.IsTrue(status.IsPending, status.ToString());
@@ -724,11 +737,11 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 resultValue = (read24Output + read51Output) * valueMult2;
                 status = useRMW
-                    ? luContext.RMW(SpanByte.FromPinnedVariable(ref resultKey), ref resultValue) // value is 'input' for RMW
-                    : luContext.Upsert(SpanByte.FromPinnedVariable(ref resultKey), SpanByte.FromPinnedVariable(ref resultValue));
+                    ? luContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue) // value is 'input' for RMW
+                    : luContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), SpanByte.FromPinnedVariable(ref resultValue));
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
-                status = luContext.Read(SpanByte.FromPinnedVariable(ref resultKey), ref resultValue);
+                status = luContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref resultValue);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 ClassicAssert.AreEqual(expectedResult, resultValue);
 
@@ -751,7 +764,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
             // Verify from the full Basic Context
             var value = 0L;
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref resultKey), ref value);
+            status = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKey)), ref value);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
             ClassicAssert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
@@ -773,19 +786,19 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
             // SetUp also reads this to determine whether to supply ReadCache settings. If ReadCache is specified it wins over CopyToTail.
             long resultKeyVal = resultLockTarget == ResultLockTarget.LockTable ? NumRecords + 1 : 75, output = 0, resultValue = -1;
-            Span<byte> resultKey = SpanByte.FromPinnedVariable(ref resultKeyVal);
+            var resultKey = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref resultKeyVal));
             Status status;
 
             var luContext = session.TransactionalUnsafeContext;
             luContext.BeginUnsafe();
             luContext.BeginTransaction();
 
-            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(resultKey, LockType.Exclusive, luContext) };
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(resultKey.KeyBytes, LockType.Exclusive, luContext) };
 
             try
             {
                 // Lock destination value.
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                luContext.Lock(keyVec);
                 AssertIsLocked(ref keyVec[0], xlock: true, slock: false);
 
                 blt.Increment(ref keyVec[0]);
@@ -800,7 +813,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 status = luContext.Read(resultKey, ref output);
                 ClassicAssert.IsFalse(status.Found, status.ToString());
 
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+                luContext.Unlock(keyVec);
                 blt.Decrement(ref keyVec[0]);
 
                 AssertNoLocks(ref blt);
@@ -847,7 +860,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
                 Random rng = new(tid + 101);
 
-                using var localSession = store.NewSession<long, long, Empty, TransactionalUnsafeFunctions>(new TransactionalUnsafeFunctions());
+                using var localSession = store.NewSession<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions>(new TransactionalUnsafeFunctions());
                 var luContext = localSession.TransactionalUnsafeContext;
                 luContext.BeginUnsafe();
                 luContext.BeginTransaction();
@@ -866,8 +879,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 {
                     var keys = enumKeysToLock().ToArray();
                     FixedLengthTransactionalKeyStruct.Sort(keys, luContext);
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(keys);
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keys);
+                    luContext.Lock(keys);
+                    luContext.Unlock(keys);
                 }
 
                 luContext.EndTransaction();
@@ -878,7 +891,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             {
                 Random rng = new(tid + 101);
 
-                using var localSession = store.NewSession<long, long, Empty, TransactionalUnsafeFunctions>(new TransactionalUnsafeFunctions());
+                using var localSession = store.NewSession<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions>(new TransactionalUnsafeFunctions());
                 var basicContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -888,9 +901,9 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                         long key = key0, value = key * ValueMult;
                         _ = rng.Next(100) switch
                         {
-                            int rand when rand < 33 => basicContext.Read(SpanByte.FromPinnedVariable(ref key)).status,
-                            int rand when rand < 66 => basicContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value)),
-                            _ => basicContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value)
+                            int rand when rand < 33 => basicContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key))).status,
+                            int rand when rand < 66 => basicContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value)),
+                            _ => basicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value)
                         };
                     }
                 }
@@ -912,11 +925,11 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             AssertTotalLockCounts(0, 0);
         }
 
-        FixedLengthTransactionalKeyStruct AddLockTableEntry<TFunctions>(TransactionalUnsafeContext<long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, ReadOnlySpan<byte> key)
+        FixedLengthTransactionalKeyStruct AddLockTableEntry<TFunctions>(TransactionalUnsafeContext<TestSpanByteKey, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, TestSpanByteKey key)
             where TFunctions : ISessionFunctions<long, long, Empty>
         {
-            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(key, LockType.Exclusive, luContext) };
-            luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(key.KeyBytes, LockType.Exclusive, luContext) };
+            luContext.Lock(keyVec);
 
             HashEntryInfo hei = new(comparer.GetHashCode64(key));
             PopulateHei(ref hei);
@@ -928,7 +941,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             return keyVec[0];
         }
 
-        void VerifyAndUnlockSplicedInKey<TFunctions>(TransactionalUnsafeContext<long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, ReadOnlySpan<byte> expectedKey)
+        void VerifyAndUnlockSplicedInKey<TFunctions>(TransactionalUnsafeContext<TestSpanByteKey, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, TestSpanByteKey expectedKey)
             where TFunctions : ISessionFunctions<long, long, Empty>
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
@@ -936,8 +949,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             var storedKey = LogRecord.GetInlineKey(pa);
             ClassicAssert.AreEqual(expectedKey.AsRef<long>(), storedKey.AsRef<long>());
 
-            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(expectedKey, LockType.Exclusive, luContext) };
-            luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(expectedKey.KeyBytes, LockType.Exclusive, luContext) };
+            luContext.Unlock(keyVec);
         }
 
         [Test]
@@ -948,10 +961,10 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             Populate();
             store.Log.FlushAndEvict(wait: true);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
             long input = 0, output = 0, keyVal = 24;
-            var key = SpanByte.FromPinnedVariable(ref keyVal);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             BucketLockTracker blt = new();
 
@@ -990,7 +1003,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
             BucketLockTracker blt = new();
             long key = 24;
@@ -1000,14 +1013,14 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             try
             {
                 var keyVec = new[] { new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref key), LockType.Exclusive, luContext) };
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                luContext.Lock(keyVec);
                 blt.Increment(ref keyVec[0]);
                 AssertTotalLockCounts(ref blt);
 
                 store.Log.FlushAndEvict(wait: true);
                 AssertTotalLockCounts(1, 0);
 
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+                luContext.Unlock(keyVec);
                 blt.Decrement(ref keyVec[0]);
 
                 blt.AssertNoLocks();
@@ -1042,7 +1055,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1052,17 +1065,17 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             try
             {
                 long keyNum = 0;
-                var key = SpanByte.FromPinnedVariable(ref keyNum);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
                 if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseExistingKey));
                 else
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseNewKey));
 
                 blt.Increment(ref keyStruct);
-                var status = luContext.Upsert(key, key);
+                var status = luContext.Upsert(key, key.KeyBytes);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key.ReadOnlySpan);
+                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1085,7 +1098,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1095,25 +1108,25 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             try
             {
                 long keyVal = 0;
-                var key = SpanByte.FromPinnedVariable(ref keyVal);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
                 if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                 {
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseExistingKey));
-                    var input = keyStruct.Key.ReadOnlySpan.AsRef<long>() * ValueMult;
-                    var status = luContext.RMW(keyStruct.Key.ReadOnlySpan, ref input);
+                    var input = keyStruct.Key.KeyBytes.AsRef<long>() * ValueMult;
+                    var status = luContext.RMW(keyStruct.Key, ref input);
                     ClassicAssert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
                     _ = luContext.CompletePending(wait: true);
                 }
                 else
                 {
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseNewKey));
-                    var input = keyStruct.Key.ReadOnlySpan.AsRef<long>() * ValueMult;
-                    var status = luContext.RMW(keyStruct.Key.ReadOnlySpan, ref input);
+                    var input = keyStruct.Key.KeyBytes.AsRef<long>() * ValueMult;
+                    var status = luContext.RMW(keyStruct.Key, ref input);
                     ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
                 blt.Increment(ref keyStruct);
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key.ReadOnlySpan);
+                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1136,7 +1149,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1146,12 +1159,12 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             try
             {
                 long keyVal = 0;
-                var key = SpanByte.FromPinnedVariable(ref keyVal);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
                 if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                 {
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseExistingKey));
                     blt.Increment(ref keyStruct);
-                    var status = luContext.Delete(keyStruct.Key.ReadOnlySpan);
+                    var status = luContext.Delete(keyStruct.Key);
 
                     // Delete does not search outside mutable region so the key will not be found
                     ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
@@ -1160,11 +1173,11 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 {
                     keyStruct = AddLockTableEntry(luContext, key.Set((long)UseNewKey));
                     blt.Increment(ref keyStruct);
-                    var status = luContext.Delete(keyStruct.Key.ReadOnlySpan);
+                    var status = luContext.Delete(keyStruct.Key);
                     ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key.ReadOnlySpan);
+                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1186,7 +1199,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         public void LockAndUnlockInLockTableOnlyTest()
         {
             // For this, just don't load anything, and it will happen in lock table.
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
             BucketLockTracker blt = new();
 
@@ -1202,8 +1215,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             luContext.BeginTransaction();
             try
             {
-                store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keyVec);
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                store.LockTable.SortKeyHashes(keyVec);
+                luContext.Lock(keyVec);
                 foreach (var idx in EnumActionKeyIndices(keyVec, LockOperationType.Lock))
                     blt.Increment(ref keyVec[idx]);
                 AssertTotalLockCounts(ref blt);
@@ -1219,7 +1232,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     if (key.LockType == LockType.Shared)
                         ClassicAssert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
 
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec.AsSpan().Slice(idx, 1));
+                    luContext.Unlock(keyVec.AsSpan().Slice(idx, 1));
                     blt.Decrement(ref key);
                 }
 
@@ -1253,12 +1266,12 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             luContext.BeginTransaction();
 
             long key42Val = 42L;
-            var key42 = SpanByte.FromPinnedVariable(ref key42Val);
-            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(key42, LockType.Exclusive, luContext) };
+            var key42 = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key42Val));
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct(key42.KeyBytes, LockType.Exclusive, luContext) };
 
             try
             {
-                luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                luContext.Lock(keyVec);
 
                 long valueVal = getValue(key42Val);
                 var value = SpanByte.FromPinnedVariable(ref valueVal);
@@ -1266,7 +1279,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 var status = updateOp switch
                 {
                     UpdateOp.Upsert => luContext.Upsert(key42, value),
-                    UpdateOp.RMW => luContext.RMW(keyVec[0].Key.ReadOnlySpan, ref valueVal),
+                    UpdateOp.RMW => luContext.RMW(keyVec[0].Key, ref valueVal),
                     UpdateOp.Delete => luContext.Delete(key42),
                     _ => new(StatusCode.Error)
                 };
@@ -1276,10 +1289,10 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 else
                     ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
-                OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key.ReadOnlySpan, true, 0);
+                OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key.KeyBytes, true, 0);
 
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
-                OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, false, 0);
+                luContext.Unlock(keyVec);
+                OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key.KeyBytes, false, 0);
             }
             catch (Exception)
             {
@@ -1299,13 +1312,13 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             const int numNewRecords = 100;
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             long getValue(long kk) => kk + ValueMult;
 
             long keyVal = 0, valueVal = 0;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
             Span<byte> value = SpanByte.FromPinnedVariable(ref valueVal);
 
             // If we are testing Delete, then we need to have the records ON-DISK first; Delete is a no-op for unfound records.
@@ -1332,15 +1345,15 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
                 for (long keyNum = NumRecords; keyNum < NumRecords + numNewRecords; ++keyNum)
                 {
-                    keyVec[0] = new(key.Set(keyNum), LockType.Exclusive, luContext);
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    keyVec[0] = new(key.Set(keyNum).KeyBytes, LockType.Exclusive, luContext);
+                    luContext.Lock(keyVec);
                     for (var iter = 0; iter < 2; ++iter)
                     {
-                        OverflowBucketLockTableTests.AssertLockCounts(store, key, true, 0);
+                        OverflowBucketLockTableTests.AssertLockCounts(store, key.KeyBytes, true, 0);
                         updater(key, iter);
                     }
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
-                    OverflowBucketLockTableTests.AssertLockCounts(store, key, false, 0);
+                    luContext.Unlock(keyVec);
+                    OverflowBucketLockTableTests.AssertLockCounts(store, key.KeyBytes, false, 0);
                 }
             }
             catch (Exception)
@@ -1354,7 +1367,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            void updater(ReadOnlySpan<byte> key, int iter)
+            void updater(TestSpanByteKey key, int iter)
             {
                 var localValueNum = getValue(key.AsRef<long>());
                 try
@@ -1407,10 +1420,10 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
             const int numNewRecords = 50;
 
-            using var lockSession = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var lockSession = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var lockLuContext = lockSession.TransactionalUnsafeContext;
 
-            using var updateSession = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var updateSession = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var basicContext = updateSession.BasicContext;
 
             long getValue(long kk) => kk + ValueMult;
@@ -1420,7 +1433,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (long keyNum = NumRecords; keyNum < NumRecords + numNewRecords; ++keyNum)
-                    ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref keyNum)).IsPending);
+                    ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref keyNum)).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1504,7 +1517,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                     lastUpdaterKeys[1] = keyNum;
                     Status status;
                     var localValueNum = getValue(keyNum);
-                    Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref localValueNum);
+                    var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
+                    var value = SpanByte.FromPinnedVariable(ref localValueNum);
                     switch (updateOp)
                     {
                         case UpdateOp.Upsert:
@@ -1550,7 +1564,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             long keyNum = 42;
@@ -1567,14 +1581,14 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    luContext.Lock(keyVec);
                     OverflowBucketLockTableTests.AssertLockCounts(store, key, false, ii + 1);
                 }
 
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+                    luContext.Unlock(keyVec);
                     OverflowBucketLockTableTests.AssertLockCounts(store, key, false, maxLocks - ii - 1);
                 }
                 OverflowBucketLockTableTests.AssertLockCounts(store, key, false, 0);
@@ -1598,7 +1612,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1617,8 +1631,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            ClassicAssert.IsTrue(luContext.TryLock<FixedLengthTransactionalKeyStruct>(keyVec));
-            luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
+            luContext.Unlock(keyVec);
 
             var blockingVec = new FixedLengthTransactionalKeyStruct[1];
 
@@ -1628,17 +1642,17 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 {
                     // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
                     blockingVec[0] = keyVec[blockingIdx];
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(blockingVec);
+                    luContext.Lock(blockingVec);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    ClassicAssert.IsFalse(luContext.TryLock<FixedLengthTransactionalKeyStruct>(keyVec, TimeSpan.FromMilliseconds(20)));
+                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
                     foreach (var k in keyVec)
                     {
-                        if (k.Key.ReadOnlySpan.AsRef<long>() != blockingVec[0].Key.ReadOnlySpan.AsRef<long>())
-                            OverflowBucketLockTableTests.AssertLockCounts(store, k.Key.ReadOnlySpan, false, 0);
+                        if (k.Key.KeyBytes.AsRef<long>() != blockingVec[0].Key.KeyBytes.AsRef<long>())
+                            OverflowBucketLockTableTests.AssertLockCounts(store, k.Key.KeyBytes, false, 0);
                     }
 
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(blockingVec);
+                    luContext.Unlock(blockingVec);
                 }
             }
             catch (Exception)
@@ -1660,7 +1674,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1679,8 +1693,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            ClassicAssert.IsTrue(luContext.TryLock<FixedLengthTransactionalKeyStruct>(keyVec));
-            luContext.Unlock<FixedLengthTransactionalKeyStruct>(keyVec);
+            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
+            luContext.Unlock(keyVec);
 
             var blockingVec = new FixedLengthTransactionalKeyStruct[1];
 
@@ -1690,19 +1704,19 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 {
                     // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
                     blockingVec[0] = keyVec[blockingIdx];
-                    luContext.Lock<FixedLengthTransactionalKeyStruct>(blockingVec);
+                    luContext.Lock(blockingVec);
 
                     using var cts = new CancellationTokenSource(20);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    ClassicAssert.IsFalse(luContext.TryLock<FixedLengthTransactionalKeyStruct>(keyVec, cts.Token));
+                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, cts.Token));
                     foreach (var k in keyVec)
                     {
-                        if (k.Key.ReadOnlySpan.AsRef<long>() != blockingVec[0].Key.ReadOnlySpan.AsRef<long>())
-                            OverflowBucketLockTableTests.AssertLockCounts(store, k.Key.ReadOnlySpan, false, 0);
+                        if (k.Key.KeyBytes.AsRef<long>() != blockingVec[0].Key.KeyBytes.AsRef<long>())
+                            OverflowBucketLockTableTests.AssertLockCounts(store, k.Key.KeyBytes, false, 0);
                     }
 
-                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(blockingVec);
+                    luContext.Unlock(blockingVec);
                 }
             }
             catch (Exception)
@@ -1724,7 +1738,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1739,15 +1753,15 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthTransactionalKeyStruct>(sharedVec));
-                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthTransactionalKeyStruct>(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
 
                 ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
 
                 // Unlock one of the readers and verify successful promotion
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(sharedVec);
+                luContext.Unlock(sharedVec);
                 ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(exclusiveVec);
+                luContext.Unlock(exclusiveVec);
             }
             catch (Exception)
             {
@@ -1768,7 +1782,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1783,16 +1797,16 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthTransactionalKeyStruct>(sharedVec));
-                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthTransactionalKeyStruct>(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
 
                 using var cts = new CancellationTokenSource(20);
                 ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
 
                 // Unlock one of the readers and verify successful promotion
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(sharedVec);
+                luContext.Unlock(sharedVec);
                 ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
-                luContext.Unlock<FixedLengthTransactionalKeyStruct>(exclusiveVec);
+                luContext.Unlock(exclusiveVec);
             }
             catch (Exception)
             {

@@ -67,11 +67,10 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectInMemWriteReadUpsert()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            TestObjectKey keyStruct = new() { key = 9999999 };
-            var key = SpanByte.FromPinnedVariable(ref keyStruct);
+            TestObjectKey key = new() { key = 9999999 };
             TestObjectValue value = new() { value = 23 };
 
             TestObjectInput input = default;
@@ -85,18 +84,16 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectInMemWriteReadRMW()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            TestObjectKey key1Struct = new() { key = 8999998 };
-            var key1 = SpanByte.FromPinnedVariable(ref key1Struct);
+            TestObjectKey key1 = new() { key = 8999998 };
             TestObjectInput input1 = new() { value = 23 };
             TestObjectOutput output = new();
 
             _ = bContext.RMW(key1, ref input1, Empty.Default);
 
-            TestObjectKey key2Struct = new() { key = 8999999 };
-            var key2 = SpanByte.FromPinnedVariable(ref key2Struct);
+            TestObjectKey key2 = new() { key = 8999999 };
             TestObjectInput input2 = new() { value = 24 };
             _ = bContext.RMW(key2, ref input2, Empty.Default);
 
@@ -111,12 +108,11 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteReadSingle()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
             const int keyInt = 42;
 
-            var keyStruct = new TestObjectKey { key = keyInt };
-            var key = SpanByte.FromPinnedVariable(ref keyStruct);
+            var key = new TestObjectKey { key = keyInt };
             var value = new TestObjectValue { value = keyInt };
             _ = bContext.Upsert(key, value, Empty.Default);
 
@@ -140,21 +136,19 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteRead()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             for (int i = 0; i < 2000; i++)
             {
-                var key1Struct = new TestObjectKey { key = i };
-                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
                 if (i == 120)
                     i += 0;
                 _ = bContext.Upsert(key, value, Empty.Default);
             }
 
-            TestObjectKey key2Struct = new() { key = 23 };
-            var key2 = SpanByte.FromPinnedVariable(ref key2Struct);
+            TestObjectKey key2 = new() { key = 23 };
             TestObjectInput input = new();
             TestObjectOutput g1 = new();
             var status = bContext.Read(key2, ref input, ref g1, Empty.Default);
@@ -168,7 +162,7 @@ namespace Tsavorite.test.Objects
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(23, g1.value.value);
 
-            key2Struct.key = 99999;
+            key2.key = 99999;
             status = bContext.Read(key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
@@ -178,8 +172,7 @@ namespace Tsavorite.test.Objects
             // Update last 100 using RMW in memory
             for (int i = 1900; i < 2000; i++)
             {
-                var keyStruct = new TestObjectKey { key = i };
-                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                var key = new TestObjectKey { key = i };
                 input = new TestObjectInput { value = 1 };
                 status = bContext.RMW(key, ref input, Empty.Default);
                 ClassicAssert.IsFalse(status.IsPending, "Expected RMW to complete in-memory");
@@ -189,8 +182,7 @@ namespace Tsavorite.test.Objects
             var numPendingUpdates = 0;
             for (int i = 0; i < 100; i++)
             {
-                var keyStruct = new TestObjectKey { key = i };
-                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                var key = new TestObjectKey { key = i };
                 input = new TestObjectInput { value = 1 };
                 status = bContext.RMW(key, ref input, Empty.Default);
                 if (status.IsPending)
@@ -205,8 +197,7 @@ namespace Tsavorite.test.Objects
             for (int i = 0; i < 2000; i++)
             {
                 var output = new TestObjectOutput();
-                var keyStruct = new TestObjectKey { key = i };
-                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                var key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
                 status = bContext.Read(key, ref input, ref output, Empty.Default);
@@ -242,7 +233,7 @@ namespace Tsavorite.test.Objects
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
-            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
             var input = new TestLargeObjectInput();
@@ -251,8 +242,7 @@ namespace Tsavorite.test.Objects
             const int numRec = 3;
             for (int ii = 0; ii < numRec; ii++)
             {
-                var key1Struct = new TestObjectKey { key = ii };
-                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var key = new TestObjectKey { key = ii };
                 var value = new TestLargeObjectValue(valueSize + (ii * 4096));
                 new Span<byte>(value.value).Fill(0x42);
                 _ = bContext.Upsert(key, ref input, value, ref output);
@@ -269,8 +259,7 @@ namespace Tsavorite.test.Objects
                 for (int ii = 0; ii < numRec; ii++)
                 {
                     var output = new TestLargeObjectOutput();
-                    var keyStruct = new TestObjectKey { key = ii };
-                    var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                    var key = new TestObjectKey { key = ii };
 
                     var status = bContext.Read(key, ref input, ref output, Empty.Default);
                     Assert.That(status.IsPending, Is.EqualTo(onDisk), $"IsPending ({status.IsPending}) != onDisk");
@@ -304,7 +293,7 @@ namespace Tsavorite.test.Objects
             Assert.That(ObjectsPerPage, Is.EqualTo(30));                // Make debugging easier by verifying the length we'll see in the IDE
 
             var functions = new TestLargeObjectFunctions { expectedRecordLength = RecordLength }; // ExpectedRecordLength controls how many objects per page
-            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
             var bContext = session.BasicContext;
 
             var input = new TestLargeObjectInput();
@@ -316,10 +305,9 @@ namespace Tsavorite.test.Objects
             int lastKey = 0;
             for (; lastKey < numRec; lastKey++)
             {
-                var key1Struct = new TestObjectKey { key = lastKey };
-                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var key = new TestObjectKey { key = lastKey };
                 var value = new TestLargeObjectValue(valueSize);
-                new Span<byte>(value.value).Fill((byte)key1Struct.key);
+                new Span<byte>(value.value).Fill((byte)key.key);
                 _ = bContext.Upsert(key, ref input, value, ref output);
             }
 
@@ -337,10 +325,9 @@ namespace Tsavorite.test.Objects
             const int ObjectsPerHalfPage = ObjectsPerPage / 2;
             for (var ii = 0; ii < ObjectsPerHalfPage; ii++)
             {
-                var key1Struct = new TestObjectKey { key = lastKey + ii };
-                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var key = new TestObjectKey { key = lastKey + ii };
                 var value = new TestLargeObjectValue(valueSize);
-                new Span<byte>(value.value).Fill((byte)key1Struct.key);
+                new Span<byte>(value.value).Fill((byte)key.key);
                 _ = bContext.Upsert(key, ref input, value, ref output);
             }
 
@@ -369,8 +356,7 @@ namespace Tsavorite.test.Objects
                 for (int ii = firstKey; ii < lastKey; ii++)
                 {
                     var output = new TestLargeObjectOutput();
-                    var keyStruct = new TestObjectKey { key = ii };
-                    var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                    var key = new TestObjectKey { key = ii };
 
                     var status = bContext.Read(key, ref input, ref output, Empty.Default);
                     Assert.That(status.IsPending, Is.EqualTo(onDisk), $"status.IsPending ({status}) != onDisk for key {ii}");
@@ -404,7 +390,7 @@ namespace Tsavorite.test.Objects
             Assert.That(ObjectsPerPage, Is.EqualTo(30));                // Make debugging easier by verifying the length we'll see in the IDE
 
             var functions = new TestLargeObjectFunctions { expectedRecordLength = RecordLength }; // ExpectedRecordLength controls how many objects per page
-            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(functions);
             var bContext = session.BasicContext;
 
             var input = new TestLargeObjectInput();
@@ -421,10 +407,9 @@ namespace Tsavorite.test.Objects
             int lastKey = 0;
             for (; lastKey < numRec; lastKey++)
             {
-                var key1Struct = new TestObjectKey { key = lastKey };
-                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var key = new TestObjectKey { key = lastKey };
                 var value = new TestLargeObjectValue(valueSize);
-                new Span<byte>(value.value).Fill((byte)key1Struct.key);
+                new Span<byte>(value.value).Fill((byte)key.key);
                 _ = bContext.Upsert(key, ref input, value, ref output);
             }
 
@@ -466,8 +451,7 @@ namespace Tsavorite.test.Objects
                 for (int ii = firstKey; ii < lastKey; ii++)
                 {
                     var output = new TestLargeObjectOutput();
-                    var keyStruct = new TestObjectKey { key = ii };
-                    var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                    var key = new TestObjectKey { key = ii };
 
                     var status = bContext.Read(key, ref input, ref output, Empty.Default);
                     Assert.That(status.IsPending, Is.EqualTo(onDisk), $"status.IsPending ({status}) != onDisk for key {ii}");
@@ -502,7 +486,7 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteReadOverflowValue()
         {
-            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
             var valueSize = IStreamBuffer.BufferSize / 2;
@@ -512,8 +496,7 @@ namespace Tsavorite.test.Objects
 
             for (int ii = 0; ii < numRec; ii++)
             {
-                var key1Struct = new TestObjectKey { key = ii };
-                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var key = new TestObjectKey { key = ii };
                 var value = new ReadOnlySpan<byte>(valueBuffer).Slice(0, valueSize * (ii + 1));
                 _ = bContext.Upsert(key, value, Empty.Default);
             }
@@ -525,8 +508,7 @@ namespace Tsavorite.test.Objects
             for (int ii = 0; ii < numRec; ii++)
             {
                 var output = new TestLargeObjectOutput();
-                var keyStruct = new TestObjectKey { key = ii };
-                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                var key = new TestObjectKey { key = ii };
 
                 input.expectedSpanLength = valueSize * (ii + 1);
                 var status = bContext.Read(key, ref input, ref output, Empty.Default);
@@ -545,7 +527,7 @@ namespace Tsavorite.test.Objects
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
-            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            using var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
             var input = new TestLargeObjectInput();
@@ -560,7 +542,7 @@ namespace Tsavorite.test.Objects
                 var key = new Span<byte>(keyBuf);
                 key.Fill((byte)(ii + 100));
                 new Span<byte>(value.value).Fill(0x42);
-                _ = bContext.Upsert(key, ref input, value, ref output);
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), ref input, value, ref output);
             }
 
             // Test before and after the flush
@@ -577,7 +559,7 @@ namespace Tsavorite.test.Objects
                     var key = new Span<byte>(keyBuf);
                     key.Fill((byte)(ii + 100));
 
-                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    var status = bContext.Read(TestSpanByteKey.FromPinnedSpan(key), ref input, ref output, Empty.Default);
                     Assert.That(status.IsPending, Is.EqualTo(onDisk));
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult();

@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.InteropServices;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,18 +14,44 @@ namespace Tsavorite.test
 {
     public enum TestValueStyle : byte { None, Inline, Overflow, Object };
 
-    public struct TestObjectKey
+    public struct TestObjectKey : IKey
     {
         public int key;
+
+        // Not always pinned, so don't assume it is
+        public readonly bool IsPinned => false;
+
+        [UnscopedRef]
+        public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<int, byte>(new ReadOnlySpan<int>(in key));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
 
         /// <inheritdoc/>
         public override readonly string ToString() => key.ToString();
 
         public struct Comparer : IKeyComparer
         {
-            public readonly long GetHashCode64(ReadOnlySpan<byte> key) => Utility.GetHashCode(key.AsRef<TestObjectKey>().key);
+            public readonly long GetHashCode64<TKey>(TKey key)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => Utility.GetHashCode(key.KeyBytes.AsRef<TestObjectKey>().key);
 
-            public readonly bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<TestObjectKey>().key == k2.AsRef<TestObjectKey>().key;
+            public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+                where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => k1.KeyBytes.AsRef<TestObjectKey>().key == k2.KeyBytes.AsRef<TestObjectKey>().key;
         }
     }
 
@@ -125,10 +153,10 @@ namespace Tsavorite.test
 
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
     public class TestObjectFunctionsDelete : SessionFunctionsBase<TestObjectInput, TestObjectOutput, int>
@@ -185,10 +213,10 @@ namespace Tsavorite.test
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
     public class TestLargeObjectValue : HeapObjectBase
@@ -303,14 +331,14 @@ namespace Tsavorite.test
 
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestLargeObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestLargeObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestLargeObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TestLargeObjectInput input)
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestLargeObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestLargeObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TestLargeObjectInput input)
             => new()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
                 HasETag = inputLogRecord.Info.HasETag,
@@ -440,14 +468,14 @@ namespace Tsavorite.test
 
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestMultiListObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestMultiListObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestMultiListObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-        public override RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TestMultiListObjectInput input)
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestMultiListObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestMultiListObjectInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TestMultiListObjectInput input)
             => new()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
                 HasETag = inputLogRecord.Info.HasETag,

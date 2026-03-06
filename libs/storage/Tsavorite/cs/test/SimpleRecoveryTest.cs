@@ -145,13 +145,13 @@ namespace Tsavorite.test.recovery.sumstore
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var session1 = store1.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext1 = session1.BasicContext;
 
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref inputArray[key]), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
 
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
@@ -171,13 +171,13 @@ namespace Tsavorite.test.recovery.sumstore
             else
                 ClassicAssert.Null(store2.RecoveredCommitCookie);
 
-            var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var session2 = store2.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext2 = session2.BasicContext;
             ClassicAssert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
 
             for (int key = 0; key < NumOps; key++)
             {
-                var status = bContext2.Read(SpanByte.FromPinnedVariable(ref inputArray[key]), ref inputArg, ref output, Empty.Default);
+                var status = bContext2.Read(inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -229,13 +229,13 @@ namespace Tsavorite.test.recovery.sumstore
             AdInput inputArg = default;
             Output output = default;
 
-            var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var session1 = store1.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext1 = session1.BasicContext;
 
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref inputArray[key]), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -246,12 +246,12 @@ namespace Tsavorite.test.recovery.sumstore
             else
                 _ = await store2.RecoverAsync(token);
 
-            var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var session2 = store2.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext2 = session1.BasicContext;
 
             for (int key = 0; key < NumOps; key++)
             {
-                var status = bContext2.Read(SpanByte.FromPinnedVariable(ref inputArray[key]), ref inputArg, ref output, Empty.Default);
+                var status = bContext2.Read(inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                     _ = bContext2.CompletePending(true);
@@ -292,14 +292,14 @@ namespace Tsavorite.test.recovery.sumstore
 
             NumClicks value;
 
-            var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var session1 = store1.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext1 = session1.BasicContext;
 
             var address = 0L;
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref inputArray[key]), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -357,18 +357,18 @@ namespace Tsavorite.test.recovery.sumstore
             AdSimpleFunctions functions1 = new(1);
             AdSimpleFunctions functions2 = new(2);
 
-            var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions1);
+            var session1 = store1.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(functions1);
             var bContext1 = session1.BasicContext;
 
             for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
                 if ((key & 1) > 0)
-                    _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref inputArray[key]), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    _ = bContext1.Upsert(inputArray[key], SpanByte.FromPinnedVariable(ref value), Empty.Default);
                 else
                 {
                     AdInput input = new() { adId = inputArray[key], numClicks = value };
-                    _ = bContext1.RMW(SpanByte.FromPinnedVariable(ref inputArray[key]), ref input);
+                    _ = bContext1.RMW(inputArray[key], ref input);
                 }
             }
             _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
@@ -383,20 +383,20 @@ namespace Tsavorite.test.recovery.sumstore
             else
                 _ = await store2.RecoverAsync(token);
 
-            var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions2);
+            var session2 = store2.NewSession<AdId, AdInput, Output, Empty, AdSimpleFunctions>(functions2);
             var bContext2 = session2.BasicContext;
 
             // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
-            var status = bContext2.Read(SpanByte.FromPinnedVariable(ref inputArray[lastKey]), ref inputArg, ref output, Empty.Default);
+            var status = bContext2.Read(inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
-            status = bContext2.Upsert(SpanByte.FromPinnedVariable(ref inputArray[lastKey]), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            status = bContext2.Upsert(inputArray[lastKey], SpanByte.FromPinnedVariable(ref value), Empty.Default);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0
-            status = bContext2.RMW(SpanByte.FromPinnedVariable(ref inputArray[lastKey]), ref inputArg);
+            status = bContext2.RMW(inputArray[lastKey], ref inputArg);
             ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             // Now verify Pending
@@ -404,7 +404,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = bContext2.Read(SpanByte.FromPinnedVariable(ref inputArray[lastKey]), ref inputArg, ref output, Empty.Default);
+            status = bContext2.Read(inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext2.CompletePending(wait: true);
 
@@ -413,7 +413,7 @@ namespace Tsavorite.test.recovery.sumstore
             --lastKey;
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = bContext2.RMW(SpanByte.FromPinnedVariable(ref inputArray[lastKey]), ref inputArg);
+            status = bContext2.RMW(inputArray[lastKey], ref inputArg);
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext2.CompletePending(wait: true);
 
@@ -477,7 +477,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref AdInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref AdInput input)
-            => new() { KeySize = key.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref AdInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
     }
 }

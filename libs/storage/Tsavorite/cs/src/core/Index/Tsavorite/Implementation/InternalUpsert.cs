@@ -46,9 +46,13 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+        internal OperationStatus InternalUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, long keyHash, ref TInput input,
                             ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output,
                             ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
@@ -130,7 +134,7 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord.Key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
+                    var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
 
                     // Type arg specification is needed because we don't pass TContext
                     if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
@@ -163,7 +167,7 @@ namespace Tsavorite.core
                 Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Transactional-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
-                status = CreateNewRecordUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                status = CreateNewRecordUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                         key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo);
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
@@ -172,7 +176,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TValueSelector.PostUpsertOperation<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, LightEpoch>(key, ref input,
+                TValueSelector.PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, LightEpoch>(key, ref input,
                     srcStringValue, srcObjectValue, in inputLogRecord, ref upsertInfo, sessionFunctions, epoch);
                 EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
@@ -212,7 +216,7 @@ namespace Tsavorite.core
                 logRecord.ClearOptionals();
                 logRecord.InfoRef.ClearTombstone();
 
-                var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, logRecord.Key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
+                var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, logRecord, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
 
                 ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
 
@@ -291,9 +295,13 @@ namespace Tsavorite.core
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="upsertInfo">UpsertInfo</param>
-        private OperationStatus CreateNewRecordUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, ref LogRecord srcLogRecord, ref TInput input,
+        private OperationStatus CreateNewRecordUpsert<TKey, TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, ref LogRecord srcLogRecord, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, in TSourceLogRecord inputLogRecord, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord

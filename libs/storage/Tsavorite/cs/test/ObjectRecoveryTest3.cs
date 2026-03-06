@@ -45,7 +45,7 @@ namespace Tsavorite.test.recovery.objects
             this.iterations = iterations;
             Prepare(out IDevice log, out IDevice objlog, out var store);
 
-            var session1 = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var session1 = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var tokens = Write(session1, store, checkpointType);
             Read(session1, false, iterations);
             session1.Dispose();
@@ -64,7 +64,7 @@ namespace Tsavorite.test.recovery.objects
                 else
                     _ = store.Recover(default, item.Item2);
 
-                var session2 = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+                var session2 = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
                 Read(session2, false, item.Item1);
                 session2.Dispose();
 
@@ -98,7 +98,7 @@ namespace Tsavorite.test.recovery.objects
             objlog.Dispose();
         }
 
-        private List<(int, Guid)> Write(ClientSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
+        private List<(int, Guid)> Write(ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
                 TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, CheckpointType checkpointType)
         {
             var bContext = session.BasicContext;
@@ -108,7 +108,7 @@ namespace Tsavorite.test.recovery.objects
             {
                 var _key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), value);
+                _ = bContext.Upsert(_key, value);
 
                 if (i % 1000 == 0 && i > 0)
                 {
@@ -120,7 +120,7 @@ namespace Tsavorite.test.recovery.objects
             return tokens;
         }
 
-        private static void Read(ClientSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator> session, bool delete, int iter)
+        private static void Read(ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator> session, bool delete, int iter)
         {
             var bContext = session.BasicContext;
 
@@ -129,7 +129,7 @@ namespace Tsavorite.test.recovery.objects
                 var key = new TestObjectKey { key = i };
                 TestObjectInput input = default;
                 TestObjectOutput output = new();
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
+                var status = bContext.Read(key, ref input, ref output);
 
                 if (status.IsPending)
                 {
@@ -146,8 +146,8 @@ namespace Tsavorite.test.recovery.objects
                 var key = new TestObjectKey { key = 1 };
                 var input = default(TestObjectInput);
                 var output = new TestObjectOutput();
-                _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
+                _ = bContext.Delete(key);
+                var status = bContext.Read(key, ref input, ref output);
 
                 if (status.IsPending)
                 {

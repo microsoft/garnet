@@ -56,11 +56,10 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectAsInlineStructUpsertTest()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
             var bContext = session.BasicContext;
 
-            TestObjectKey keyStruct = new() { key = 9999999 };
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyStruct);
+            TestObjectKey key = new() { key = 9999999 };
             TestObjectInput input = new() { value = 23 };
             TestObjectOutput output = default;
 
@@ -170,11 +169,10 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectAsInlineStructRMWTest()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
             var bContext = session.BasicContext;
 
-            TestObjectKey keyStruct = new() { key = 9999999 };
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyStruct);
+            TestObjectKey key = new() { key = 9999999 };
             TestObjectInput input = new() { value = 23 };
             TestObjectOutput output = default;
 
@@ -429,10 +427,14 @@ namespace Tsavorite.test.Objects
                 Assert.That(input.wantValueStyle, Is.EqualTo(style));
             }
 
-            static RecordFieldInfo GetFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
+            static RecordFieldInfo GetFieldInfo<TKey>(TKey key, ref TestObjectInput input)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
                 => new()
                 {
-                    KeySize = key.Length,
+                    KeySize = key.KeyBytes.Length,
                     ValueSize = input.wantValueStyle switch
                     {
                         TestValueStyle.Inline => ValueStruct.AsSpanByteDataSize,
@@ -444,10 +446,10 @@ namespace Tsavorite.test.Objects
                 };
 
             public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-                => GetFieldInfo(srcLogRecord.Key, ref input);
-            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
+                => GetFieldInfo(srcLogRecord, ref input);
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
-            public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
         }
     }

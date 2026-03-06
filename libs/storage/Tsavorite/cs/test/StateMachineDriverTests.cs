@@ -94,12 +94,12 @@ namespace Tsavorite.test.recovery
                 await Task.WhenAll(opTasks);
 
                 // Verify the final state of the old store
-                using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+                using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
                 var bc1 = s1.BasicContext;
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -132,12 +132,12 @@ namespace Tsavorite.test.recovery
                 _ = await store2.RecoverAsync(default, checkpointToken);
 
                 // Verify the state of the new store
-                using var s2 = store2.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+                using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc2.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -204,12 +204,12 @@ namespace Tsavorite.test.recovery
                 await Task.WhenAll(opTasks);
 
                 // Verify the final state of the store
-                using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+                using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
                 var bc1 = s1.BasicContext;
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -274,7 +274,7 @@ namespace Tsavorite.test.recovery
 
         protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store)
         {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
+            using var s = store.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
             var bc = s.BasicContext;
             var r = new Random(thread_id);
 
@@ -288,7 +288,7 @@ namespace Tsavorite.test.recovery
                 key = r.Next(numKeys);
 
                 // Run the RMW operation
-                _ = bc.RMW(SpanByte.FromPinnedVariable(ref key), ref input);
+                _ = bc.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input);
 
                 // Update expected counts for the old and new version of store
                 if (bc.Session.Version == currentIteration + 1)
@@ -332,7 +332,7 @@ namespace Tsavorite.test.recovery
 
         protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store)
         {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
+            using var s = store.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
             var lc = s.TransactionalContext;
             var r = new Random(thread_id);
 
@@ -367,8 +367,8 @@ namespace Tsavorite.test.recovery
                 lc.LocksAcquired(txnVersion);
 
                 // Run transaction
-                _ = lc.RMW(SpanByte.FromPinnedVariable(ref key1), ref input);
-                _ = lc.RMW(SpanByte.FromPinnedVariable(ref key2), ref input);
+                _ = lc.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key1)), ref input);
+                _ = lc.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key2)), ref input);
 
                 // Unlock keys
                 lc.Unlock<FixedLengthTransactionalKeyStruct>(exclusiveVec);
