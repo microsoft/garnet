@@ -162,7 +162,7 @@ namespace Tsavorite.test
                     using var originalIterator = l.Scan(0, l.TailAddress);
 
                     int count = 0;
-                    await foreach (var item in originalIterator.GetAsyncEnumerable())
+                    await foreach (var item in originalIterator.GetAsyncEnumerable().ConfigureAwait(false))
                     {
                         if (count < 1) // we commit only 1st item read
                             await l.CommitAsync(cookie: BitConverter.GetBytes(item.nextAddress)).ConfigureAwait(false);

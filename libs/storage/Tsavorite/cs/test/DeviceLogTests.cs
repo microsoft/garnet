@@ -112,14 +112,14 @@ namespace Tsavorite.test
                 switch (iteratorType)
                 {
                     case TsavoriteLogTestBase.IteratorType.AsyncByteVector:
-                        await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable())
+                        await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable().ConfigureAwait(false))
                         {
                             ClassicAssert.IsTrue(result.SequenceEqual(entry));
                             counter.IncrementAndMaybeTruncateUntil(nextAddress);
                         }
                         break;
                     case TsavoriteLogTestBase.IteratorType.AsyncMemoryOwner:
-                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).ConfigureAwait(false))
                         {
                             ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                             result.Dispose();

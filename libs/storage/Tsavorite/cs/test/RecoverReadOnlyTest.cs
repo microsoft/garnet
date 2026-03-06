@@ -131,7 +131,7 @@ namespace Tsavorite.test
             {
                 using (var iter = logReadOnly.Scan(logReadOnly.BeginAddress, long.MaxValue))
                 {
-                    await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+                    await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken).ConfigureAwait(false))
                     {
                     }
                 }
