@@ -29,7 +29,7 @@ namespace Garnet.server.Vector.Filter
 
         /// <summary>
         /// Create a reusable evaluation stack with default capacity (16).
-        /// The caller owns the stack and can pass it to <see cref="Run"/> across multiple calls.
+        /// The caller owns the stack and can pass it to Run across multiple calls.
         /// The stack is cleared at the start of each Run call, so the caller does not need to clear it.
         /// </summary>
         public static Stack<ExprToken> CreateStack() => new Stack<ExprToken>(DefaultStackCapacity);
@@ -64,79 +64,8 @@ namespace Garnet.server.Vector.Filter
                     continue;
                 }
 
-                // Non-operator values — push directly
-                if (inst.TokenType != ExprTokenType.Op)
-                {
-                    stack.Push(inst);
-                    continue;
-                }
-
-                // Operators — pop operands, compute, push result
-                var arity = OpTable.GetArity(inst.OpCode);
-                if (stack.Count < arity)
-                {
-                    stack.Clear();
+                if (!ExecuteInstruction(inst, json, stack))
                     return false;
-                }
-
-                ExprToken b = stack.Count > 0 ? stack.Pop() : default;
-                ExprToken a = arity == 2 && stack.Count > 0 ? stack.Pop() : default;
-
-                var result = ExprToken.NewNum(0);
-
-                switch (inst.OpCode)
-                {
-                    case OpCode.Not:
-                        result.Num = ToBool(b) == 0 ? 1 : 0;
-                        break;
-                    case OpCode.Pow:
-                        result.Num = Math.Pow(ToNum(a, json), ToNum(b, json));
-                        break;
-                    case OpCode.Mul:
-                        result.Num = ToNum(a, json) * ToNum(b, json);
-                        break;
-                    case OpCode.Div:
-                        result.Num = ToNum(a, json) / ToNum(b, json);
-                        break;
-                    case OpCode.Mod:
-                        result.Num = ToNum(a, json) % ToNum(b, json);
-                        break;
-                    case OpCode.Add:
-                        result.Num = ToNum(a, json) + ToNum(b, json);
-                        break;
-                    case OpCode.Sub:
-                        result.Num = ToNum(a, json) - ToNum(b, json);
-                        break;
-                    case OpCode.Gt:
-                        result.Num = ToNum(a, json) > ToNum(b, json) ? 1 : 0;
-                        break;
-                    case OpCode.Gte:
-                        result.Num = ToNum(a, json) >= ToNum(b, json) ? 1 : 0;
-                        break;
-                    case OpCode.Lt:
-                        result.Num = ToNum(a, json) < ToNum(b, json) ? 1 : 0;
-                        break;
-                    case OpCode.Lte:
-                        result.Num = ToNum(a, json) <= ToNum(b, json) ? 1 : 0;
-                        break;
-                    case OpCode.Eq:
-                        result.Num = AreEqual(a, b, json) ? 1 : 0;
-                        break;
-                    case OpCode.Neq:
-                        result.Num = !AreEqual(a, b, json) ? 1 : 0;
-                        break;
-                    case OpCode.In:
-                        result.Num = EvalIn(a, b, json) ? 1 : 0;
-                        break;
-                    case OpCode.And:
-                        result.Num = ToBool(a) != 0 && ToBool(b) != 0 ? 1 : 0;
-                        break;
-                    case OpCode.Or:
-                        result.Num = ToBool(a) != 0 || ToBool(b) != 0 ? 1 : 0;
-                        break;
-                }
-
-                stack.Push(result);
             }
 
             var returnValue = false;
@@ -146,6 +75,144 @@ namespace Garnet.server.Vector.Filter
             // Clear to release string references for GC
             stack.Clear();
             return returnValue;
+        }
+
+        /// <summary>
+        /// Execute the compiled program using pre-extracted field values (single-pass extraction).
+        /// Selectors are resolved from <paramref name="extractedFields"/> instead of re-scanning JSON.
+        /// </summary>
+        /// <param name="program">The compiled postfix program.</param>
+        /// <param name="json">Raw JSON attribute bytes (needed for JsonRef string comparisons).</param>
+        /// <param name="selectorNames">Selector names matching indices in <paramref name="extractedFields"/>.</param>
+        /// <param name="extractedFields">Pre-extracted field values (one per selector name).</param>
+        /// <param name="stack">A reusable evaluation stack obtained from <see cref="CreateStack"/>.</param>
+        public static bool Run(ExprProgram program, ReadOnlySpan<byte> json,
+            string[] selectorNames, ExprToken[] extractedFields, Stack<ExprToken> stack)
+        {
+            stack.Clear();
+
+            for (var i = 0; i < program.Length; i++)
+            {
+                var inst = program.Instructions[i];
+
+                // Selectors — look up from pre-extracted fields
+                if (inst.TokenType == ExprTokenType.Selector)
+                {
+                    var found = false;
+                    for (var j = 0; j < selectorNames.Length; j++)
+                    {
+                        if (string.Equals(inst.Str, selectorNames[j], System.StringComparison.Ordinal))
+                        {
+                            if (extractedFields[j].IsNone)
+                            {
+                                stack.Clear();
+                                return false; // Selector not found → expression is false
+                            }
+                            stack.Push(extractedFields[j]);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        stack.Clear();
+                        return false;
+                    }
+                    continue;
+                }
+
+                if (!ExecuteInstruction(inst, json, stack))
+                    return false;
+            }
+
+            var returnValue = false;
+            if (stack.Count > 0)
+                returnValue = ToBool(stack.Peek()) != 0;
+
+            stack.Clear();
+            return returnValue;
+        }
+
+        /// <summary>
+        /// Execute a single non-selector instruction (value push or operator evaluation).
+        /// Returns false if the stack is in an invalid state.
+        /// </summary>
+        private static bool ExecuteInstruction(ExprToken inst, ReadOnlySpan<byte> json, Stack<ExprToken> stack)
+        {
+            // Non-operator values — push directly
+            if (inst.TokenType != ExprTokenType.Op)
+            {
+                stack.Push(inst);
+                return true;
+            }
+
+            // Operators — pop operands, compute, push result
+            var arity = OpTable.GetArity(inst.OpCode);
+            if (stack.Count < arity)
+            {
+                stack.Clear();
+                return false;
+            }
+
+            ExprToken b = stack.Count > 0 ? stack.Pop() : default;
+            ExprToken a = arity == 2 && stack.Count > 0 ? stack.Pop() : default;
+
+            var result = ExprToken.NewNum(0);
+
+            switch (inst.OpCode)
+            {
+                case OpCode.Not:
+                    result.Num = ToBool(b) == 0 ? 1 : 0;
+                    break;
+                case OpCode.Pow:
+                    result.Num = Math.Pow(ToNum(a, json), ToNum(b, json));
+                    break;
+                case OpCode.Mul:
+                    result.Num = ToNum(a, json) * ToNum(b, json);
+                    break;
+                case OpCode.Div:
+                    result.Num = ToNum(a, json) / ToNum(b, json);
+                    break;
+                case OpCode.Mod:
+                    result.Num = ToNum(a, json) % ToNum(b, json);
+                    break;
+                case OpCode.Add:
+                    result.Num = ToNum(a, json) + ToNum(b, json);
+                    break;
+                case OpCode.Sub:
+                    result.Num = ToNum(a, json) - ToNum(b, json);
+                    break;
+                case OpCode.Gt:
+                    result.Num = ToNum(a, json) > ToNum(b, json) ? 1 : 0;
+                    break;
+                case OpCode.Gte:
+                    result.Num = ToNum(a, json) >= ToNum(b, json) ? 1 : 0;
+                    break;
+                case OpCode.Lt:
+                    result.Num = ToNum(a, json) < ToNum(b, json) ? 1 : 0;
+                    break;
+                case OpCode.Lte:
+                    result.Num = ToNum(a, json) <= ToNum(b, json) ? 1 : 0;
+                    break;
+                case OpCode.Eq:
+                    result.Num = AreEqual(a, b, json) ? 1 : 0;
+                    break;
+                case OpCode.Neq:
+                    result.Num = !AreEqual(a, b, json) ? 1 : 0;
+                    break;
+                case OpCode.In:
+                    result.Num = EvalIn(a, b, json) ? 1 : 0;
+                    break;
+                case OpCode.And:
+                    result.Num = ToBool(a) != 0 && ToBool(b) != 0 ? 1 : 0;
+                    break;
+                case OpCode.Or:
+                    result.Num = ToBool(a) != 0 || ToBool(b) != 0 ? 1 : 0;
+                    break;
+            }
+
+            stack.Push(result);
+            return true;
         }
 
         // ======================== Type conversion helpers ========================

@@ -112,7 +112,7 @@ namespace Garnet.server.Vector.Filter
     /// <para><b>Lifetime:</b> Tokens inside the compiled <see cref="ExprProgram"/> are
     /// allocated once and reused across all candidate evaluations. Tokens created during
     /// execution (e.g. from <see cref="AttributeExtractor"/> JSON field extraction) are
-    /// transient and discarded after each <see cref="ExprRunner.Run"/> call.</para>
+    /// transient and discarded after each <c>ExprRunner.Run</c> call.</para>
     /// </summary>
     internal struct ExprToken
     {
@@ -225,7 +225,7 @@ namespace Garnet.server.Vector.Filter
 
     /// <summary>
     /// Compiled filter expression program — the output of <see cref="ExprCompiler.TryCompile"/>
-    /// and the input to <see cref="ExprRunner.Run"/>.
+    /// and the input to <c>ExprRunner.Run</c>.
     ///
     /// Contains a flat postfix (reverse-Polish notation) instruction sequence where every
     /// element is an <see cref="ExprToken"/>:
@@ -242,7 +242,7 @@ namespace Garnet.server.Vector.Filter
     ///
     /// <para>This is the C# equivalent of the <c>exprstate.program[]</c> array in
     /// Redis <c>expr.c</c>. The evaluation stack (<c>values_stack</c> in Redis) is
-    /// <em>not</em> stored here — it is allocated per-call in <see cref="ExprRunner.Run"/>.</para>
+    /// <em>not</em> stored here — it is allocated per-call in <c>ExprRunner.Run</c>.</para>
     /// </summary>
     internal sealed class ExprProgram
     {
@@ -251,5 +251,31 @@ namespace Garnet.server.Vector.Filter
 
         /// <summary>Number of instructions in the program.</summary>
         public int Length;
+
+        /// <summary>Cached unique selector names (field names) used in this program.</summary>
+        private string[] selectorNames;
+
+        /// <summary>
+        /// Get the unique selector (field) names referenced by this program.
+        /// Cached after first call — safe to call repeatedly.
+        /// </summary>
+        public string[] GetSelectors()
+        {
+            if (selectorNames != null)
+                return selectorNames;
+
+            // Count unique selectors
+            var seen = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            for (var i = 0; i < Length; i++)
+            {
+                if (Instructions[i].TokenType == ExprTokenType.Selector)
+                    seen.Add(Instructions[i].Str);
+            }
+
+            var names = new string[seen.Count];
+            seen.CopyTo(names);
+            selectorNames = names;
+            return selectorNames;
+        }
     }
 }

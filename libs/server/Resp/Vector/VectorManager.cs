@@ -916,9 +916,11 @@ namespace Garnet.server
         ///
         /// Architecture (modeled after Redis expr.c + fastjson.c):
         /// 1. The filter string is compiled ONCE into a flat postfix program (ExprCompiler).
-        /// 2. For each candidate, the program is executed against the raw JSON attribute bytes
-        ///    using a stack-based VM (ExprRunner) with on-demand field extraction (AttributeExtractor).
-        /// 3. No JsonDocument DOM is allocated — fields are extracted directly from the raw bytes.
+        /// 2. Unique selectors (field names) are collected from the program.
+        /// 3. For each candidate, ALL needed fields are extracted in a single JSON pass
+        ///    via <see cref="AttributeExtractor.ExtractFields"/>, then the program is
+        ///    evaluated against the pre-extracted values.
+        /// 4. No JsonDocument DOM is allocated — fields are extracted directly from the raw bytes.
         ///
         /// The <paramref name="filterBitmap"/> is populated with one bit per result:
         /// bit i = 1 means result i passed the filter. Caller can test with:
@@ -948,6 +950,12 @@ namespace Garnet.server
             // Clear the bitmap
             filterBitmap.Clear();
 
+            // Collect unique selectors — these are the JSON fields we need per candidate.
+            var selectors = program.GetSelectors();
+
+            // Pre-allocate extraction buffer — reused across all candidates.
+            var extractedFields = new ExprToken[selectors.Length];
+
             var filteredCount = 0;
 
             // Allocate the evaluation stack once and reuse it across all candidate evaluations
@@ -961,9 +969,11 @@ namespace Garnet.server
                 var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
                 var attrData = remaining.Slice(sizeof(int), attrLen);
 
-                // Execute the compiled filter program against raw JSON bytes.
-                // No JsonDocument DOM allocation — AttributeExtractor extracts fields on demand.
-                if (ExprRunner.Run(program, attrData, stack))
+                // Single-pass extraction: scan JSON once, extract all needed fields.
+                AttributeExtractor.ExtractFields(attrData, selectors, extractedFields);
+
+                // Execute the compiled program against pre-extracted fields.
+                if (ExprRunner.Run(program, attrData, selectors, extractedFields, stack))
                 {
                     filterBitmap[i >> 3] |= (byte)(1 << (i & 7));
                     filteredCount++;

@@ -20,6 +20,77 @@ namespace Garnet.server.Vector.Filter
     internal static class AttributeExtractor
     {
         /// <summary>
+        /// Extract multiple top-level fields from a JSON object in a single pass.
+        /// <paramref name="fieldNames"/> lists the fields to extract.
+        /// <paramref name="results"/> must be at least <paramref name="fieldNames"/>.Length long.
+        /// Entries for fields not found are set to default (IsNone).
+        /// Returns the number of fields successfully extracted.
+        /// </summary>
+        public static int ExtractFields(ReadOnlySpan<byte> json, string[] fieldNames, ExprToken[] results)
+        {
+            // Clear results
+            for (var i = 0; i < fieldNames.Length; i++)
+                results[i] = default;
+
+            var s = TrimWhiteSpace(json);
+            if (s.IsEmpty || s[0] != (byte)'{') return 0;
+            s = s[1..]; // Skip '{'
+
+            var found = 0;
+            var needed = fieldNames.Length;
+
+            while (true)
+            {
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return found;
+                if (s[0] == (byte)'}') return found;
+
+                // Expect a key string
+                if (s[0] != (byte)'"') return found;
+
+                var afterOpenQuote = s[1..];
+                if (!SkipString(ref s)) return found;
+                var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
+
+                // Check against all requested field names
+                var matchIndex = -1;
+                for (var i = 0; i < fieldNames.Length; i++)
+                {
+                    if (results[i].IsNone && MatchKey(keyContent, fieldNames[i]))
+                    {
+                        matchIndex = i;
+                        break;
+                    }
+                }
+
+                // Expect ':'
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty || s[0] != (byte)':') return found;
+                s = s[1..];
+
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return found;
+
+                if (matchIndex >= 0)
+                {
+                    results[matchIndex] = ParseValueToken(json, ref s);
+                    found++;
+                    if (found == needed) return found; // All fields found — early exit
+                }
+                else
+                {
+                    if (!SkipValue(ref s)) return found;
+                }
+
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return found;
+                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)'}') return found;
+                return found; // Malformed JSON
+            }
+        }
+
+        /// <summary>
         /// Extract a top-level field from a JSON object and return it as an ExprToken.
         /// Returns default (IsNone) if the field is not found or the JSON is malformed.
         /// </summary>
