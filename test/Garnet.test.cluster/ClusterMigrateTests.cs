@@ -1928,8 +1928,13 @@ namespace Garnet.test.cluster
             var keys = context.GenerateKeysWithPrefix(keyPrefix, keyCount, suffixLength: 12);
             var values = context.GenerateKeysWithPrefix(valuePrefix, keyCount, suffixLength: 8);
             var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(keyPrefix));
-            var migrateTargetInfo = new string[] { slot.ToString(), "<", sourceNodeId };
-            var migrateSourceInfo = new string[] { slot.ToString(), ">", targetNodeId };
+            void AssertSlotState(string[] slotState, string expectedDirection, string expectedNodeId, string stateName)
+            {
+                ClassicAssert.AreEqual(3, slotState.Length, $"{stateName} slot state should have 3 elements: [{string.Join(' ', slotState)}]");
+                ClassicAssert.AreEqual(slot.ToString(), slotState[0], $"{stateName} slot mismatch: [{string.Join(' ', slotState)}]");
+                ClassicAssert.AreEqual(expectedDirection, slotState[1], $"{stateName} direction mismatch: [{string.Join(' ', slotState)}]");
+                ClassicAssert.AreEqual(expectedNodeId, slotState[2], $"{stateName} nodeId mismatch: [{string.Join(' ', slotState)}]");
+            }
 
             for (var i = 0; i < keyCount; i++)
             {
@@ -1943,13 +1948,13 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(respImport, "OK");
             context.logger.LogDebug("3. Set slot {_slot} to IMPORTING state on node {port}", slot, context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port);
             var migrateInfo = context.clusterTestUtils.SlotState(targetNodeIndex, slot, logger: context.logger);
-            ClassicAssert.AreEqual(migrateTargetInfo, migrateInfo, $"{migrateTargetInfo} {migrateInfo}");
+            AssertSlotState(migrateInfo, "<", sourceNodeId, "IMPORTING");
 
             var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger);
             ClassicAssert.AreEqual(respMigrate, "OK");
             context.logger.LogDebug("4. Set slot {_slot} to MIGRATING state on node {port}", slot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
             migrateInfo = context.clusterTestUtils.SlotState(sourceNodeIndex, slot, logger: context.logger);
-            ClassicAssert.AreEqual(migrateSourceInfo, migrateInfo, $"{migrateTargetInfo} {migrateInfo}");
+            AssertSlotState(migrateInfo, ">", targetNodeId, "MIGRATING");
 
             // Ensure we can read
             for (var i = 0; i < keyCount; i++)
@@ -2248,7 +2253,8 @@ namespace Garnet.test.cluster
 
         [Test, Order(26)]
         [Category("CLUSTER")]
-        public void ClusterMigrateSlotWithTombstones()
+        [CancelAfter(30_000)]
+        public async Task ClusterMigrateSlotWithTombstones(CancellationToken cancellationToken)
         {
             var shards = defaultShards;
             context.CreateInstances(shards, useTLS: UseTLS);
@@ -2275,10 +2281,8 @@ namespace Garnet.test.cluster
 
             var deletedCount = keys.Length / 2;
             var db = context.clusterTestUtils.GetMultiplexer().GetDatabase(0);
-
-            var keysSpan = keys.AsSpan();
-            var deletedKeys = keysSpan.Slice(0, deletedCount);
-            var liveKeys = keysSpan.Slice(deletedCount);
+            var deletedKeys = keys.AsSpan().Slice(0, deletedCount).ToArray();
+            var liveKeys = keys.AsSpan().Slice(deletedCount).ToArray();
 
             foreach (var key in deletedKeys)
                 _ = db.KeyDelete(key);
@@ -2297,7 +2301,7 @@ namespace Garnet.test.cluster
                 var value = context.clusterTestUtils.GetKey(targetEndPoint, probeLiveKey, out var migratedSlot, out var migratedEndPoint, out var responseState);
                 while (responseState != ResponseState.OK || value == null)
                 {
-                    _ = Thread.Yield();
+                    await Task.Delay(100, cancellationToken);
                     value = context.clusterTestUtils.GetKey(targetEndPoint, probeLiveKey, out migratedSlot, out migratedEndPoint, out responseState);
                 }
 
@@ -2314,7 +2318,7 @@ namespace Garnet.test.cluster
                 var value = context.clusterTestUtils.GetKey(targetEndPoint, key, out var migratedSlot, out var migratedEndPoint, out var responseState);
                 while (responseState != ResponseState.OK)
                 {
-                    _ = Thread.Yield();
+                    await Task.Delay(100, cancellationToken);
                     value = context.clusterTestUtils.GetKey(targetEndPoint, key, out migratedSlot, out migratedEndPoint, out responseState);
                 }
 

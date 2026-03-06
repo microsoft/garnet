@@ -80,7 +80,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Pause Revivification
         /// </summary>
-        public void PauseRevivification()
+        /// <param name="timeout"></param>
+        /// /// <param name="token"></param>
+        public void PauseRevivification(TimeSpan timeout, CancellationToken token)
         {
             try
             {
@@ -98,7 +100,7 @@ namespace Tsavorite.core
             }
 
             // Wait for everyone to observe the reviv suspend signal
-            pauseRevivEvent.Wait();
+            pauseRevivEvent.Wait(timeout, token);
         }
 
         /// <summary>
