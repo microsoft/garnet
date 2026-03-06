@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -56,8 +57,7 @@ namespace Garnet.server
         {
             var offset = args.offset;
             var bitCount = (byte)(args.typeInfo & 0x7F);
-            if (!TryValidateBitfieldOffset(offset, bitCount, multiplyOffset: false, out _, out var endOffset))
-                throw new GarnetException("ERR value is not an integer or out of range.");
+            Debug.Assert(TryValidateBitfieldOffset(offset, bitCount, multiplyOffset: false, out _, out var endOffset));
             return LengthInBytes(endOffset);
         }
 
