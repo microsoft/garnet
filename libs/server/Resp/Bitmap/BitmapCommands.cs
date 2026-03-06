@@ -215,14 +215,10 @@ namespace Garnet.server
 
             // Extract parameters in command order:
             // start, end, [BIT|BYTE]
+            var useBitIndex = true;
             if (count > 1)
             {
-                if (!parseState.TryGetLong(1, out _))
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                }
-
-                if (!parseState.TryGetLong(2, out _))
+                if (!parseState.TryGetLong(1, out _) || !parseState.TryGetLong(2, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
@@ -230,14 +226,20 @@ namespace Garnet.server
                 if (count > 3)
                 {
                     var spanOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
-                    if (!spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) && !spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                    if (spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8))
+                        useBitIndex = true;
+                    else if (spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                        useBitIndex = false;
+                    else
                     {
                         return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
+
+
                 }
             }
 
-            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1, arg1: useBitIndex ? 1 : 0);
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringBitCount(ref sbKey, ref input, ref o);
             if (status == GarnetStatus.OK)

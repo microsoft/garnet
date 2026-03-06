@@ -154,20 +154,19 @@ namespace Garnet.server
                     long bcEndOffset = -1;
                     byte bcOffsetType = 0x0;
 
-                    if (input.parseState.Count > 0 && input.parseState.TryGetLong(0, out var parsedBcStartOffset))
+                    if (input.parseState.Count > 0)
                     {
-                        bcStartOffset = parsedBcStartOffset;
+                        bcStartOffset = input.parseState.GetLong(0);
                     }
 
-                    if (input.parseState.Count > 1 && input.parseState.TryGetLong(1, out var parsedBcEndOffset))
+                    if (input.parseState.Count > 1)
                     {
-                        bcEndOffset = parsedBcEndOffset;
+                        bcEndOffset = input.parseState.GetLong(1);
                     }
 
                     if (input.parseState.Count > 2)
                     {
-                        var spanOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
-                        bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
+                        bcOffsetType = (byte)(input.arg1 & 0x1);
                     }
 
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
