@@ -33,7 +33,7 @@ namespace Garnet.cluster
                 mss.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                // NOTE: Value might be null (because scan executes includingTombstones) so skip expiration validation until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendMainStoreKeyValuePair).
+                // NOTE: Because the scan executes includingTombstones, tombstone records may not have valid expiration metadata; skip expiration validation here and defer it until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendMainStoreKeyValuePair).
                 if (!recordMetadata.RecordInfo.Tombstone && ClusterSession.Expired(ref value))
                     return true;
 
@@ -100,7 +100,7 @@ namespace Garnet.cluster
                 mss.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                // NOTE: Value might be null (because scan executes includingTombstones) so skip expiration validation until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendObjectStoreKeyValuePair).
+                // NOTE: Because the scan executes includingTombstones, tombstone records may not have valid expiration metadata; skip expiration validation here and defer it until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendObjectStoreKeyValuePair).
                 if (!recordMetadata.RecordInfo.Tombstone && ClusterSession.Expired(ref value))
                     return true;
 
