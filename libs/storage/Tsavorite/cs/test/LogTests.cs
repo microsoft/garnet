@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -144,7 +144,7 @@ namespace Tsavorite.test
         {
             if (asyncByteVectorIter is not null)
             {
-                ClassicAssert.IsTrue(await asyncByteVectorIter.MoveNextAsync());
+                ClassicAssert.IsTrue(await asyncByteVectorIter.MoveNextAsync().ConfigureAwait(false));
                 if (expectedData is not null)
                     ClassicAssert.IsTrue(asyncByteVectorIter.Current.entry.SequenceEqual(expectedData));
 
@@ -156,7 +156,7 @@ namespace Tsavorite.test
 
             if (asyncMemoryOwnerIter is not null)
             {
-                ClassicAssert.IsTrue(await asyncMemoryOwnerIter.MoveNextAsync());
+                ClassicAssert.IsTrue(await asyncMemoryOwnerIter.MoveNextAsync().ConfigureAwait(false));
                 if (expectedData is not null)
                     ClassicAssert.IsTrue(asyncMemoryOwnerIter.Current.entry.Memory.Span.ToArray().Take(expectedData.Length)
                         .SequenceEqual(expectedData));
@@ -181,11 +181,11 @@ namespace Tsavorite.test
             CancellationToken token = cts.Token;
 
             // Enter in some entries then wait on this separate thread
-            await log.EnqueueAsync(entry);
-            await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null, null, token);
-            await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask, null, token);
+            await log.EnqueueAsync(entry).ConfigureAwait(false);
+            await log.EnqueueAsync(entry).ConfigureAwait(false);
+            var commitTask = await log.CommitAsync(null, null, token).ConfigureAwait(false);
+            await log.EnqueueAsync(entry).ConfigureAwait(false);
+            await log.CommitAsync(commitTask, null, token).ConfigureAwait(false);
         }
     }
 
@@ -206,7 +206,7 @@ namespace Tsavorite.test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
-            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -226,7 +226,7 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable().ConfigureAwait(false))
                     {
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                         counter.IncrementAndMaybeTruncateUntil(nextAddress);
@@ -235,7 +235,7 @@ namespace Tsavorite.test
                     break;
                 case IteratorType.AsyncMemoryOwner:
                     await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter
-                                       .GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                                       .GetAsyncEnumerable(MemoryPool<byte>.Shared).ConfigureAwait(false))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                         result.Dispose();
@@ -268,7 +268,7 @@ namespace Tsavorite.test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
-            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             log.Initialize(1000000L, 1000000L, 323);
 
@@ -292,7 +292,7 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable().ConfigureAwait(false))
                     {
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                         counter.IncrementAndMaybeTruncateUntil(nextAddress);
@@ -301,7 +301,7 @@ namespace Tsavorite.test
                     break;
                 case IteratorType.AsyncMemoryOwner:
                     await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter
-                                       .GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                                       .GetAsyncEnumerable(MemoryPool<byte>.Shared).ConfigureAwait(false))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                         result.Dispose();
@@ -381,7 +381,7 @@ namespace Tsavorite.test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
-            log = await TsavoriteLog.CreateAsync(logSettings);
+            log = await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -398,7 +398,7 @@ namespace Tsavorite.test
             using var iter = log.Scan(0, long.MaxValue);
             var counter = new Counter(log);
             var consumer = new TestConsumer(counter, entry);
-            await iter.ConsumeAllAsync(consumer);
+            await iter.ConsumeAllAsync(consumer).ConfigureAwait(false);
             ClassicAssert.AreEqual(numEntries, counter.count);
         }
     }
@@ -424,7 +424,7 @@ namespace Tsavorite.test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
-            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             const int dataLength = 1000;
             byte[] data1 = new byte[dataLength];
@@ -457,11 +457,11 @@ namespace Tsavorite.test
 
                     ClassicAssert.IsFalse(waitingReader.IsCompleted);
 
-                    await log.CommitAsync(token: token);
+                    await log.CommitAsync(token: token).ConfigureAwait(false);
                     while (!waitingReader.IsCompleted) ;
                     ClassicAssert.IsTrue(waitingReader.IsCompleted);
 
-                    await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+                    await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
                 }
             }
         }
@@ -484,7 +484,7 @@ namespace Tsavorite.test
                 SegmentSizeBits = 22,
                 TryRecoverLatest = false
             };
-            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             const int dataLength = 10000;
             byte[] data1 = new byte[dataLength];
@@ -500,16 +500,16 @@ namespace Tsavorite.test
 
             var appendResult = log.TryEnqueue(data1, out _);
             ClassicAssert.IsTrue(appendResult);
-            await log.CommitAsync();
-            await iter.WaitAsync();
+            await log.CommitAsync().ConfigureAwait(false);
+            await iter.WaitAsync().ConfigureAwait(false);
 
-            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1);
+            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1).ConfigureAwait(false);
 
             // This no longer fails in latest TryAllocate improvement
             appendResult = log.TryEnqueue(data1, out _);
             ClassicAssert.IsTrue(appendResult);
-            await log.CommitAsync();
-            await iter.WaitAsync();
+            await log.CommitAsync().ConfigureAwait(false);
+            await iter.WaitAsync().ConfigureAwait(false);
 
             switch (iteratorType)
             {
@@ -522,7 +522,7 @@ namespace Tsavorite.test
                         var moveNextTask = asyncByteVectorIter.MoveNextAsync();
 
                         // Now the data is available.
-                        ClassicAssert.IsTrue(await moveNextTask);
+                        ClassicAssert.IsTrue(await moveNextTask.ConfigureAwait(false));
                     }
                     break;
                 case IteratorType.AsyncMemoryOwner:
@@ -531,7 +531,7 @@ namespace Tsavorite.test
                         var moveNextTask = asyncMemoryOwnerIter.MoveNextAsync();
 
                         // Now the data is available, and must be disposed.
-                        ClassicAssert.IsTrue(await moveNextTask);
+                        ClassicAssert.IsTrue(await moveNextTask.ConfigureAwait(false));
                         asyncMemoryOwnerIter.Current.entry.Dispose();
                     }
                     break;
@@ -570,7 +570,7 @@ namespace Tsavorite.test
                 SegmentSizeBits = 22,
                 TryRecoverLatest = false
             };
-            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             byte[] data1 = new byte[100];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
@@ -581,7 +581,7 @@ namespace Tsavorite.test
             }
 
             ClassicAssert.AreEqual(log.BeginAddress, log.CommittedUntilAddress);
-            await log.CommitAsync();
+            await log.CommitAsync().ConfigureAwait(false);
 
             ClassicAssert.AreEqual(log.TailAddress, log.CommittedUntilAddress);
             ClassicAssert.AreEqual(log.BeginAddress, log.CommittedBeginAddress);
@@ -594,7 +594,7 @@ namespace Tsavorite.test
                 ? iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).GetAsyncEnumerator()
                 : default;
 
-            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1);
+            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1).ConfigureAwait(false);
 
             log.TruncateUntil(iter.NextAddress);
 
@@ -602,7 +602,7 @@ namespace Tsavorite.test
             ClassicAssert.Less(log.CommittedBeginAddress, log.BeginAddress);
             ClassicAssert.AreEqual(log.BeginAddress, iter.NextAddress);
 
-            await log.CommitAsync();
+            await log.CommitAsync().ConfigureAwait(false);
 
             ClassicAssert.AreEqual(log.TailAddress, log.CommittedUntilAddress);
             ClassicAssert.AreEqual(log.BeginAddress, log.CommittedBeginAddress);
@@ -647,22 +647,22 @@ namespace Tsavorite.test
             commit.Start();
 
             // 65536=page size|headerSize|64=log header - add cancellation token on end just so not assuming default on at least one 
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken).ConfigureAwait(false);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]).ConfigureAwait(false);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(spanBatch);
+            await log.EnqueueAndWaitForCommitAsync(spanBatch).ConfigureAwait(false);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken);
+            await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken).ConfigureAwait(false);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
+            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte).ConfigureAwait(false);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
+            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken).ConfigureAwait(false);
 
             // TO DO: Probably do more verification - could read it but in reality, if fails it locks up waiting
 
@@ -686,7 +686,7 @@ namespace Tsavorite.test
                 TryRecoverLatest = false,
                 SafeTailRefreshFrequencyMs = 0
             };
-            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
@@ -698,7 +698,7 @@ namespace Tsavorite.test
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
-                await Task.Yield();
+                await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
@@ -721,14 +721,14 @@ namespace Tsavorite.test
                     break;
                 case IteratorType.AsyncByteVector:
                     {
-                        while (await asyncByteVectorIter.MoveNextAsync() &&
+                        while (await asyncByteVectorIter.MoveNextAsync().ConfigureAwait(false) &&
                                asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
                             log.TruncateUntil(asyncByteVectorIter.Current.nextAddress);
                     }
                     break;
                 case IteratorType.AsyncMemoryOwner:
                     {
-                        while (await asyncMemoryOwnerIter.MoveNextAsync())
+                        while (await asyncMemoryOwnerIter.MoveNextAsync().ConfigureAwait(false))
                         {
                             log.TruncateUntil(asyncMemoryOwnerIter.Current.nextAddress);
                             asyncMemoryOwnerIter.Current.entry.Dispose();
@@ -747,9 +747,9 @@ namespace Tsavorite.test
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
-                await Task.Yield();
+                await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
-            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+            await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
 
             log.Dispose();
         }
@@ -779,7 +779,7 @@ namespace Tsavorite.test
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
-                await Task.Yield();
+                await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -802,14 +802,14 @@ namespace Tsavorite.test
                         break;
                     case IteratorType.AsyncByteVector:
                         {
-                            while (await asyncByteVectorIter.MoveNextAsync() &&
+                            while (await asyncByteVectorIter.MoveNextAsync().ConfigureAwait(false) &&
                                    asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
                                 log.TruncateUntilPageStart(asyncByteVectorIter.Current.nextAddress);
                         }
                         break;
                     case IteratorType.AsyncMemoryOwner:
                         {
-                            while (await asyncMemoryOwnerIter.MoveNextAsync())
+                            while (await asyncMemoryOwnerIter.MoveNextAsync().ConfigureAwait(false))
                             {
                                 log.TruncateUntilPageStart(asyncMemoryOwnerIter.Current.nextAddress);
                                 asyncMemoryOwnerIter.Current.entry.Dispose();
@@ -828,10 +828,10 @@ namespace Tsavorite.test
 
                 // Wait for safe tail to catch up
                 while (log.SafeTailAddress < log.TailAddress)
-                    await Task.Yield();
+                    await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
 
-                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
             }
 
             log.Dispose();
@@ -902,7 +902,7 @@ namespace Tsavorite.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22, TryRecoverLatest = false };
-            log = await TsavoriteLog.CreateAsync(logSettings);
+            log = await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false);
 
             // make it small since launching each on separate threads 
             const int entryLength = 10;
@@ -988,7 +988,7 @@ namespace Tsavorite.test
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
-                await Task.Yield();
+                await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -1011,14 +1011,14 @@ namespace Tsavorite.test
                         break;
                     case IteratorType.AsyncByteVector:
                         {
-                            while (await asyncByteVectorIter.MoveNextAsync() &&
+                            while (await asyncByteVectorIter.MoveNextAsync().ConfigureAwait(false) &&
                                    asyncByteVectorIter.Current.nextAddress != log.SafeTailAddress)
                                 log.TruncateUntilPageStart(asyncByteVectorIter.Current.nextAddress);
                         }
                         break;
                     case IteratorType.AsyncMemoryOwner:
                         {
-                            while (await asyncMemoryOwnerIter.MoveNextAsync())
+                            while (await asyncMemoryOwnerIter.MoveNextAsync().ConfigureAwait(false))
                             {
                                 log.TruncateUntilPageStart(asyncMemoryOwnerIter.Current.nextAddress);
                                 asyncMemoryOwnerIter.Current.entry.Dispose();
@@ -1037,9 +1037,9 @@ namespace Tsavorite.test
 
                 // Wait for safe tail to catch up
                 while (log.SafeTailAddress < log.TailAddress)
-                    await Task.Yield();
+                    await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
-                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
+                await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
             }
 
             log.Dispose();
@@ -1177,7 +1177,7 @@ namespace Tsavorite.test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
-            log = await TsavoriteLog.CreateAsync(logSettings);
+            log = await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -1217,7 +1217,7 @@ namespace Tsavorite.test
             {
                 var counter = new Counter(log);
                 var consumer = new TsavoriteLogGeneralTests.TestConsumer(counter, entry);
-                await iter.ConsumeAllAsync(consumer);
+                await iter.ConsumeAllAsync(consumer).ConfigureAwait(false);
                 ClassicAssert.AreEqual(numEntries, counter.count);
             }
         }
