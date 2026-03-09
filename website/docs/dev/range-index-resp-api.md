@@ -1896,6 +1896,7 @@ private struct RangeIndexEntry
     public uint MaxKeyLen;
     public uint LeafPageSize;
     public byte StorageBackend;
+    public string BackendFilePath; // BfTree's SSD backend file path
 }
 ```
 
@@ -2003,10 +2004,9 @@ public void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
 
     if (rangeIndexManager.activeIndexes.TryRemove(treePtr, out var entry))
     {
-        // Snapshot BfTree to disk, then free native instance
-        var snapshotPath = DeriveSnapshotPath(entry.KeyBytes,
-            rangeIndexManager.latestSnapshotDir);
-        rangeIndexManager.service.Snapshot(treePtr, snapshotPath);
+        // Flush BfTree state to its SSD backend file, then free native instance.
+        // No copy needed — the backend file IS the snapshot for recovery.
+        rangeIndexManager.service.Snapshot(treePtr);
         rangeIndexManager.service.Drop(treePtr);
     }
 }
@@ -2078,13 +2078,31 @@ snapshot. For RangeIndex stubs, this callback snapshots the BfTree to disk along
 Tsavorite snapshot page, using the deterministic path derived from the key bytes and
 checkpoint token.
 
-This is cleaner than a pre-checkpoint scan because:
-- The BfTree snapshot happens **atomically** with the stub being written to the checkpoint
-  file — no window for concurrent writes to create divergence.
-- No need to iterate all active indexes upfront — only the stubs being flushed trigger
-  snapshots.
-- Indexes that were already evicted (and thus already snapshotted to disk) are skipped
-  naturally.
+**Important: snapshot consistency.** The bf-tree `snapshot()` method flushes state to
+the **same SSD backend file** the tree uses for operations. It does not create a separate
+point-in-time copy. Subsequent writes to the BfTree modify the same file, overwriting the
+snapshotted state. For checkpoint correctness, we need a point-in-time copy.
+
+**Approach: reflink (copy-on-write) file clone.** After calling `snapshot()` to flush the
+BfTree state, create a **reflink copy** of the backend file to the checkpoint directory.
+On filesystems that support it (btrfs, XFS, bcachefs, ZFS), this is an instant O(1)
+operation that shares data blocks via copy-on-write — subsequent BfTree writes allocate
+new blocks without affecting the checkpoint copy. On filesystems without reflink support
+(ext4, NTFS), this falls back to a regular file copy.
+
+```csharp
+// Linux: ioctl FICLONE or cp --reflink=auto
+// .NET: File.Copy as fallback; use ioctl for reflink
+private static void ReflinkCopy(string source, string destination)
+{
+    Directory.CreateDirectory(Path.GetDirectoryName(destination));
+    // Try reflink first (Linux: ioctl FICLONE), fall back to regular copy
+    if (!TryReflinkClone(source, destination))
+        File.Copy(source, destination, overwrite: true);
+}
+```
+
+The per-record callback during snapshot page flush becomes:
 
 > **Tsavorite change required:** Invoke a per-record callback during snapshot page flush,
 > analogous to `DisposeRecord` on eviction. This could be a new `DisposeReason` value
@@ -2105,9 +2123,23 @@ public void OnSnapshotRecord(ref LogRecord logRecord, Guid checkpointToken, stri
 
     if (rangeIndexManager.activeIndexes.TryGetValue(treePtr, out var entry))
     {
-        // Snapshot BfTree to checkpoint directory (do NOT free — it's still live)
-        var snapshotPath = DeriveSnapshotPath(entry.KeyBytes, checkpointDir, checkpointToken);
-        rangeIndexManager.service.Snapshot(treePtr, snapshotPath);
+        // Acquire exclusive lock to block all RI operations on this index
+        // during the flush+copy window.
+        var keyHash = HashKeyToGuid(entry.KeyBytes);
+        rangeIndexManager.rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+        try
+        {
+            // 1. Flush BfTree state to its SSD backend file
+            rangeIndexManager.service.Snapshot(treePtr);
+
+            // 2. Reflink-copy the backend file to the checkpoint directory
+            var checkpointPath = DeriveSnapshotPath(entry.KeyBytes, checkpointDir, checkpointToken);
+            ReflinkCopy(entry.BackendFilePath, checkpointPath);
+        }
+        finally
+        {
+            rangeIndexManager.rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+        }
     }
 }
 ```
