@@ -138,7 +138,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0) || !BitmapManager.IsValidBitOffset(offset))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
             }
@@ -175,7 +175,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0) || !BitmapManager.IsValidBitOffset(offset))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
             }
@@ -202,27 +202,40 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
-            if (count < 1 || count > 4)
+            if (count is not 1 and not 3 and not 4)
+            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
 
             // <[Get Key]>
             var key = parseState.GetArgSliceByRef(0);
 
-            // Validate start & end offsets, if exist
-            if (parseState.Count > 1)
+            // Extract parameters in command order:
+            // start, end, [BIT|BYTE]
+            var useBitIndex = true;
+            if (count > 1)
             {
-                if (!parseState.TryGetInt(1, out _) || (parseState.Count > 2 && !parseState.TryGetInt(2, out _)))
+                if (!parseState.TryGetLong(1, out _) || !parseState.TryGetLong(2, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
-            }
 
-            var input = new StringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1);
+                if (count > 3)
+                {
+                    var spanOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
+                    if (spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8))
+                        useBitIndex = true;
+                    else if (spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                        useBitIndex = false;
+                    else
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                    }
+
+            var input = new StringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1, arg1: useBitIndex ? 1 : 0);
 
             var output = GetStringOutput();
 
             var status = storageApi.StringBitCount(key, ref input, ref output);
-
             if (status == GarnetStatus.OK)
             {
                 ProcessOutput(output.SpanByteAndMemory);
@@ -243,7 +256,8 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
-            if (count < 2 || count > 5)
+            if (count is < 2 or > 5)
+            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
 
             // <[Get Key]>
@@ -256,25 +270,53 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER);
             }
 
-            // Validate start & end offsets, if exist
-            if (parseState.Count > 2)
+            long startOffset = 0;
+            long endOffset = -1;
+            byte offsetType = 0x0;
+            var hasStartOffset = false;
+            var hasEndOffset = false;
+
+            // Extract parameters in command order, consistent with PrivateMethods BITPOS decoding:
+            // bit, start, end, [BIT|BYTE]
+            if (count > 2)
             {
-                if (!parseState.TryGetInt(2, out _) ||
-                    (parseState.Count > 3 && !parseState.TryGetInt(3, out _)))
+                // start
+                if (!parseState.TryGetLong(2, out startOffset))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
+                hasStartOffset = true;
+
+                if (count > 3)
+                {
+                    // end
+                    if (!parseState.TryGetLong(3, out endOffset))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    }
+                    hasEndOffset = true;
+
+                    if (count > 4)
+                    {
+                        // Optional index type (default BYTE)
+                        var sbOffsetType = parseState.GetArgSliceByRef(4).ReadOnlySpan;
+                        if (sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8))
+                        {
+                            offsetType = 0x1;
+                        }
+                        else if (!sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                        }
+                    }
+                }
             }
 
-            // Validate offset range type (BIT / BYTE), if exists
-            if (parseState.Count > 4)
+            if (BitmapManager.TryValidateBitPosOffsets(startOffset, endOffset, offsetType, hasStartOffset, hasEndOffset))
             {
-                var sbOffsetType = parseState.GetArgSliceByRef(4).ReadOnlySpan;
-                if (!sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) &&
-                    !sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BYTE"u8))
-                {
-                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
-                }
+                while (!RespWriteUtils.TryWriteInt64(-1, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             var input = new StringInput(RespCommand.BITPOS, ref parseState, startIdx: 1);
@@ -372,17 +414,23 @@ namespace Garnet.server
 
                 // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
                 // Process encoding argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out var bitCount, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE);
                 }
                 var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // Process offset argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out var offset, out var multiplyOffset))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
                 }
+
+                if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out _, out _))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
+                }
+
                 var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // GET Subcommand takes 2 args, encoding and offset
@@ -454,17 +502,23 @@ namespace Garnet.server
                 // GET Subcommand takes 2 args, encoding and offset
 
                 // Process encoding argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out var bitCount, out _))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE);
                 }
                 var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // Process offset argument
-                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out var offset, out var multiplyOffset))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
                 }
+
+                if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out _, out _))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
+                }
+
                 var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
