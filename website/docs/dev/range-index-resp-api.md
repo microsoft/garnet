@@ -1476,6 +1476,14 @@ cp libs/native/bftree-garnet/target/release/libbftree_garnet.so \
    main/GarnetServer/bin/Debug/net10.0/
 ```
 
+**CI/CD considerations:**
+- The Azure pipeline for external release must be updated to build the `bftree-garnet`
+  crate (for each target platform), package the NuGet, **sign it**, and publish it.
+- The pipeline should detect when the `bf-tree` crate version changes in
+  `libs/native/bftree-garnet/Cargo.toml` and trigger a new NuGet release.
+- The NuGet package must be signed before publishing, consistent with Garnet's existing
+  package signing requirements.
+
 #### 11c. Implement `BfTreeService` (C# interop wrapper)
 
 > **Prototype reference:** [`DiskANNService.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/DiskANNService.cs) —
