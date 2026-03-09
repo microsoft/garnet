@@ -281,6 +281,7 @@ namespace Tsavorite.test.LogRecordTests
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        [Explicit("TODO CopyDiskLogRecordToLogRecord")]
         public void CopyDiskLogRecordToLogRecord()
         {
             Assert.Ignore("TODO CopyDiskLogRecordToLogRecord");
@@ -288,6 +289,7 @@ namespace Tsavorite.test.LogRecordTests
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        [Explicit("TODO SerializeToMemoryPool")]
         public void SerializeToMemoryPool()
         {
             Assert.Ignore("TODO SerializeToMemoryPool");

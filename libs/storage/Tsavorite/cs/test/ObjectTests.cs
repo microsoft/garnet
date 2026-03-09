@@ -438,7 +438,8 @@ namespace Tsavorite.test.Objects
                 store.epoch.Suspend();
             }
             gate.Dispose();
-            await Task.WhenAll(task, sroSemaphore.WaitAsync());
+
+            await Task.WhenAll(task, sroSemaphore.WaitAsync(millisecondsTimeout: 2000));
 
             // Test that the FlushedUntilAddress is correct and that we get the right results back; nothing has been evicted yet, so all records are in memory.
             Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.GetTailAddress()));
