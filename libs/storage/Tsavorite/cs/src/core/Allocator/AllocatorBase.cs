@@ -679,7 +679,7 @@ namespace Tsavorite.core
         }
         internal bool IsAllocated(int pageIndex) => pageArrays[pageIndex] is not null;
 
-        internal void ClearPage(long page, int offset = 0)
+        internal virtual void ClearPage(long page, int offset = 0)
         {
             var pageArray = pageArrays[page % BufferSize];
 

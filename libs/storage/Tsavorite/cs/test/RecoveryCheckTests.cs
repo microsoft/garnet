@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -121,23 +122,39 @@ namespace Tsavorite.test.recovery
             using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions());
             var bc1 = s1.BasicContext;
 
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
             for (long key = 0; key < 1000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+            }
 
             if (readCacheMode == ReadCacheMode.UseRC)
             {
                 store1.Log.FlushAndEvict(true);
+
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+
                 for (long key = 0; key < 1000; key++)
                 {
+                    keyLong = key;
                     long output = default;
-                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+
+                    var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
                 }
             }
 
@@ -175,15 +192,20 @@ namespace Tsavorite.test.recovery
             var bc2 = s2.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
             }
         }
     }
@@ -200,10 +222,14 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        //[Repeat(3000)]
         public async ValueTask RecoveryCheck2(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
+
             const long pageSize = 1L << 10;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
@@ -234,25 +260,40 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            for (int i = 0; i < 5; i++)
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
+            for (int iter = 0; iter < 5; iter++)
             {
-                for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                    _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
+                {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                }
 
                 if (readCacheMode == ReadCacheMode.UseRC)
                 {
                     store1.Log.FlushAndEvict(true);
-                    for (long key = 1000 * i; key < 1000 * i + 1000; key++)
+
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+
+                    for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
                     {
+                        keyLong = key;
                         long output = default;
-                        var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                        if (status.IsPending)
+                        var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                        var wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                             (status, output) = GetSinglePendingResult(completedOutputs);
                         }
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                     }
                 }
 
@@ -269,37 +310,43 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {i}");
-                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {i}");
-                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: i);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {iter}");
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {iter}");
+                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: iter);
 
                 using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
-                for (long key = 0; key < 1000 * i + 1000; key++)
+                for (long key = 0; key < 1000 * iter + 1000; key++)
                 {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
                     long output = default;
-                    var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+                    var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                 }
             }
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryCheck2Repeated(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
-            )
+        public void RecoveryCheck2Repeated([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
             Guid token = default;
             const long pageSize = 1L << 10;
 
-            for (int i = 0; i < 6; i++)
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
+            for (int iter = 0; iter < 6; iter++)
             {
                 using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
                 {
@@ -313,14 +360,20 @@ namespace Tsavorite.test.recovery
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
-                if (i > 0)
+                if (iter > 0)
                     _ = store.Recover(default, token);
 
                 using var s1 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc1 = s1.BasicContext;
 
-                for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                    _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
+                {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                }
 
                 var task = store.TakeHybridLogCheckpointAsync(checkpointType);
                 bool success;
@@ -330,17 +383,22 @@ namespace Tsavorite.test.recovery
                 using var s2 = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
 
-                for (long key = 0; key < 1000 * i + 1000; key++)
+                for (long key = 0; key < 1000 * iter + 1000; key++)
                 {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
                     long output = default;
-                    var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+                    var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                 }
             }
         }
@@ -377,13 +435,14 @@ namespace Tsavorite.test.recovery
             {
                 long output = default;
                 var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
             }
 
             for (long key = 1000; key < 2000; key++)
@@ -396,12 +455,13 @@ namespace Tsavorite.test.recovery
             {
                 long output = default;
                 var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
+                ClassicAssert.IsTrue(status.NotFound, $"status = {status}, key = {key}, wasPending = {wasPending}");
             }
 
             // Rollback to previous checkpoint
@@ -411,25 +471,27 @@ namespace Tsavorite.test.recovery
             {
                 long output = default;
                 var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
             }
 
             for (long key = 1000; key < 2000; key++)
             {
                 long output = default;
                 var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
+                ClassicAssert.IsTrue(status.NotFound, $"status = {status}, key = {key}, wasPending = {wasPending}");
             }
 
             for (long key = 1000; key < 2000; key++)
@@ -439,13 +501,14 @@ namespace Tsavorite.test.recovery
             {
                 long output = default;
                 var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
             }
         }
     }
@@ -496,25 +559,40 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            for (int i = 0; i < 5; i++)
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
+            for (int iter = 0; iter < 5; iter++)
             {
-                for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                    _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
+                {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                }
 
                 if (readCacheMode == ReadCacheMode.UseRC)
                 {
                     store1.Log.FlushAndEvict(true);
-                    for (long key = 1000 * i; key < 1000 * i + 1000; key++)
+
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+
+                    for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
                     {
+                        keyLong = key;
                         long output = default;
-                        var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                        if (status.IsPending)
+                        var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                        var wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                             (status, output) = GetSinglePendingResult(completedOutputs);
                         }
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                     }
                 }
 
@@ -531,23 +609,29 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {i}");
-                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {i}");
-                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: i);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {iter}");
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {iter}");
+                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: iter);
 
                 using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
-                for (long key = 0; key < 1000 * i + 1000; key++)
+                for (long key = 0; key < 1000 * iter + 1000; key++)
                 {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
                     long output = default;
-                    var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+                    // Local variables in an async function can be moved, so we must copy the key
+                    var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                 }
             }
         }
@@ -599,29 +683,44 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            for (int i = 0; i < 5; i++)
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
+            for (int iter = 0; iter < 5; iter++)
             {
-                for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                    _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
+                {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                }
 
                 if (readCacheMode == ReadCacheMode.UseRC)
                 {
                     store1.Log.FlushAndEvict(true);
-                    for (long key = 1000 * i; key < 1000 * i + 1000; key++)
+
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+
+                    for (long key = 1000 * iter; key < 1000 * iter + 1000; key++)
                     {
+                        keyLong = key;
                         long output = default;
-                        var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                        if (status.IsPending)
+                        var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                        var wasPending = status.IsPending;
+                        if (wasPending)
                         {
                             Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                             (status, output) = GetSinglePendingResult(completedOutputs);
                         }
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                     }
                 }
 
-                if (i == 0)
+                if (iter == 0)
                     _ = store1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
 
@@ -636,23 +735,28 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {i}");
-                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {i}");
-                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: i);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {iter}");
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {iter}");
+                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: iter);
 
                 using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
-                for (long key = 0; key < 1000 * i + 1000; key++)
+                for (long key = 0; key < 1000 * iter + 1000; key++)
                 {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
                     long output = default;
-                    var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+                    var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, key = {key}, wasPending = {wasPending}, iter = {iter}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, key = {key}, wasPending = {wasPending}, iter = {iter}");
                 }
             }
         }
@@ -691,23 +795,40 @@ namespace Tsavorite.test.recovery
 
             using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions());
             var bc1 = s1.BasicContext;
+
+            // Local variables in an async function can be moved, so we must use an array for the key
+            var keyArray = new byte[sizeof(long)];
+
             for (long key = 0; key < 1000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+            }
 
             if (useReadCache)
             {
                 store1.Log.FlushAndEvict(true);
+
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+
                 for (long key = 0; key < 1000; key++)
                 {
+                    keyLong = key;
+
                     long output = default;
-                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+                    var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, key = {key}, wasPending = {wasPending}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, key = {key}, wasPending = {wasPending}");
                 }
             }
 
@@ -716,15 +837,20 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, key = {key}, wasPending = {wasPending}");
             }
 
             var task = store1.TakeFullCheckpointAsync(checkpointType);
@@ -762,15 +888,20 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, key = {key}, wasPending = {wasPending}");
             }
         }
     }
@@ -828,16 +959,33 @@ namespace Tsavorite.test.recovery
 
             using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions2>(new MyFunctions2());
             var bc1 = s1.BasicContext;
+
+            // Local variables in an async function can be moved, so we must use an array for the key and value
+            var keyArray = new byte[sizeof(long)];
+            var valueArray = new byte[sizeof(long)];
+
             for (long key = 0; key < 1000; key++)
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+            {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+            }
 
             var task = store1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
             var (success, token) = await task;
 
             for (long key = 950; key < 1000; key++)
             {
-                var value = key + 1;
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                var valueSpan = new Span<byte>(valueArray);
+                ref var valueLong = ref valueSpan.AsRef<long>();
+                keyLong = key;
+                valueLong = key + 1;
+
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
             }
 
             var version1 = store1.CurrentVersion;
@@ -849,8 +997,14 @@ namespace Tsavorite.test.recovery
 
             for (long key = 1000; key < 2000; key++)
             {
-                var value = key + 1;
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                var valueSpan = new Span<byte>(valueArray);
+                ref var valueLong = ref valueSpan.AsRef<long>();
+                keyLong = key;
+                valueLong = key + 1;
+
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
             }
 
             var version2 = store1.CurrentVersion;
@@ -882,9 +1036,14 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < 2000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
@@ -912,9 +1071,14 @@ namespace Tsavorite.test.recovery
             var bc3 = s3.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc3.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var status = bc3.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc3.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
@@ -997,36 +1161,65 @@ namespace Tsavorite.test.recovery
             using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, MyFunctions>(new MyFunctions());
             var bc1 = s1.BasicContext;
 
+            // Local variables in an async function can be moved, so we must use an array for the key and value
+            var keyArray = new byte[sizeof(long)];
+            var valueArray = new byte[sizeof(long)];
+
             for (long key = 0; key < (reInsert ? 800 : 1000); key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                var valueSpan = new Span<byte>(valueArray);
+                ref var valueLong = ref valueSpan.AsRef<long>();
+                keyLong = key;
                 // If reInsert, we insert the wrong value during the first pass for the first 500 keys
-                long value = reInsert && key < 500 ? key + 1 : key;
-                _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                valueLong = reInsert && key < 500 ? key + 1 : key;
+
+                _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), valueSpan);
             }
 
             if (reInsert)
             {
                 store1.Log.FlushAndEvict(true);
                 for (long key = 0; key < 500; key++)
-                    _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                }
                 for (long key = 800; key < 1000; key++)
-                    _ = bc1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
+                {
+                    var keySpan = new Span<byte>(keyArray);
+                    ref var keyLong = ref keySpan.AsRef<long>();
+                    keyLong = key;
+
+                    _ = bc1.Upsert(TestSpanByteKey.FromArray(keyArray), keySpan);
+                }
             }
 
             if (readCacheMode == ReadCacheMode.UseRC)
             {
                 store1.Log.FlushAndEvict(true);
+
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+
                 for (long key = 0; key < 1000; key++)
                 {
+                    keyLong = key;
                     long output = default;
-                    var status = bc1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                    if (status.IsPending)
+                    // Local variables in an async function can be moved, so we must copy the key
+                    var status = bc1.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                    var wasPending = status.IsPending;
+                    if (wasPending)
                     {
                         Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
                 }
             }
 
@@ -1057,15 +1250,20 @@ namespace Tsavorite.test.recovery
             var bc2 = s2.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
+                var keySpan = new Span<byte>(keyArray);
+                ref var keyLong = ref keySpan.AsRef<long>();
+                keyLong = key;
+
                 long output = default;
-                var status = bc2.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
-                if (status.IsPending)
+                var status = bc2.Read(TestSpanByteKey.FromArray(keyArray), ref output);
+                var wasPending = status.IsPending;
+                if (wasPending)
                 {
                     Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}, wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}, wasPending = {wasPending}");
             }
         }
     }

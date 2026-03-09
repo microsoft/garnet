@@ -695,12 +695,19 @@ namespace Tsavorite.core
         /// <returns>True if <paramref name="minEvictPageCount"/> is nonzero, else false</returns>
         private bool GetEvictionPageRange(long tailPage, int numPagesToRead, CancellationToken cancellationToken, out long startPage, out int minEvictPageCount, out int maxEvictPageCount)
         {
-            // The caller will iterate from startPage to endPage, so we use that as the basis for our eviction counts.
-            startPage = Math.Max(0, tailPage - hlogBase.MaxAllocatedPageCount);
+            // The caller will iterate from startPage to endPage, so we use that as the basis for our eviction counts (which will start evicting at startPage).
+            // tailPage is the leading page index and start/endPage are the trailing page indexes: startPage is at the start of a full buffer of pages,
+            // and endPage is the start of the "usable" buffer capacity (the amount of pages we can actually use within the hlogBase.MaxAllocatedPageCount
+            // constraint) PLUS the number of pages to read. If hlogBase.MaxAllocatedPageCount is less than hlogBase.BufferSize, the the calling
+            // TrimLogMemorySize will probably be iterating over freed (non-allocated) pages from startPage to (endPage - numPagesToRead), and then
+            // will start actually evicting pages. NOTE: Currently numPagesToRead is always 1, but we may be able to optimize that in the future.
+            startPage = Math.Max(0, tailPage - hlogBase.BufferSize);
             var endPage = Math.Max(0, tailPage - hlogBase.MaxAllocatedPageCount + numPagesToRead);
 
-            // TODO: Currently Recovery is still page-level eviction only. Since we don't have hlogBase.HeadAddress
-            // set, we would have to propagate the new headAddress back up through variables.
+            // TODO: Currently Recovery is still page-level eviction only. hlogBase.HeadAddress etc. are not yet set so we will have to propagate
+            // the new headAddress back up the path we currently pass the lastFreedPage.
+
+            // MinEvictPageCount is the number of pages we must clear so we can read numPagesToRead without violating the maximum page count constraint.
             minEvictPageCount = Math.Max(0, (int)(endPage - startPage));
             maxEvictPageCount = minEvictPageCount;
             if (endPage <= startPage)
@@ -712,9 +719,8 @@ namespace Tsavorite.core
 
             // We have a log size tracker, so set minEvictPageCount to zero and maxEvictPageCount to the maximum number of pages we can evict;
             // the caller will also test logSizeTracker.IsBeyondSizeLimitToReadPages during the eviction loop and jump out if it drops within budget.
-            minEvictPageCount = 0;
             maxEvictPageCount = Math.Max(minEvictPageCount, (int)(tailPage - startPage) - LogSizeTracker.MinResizeTargetPageCount);
-            return hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead);
+            return minEvictPageCount > 0 || hlogBase.logSizeTracker.IsBeyondSizeLimitToReadPages(numPagesToRead);
         }
 
         private long TrimLogMemorySize(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead)
@@ -1039,7 +1045,6 @@ namespace Tsavorite.core
                     lastFreedPage = freedPage;
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
 
-                var trimPageReadCount = numPagesToReadPerIteration;
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlogBase.GetPageIndexForPage(p);
@@ -1050,10 +1055,8 @@ namespace Tsavorite.core
 
                         if (hlogBase.logSizeTracker is not null)
                         {
-                            // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
-                            // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
-                            // Decrease trimPageReadCount as we process each page so we don't over-prune.
-                            freedPage = TrimLogMemorySize(recoveryStatus, tailPage: p + 1, trimPageReadCount--);
+                            // Trim the log memory again in case we read large objects on the current page. Use 0 for numPagesToRead so we don't over-prune.
+                            freedPage = TrimLogMemorySize(recoveryStatus, tailPage: p + 1, 0);
                             if (freedPage != NoPageFreed)
                                 lastFreedPage = freedPage;
                         }
@@ -1109,7 +1112,6 @@ namespace Tsavorite.core
                     lastFreedPage = freedPage;
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
 
-                var trimPageReadCount = numPagesToReadPerIteration;
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlogBase.GetPageIndexForPage(p);
@@ -1120,10 +1122,8 @@ namespace Tsavorite.core
 
                         if (hlogBase.logSizeTracker is not null)
                         {
-                            // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
-                            // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
-                            // Decrease trimPageReadCount as we process each page so we don't over-prune.
-                            freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, numPagesToRead: trimPageReadCount--, cancellationToken).ConfigureAwait(false);
+                            // Trim the log memory again in case we read large objects on the current page. Use 0 for numPagesToRead so we don't over-prune.
+                            freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, numPagesToRead: 0, cancellationToken).ConfigureAwait(false);
                             if (freedPage != NoPageFreed)
                                 lastFreedPage = freedPage;
                         }

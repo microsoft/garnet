@@ -157,12 +157,13 @@ namespace Tsavorite.core
                     value = objectPages[index]
                 });
 
-                // We only need to clear the page if it's enqueued; otherwise we don't reuese the page
+                // We only need to clear the page if it's enqueued; otherwise we don't reuse the page, so can save the time
                 if (enqueued)
                     ClearPage(index, 0);
+                else
+                    objectPages[index].Clear();
                 pageArrays[index] = default;
                 pagePointers[index] = default;
-                objectPages[index].Clear();
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
@@ -177,6 +178,17 @@ namespace Tsavorite.core
                 objectPages[page % BufferSize].Clear();
                 ClearPage(page, 0);
             }
+        }
+
+        internal override void ClearPage(long page, int offset = 0)
+        {
+            var index = page % BufferSize;
+
+            // Offset is nonzero only for RecoveryReset, to zero out the page past offset (which is tailAddress).
+            // In this case, we want to keep the objectPage information for the used (so far) part of the page.
+            if (offset == 0)
+                objectPages[index].Clear();
+            base.ClearPage(index, offset);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

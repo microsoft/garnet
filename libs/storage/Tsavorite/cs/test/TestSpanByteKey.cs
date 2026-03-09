@@ -35,20 +35,17 @@ namespace Tsavorite.test
         {
             var ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(key));
             var len = key.Length;
-
             return new(null, ptr, len);
         }
 
         public static TestSpanByteKey CopySpan(ReadOnlySpan<byte> key)
         {
             var arr = key.ToArray();
-
             return new(arr, null, arr.Length);
         }
 
-        public static TestSpanByteKey FromPointer(byte* ptr, int len)
-        {
-            return new(null, ptr, len);
-        }
+        public static TestSpanByteKey FromPointer(byte* ptr, int len) => new(null, ptr, len);
+
+        public static TestSpanByteKey FromArray(byte[] array) => new(array, null, array.Length);
     }
 }
