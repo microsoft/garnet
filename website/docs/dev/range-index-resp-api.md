@@ -1391,11 +1391,86 @@ if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType
 
 ---
 
-### Step 11: Implement `BfTreeService` (native interop)
+### Step 11: Build and integrate the native Bf-Tree library
+
+The Bf-Tree is a Rust library in a separate repository
+([`microsoft/bf-tree`](https://github.com/microsoft/bf-tree), cloned locally at
+`/home/badrishc/git/bf-tree`). It must be compiled as a C-compatible shared library
+and placed where .NET's P/Invoke can find it at runtime.
+
+#### 11a. Add FFI exports to bf-tree
+
+The bf-tree crate currently has no C FFI layer. Add:
+
+1. **`crate-type = ["cdylib"]`** in `Cargo.toml`:
+   ```toml
+   [lib]
+   crate-type = ["cdylib"]
+   ```
+   This tells `cargo build` to produce `libbftree.so` (Linux) / `bftree.dll` (Windows) /
+   `libbftree.dylib` (macOS).
+
+2. **`src/ffi.rs`** — a new module with `#[no_mangle] pub extern "C" fn` exports for
+   each BfTree operation (create, insert, read, delete, scan, snapshot, restore, drop).
+   See the Rust FFI code below for the full API.
+
+3. **Build:**
+   ```bash
+   cd /home/badrishc/git/bf-tree
+   cargo build --release
+   # Output: target/release/libbftree.so (Linux)
+   ```
+
+#### 11b. Package the native library for Garnet
+
+This follows the same approach used by the VectorSet prototype with
+[`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/metajack/diskann-garnet/diskann-garnet):
+a Rust `cdylib` crate is compiled, packaged into a NuGet with platform-specific
+binaries under `runtimes/{rid}/native/`, and referenced from Garnet's
+`Directory.Packages.props`.
+
+**NuGet package (recommended):**
+
+1. Build the shared library per platform:
+   ```bash
+   cd /home/badrishc/git/bf-tree
+   cargo build --release
+   # Linux: target/release/libbftree.so
+   # Windows: target/release/bftree.dll
+   ```
+
+2. Create a `.nuspec` (e.g., `bftree.nuspec`) with the `runtimes/` layout:
+   ```
+   runtimes/linux-x64/native/libbftree.so
+   runtimes/win-x64/native/bftree.dll
+   runtimes/osx-x64/native/libbftree.dylib
+   ```
+
+3. Pack and publish (or use a local NuGet source for development):
+   ```bash
+   nuget pack -BasePath target/pkg -OutputDirectory /path/to/local-nuget
+   ```
+
+4. Reference from Garnet — add to `Directory.Packages.props`:
+   ```xml
+   <PackageVersion Include="bftree" Version="0.1.0" />
+   ```
+   And to `Garnet.server.csproj`:
+   ```xml
+   <PackageReference Include="bftree" />
+   ```
+
+**Direct file copy (for local development):**
+```bash
+cp /home/badrishc/git/bf-tree/target/release/libbftree.so \
+   /home/badrishc/git/garnet/main/GarnetServer/bin/Debug/net10.0/
+```
+
+#### 11c. Implement `BfTreeService` (C# interop wrapper)
 
 > **Prototype reference:** [`DiskANNService.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/DiskANNService.cs) —
 > wraps the unmanaged DiskANN library. BfTreeService follows the same pattern with
-> P/Invoke to a Rust shared library instead.
+> P/Invoke to the Rust shared library.
 
 **File:** `libs/server/Resp/RangeIndex/BfTreeService.cs` (new)
 
@@ -1504,45 +1579,46 @@ internal sealed class BfTreeService : IDisposable
 
 ```csharp
 /// P/Invoke declarations for the native Bf-Tree library.
-internal static class NativeBfTreeMethods
+/// Uses LibraryImport (source-generated, zero-overhead) matching the DiskANN prototype pattern.
+internal static unsafe partial class NativeBfTreeMethods
 {
     private const string LibName = "bftree";
 
-    [DllImport(LibName)] internal static extern nint bftree_create(
+    [LibraryImport(LibName)] internal static partial nint bftree_create(
         ulong cacheSize, uint minRecord, uint maxRecord,
         uint maxKeyLen, uint leafPageSize, byte storageBackend,
         byte* filePath, int filePathLen);
 
-    [DllImport(LibName)] internal static extern int bftree_insert(
+    [LibraryImport(LibName)] internal static partial int bftree_insert(
         nint tree, byte* key, int keyLen, byte* value, int valueLen);
 
-    [DllImport(LibName)] internal static extern int bftree_read(
+    [LibraryImport(LibName)] internal static partial int bftree_read(
         nint tree, byte* key, int keyLen, byte* outBuffer, int outBufferLen);
 
-    [DllImport(LibName)] internal static extern void bftree_delete(
+    [LibraryImport(LibName)] internal static partial void bftree_delete(
         nint tree, byte* key, int keyLen);
 
-    [DllImport(LibName)] internal static extern nint bftree_scan_with_count(
+    [LibraryImport(LibName)] internal static partial nint bftree_scan_with_count(
         nint tree, byte* startKey, int startKeyLen, int count, byte returnField);
 
-    [DllImport(LibName)] internal static extern nint bftree_scan_with_end_key(
+    [LibraryImport(LibName)] internal static partial nint bftree_scan_with_end_key(
         nint tree, byte* startKey, int startKeyLen,
         byte* endKey, int endKeyLen, byte returnField);
 
-    [DllImport(LibName)] internal static extern int bftree_scan_next(
+    [LibraryImport(LibName)] internal static partial int bftree_scan_next(
         nint iter, byte* outBuffer, int outBufferLen,
         out int keyLen, out int valueLen);
 
-    [DllImport(LibName)] internal static extern void bftree_scan_drop(nint iter);
+    [LibraryImport(LibName)] internal static partial void bftree_scan_drop(nint iter);
 
-    [DllImport(LibName)] internal static extern nint bftree_snapshot(nint tree);
+    [LibraryImport(LibName)] internal static partial nint bftree_snapshot(nint tree);
 
-    [DllImport(LibName)] internal static extern nint bftree_new_from_snapshot(
+    [LibraryImport(LibName)] internal static partial nint bftree_new_from_snapshot(
         byte* configPath, int configPathLen,
         ulong cacheSize, uint minRecord, uint maxRecord,
         uint maxKeyLen, uint leafPageSize);
 
-    [DllImport(LibName)] internal static extern void bftree_drop(nint tree);
+    [LibraryImport(LibName)] internal static partial void bftree_drop(nint tree);
 }
 
 /// Result codes from BfTree insert operations
