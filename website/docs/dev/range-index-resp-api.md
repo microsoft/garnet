@@ -1270,6 +1270,9 @@ break;
 
 #### InPlaceUpdater
 
+<details>
+<summary>InPlaceUpdater case (click to expand)</summary>
+
 ```csharp
 case RespCommand.RISET:
 case RespCommand.RIDEL:
@@ -1292,7 +1295,12 @@ case RespCommand.RICREATE:
     return true;
 ```
 
+</details>
+
 #### CopyUpdater
+
+<details>
+<summary>CopyUpdater case (click to expand)</summary>
 
 ```csharp
 case RespCommand.RISET:
@@ -1316,6 +1324,8 @@ case RespCommand.RICREATE:
     }
     break;
 ```
+
+</details>
 
 ---
 
