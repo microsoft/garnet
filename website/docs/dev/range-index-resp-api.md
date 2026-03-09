@@ -1393,56 +1393,67 @@ if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType
 
 ### Step 11: Build and integrate the native Bf-Tree library
 
-The Bf-Tree is a Rust library in a separate repository
-([`microsoft/bf-tree`](https://github.com/microsoft/bf-tree)). It must be compiled as a C-compatible shared library
-and placed where .NET's P/Invoke can find it at runtime.
+The Bf-Tree is a Rust library published on crates.io as
+[`bf-tree`](https://crates.io/crates/bf-tree) (source:
+[`microsoft/bf-tree`](https://github.com/microsoft/bf-tree)). It has no C FFI layer —
+that is provided by a thin **wrapper crate** in the Garnet repo, following the same
+pattern as [`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/metajack/diskann-garnet/diskann-garnet)
+which wraps DiskANN for the VectorSet prototype.
 
-#### 11a. Add FFI exports to bf-tree
+#### 11a. Create `bftree-garnet` wrapper crate
 
-The bf-tree crate currently has no C FFI layer. Add:
+**Location:** `libs/native/bftree-garnet/` in the Garnet repo.
 
-1. **`crate-type = ["cdylib"]`** in `Cargo.toml`:
-   ```toml
-   [lib]
-   crate-type = ["cdylib"]
-   ```
-   This tells `cargo build` to produce `libbftree.so` (Linux) / `bftree.dll` (Windows) /
-   `libbftree.dylib` (macOS).
+```
+libs/native/bftree-garnet/
+├── Cargo.toml
+├── src/
+│   └── lib.rs              # #[no_mangle] extern "C" fn FFI exports
+└── bftree-garnet.nuspec    # NuGet packaging spec
+```
 
-2. **`src/ffi.rs`** — a new module with `#[no_mangle] pub extern "C" fn` exports for
-   each BfTree operation (create, insert, read, delete, scan, snapshot, restore, drop).
-   See the Rust FFI code below for the full API.
+**`Cargo.toml`:**
+```toml
+[package]
+name = "bftree-garnet"
+version = "0.1.0"
+edition = "2021"
+publish = false
 
-3. **Build:**
-   ```bash
-   cd bf-tree
-   cargo build --release
-   # Output: target/release/libbftree.so (Linux)
-   ```
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bf-tree = "0.4"
+```
+
+**`src/lib.rs`** — contains all `#[no_mangle] pub extern "C" fn` exports that wrap
+bf-tree's Rust API for C/P/Invoke consumption. See the Rust FFI code below.
+
+**Build:**
+```bash
+cd libs/native/bftree-garnet
+cargo build --release
+# Output: target/release/libbftree_garnet.so (Linux)
+#         target/release/bftree_garnet.dll (Windows)
+```
 
 #### 11b. Package the native library for Garnet
 
 This follows the same approach used by the VectorSet prototype with
 [`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/metajack/diskann-garnet/diskann-garnet):
-a Rust `cdylib` crate is compiled, packaged into a NuGet with platform-specific
-binaries under `runtimes/{rid}/native/`, and referenced from Garnet's
-`Directory.Packages.props`.
+the Rust `cdylib` output is packaged into a NuGet with platform-specific binaries under
+`runtimes/{rid}/native/`, and referenced from Garnet's `Directory.Packages.props`.
 
 **NuGet package (recommended):**
 
-1. Build the shared library per platform:
-   ```bash
-   cd bf-tree
-   cargo build --release
-   # Linux: target/release/libbftree.so
-   # Windows: target/release/bftree.dll
-   ```
+1. Build per platform (see 11a above).
 
-2. Create a `.nuspec` (e.g., `bftree.nuspec`) with the `runtimes/` layout:
+2. Create a `.nuspec` (e.g., `bftree-garnet.nuspec`) with the `runtimes/` layout:
    ```
-   runtimes/linux-x64/native/libbftree.so
-   runtimes/win-x64/native/bftree.dll
-   runtimes/osx-x64/native/libbftree.dylib
+   runtimes/linux-x64/native/libbftree_garnet.so
+   runtimes/win-x64/native/bftree_garnet.dll
+   runtimes/osx-x64/native/libbftree_garnet.dylib
    ```
 
 3. Pack and publish (or use a local NuGet source for development):
@@ -1452,17 +1463,17 @@ binaries under `runtimes/{rid}/native/`, and referenced from Garnet's
 
 4. Reference from Garnet — add to `Directory.Packages.props`:
    ```xml
-   <PackageVersion Include="bftree" Version="0.1.0" />
+   <PackageVersion Include="bftree-garnet" Version="0.1.0" />
    ```
    And to `Garnet.server.csproj`:
    ```xml
-   <PackageReference Include="bftree" />
+   <PackageReference Include="bftree-garnet" />
    ```
 
 **Direct file copy (for local development):**
 ```bash
-cp bf-tree/target/release/libbftree.so \
-   garnet/main/GarnetServer/bin/Debug/net10.0/
+cp libs/native/bftree-garnet/target/release/libbftree_garnet.so \
+   main/GarnetServer/bin/Debug/net10.0/
 ```
 
 #### 11c. Implement `BfTreeService` (C# interop wrapper)
@@ -1581,7 +1592,7 @@ internal sealed class BfTreeService : IDisposable
 /// Uses LibraryImport (source-generated, zero-overhead) matching the DiskANN prototype pattern.
 internal static unsafe partial class NativeBfTreeMethods
 {
-    private const string LibName = "bftree";
+    private const string LibName = "bftree_garnet";
 
     [LibraryImport(LibName)] internal static partial nint bftree_create(
         ulong cacheSize, uint minRecord, uint maxRecord,
@@ -1630,13 +1641,13 @@ internal enum BfTreeInsertResult
 
 </details>
 
-**Rust FFI side** (`bf-tree/src/ffi.rs`, new file in the bf-tree crate):
+**Rust FFI side** (`libs/native/bftree-garnet/src/lib.rs`):
 
 <details>
 <summary>Rust FFI exports (click to expand)</summary>
 
 ```rust
-use crate::{BfTree, Config, LeafInsertResult, LeafReadResult, ScanReturnField, ScanIter};
+use bf_tree::{BfTree, Config, LeafInsertResult, LeafReadResult, ScanReturnField, ScanIter};
 use std::ffi::c_char;
 use std::slice;
 
@@ -1804,7 +1815,7 @@ public enum RangeIndexResult
 | 6 | `libs/server/Resp/RangeIndex/NativeBfTreeMethods.cs` | P/Invoke declarations | ~60 |
 | 7 | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | RESP command handlers | ~400 |
 | 8 | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | Storage session wrappers | ~200 |
-| 9 | `bf-tree/src/ffi.rs` | Rust C FFI exports | ~200 |
+| 9 | `libs/native/bftree-garnet/src/lib.rs` | Rust C FFI exports | ~200 |
 | 10 | `test/Garnet.test/RangeIndexTests.cs` | Integration tests | ~300 |
 
 ### Modified Files (9 files)
@@ -2367,7 +2378,7 @@ temp files — the BfTree data can be serialized directly into the migration pay
 | MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Handle `RISTORE` type during key migration |
 | MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | Detect RangeIndex `RecordType`, serialize BfTree, 2-phase transmit |
 | MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | Check `RecordType` during slot scan |
-| MOD | `bf-tree/src/ffi.rs` | Add `bftree_snapshot_to_path`, `bftree_serialize_to_buffer`, `bftree_deserialize_from_buffer` |
+| MOD | `libs/native/bftree-garnet/src/lib.rs` | Add `bftree_snapshot_to_path`, `bftree_serialize_to_buffer`, `bftree_deserialize_from_buffer` |
 
 ---
 
