@@ -574,6 +574,9 @@ RespCommand.RIKEYS   => NetworkRIKEYS(ref storageApi),
 
 **File:** `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` (new)
 
+<details>
+<summary>RESP command handler implementations (click to expand)</summary>
+
 ```csharp
 internal sealed unsafe partial class RespServerSession
 {
@@ -739,6 +742,8 @@ internal sealed unsafe partial class RespServerSession
 }
 ```
 
+</details>
+
 ---
 
 ### Step 5: Add `IGarnetApi` and `GarnetApi` interface methods
@@ -748,6 +753,9 @@ internal sealed unsafe partial class RespServerSession
 > then forward to `storageSession.RangeIndex*()`.
 
 **IGarnetApi.cs — add:**
+
+<details>
+<summary>IGarnetApi method declarations (click to expand)</summary>
 
 ```csharp
 // --- RangeIndex operations ---
@@ -784,7 +792,12 @@ GarnetStatus RangeIndexMetrics(PinnedSpanByte key,
     ref StringOutput output);
 ```
 
+</details>
+
 **GarnetApi.cs — add delegation** (expression-bodied):
+
+<details>
+<summary>GarnetApi delegation methods (click to expand)</summary>
 
 ```csharp
 public GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
@@ -802,6 +815,8 @@ public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
 // ... same pattern for all methods
 ```
 
+</details>
+
 ---
 
 ### Step 6: Implement Storage Session layer (`RangeIndexOps.cs`)
@@ -818,6 +833,9 @@ public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
 >   re-acquires shared lock, then returns
 
 **File:** `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` (new)
+
+<details>
+<summary>StorageSession RangeIndexOps implementation (click to expand)</summary>
 
 ```csharp
 internal sealed unsafe partial class StorageSession
@@ -918,6 +936,8 @@ internal sealed unsafe partial class StorageSession
 }
 ```
 
+</details>
+
 ---
 
 ### Step 7: Implement `RangeIndexManager` (partial class)
@@ -929,6 +949,9 @@ internal sealed unsafe partial class StorageSession
 
 > **Prototype reference:** [`VectorManager.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.cs) —
 > constants, `processInstanceId`, `TryAdd`/`TryRemove`, `Initialize()`, `ResumePostRecovery()`, `Dispose()`.
+
+<details>
+<summary>RangeIndexManager main class (click to expand)</summary>
 
 ```csharp
 public sealed partial class RangeIndexManager : IDisposable
@@ -1007,17 +1030,22 @@ public sealed partial class RangeIndexManager : IDisposable
             ref output, out resultCount);
     }
 
-    /// Recovery entry point: scans store for stale stubs, recreates BfTrees
-    internal void ResumePostRecovery() { /* scan for stale stubs, RecreateIndex */ }
+    /// Recovery is lazy — no proactive scan needed. ReadRangeIndex detects stale stubs.
+    internal void ResumePostRecovery() { /* no-op; lazy recovery via ReadRangeIndex */ }
 
     public void Dispose() { service.Dispose(); }
 }
 ```
 
+</details>
+
 #### 7b. `RangeIndexManager.Index.cs` — Stub struct + serialization
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
 > 50-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`, `SetContextForMigration()`.
+
+<details>
+<summary>RangeIndexStub struct and serialization methods (click to expand)</summary>
 
 ```csharp
 public sealed partial class RangeIndexManager
@@ -1104,6 +1132,8 @@ public sealed partial class RangeIndexManager
 }
 ```
 
+</details>
+
 #### 7c. `RangeIndexManager.Locking.cs` — Lock management
 
 > The locking pattern uses a striped `ReadOptimizedLock` for concurrent access, with
@@ -1122,6 +1152,9 @@ public sealed partial class RangeIndexManager
 > It provides shared/exclusive locking with `AcquireSharedLock(keyHash, out token)`,
 > `TryPromoteSharedLock(keyHash, sharedToken, out exclusiveToken)`,
 > `ReleaseSharedLock(token)`, and `ReleaseExclusiveLock(token)` methods.
+
+<details>
+<summary>ReadRangeIndexLock and locking methods (click to expand)</summary>
 
 ```csharp
 public sealed partial class RangeIndexManager
@@ -1180,6 +1213,8 @@ public sealed partial class RangeIndexManager
 }
 ```
 
+</details>
+
 ---
 
 ### Step 8: Wire into Main Store RMW callbacks
@@ -1192,6 +1227,9 @@ public sealed partial class RangeIndexManager
 > Access command via `input.header.cmd`. Access/modify value via `logRecord.ValueSpan` / `logRecord.TrySetValueSpan(...)`.
 
 #### InitialUpdater
+
+<details>
+<summary>InitialUpdater case (click to expand)</summary>
 
 ```csharp
 case RespCommand.RICREATE:
@@ -1227,6 +1265,8 @@ case RespCommand.RISET:
 }
 break;
 ```
+
+</details>
 
 #### InPlaceUpdater
 
@@ -1349,6 +1389,9 @@ if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType
 
 **File:** `libs/server/Resp/RangeIndex/BfTreeService.cs` (new)
 
+<details>
+<summary>BfTreeService implementation (click to expand)</summary>
+
 ```csharp
 /// Wraps the native Bf-Tree library (bftree.dll / libbftree.so).
 /// Provides managed C# interface for BfTree lifecycle and operations.
@@ -1442,7 +1485,14 @@ internal sealed class BfTreeService : IDisposable
 
     public void Dispose() { /* cleanup any global state */ }
 }
+```
 
+</details>
+
+<details>
+<summary>P/Invoke declarations (click to expand)</summary>
+
+```csharp
 /// P/Invoke declarations for the native Bf-Tree library.
 internal static class NativeBfTreeMethods
 {
@@ -1493,7 +1543,12 @@ internal enum BfTreeInsertResult
 }
 ```
 
+</details>
+
 **Rust FFI side** (`bf-tree/src/ffi.rs`, new file in the bf-tree crate):
+
+<details>
+<summary>Rust FFI exports (click to expand)</summary>
 
 ```rust
 use crate::{BfTree, Config, LeafInsertResult, LeafReadResult, ScanReturnField, ScanIter};
@@ -1565,6 +1620,8 @@ pub extern "C" fn bftree_drop(tree: *mut BfTree) {
 // new_from_snapshot follow similar patterns
 ```
 
+</details>
+
 ---
 
 ### Step 12: Add `RangeIndexManager` to `FunctionsState`
@@ -1601,9 +1658,11 @@ internal readonly RangeIndexManager rangeIndexManager;
 ### Step 13: Checkpoint & Recovery
 
 > The stub in the store is automatically serialized by Tsavorite during checkpoint
-> (as part of the hybrid log). On recovery, `ResumePostRecovery()` scans for stale
-> stubs (identified by `RecordType == RangeIndexRecordType`) and recreates BfTrees from
-> their snapshot files.
+> (as part of the hybrid log). On recovery, BfTrees are **not** proactively recreated.
+> Instead, `RangeIndexManager` generates a fresh `processInstanceId` at startup, and
+> `ReadRangeIndex()` lazily detects stale stubs (via `ProcessInstanceId` mismatch) on
+> first access, restoring from snapshot at that point. This matches how VectorSet
+> handles recovery on the prototype branch.
 
 **Checkpoint:** Before Garnet checkpoint, call `RangeIndexManager.PrepareCheckpoint()`:
 
@@ -1616,20 +1675,18 @@ internal void PrepareCheckpoint()
 }
 ```
 
-**Recovery:** After Tsavorite recovery, call `RangeIndexManager.ResumePostRecovery()`:
+**Recovery:** No proactive store scan needed. After Tsavorite recovery, the stubs contain
+`ProcessInstanceId` values from the prior process. Since `RangeIndexManager` generates a
+fresh `Guid` at startup, every stub will mismatch on first access. The existing
+`ReadRangeIndex()` flow handles this lazily:
 
-```csharp
-internal void ResumePostRecovery()
-{
-    // Iterate main store for all records with RecordType == RangeIndexRecordType.
-    // For each:
-    //   1. ReadIndex → extract config + ProcessInstanceId
-    //   2. If ProcessInstanceId != this.processInstanceId → stale
-    //   3. Derive snapshot path from config
-    //   4. newTreePtr = service.RestoreFromSnapshot(path, config...)
-    //   5. Issue RMW with RecreateIndexArg to update stub
-}
-```
+1. First `RI.*` command on a recovered key → `Read_MainStore` returns stub from store
+2. `ProcessInstanceId != this.processInstanceId` → stale
+3. Promote to exclusive lock → restore BfTree from snapshot → update stub via RMW
+4. Proceed with the requested operation
+
+This avoids a potentially expensive full-store scan at startup, and only pays the
+restore cost for indexes that are actually accessed.
 
 ---
 
@@ -1833,6 +1890,9 @@ to the full record including `RecordType` and inline value bytes.
 In the Garnet-level `DisposeRecord` implementation (or a new `IRecordDisposer` that
 replaces `DefaultRecordDisposer`), check `RecordType` and clean up the BfTree:
 
+<details>
+<summary>Eviction observer implementation (click to expand)</summary>
+
 ```csharp
 // In Garnet's record disposer (handling DisposeReason.PageEviction):
 public void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
@@ -1856,6 +1916,8 @@ public void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
 }
 ```
 
+</details>
+
 > **Tsavorite change required:** Wire `DisposeRecord(ref LogRecord, DisposeReason.PageEviction)`
 > into the eviction path (`EvictPage()` / `OnPagesClosedWorker()`), iterating records on
 > the evicted page and calling `DisposeRecord` per-record. This resolves the existing
@@ -1868,6 +1930,9 @@ the record value.
 
 For RangeIndex, `MainSessionFunctions.OnLoadFromDisk` clears the `ProcessInstanceId`
 so that `ReadRangeIndex()` detects the stub as stale and triggers restoration:
+
+<details>
+<summary>OnLoadFromDisk callback (click to expand)</summary>
 
 ```csharp
 // In MainSessionFunctions (new ISessionFunctions callback):
@@ -1883,6 +1948,8 @@ public void OnLoadFromDisk(ref LogRecord logRecord)
     stub.TreePtr = nint.Zero;
 }
 ```
+
+</details>
 
 > **Tsavorite change required:** Add `OnLoadFromDisk(ref LogRecord logRecord)` to
 > `ISessionFunctions` and call it per-record alongside `ClearBitsForDiskImages()` in
@@ -1915,6 +1982,9 @@ The callbacks only fire on cold paths (page eviction / page load from disk).
 **Pre-checkpoint hook:** Before Tsavorite begins the checkpoint state machine, snapshot
 all active BfTrees:
 
+<details>
+<summary>PrepareCheckpoint implementation (click to expand)</summary>
+
 ```csharp
 // Hook into IClusterProvider.OnCheckpointInitiated()
 // or into DatabaseManagerBase.InitiateCheckpointAsync() before the state machine runs.
@@ -1934,6 +2004,8 @@ internal void PrepareCheckpoint(Guid checkpointToken, string checkpointDir)
 }
 ```
 
+</details>
+
 **Where to hook this in:**
 
 ```csharp
@@ -1951,86 +2023,26 @@ db.StateMachineDriver.RunAsync();
 ### C. Recovery
 
 > **Reference:** `libs/server/Databases/SingleDatabaseManager.cs` — `RecoverCheckpoint()`
-> restores the store from a checkpoint. After Tsavorite recovery completes,
-> `RangeIndexManager.ResumePostRecovery()` should be called to restore BfTrees.
+> restores the store from a checkpoint.
 
-**Post-recovery scan:** After Tsavorite recovery loads all records from the checkpoint,
-scan the store for all records with `RecordType == RangeIndexRecordType` and recreate their BfTrees:
+**No proactive store scan.** After Tsavorite recovery, all stubs are loaded with stale
+`ProcessInstanceId` values (from the prior process). `RangeIndexManager` generates a fresh
+`processInstanceId = Guid.NewGuid()` at construction, so every stub will mismatch.
 
-```csharp
-// In RangeIndexManager.cs:
-internal void ResumePostRecovery(
-    TsavoriteKV<StoreFunctions, StoreAllocator> store,
-    string checkpointDir, Guid checkpointToken)
-{
-    // 1. Iterate main store for RangeIndex records (by RecordType)
-    using var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress);
-    while (iter.GetNext(out var recordInfo))
-    {
-        // Filter by RecordType to find RangeIndex stubs
-        // if (iter.GetRecordType() != RangeIndexManager.RangeIndexRecordType) continue;
-        ref var key = ref iter.GetKey();
-        ref var value = ref iter.GetValue();
+BfTrees are restored **lazily** on first access via the existing `ReadRangeIndex()` flow:
 
-        ReadIndex(value.AsReadOnlySpan(), out var treePtr,
-            out var cacheSize, out var minRecordSize, out var maxRecordSize,
-            out var maxKeyLen, out var leafPageSize, out var storageBackend,
-            out var flags, out var pid);
+1. First `RI.*` command on a recovered key → `Read_MainStore` returns the stub
+2. `stub.ProcessInstanceId != this.processInstanceId` → stale pointer detected
+3. Promote shared lock to exclusive
+4. Derive snapshot path from key bytes + checkpoint directory + checkpoint token
+5. `newTreePtr = service.RestoreFromSnapshot(snapshotPath, config...)`
+6. Register in `activeIndexes`
+7. Issue RMW with `RecreateIndexArg` → updates `TreePtr` and `ProcessInstanceId` in stub
+8. Release exclusive, re-acquire shared, proceed with operation
 
-        // 2. ProcessInstanceId mismatch → stale pointer
-        if (pid == processInstanceId) continue; // Already live (shouldn't happen post-recovery)
-
-        // 3. Derive snapshot path deterministically from key + checkpoint info
-        //    Uses the same DeriveSnapshotPath() that PrepareCheckpoint() used to write the file.
-        //    Inputs: key bytes (from Tsavorite record), checkpointDir (from config),
-        //            checkpointToken (from store.RecoveredToken).
-        var snapshotPath = DeriveSnapshotPath(
-            key.AsReadOnlySpan(), checkpointDir, checkpointToken);
-
-        if (!File.Exists(snapshotPath))
-        {
-            logger.LogError("RangeIndex snapshot not found: {path}", snapshotPath);
-            continue; // Data loss — snapshot file missing
-        }
-
-        // 4. Restore BfTree from snapshot
-        var newTreePtr = service.RestoreFromSnapshot(
-            snapshotPath, cacheSize, minRecordSize, maxRecordSize,
-            maxKeyLen, leafPageSize);
-
-        // 5. Register in active indexes
-        activeIndexes[newTreePtr] = new RangeIndexEntry
-        {
-            KeyBytes = key.AsReadOnlySpan().ToArray(),
-            SnapshotPath = snapshotPath,
-            CacheSize = cacheSize,
-            // ... other config
-        };
-
-        // 6. Issue RMW with RecreateIndexArg to update stub in Tsavorite
-        // This updates TreePtr and ProcessInstanceId in the main store record
-        IssueRecreateRMW(ref key, newTreePtr, store);
-    }
-}
-
-private void IssueRecreateRMW(ReadOnlySpan<byte> key, nint newTreePtr,
-    TsavoriteKV<...> store)
-{
-    // Build parseState with newTreePtr at arg slot 6
-    // Set input.arg1 = RecreateIndexArg
-    // Call stringBasicContext.RMW(key, ref input)
-    // This triggers InPlaceUpdater/CopyUpdater which calls RecreateIndex()
-}
-```
-
-**Call site:**
-
-```csharp
-// In SingleDatabaseManager.RecoverCheckpoint(), after Tsavorite recovery completes:
-defaultDatabase.RangeIndexManager.Initialize();
-defaultDatabase.RangeIndexManager.ResumePostRecovery(
-    defaultDatabase.Store, checkpointDir, recoveredToken);
-```
+This avoids a full-store scan at startup. Only indexes that are actually accessed pay
+the restore cost. This is the same approach used by VectorManager on the prototype branch
+(where `ResumePostRecovery()` is a no-op TODO).
 
 ---
 
@@ -2090,9 +2102,10 @@ case CheckpointFileType.RANGEINDEX_SNAPSHOT:
     break;
 ```
 
-After all files are received and Tsavorite recovery completes, the replica calls
-`RangeIndexManager.ResumePostRecovery()` which finds the snapshot files at the expected
-paths and recreates the BfTrees.
+After all files are received and Tsavorite recovery completes, the replica's
+`RangeIndexManager` has a fresh `processInstanceId`. BfTrees are restored lazily on
+first access — `ReadRangeIndex()` detects the `ProcessInstanceId` mismatch in each stub
+and restores from the snapshot files at the expected paths.
 
 ---
 
@@ -2260,10 +2273,10 @@ temp files — the BfTree data can be serialized directly into the migration pay
 
 | # | File Path | Purpose |
 |---|---|---|
-| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Persistence.cs` | Eviction observer, `PrepareCheckpoint()`, `ResumePostRecovery()`, snapshot path derivation |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Persistence.cs` | `DisposeRecord` handler, `PrepareCheckpoint()`, snapshot path derivation |
 | NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | `HandleMigratedRangeIndexKey()`, migration serialization/deserialization |
 | MOD | `libs/server/Databases/DatabaseManagerBase.cs` | Call `rangeIndexManager.PrepareCheckpoint()` before checkpoint state machine |
-| MOD | `libs/server/Databases/SingleDatabaseManager.cs` | Call `rangeIndexManager.ResumePostRecovery()` after Tsavorite recovery |
+| MOD | `libs/server/Databases/SingleDatabaseManager.cs` | Call `rangeIndexManager.PrepareCheckpoint()` before checkpoint |
 | MOD | `libs/cluster/Server/Replication/CheckpointFileType.cs` | Add `RANGEINDEX_SNAPSHOT` enum value |
 | MOD | `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` | Send BfTree snapshot files during replica sync |
 | MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Handle `RISTORE` type during key migration |
