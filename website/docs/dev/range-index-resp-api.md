@@ -1394,8 +1394,7 @@ if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType
 ### Step 11: Build and integrate the native Bf-Tree library
 
 The Bf-Tree is a Rust library in a separate repository
-([`microsoft/bf-tree`](https://github.com/microsoft/bf-tree), cloned locally at
-`/home/badrishc/git/bf-tree`). It must be compiled as a C-compatible shared library
+([`microsoft/bf-tree`](https://github.com/microsoft/bf-tree)). It must be compiled as a C-compatible shared library
 and placed where .NET's P/Invoke can find it at runtime.
 
 #### 11a. Add FFI exports to bf-tree
@@ -1416,7 +1415,7 @@ The bf-tree crate currently has no C FFI layer. Add:
 
 3. **Build:**
    ```bash
-   cd /home/badrishc/git/bf-tree
+   cd bf-tree
    cargo build --release
    # Output: target/release/libbftree.so (Linux)
    ```
@@ -1433,7 +1432,7 @@ binaries under `runtimes/{rid}/native/`, and referenced from Garnet's
 
 1. Build the shared library per platform:
    ```bash
-   cd /home/badrishc/git/bf-tree
+   cd bf-tree
    cargo build --release
    # Linux: target/release/libbftree.so
    # Windows: target/release/bftree.dll
@@ -1462,8 +1461,8 @@ binaries under `runtimes/{rid}/native/`, and referenced from Garnet's
 
 **Direct file copy (for local development):**
 ```bash
-cp /home/badrishc/git/bf-tree/target/release/libbftree.so \
-   /home/badrishc/git/garnet/main/GarnetServer/bin/Debug/net10.0/
+cp bf-tree/target/release/libbftree.so \
+   garnet/main/GarnetServer/bin/Debug/net10.0/
 ```
 
 #### 11c. Implement `BfTreeService` (C# interop wrapper)
