@@ -1,8 +1,8 @@
-# RESP-Style Remote API for Bf-Tree as a RangeIndex Data Type
+# Integrating Range Index (Bf-Tree) as a Garnet Data Type
 
 ## Summary
 
-Proposal for a Redis-compatible RESP protocol API that exposes Bf-Tree as a `RangeIndex` data type, analogous to how Redis exposes SortedSets via `Z*` commands. The server hosts a key-value cache where keys are RangeIndex names (e.g., `r1`, `r2`) and values are `BfTree` instances.
+Proposal for a RESP protocol API that exposes [Bf-Tree](https://github.com/microsoft/bf-tree) as a `RangeIndex` data type, analogous to how Garnet exposes SortedSets via `Z*` commands. The server hosts a key-value cache where keys are RangeIndex names (e.g., `r1`, `r2`) and values are `BfTree` instances.
 
 All commands follow the `RI.*` prefix convention (short for **R**ange**I**ndex).
 
@@ -13,10 +13,11 @@ All commands follow the `RI.*` prefix convention (short for **R**ange**I**ndex).
 | Command | Syntax | Description | Maps to |
 |---|---|---|---|
 | **RI.CREATE** | `RI.CREATE key [options...]` | Create a new RangeIndex. Options allow tuning the underlying BfTree config | `BfTree::new()` / `BfTree::with_config()` |
-| **RI.DROP** | `RI.DROP key` | Destroy a RangeIndex and free its resources | `drop(BfTree)` |
 | **RI.EXISTS** | `RI.EXISTS key` | Check if a RangeIndex exists. Returns `1` or `0` | Cache lookup |
 | **RI.CONFIG** | `RI.CONFIG key` | Return current config of the RangeIndex as key-value pairs | `BfTree::config()` |
 | **RI.METRICS** | `RI.METRICS key` | Return buffer/tree metrics (JSON) | `BfTree::get_buffer_metrics()` / `get_metrics()` |
+
+Deletion of RangeIndex keys uses the standard `DEL` / `UNLINK` commands. The store's `DisposeRecord` callback detects the RangeIndex `RecordType`, snapshots the BfTree pointer from the stub, and frees it — no special drop command is needed.
 
 Snapshot and restore are handled automatically by the cache checkpointing mechanism.
 
@@ -204,7 +205,7 @@ Keys and values are transmitted as raw bytes (bulk strings), matching Bf-Tree's 
 |---|---|
 | `BfTree::new()` | `RI.CREATE` |
 | `BfTree::with_config()` | `RI.CREATE ... [options]` |
-| `drop(BfTree)` | `RI.DROP` |
+| `drop(BfTree)` | `DEL` / `UNLINK` |
 | `BfTree::insert(key, value)` | `RI.SET` |
 | `BfTree::read(key, buf)` | `RI.GET` |
 | `BfTree::delete(key)` | `RI.DEL` |
@@ -259,8 +260,8 @@ emp:010
 > RI.DEL r1 "emp:002"
 :1
 
-> RI.DROP r1
-+OK
+> DEL r1
+:1
 ```
 
 ---
@@ -312,7 +313,7 @@ prototype branch.
 | # | New File | Prototype reference (`vectorApiPoC-storeV2`) | Role |
 |---|---|---|---|
 | 1 | `libs/server/Resp/RangeIndex/RangeIndexManager.cs` | [`VectorManager.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.cs) | Main class: constants, `processInstanceId`, `IsEnabled`, initialization, `TryInsert`/`TryRead`/`TryScan`/`TryRange` methods, `ResumePostRecovery()` |
-| 2 | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) | Stub struct definition, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()` |
+| 2 | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) | Stub struct definition, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()` |
 | 3 | `libs/server/Resp/RangeIndex/RangeIndexManager.Locking.cs` | [`VectorManager.Locking.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Locking.cs) | `ReadRangeIndexLock` ref struct, `ReadRangeIndex()`, `ReadOrCreateRangeIndex()` — shared/exclusive lock management via `ReadOptimizedLock` |
 | 4 | `libs/server/Resp/RangeIndex/RangeIndexManager.Cleanup.cs` | [`VectorManager.Cleanup.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Cleanup.cs) | Post-drop async cleanup: background task that scans and removes orphaned data |
 | 5 | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | [`VectorManager.Migration.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Migration.cs) | *(future)* Replication/migration support |
@@ -375,7 +376,7 @@ RESP Client ("RI.SET r1 mykey myval")
 ## The Stub (RangeIndexManager.Index.cs)
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
-> the 50-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`.
+> the 50-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`.
 
 A fixed-size struct stored as a raw-byte (non-object) value in the unified store, accessed
 via the string context. Since `RecordInfo.ValueIsObject` is `false` for these records, the
@@ -453,7 +454,7 @@ public static bool IsLegalOnRangeIndex(this RespCommand cmd)
     => cmd is RespCommand.RISET or RespCommand.RIDEL or RespCommand.RIGET
        or RespCommand.RIMSET or RespCommand.RIMDEL or RespCommand.RIMGET
        or RespCommand.RISCAN or RespCommand.RIRANGE
-       or RespCommand.RICREATE or RespCommand.RIDROP
+       or RespCommand.RICREATE
        or RespCommand.RIEXISTS or RespCommand.RICONFIG or RespCommand.RIMETRICS;
 ```
 
@@ -488,7 +489,6 @@ RIDEL,        // RI.DEL key field
 RIMSET,       // RI.MSET key f1 v1 [f2 v2 ...]
 RIMDEL,       // RI.MDEL key f1 [f2 ...]
 RICREATE,     // RI.CREATE key [options]
-RIDROP,       // RI.DROP key
 ```
 
 **Parsing:** RI commands are dot-prefixed (`RI.SET`), so they won't fit the 4-char fast
@@ -516,7 +516,6 @@ private static RespCommand ParseRangeIndexCommand(byte* ptr, int length)
         4 when *(uint*)ptr == MemoryMarshal.Read<uint>("MSET"u8) => RespCommand.RIMSET,
         4 when *(uint*)ptr == MemoryMarshal.Read<uint>("MDEL"u8) => RespCommand.RIMDEL,
         4 when *(uint*)ptr == MemoryMarshal.Read<uint>("MGET"u8) => RespCommand.RIMGET,
-        4 when *(uint*)ptr == MemoryMarshal.Read<uint>("DROP"u8) => RespCommand.RIDROP,
         4 when *(uint*)ptr == MemoryMarshal.Read<uint>("KEYS"u8) => RespCommand.RIKEYS,
         5 when *(uint*)ptr == MemoryMarshal.Read<uint>("RANG"u8)
             && ptr[4] == (byte)'E' => RespCommand.RIRANGE,
@@ -551,7 +550,6 @@ RespCommand.RIMSET   => NetworkRIMSET(ref storageApi),
 RespCommand.RIMDEL   => NetworkRIMDEL(ref storageApi),
 RespCommand.RIMGET   => NetworkRIMGET(ref storageApi),
 RespCommand.RICREATE => NetworkRICREATE(ref storageApi),
-RespCommand.RIDROP   => NetworkRIDROP(ref storageApi),
 RespCommand.RIEXISTS => NetworkRIEXISTS(ref storageApi),
 RespCommand.RICONFIG => NetworkRICONFIG(ref storageApi),
 RespCommand.RIMETRICS => NetworkRIMETRICS(ref storageApi),
@@ -736,7 +734,7 @@ internal sealed unsafe partial class RespServerSession
         return true;
     }
 
-    // NetworkRICREATE, NetworkRIDROP, NetworkRIMSET, NetworkRIMDEL,
+    // NetworkRICREATE, NetworkRIMSET, NetworkRIMDEL,
     // NetworkRIMGET, NetworkRIEXISTS, NetworkRICONFIG, NetworkRIMETRICS,
     // NetworkRIKEYS follow the same pattern.
 }
@@ -780,8 +778,6 @@ GarnetStatus RangeIndexCreate(PinnedSpanByte key,
     ulong cacheSize, uint minRecord, uint maxRecord,
     uint maxKeyLen, uint leafPageSize, byte storageBackend,
     out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
-
-GarnetStatus RangeIndexDrop(PinnedSpanByte key);
 
 GarnetStatus RangeIndexExists(PinnedSpanByte key, out bool exists);
 
@@ -959,8 +955,7 @@ public sealed partial class RangeIndexManager : IDisposable
     // --- Constants ---
     internal const int IndexSizeBytes = 50; // sizeof(RangeIndexStub)
     internal const long RISetAppendLogArg = long.MinValue;
-    internal const long DeleteAfterDropArg = RISetAppendLogArg + 1;
-    internal const long RecreateIndexArg = DeleteAfterDropArg + 1;
+    internal const long RecreateIndexArg = RISetAppendLogArg + 1;
     internal const long RIDelAppendLogArg = RecreateIndexArg + 1;
 
     // --- Fields ---
@@ -1042,7 +1037,7 @@ public sealed partial class RangeIndexManager : IDisposable
 #### 7b. `RangeIndexManager.Index.cs` — Stub struct + serialization
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
-> 50-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `DropIndex()`, `SetContextForMigration()`.
+> 50-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `SetContextForMigration()`.
 
 <details>
 <summary>RangeIndexStub struct and serialization methods (click to expand)</summary>
@@ -1120,15 +1115,6 @@ public sealed partial class RangeIndexManager
         stub.ProcessInstanceId = processInstanceId;
     }
 
-    /// Zero-check for safe deletion.
-    internal void DropIndex(ReadOnlySpan<byte> indexValue)
-    {
-        ReadIndex(indexValue, out var treePtr, out _, out _, out _,
-            out _, out _, out _, out _, out var pid);
-        if (pid != processInstanceId)
-            return; // Never spun up this index, nothing to drop
-        service.Drop(treePtr);
-    }
 }
 ```
 
@@ -1277,11 +1263,7 @@ break;
 case RespCommand.RISET:
 case RespCommand.RIDEL:
 case RespCommand.RICREATE:
-    if (input.arg1 == RangeIndexManager.DeleteAfterDropArg)
-    {
-        logRecord.ValueSpan.Clear();
-    }
-    else if (input.arg1 == RangeIndexManager.RecreateIndexArg)
+    if (input.arg1 == RangeIndexManager.RecreateIndexArg)
     {
         var newTreePtr = MemoryMarshal.Read<nint>(
             input.parseState.GetArgSliceByRef(6).ReadOnlySpan);
@@ -1291,7 +1273,7 @@ case RespCommand.RICREATE:
     // All other operations (insert/delete/scan) are handled OUTSIDE
     // of Tsavorite's RMW — they happen in the StorageSession layer
     // while holding the shared lock. The RMW path here is only for
-    // stub lifecycle (create/recreate/drop).
+    // stub lifecycle (create/recreate).
     return true;
 ```
 
@@ -1306,11 +1288,7 @@ case RespCommand.RICREATE:
 case RespCommand.RISET:
 case RespCommand.RIDEL:
 case RespCommand.RICREATE:
-    if (input.arg1 == RangeIndexManager.DeleteAfterDropArg)
-    {
-        dstLogRecord.ValueSpan.Clear();
-    }
-    else if (input.arg1 == RangeIndexManager.RecreateIndexArg)
+    if (input.arg1 == RangeIndexManager.RecreateIndexArg)
     {
         var newTreePtr = MemoryMarshal.Read<nint>(
             input.parseState.GetArgSliceByRef(6).ReadOnlySpan);
@@ -1361,33 +1339,36 @@ Tsavorite's `Read()` path for data access. The storage session reads the stub vi
 
 ---
 
-### Step 10: Delete/Drop handling
+### Step 10: Delete handling via `DisposeRecord`
 
-> **Reference:** `libs/server/Storage/Functions/MainStore/DeleteMethods.cs`
-> Add a guard to prevent deletion of RangeIndex keys while the stub is non-zero
-> (BfTree still alive). The `RI.DROP` command explicitly zeroes the stub before deleting.
+> **Reference:** `libs/server/Storage/Functions/MainStore/DisposeMethods.cs`
+> The `DisposeRecord` callback is invoked by Tsavorite when a record is deleted (`DEL` / `UNLINK`)
+> or evicted from the log. It handles freeing the BfTree for RangeIndex keys.
+
+No special `RI.DROP` command is needed. Standard `DEL` / `UNLINK` commands delete
+RangeIndex keys. The store's `DisposeRecord(DisposeReason.PageEviction)` and delete
+path handles BfTree cleanup:
 
 ```csharp
-// In SingleDeleter and ConcurrentDeleter:
-if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType
-    && value.AsReadOnlySpan().ContainsAnyExcept((byte)0))
+// In DisposeRecord:
+if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
 {
-    // Stub not yet zeroed — BfTree still alive, block deletion
-    deleteInfo.Action = DeleteAction.CancelOperation;
-    return false;
+    var indexSpan = logRecord.ValueSpan;
+    functionsState.rangeIndexManager.ReadIndex(indexSpan,
+        out var treePtr, out _, out _, out _,
+        out _, out _, out _, out _, out var pid);
+    if (pid == functionsState.rangeIndexManager.ProcessInstanceId && treePtr != 0)
+    {
+        // Snapshot the BfTree pointer and free it
+        functionsState.rangeIndexManager.Service.Drop(treePtr);
+    }
 }
 ```
 
-**RI.DROP command flow:**
-
-1. RESP handler `NetworkRIDROP` calls `storageApi.RangeIndexDrop(key)`
-2. `StorageSession.RangeIndexDrop()`:
-   a. `ReadRangeIndex()` → acquire shared lock, read stub
-   b. `rangeIndexManager.DropIndex(indexSpan)` → calls `BfTreeService.Drop(treePtr)` to
-      free the BfTree
-   c. Issue RMW with `arg1 = DeleteAfterDropArg` → `InPlaceUpdater` zeroes the stub
-   d. Issue `DEL` on the key → now succeeds because stub is all zeros
-3. *(Future)* `CleanupDroppedIndex()` for any async cleanup if needed
+This approach is simpler and safer than a dedicated drop command:
+- No two-phase zeroing+delete dance is needed
+- `DisposeRecord` is guaranteed to be called for every deleted or evicted record
+- Works for both explicit `DEL`/`UNLINK` and page eviction scenarios
 
 ---
 
@@ -1808,7 +1789,7 @@ public enum RangeIndexResult
 | # | File Path | Purpose | Lines (est.) |
 |---|---|---|---|
 | 1 | `libs/server/Resp/RangeIndex/RangeIndexManager.cs` | Main class: constants, Try* methods, recovery | ~200 |
-| 2 | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | Stub struct, Create/Read/Recreate/DropIndex | ~120 |
+| 2 | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | Stub struct, Create/Read/RecreateIndex | ~120 |
 | 3 | `libs/server/Resp/RangeIndex/RangeIndexManager.Locking.cs` | ReadRangeIndexLock, ReadRangeIndex, ReadOrCreateRangeIndex | ~250 |
 | 4 | `libs/server/Resp/RangeIndex/RangeIndexManager.Cleanup.cs` | Post-drop async cleanup | ~100 |
 | 5 | `libs/server/Resp/RangeIndex/BfTreeService.cs` | High-level BfTree operations wrapper | ~150 |
@@ -2445,7 +2426,7 @@ temp files — the BfTree data can be serialized directly into the migration pay
 5. **RI.RANGE** — scan with end key, verify inclusive bounds
 6. **RI.SCAN FIELDS KEY/VALUE/BOTH** — verify ScanReturnField behavior
 7. **RI.DEL + RI.GET** — delete then read returns nil
-8. **RI.DROP** — drop index, verify key is gone
+8. **DEL/UNLINK** — delete RangeIndex key, verify BfTree freed
 9. **RI.EXISTS** — returns 1/0 correctly
 10. **RI.CONFIG / RI.METRICS** — return valid data
 11. **WRONGTYPE** — `GET` on RI key returns WRONGTYPE; `RI.SET` on string key returns WRONGTYPE
@@ -2461,4 +2442,4 @@ temp files — the BfTree data can be serialized directly into the migration pay
 
 1. Multiple threads doing RI.SET/RI.GET simultaneously (BfTree is thread-safe)
 2. RI.SCAN concurrent with RI.SET (scan consistency)
-3. RI.DROP during concurrent RI.SET (proper locking)
+3. DEL during concurrent RI.SET (proper locking)
