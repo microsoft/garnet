@@ -1768,16 +1768,8 @@ internal readonly RangeIndexManager rangeIndexManager;
 > first access, restoring from snapshot at that point. This matches how VectorSet
 > handles recovery on the prototype branch.
 
-**Checkpoint:** Before Garnet checkpoint, call `RangeIndexManager.PrepareCheckpoint()`:
-
-```csharp
-internal void PrepareCheckpoint()
-{
-    // Snapshot all active BfTrees to disk.
-    // The stub's config fields + deterministic path allow reconstruction.
-    // TreePtr becomes stale but ProcessInstanceId enables detection.
-}
-```
+**Checkpoint:** No separate pre-checkpoint scan. BfTrees are snapshotted per-record
+during the snapshot page flush via the `OnSnapshotRecord` callback (see section B below).
 
 **Recovery:** No proactive store scan needed. After Tsavorite recovery, the stubs contain
 `ProcessInstanceId` values from the prior process. Since `RangeIndexManager` generates a
@@ -2078,46 +2070,46 @@ The callbacks only fire on cold paths (page eviction / page load from disk).
 
 ### B. Checkpoint
 
-> **Reference:** `libs/server/Databases/DatabaseManagerBase.cs` —
-> `InitiateCheckpointAsync()` orchestrates the checkpoint state machine.
-> The `RangeIndexManager.PrepareCheckpoint()` hook should be called before the
-> state machine starts, to snapshot all active BfTrees.
+**No separate pre-checkpoint scan needed.** During a snapshot checkpoint, Tsavorite
+flushes pages to the snapshot file. At this point, the same per-record callback mechanism
+used for eviction (e.g., `DisposeRecord` with a snapshot-specific `DisposeReason`, or a
+new `OnSnapshotToDisk` callback) can be invoked for each record being written to the
+snapshot. For RangeIndex stubs, this callback snapshots the BfTree to disk alongside the
+Tsavorite snapshot page, using the deterministic path derived from the key bytes and
+checkpoint token.
 
-**Pre-checkpoint hook:** Before Tsavorite begins the checkpoint state machine, snapshot
-all active BfTrees:
+This is cleaner than a pre-checkpoint scan because:
+- The BfTree snapshot happens **atomically** with the stub being written to the checkpoint
+  file — no window for concurrent writes to create divergence.
+- No need to iterate all active indexes upfront — only the stubs being flushed trigger
+  snapshots.
+- Indexes that were already evicted (and thus already snapshotted to disk) are skipped
+  naturally.
 
-<details>
-<summary>PrepareCheckpoint implementation (click to expand)</summary>
+> **Tsavorite change required:** Invoke a per-record callback during snapshot page flush,
+> analogous to `DisposeRecord` on eviction. This could be a new `DisposeReason` value
+> (e.g., `DisposeReason.SnapshotCheckpoint`) or a separate `OnSnapshotToDisk` callback.
+> The implementation snapshots the BfTree but does **not** free it (unlike eviction) —
+> the BfTree remains live in memory.
 
 ```csharp
-// Hook into IClusterProvider.OnCheckpointInitiated()
-// or into DatabaseManagerBase.InitiateCheckpointAsync() before the state machine runs.
-
-// In RangeIndexManager.cs:
-internal void PrepareCheckpoint(Guid checkpointToken, string checkpointDir)
+// In Garnet's record disposer / callback:
+// Called per-record during snapshot page flush
+public void OnSnapshotRecord(ref LogRecord logRecord, Guid checkpointToken, string checkpointDir)
 {
-    foreach (var (treePtr, entry) in activeIndexes)
+    if (logRecord.RecordType != RangeIndexManager.RangeIndexRecordType)
+        return;
+
+    ReadIndex(logRecord.ValueSpan, out var treePtr, ...);
+    if (treePtr == nint.Zero) return;
+
+    if (rangeIndexManager.activeIndexes.TryGetValue(treePtr, out var entry))
     {
-        // Derive path: {checkpointDir}/rangeindex/{keyHash}/{checkpointToken}.bftree
+        // Snapshot BfTree to checkpoint directory (do NOT free — it's still live)
         var snapshotPath = DeriveSnapshotPath(entry.KeyBytes, checkpointDir, checkpointToken);
-        service.Snapshot(treePtr, snapshotPath);
-        entry.SnapshotPath = snapshotPath;
+        rangeIndexManager.service.Snapshot(treePtr, snapshotPath);
     }
-    // The snapshot files now sit alongside the Tsavorite checkpoint files.
-    // When checkpoint completes, these files are part of the checkpoint "bundle."
 }
-```
-
-</details>
-
-**Where to hook this in:**
-
-```csharp
-// In DatabaseManagerBase.cs, inside InitiateCheckpointAsync():
-// BEFORE the state machine runs (line ~670):
-rangeIndexManager.PrepareCheckpoint(checkpointToken, checkpointDir);
-// ... then start the state machine:
-db.StateMachineDriver.RunAsync();
 ```
 
 **After checkpoint:** Optionally clean up old snapshot files from previous checkpoints.
@@ -2377,10 +2369,10 @@ temp files — the BfTree data can be serialized directly into the migration pay
 
 | # | File Path | Purpose |
 |---|---|---|
-| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Persistence.cs` | `DisposeRecord` handler, `PrepareCheckpoint()`, snapshot path derivation |
+| NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Persistence.cs` | `DisposeRecord` handler, `OnSnapshotRecord` handler, snapshot path derivation |
 | NEW | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | `HandleMigratedRangeIndexKey()`, migration serialization/deserialization |
-| MOD | `libs/server/Databases/DatabaseManagerBase.cs` | Call `rangeIndexManager.PrepareCheckpoint()` before checkpoint state machine |
-| MOD | `libs/server/Databases/SingleDatabaseManager.cs` | Call `rangeIndexManager.PrepareCheckpoint()` before checkpoint |
+| MOD | `libs/server/Databases/DatabaseManagerBase.cs` | *(no RangeIndex-specific changes needed — checkpoint handled via per-record callback)* |
+| MOD | `libs/server/Databases/SingleDatabaseManager.cs` | *(no RangeIndex-specific changes needed — recovery is lazy)* |
 | MOD | `libs/cluster/Server/Replication/CheckpointFileType.cs` | Add `RANGEINDEX_SNAPSHOT` enum value |
 | MOD | `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` | Send BfTree snapshot files during replica sync |
 | MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Handle `RISTORE` type during key migration |
