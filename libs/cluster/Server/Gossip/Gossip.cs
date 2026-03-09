@@ -27,6 +27,7 @@ namespace Garnet.cluster
 
         readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
+        public ConcurrentDictionary<string, long> WorkerBanList => workerBanList;
 
         /// <summary>
         /// Return worker ban list

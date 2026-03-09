@@ -53,6 +53,11 @@ namespace Garnet.server
         /// Replays <see cref="RespCommand.VADD"/>s on replicas in parallel.
         /// </summary>
         VectorReplicationReplayTask,
+
+        /// <summary>
+        /// Cluster config merger background task
+        /// </summary>
+        ConfigMergerTask,
     }
 
     /// <summary>

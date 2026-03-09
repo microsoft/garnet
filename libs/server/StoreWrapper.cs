@@ -172,6 +172,11 @@ namespace Garnet.server
         public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
         /// <summary>
+        /// Task manager instance
+        /// </summary>
+        public TaskManager TaskManager => taskManager;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public StoreWrapper(
@@ -833,6 +838,11 @@ namespace Garnet.server
             databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
         }
 
+        /// <summary>
+        /// Check if there are any keys in the provided list of slots.
+        /// </summary>
+        /// <param name="slots"></param>
+        /// <returns></returns>
         public bool HasKeysInSlots(List<int> slots)
         {
             if (slots.Count > 0)

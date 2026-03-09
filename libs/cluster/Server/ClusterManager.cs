@@ -28,6 +28,12 @@ namespace Garnet.cluster
         public ClusterConfig CurrentConfig => currentConfig;
 
         /// <summary>
+        /// Get current config merger isntance
+        /// </summary>
+        public ConfigMerger ConfigMerger
+            => configMerger;
+
+        /// <summary>
         /// Tls Client options
         /// </summary>
         readonly IGarnetTlsOptions tlsOptions;
@@ -51,6 +57,11 @@ namespace Garnet.cluster
         /// Shared epoch instance for connection store
         /// </summary>
         readonly client.LightEpoch epoch;
+
+        /// <summary>
+        /// Config merger that delegates merging asynchronously
+        /// </summary>
+        readonly ConfigMerger configMerger;
 
         /// <summary>
         /// Constructor
@@ -106,6 +117,7 @@ namespace Garnet.cluster
             clusterTimeout = serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(serverOptions.ClusterTimeout);
             numActiveTasks = 0;
             GossipSamplePercent = serverOptions.GossipSamplePercent;
+            configMerger = new ConfigMerger(clusterProvider, logger: logger);
 
             // Run Background task
             if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
@@ -140,6 +152,7 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
+            configMerger?.Dispose();
             DisposeBackgroundTasks();
 
             clusterConfigDevice.Dispose();
