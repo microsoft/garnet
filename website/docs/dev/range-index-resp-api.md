@@ -1058,9 +1058,7 @@ public sealed partial class RangeIndexManager
         [FieldOffset(28)] public uint LeafPageSize;
         [FieldOffset(32)] public byte StorageBackend;
         [FieldOffset(33)] public byte Flags;
-        [FieldOffset(34)] public ushort Reserved;
-        [FieldOffset(36)] public uint Reserved2;
-        [FieldOffset(40)] public Guid ProcessInstanceId;
+        [FieldOffset(34)] public Guid ProcessInstanceId;
     }
 
     /// Write a new stub into the value span of a LogRecord.
@@ -1860,29 +1858,20 @@ key name and a checkpoint-specific directory:
 {garnet_checkpoint_dir}/rangeindex/{key_hash}/{checkpoint_token}.bftree
 ```
 
-The `RangeIndexManager` maintains a registry mapping live `TreePtr` values to their key
-names and snapshot paths:
+All paths (backend file, checkpoint snapshot) are derived deterministically from the
+key bytes and configuration directories — no in-memory registry is needed. The stub
+itself persists the BfTree config, and `ref LogRecord` in callbacks provides the key
+bytes. This avoids a concurrent data structure on the hot path.
 
-```csharp
-// In RangeIndexManager.cs
-private readonly ConcurrentDictionary<nint, RangeIndexEntry> activeIndexes = new();
-
-private struct RangeIndexEntry
-{
-    public byte[] KeyBytes;        // Garnet key name
-    public string SnapshotPath;    // Last snapshot file path
-    public ulong CacheSize;        // Config for restoration
-    public uint MinRecordSize;
-    public uint MaxRecordSize;
-    public uint MaxKeyLen;
-    public uint LeafPageSize;
-    public byte StorageBackend;
-    public string BackendFilePath; // BfTree's SSD backend file path
-}
+**Backend file path** (where the live BfTree stores its data):
+```
+{garnet_data_dir}/rangeindex/{key_hash}/data.bftree
 ```
 
-When a BfTree is created (in `CreateIndex`), it is registered. When dropped, it is
-unregistered.
+**Checkpoint snapshot path** (point-in-time copy for recovery):
+```
+{garnet_checkpoint_dir}/rangeindex/{key_hash}/{checkpoint_token}.bftree
+```
 
 ### Design: Deterministic Snapshot Path Derivation
 
@@ -1983,13 +1972,11 @@ public void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
     ReadIndex(logRecord.ValueSpan, out var treePtr, ...);
     if (treePtr == nint.Zero) return;
 
-    if (rangeIndexManager.activeIndexes.TryRemove(treePtr, out var entry))
-    {
-        // Flush BfTree state to its SSD backend file, then free native instance.
-        // No copy needed — the backend file IS the snapshot for recovery.
-        rangeIndexManager.service.Snapshot(treePtr);
-        rangeIndexManager.service.Drop(treePtr);
-    }
+    // Flush BfTree state to its SSD backend file, then free native instance.
+    // The backend file path is deterministic from the key bytes.
+    // No copy needed — the backend file IS the snapshot for cold-read recovery.
+    rangeIndexManager.service.Snapshot(treePtr);
+    rangeIndexManager.service.Drop(treePtr);
 }
 ```
 
@@ -2041,11 +2028,10 @@ The callbacks only fire on cold paths (page eviction / page load from disk).
 1. Tsavorite loads record from disk → `OnLoadFromDisk` clears `ProcessInstanceId`
 2. `ReadRangeIndex()` reads stub → `ProcessInstanceId == Guid.Empty` ≠ `this.processInstanceId`
 3. Promote to exclusive lock
-4. Derive snapshot path from key bytes + latest snapshot directory
-5. Restore BfTree: `newTreePtr = service.RestoreFromSnapshot(snapshotPath, config...)`
-6. Register `newTreePtr` in `activeIndexes`
-7. Issue RMW with `RecreateIndexArg` to update the stub's `TreePtr` and `ProcessInstanceId`
-8. Release exclusive lock, re-acquire shared, return
+4. Derive backend file path from key bytes (deterministic)
+5. Restore BfTree from backend file: `newTreePtr = service.RestoreFromSnapshot(path, config...)`
+6. Issue RMW with `RecreateIndexArg` to update the stub's `TreePtr` and `ProcessInstanceId`
+7. Release exclusive lock, re-acquire shared, return
 
 ---
 
@@ -2102,25 +2088,26 @@ public void OnSnapshotRecord(ref LogRecord logRecord, Guid checkpointToken, stri
     ReadIndex(logRecord.ValueSpan, out var treePtr, ...);
     if (treePtr == nint.Zero) return;
 
-    if (rangeIndexManager.activeIndexes.TryGetValue(treePtr, out var entry))
-    {
-        // Acquire exclusive lock to block all RI operations on this index
-        // during the flush+copy window.
-        var keyHash = HashKeyToGuid(entry.KeyBytes);
-        rangeIndexManager.rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
-        try
-        {
-            // 1. Flush BfTree state to its SSD backend file
-            rangeIndexManager.service.Snapshot(treePtr);
+    // Derive paths deterministically from key bytes in the LogRecord
+    var keyBytes = logRecord.Key;
+    var backendPath = DeriveBackendPath(keyBytes, rangeIndexManager.dataDir);
+    var checkpointPath = DeriveSnapshotPath(keyBytes, checkpointDir, checkpointToken);
 
-            // 2. Reflink-copy the backend file to the checkpoint directory
-            var checkpointPath = DeriveSnapshotPath(entry.KeyBytes, checkpointDir, checkpointToken);
-            ReflinkCopy(entry.BackendFilePath, checkpointPath);
-        }
-        finally
-        {
-            rangeIndexManager.rangeIndexLocks.ReleaseExclusiveLock(lockToken);
-        }
+    // Acquire exclusive lock to block all RI operations on this index
+    // during the flush+copy window.
+    var keyHash = HashKeyToGuid(keyBytes);
+    rangeIndexManager.rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+    try
+    {
+        // 1. Flush BfTree state to its SSD backend file
+        rangeIndexManager.service.Snapshot(treePtr);
+
+        // 2. Reflink-copy the backend file to the checkpoint directory
+        ReflinkCopy(backendPath, checkpointPath);
+    }
+    finally
+    {
+        rangeIndexManager.rangeIndexLocks.ReleaseExclusiveLock(lockToken);
     }
 }
 ```
@@ -2143,11 +2130,10 @@ BfTrees are restored **lazily** on first access via the existing `ReadRangeIndex
 1. First `RI.*` command on a recovered key → `Read_MainStore` returns the stub
 2. `stub.ProcessInstanceId != this.processInstanceId` → stale pointer detected
 3. Promote shared lock to exclusive
-4. Derive snapshot path from key bytes + checkpoint directory + checkpoint token
+4. Derive checkpoint snapshot path from key bytes + checkpoint directory + checkpoint token
 5. `newTreePtr = service.RestoreFromSnapshot(snapshotPath, config...)`
-6. Register in `activeIndexes`
-7. Issue RMW with `RecreateIndexArg` → updates `TreePtr` and `ProcessInstanceId` in stub
-8. Release exclusive, re-acquire shared, proceed with operation
+6. Issue RMW with `RecreateIndexArg` → updates `TreePtr` and `ProcessInstanceId` in stub
+7. Release exclusive, re-acquire shared, proceed with operation
 
 This avoids a full-store scan at startup. Only indexes that are actually accessed pay
 the restore cost. This is the same approach used by VectorManager on the prototype branch
