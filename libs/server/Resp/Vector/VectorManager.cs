@@ -914,19 +914,18 @@ namespace Garnet.server
         /// <summary>
         /// Apply post-filtering to vector search results using a compiled filter expression.
         ///
-        /// Architecture (modeled after Redis expr.c + fastjson.c):
-        /// 1. The filter string is compiled ONCE into a flat postfix program (ExprCompiler).
-        /// 2. Unique selectors (field names) are collected from the program.
-        /// 3. For each candidate, ALL needed fields are extracted in a single JSON pass
-        ///    via <see cref="AttributeExtractor.ExtractFields"/>, then the program is
-        ///    evaluated against the pre-extracted values.
-        /// 4. No JsonDocument DOM is allocated — fields are extracted directly from the raw bytes.
+        /// Two-phase approach:
+        /// 1. COMPILE: The filter string is compiled ONCE into a postfix program (ExprCompiler).
+        /// 2. INDEX: Build a field offset index for ALL candidates in one pass over the
+        ///    contiguous attributes span. The index records (offset, length) for each
+        ///    field the filter needs, per candidate. This is the "simdjson-style" structural
+        ///    pass — future optimization can use SIMD to find delimiters.
+        /// 3. EVALUATE: For each candidate, create tokens lazily from indexed positions
+        ///    and run the postfix program. Only touches attribute bytes for fields the
+        ///    filter actually references.
         ///
         /// The <paramref name="filterBitmap"/> is populated with one bit per result:
-        /// bit i = 1 means result i passed the filter. Caller can test with:
-        ///   (filterBitmap[i >> 3] &amp; (1 &lt;&lt; (i &amp; 7))) != 0
-        ///
-        /// No in-place compaction — the caller skips non-matching results using the bitmap.
+        /// bit i = 1 means result i passed the filter.
         /// </summary>
         private static int ApplyPostFilter(
             ReadOnlySpan<byte> filter,
@@ -939,40 +938,60 @@ namespace Garnet.server
                 return 0;
             }
 
-            // Compile the filter expression (UTF-8 bytes) into a flat postfix program.
-            // This is done once and reused for all candidate evaluations.
+            // Phase 1: Compile the filter expression into a postfix program.
             var program = ExprCompiler.TryCompile(filter, out _);
             if (program == null)
             {
-                return 0; // If the filter doesn't compile, treat it as filtering out all results (matches Redis behavior)
+                return 0; // Invalid filter → filter out all results (matches Redis behavior)
             }
 
-            // Clear the bitmap
             filterBitmap.Clear();
 
-            // Collect unique selectors — these are the JSON fields we need per candidate.
             var selectors = program.GetSelectors();
+            var numSelectors = selectors.Length;
+            var stride = AttributeExtractor.FieldIndexStride(numSelectors);
 
-            // Pre-allocate extraction buffer — reused across all candidates.
-            var extractedFields = new ExprToken[selectors.Length];
+            // Phase 2: Build field offset index for ALL candidates in one pass.
+            // Index layout per doc: [fieldCount, field0_offset, field0_len, ..., fieldN_offset, fieldN_len]
+            // Size is predictable: numResults * stride ints.
+            var indexSize = numResults * stride;
+            var fieldIndex = indexSize <= 256
+                ? stackalloc int[indexSize]
+                : new int[indexSize];
 
+            AttributeExtractor.BuildFieldIndex(attributesSpan, numResults, selectors, fieldIndex);
+
+            // Phase 3: Evaluate filter per candidate using indexed positions.
             var filteredCount = 0;
-
-            // Allocate the evaluation stack once and reuse it across all candidate evaluations
             var stack = ExprRunner.CreateStack();
-
+            var extractedFields = new ExprToken[numSelectors];
             var remaining = attributesSpan;
 
             for (var i = 0; i < numResults; i++)
             {
-                // Read attribute length-prefix + data
                 var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
                 var attrData = remaining.Slice(sizeof(int), attrLen);
 
-                // Single-pass extraction: scan JSON once, extract all needed fields.
-                AttributeExtractor.ExtractFields(attrData, selectors, extractedFields);
+                var docIndex = fieldIndex.Slice(i * stride, stride);
+                var fieldCount = docIndex[0];
 
-                // Execute the compiled program against pre-extracted fields.
+                if (fieldCount < 0)
+                {
+                    // Malformed JSON — skip
+                    remaining = remaining[(sizeof(int) + attrLen)..];
+                    continue;
+                }
+
+                // Create tokens lazily from indexed positions — only parses values the filter touches
+                for (var f = 0; f < numSelectors; f++)
+                {
+                    var offset = docIndex[1 + 2 * f];
+                    var len = docIndex[1 + 2 * f + 1];
+                    extractedFields[f] = offset >= 0
+                        ? AttributeExtractor.ParseValueAt(attrData, offset, len)
+                        : default;
+                }
+
                 if (ExprRunner.Run(program, attrData, selectors, extractedFields, stack))
                 {
                     filterBitmap[i >> 3] |= (byte)(1 << (i & 7));

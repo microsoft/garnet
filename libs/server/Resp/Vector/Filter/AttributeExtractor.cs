@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Buffers.Text;
 
 namespace Garnet.server.Vector.Filter
@@ -19,6 +20,189 @@ namespace Garnet.server.Vector.Filter
     /// </summary>
     internal static class AttributeExtractor
     {
+        /// <summary>
+        /// Stride (in ints) per document in the field index: 1 (count) + 2 per field (offset, length).
+        /// </summary>
+        internal static int FieldIndexStride(int numFields) => 1 + 2 * numFields;
+
+        /// <summary>
+        /// Build a field offset index for ALL documents in the contiguous attributes span.
+        ///
+        /// The attributes span is a series of length-prefixed JSON blobs:
+        ///   [len0][json0][len1][json1]...
+        ///
+        /// For each document, the index records:
+        ///   [fieldCount, field0_offset, field0_length, field1_offset, field1_length, ...]
+        ///
+        /// Offsets are relative to the start of that document's JSON (after the length prefix).
+        /// A field offset of -1 means that field was not found in that document.
+        /// A fieldCount of -1 means malformed JSON.
+        ///
+        /// <paramref name="indexBuffer"/> must contain at least
+        /// <c>numDocs * FieldIndexStride(fieldNames.Length)</c> ints.
+        /// </summary>
+        public static void BuildFieldIndex(
+            ReadOnlySpan<byte> attributesSpan,
+            int numDocs,
+            string[] fieldNames,
+            Span<int> indexBuffer)
+        {
+            var numFields = fieldNames.Length;
+            var stride = FieldIndexStride(numFields);
+            var remaining = attributesSpan;
+
+            for (var doc = 0; doc < numDocs; doc++)
+            {
+                var docIndex = indexBuffer.Slice(doc * stride, stride);
+
+                // Read length prefix
+                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                var json = remaining.Slice(sizeof(int), attrLen);
+
+                // Initialize: count = 0, all offsets = -1
+                docIndex[0] = 0;
+                for (var f = 0; f < numFields; f++)
+                {
+                    docIndex[1 + 2 * f] = -1;
+                    docIndex[1 + 2 * f + 1] = 0;
+                }
+
+                // Scan this document for requested field positions
+                ScanFieldPositions(json, fieldNames, docIndex);
+
+                remaining = remaining[(sizeof(int) + attrLen)..];
+            }
+        }
+
+        /// <summary>
+        /// Create an ExprToken from a value at an indexed position in JSON bytes.
+        /// Uses the offset and length recorded by <see cref="BuildFieldIndex"/>.
+        /// </summary>
+        public static ExprToken ParseValueAt(ReadOnlySpan<byte> json, int offset, int length)
+        {
+            if (offset < 0 || length <= 0 || offset + length > json.Length)
+                return default;
+
+            var c = json[offset];
+
+            // String: content is between quotes
+            if (c == (byte)'"')
+            {
+                // offset points to opening quote, length includes both quotes
+                var contentStart = offset + 1;
+                var contentLen = length - 2;
+                // Check for escapes (scan for backslash)
+                var content = json.Slice(contentStart, contentLen);
+                if (content.IndexOf((byte)'\\') < 0)
+                {
+                    // Zero-alloc: store byte offset+length into source JSON
+                    return ExprToken.NewJsonStr(contentStart, contentLen);
+                }
+                else
+                {
+                    // Escaped: materialize
+                    return ExprToken.NewStr(UnescapeJsonString(content));
+                }
+            }
+
+            // Number
+            if (IsDigit(c) || c == (byte)'-' || c == (byte)'+')
+            {
+                var numSpan = json.Slice(offset, length);
+                if (Utf8Parser.TryParse(numSpan, out double value, out var consumed) && consumed == numSpan.Length)
+                    return ExprToken.NewNum(value);
+                return default;
+            }
+
+            // Boolean / null
+            if (c == (byte)'t' && length == 4) return ExprToken.NewNum(1);
+            if (c == (byte)'f' && length == 5) return ExprToken.NewNum(0);
+            if (c == (byte)'n' && length == 4) return ExprToken.NewNull();
+
+            // Array: parse via existing method
+            if (c == (byte)'[')
+            {
+                var s = json[offset..];
+                return ParseArrayToken(json, ref s);
+            }
+
+            return default;
+        }
+
+        /// <summary>
+        /// Scan a single JSON object and record the byte positions of requested fields.
+        /// </summary>
+        private static void ScanFieldPositions(ReadOnlySpan<byte> json, string[] fieldNames, Span<int> docIndex)
+        {
+            var numFields = fieldNames.Length;
+            var s = TrimWhiteSpace(json);
+            if (s.IsEmpty || s[0] != (byte)'{')
+            {
+                docIndex[0] = -1; // malformed
+                return;
+            }
+            s = s[1..]; // Skip '{'
+
+            var found = 0;
+
+            while (true)
+            {
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) { if (found == 0) docIndex[0] = -1; return; }
+                if (s[0] == (byte)'}') return;
+
+                // Expect key string
+                if (s[0] != (byte)'"') { if (found == 0) docIndex[0] = -1; return; }
+
+                var afterOpenQuote = s[1..];
+                if (!SkipString(ref s)) { docIndex[0] = -1; return; }
+                var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
+
+                // Match against requested fields
+                var matchIndex = -1;
+                for (var i = 0; i < numFields; i++)
+                {
+                    if (docIndex[1 + 2 * i] < 0 && MatchKey(keyContent, fieldNames[i]))
+                    {
+                        matchIndex = i;
+                        break;
+                    }
+                }
+
+                // Expect ':'
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty || s[0] != (byte)':') { docIndex[0] = -1; return; }
+                s = s[1..];
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) { docIndex[0] = -1; return; }
+
+                // Record value position (offset relative to json start)
+                var valueStart = json.Length - s.Length;
+                var beforeSkip = s;
+
+                if (!SkipValue(ref s)) { docIndex[0] = -1; return; }
+
+                var valueLen = beforeSkip.Length - s.Length;
+
+                if (matchIndex >= 0)
+                {
+                    docIndex[1 + 2 * matchIndex] = valueStart;
+                    docIndex[1 + 2 * matchIndex + 1] = valueLen;
+                    found++;
+                    docIndex[0] = found;
+                    if (found == numFields) return; // All fields found — early exit
+                }
+
+                // Look for ',' or '}'
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return;
+                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)'}') return;
+                docIndex[0] = -1; // Malformed
+                return;
+            }
+        }
+
         /// <summary>
         /// Extract multiple top-level fields from a JSON object in a single pass.
         /// <paramref name="fieldNames"/> lists the fields to extract.
