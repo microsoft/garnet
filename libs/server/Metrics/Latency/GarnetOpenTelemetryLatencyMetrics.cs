@@ -108,7 +108,16 @@ namespace Garnet.server.Metrics.Latency
         private GarnetOpenTelemetryLatencyMetrics()
         {
             this.meter = new Meter(MeterName);
-            this.latencyHistogram = meter.CreateHistogram<double>("garnet.server.command.latency", unit: "s", description: "Latency of processing, per network receive call (server side).");
+            this.latencyHistogram = meter.CreateHistogram<double>(
+                "garnet.server.command.latency",
+                unit: "s",
+                description: "Latency of processing, per network receive call (server side).",
+                advice: new InstrumentAdvice<double>()
+                {
+                    // 50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600, 51200, 102400, 204800, 409600 Microseconds:
+                    HistogramBucketBoundaries = [0.00005, 0.0001, 0.0002, 0.0004, 0.0008, 0.0016, 0.0032, 0.0064, 0.0128, 0.0256, 0.0512, 0.1024, 0.2048, 0.4096]
+                });
+
             this.bytesPerCallHistogram = meter.CreateHistogram<int>("garnet.server.bytes.processed", unit: "By", description: "Bytes processed, per network receive call (server side).");
             this.operationsPerCallHistogram = meter.CreateHistogram<int>("garnet.server.operations.processed", unit: "{operations}", description: "Ops processed, per network receive call (server side).");
         }
