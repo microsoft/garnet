@@ -32,7 +32,7 @@ namespace Tsavorite.test.ReadCacheTests
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10,
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 10,
@@ -59,16 +59,16 @@ namespace Tsavorite.test.ReadCacheTests
         [Category("Smoke")]
         public void ObjectDiskWriteReadCache()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             TestObjectInput input = default;
 
             for (int i = 0; i < 2000; i++)
             {
-                var key = new TestObjectKey { key = i };
+                var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, Empty.Default);
+                _ = bContext.Upsert(key1, value, Empty.Default);
             }
             _ = bContext.CompletePending(true);
 
@@ -82,7 +82,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
                 _ = bContext.CompletePending(true);
             }
@@ -94,7 +94,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -109,7 +109,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
                 _ = bContext.CompletePending(true);
             }
@@ -121,7 +121,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -133,7 +133,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i + valueAdd };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, Empty.Default);
+                _ = bContext.Upsert(key1, value, Empty.Default);
             }
 
             // RMW to overwrite the read cache
@@ -141,7 +141,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new TestObjectKey { key = i };
                 input = new TestObjectInput { value = valueAdd };
-                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
+                var status = bContext.RMW(key1, ref input, Empty.Default);
                 if (status.IsPending)
                     _ = bContext.CompletePending(true);
             }
@@ -153,7 +153,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i + valueAdd };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found, $"key = {key1.key}");
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -163,16 +163,16 @@ namespace Tsavorite.test.ReadCacheTests
         [Category("TsavoriteKV")]
         public void ObjectDiskWriteReadCache2()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             TestObjectInput input = default;
 
             for (int i = 0; i < 2000; i++)
             {
-                var key = new TestObjectKey { key = i };
+                var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, Empty.Default);
+                _ = bContext.Upsert(key1, value, Empty.Default);
             }
             _ = bContext.CompletePending(true);
 
@@ -185,7 +185,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
                 _ = bContext.CompletePending(true);
             }
@@ -197,7 +197,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -212,7 +212,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
                 _ = bContext.CompletePending(true);
             }
@@ -224,7 +224,7 @@ namespace Tsavorite.test.ReadCacheTests
                 TestObjectKey key1 = new() { key = i };
                 TestObjectValue value = new() { value = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
+                var status = bContext.Read(key1, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }

@@ -97,7 +97,7 @@ namespace Garnet.test
             for (int i = 0; i < KeyCount; i++)
                 db.StringSet($"try:{i}", i);
 
-            // get and count keys using SE Redis, using the default pageSize of 250
+            // get and count keys using SE Redis, using the default pageSizeStr of 250
             var server = redis.GetServers()[db.Database];
             var keyCount1 = server.Keys().ToArray().Length;
             ClassicAssert.AreEqual(KeyCount, keyCount1, "IServer.Keys()");

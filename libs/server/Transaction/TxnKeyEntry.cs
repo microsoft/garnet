@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -51,7 +52,7 @@ namespace Garnet.server
         public int phase;
 
         internal TxnKeyEntries(int initialCount,
-                TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
+                TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
@@ -77,7 +78,7 @@ namespace Garnet.server
 
         public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
         {
-            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
+            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash((FixedSpanByteKey)keyArgSlice);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)

@@ -57,7 +57,8 @@ namespace Tsavorite.core
         /// </summary>
         public long snapshotFinalLogicalAddress;
         /// <summary>
-        /// hlog HeadAddress at the start of the WAIT_FLUSH phase
+        /// hlog HeadAddress at the start of the WAIT_FLUSH phase. This is the initial address to start scanning from; the lowest address at which we will bring pages
+        /// into the circular buffer (may be in the middle of a page)
         /// </summary>
         public long headAddress;
         /// <summary>

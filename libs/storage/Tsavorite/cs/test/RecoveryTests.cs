@@ -53,7 +53,7 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 IndexSize = KeySpace,
                 LogDevice = log,
-                SegmentSize = 1L << 25, //MemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
+                SegmentSize = 1L << 25, //LogMemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -156,13 +156,13 @@ namespace Tsavorite.test.recovery.sumstore
             }
 
             // Register thread with Tsavorite
-            using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            using var session = store.NewSession<AdId, AdInput, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Process the batch of input data
             for (int i = 0; i < NumOps; i++)
             {
-                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref inputArray[i].adId), ref inputArray[i], Empty.Default);
+                _ = bContext.RMW(inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 checkpointAction(i);
 
@@ -194,7 +194,7 @@ namespace Tsavorite.test.recovery.sumstore
             }
 
             // Register with thread
-            using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            using var session = store.NewSession<AdId, AdInput, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             AdInput input = default;
@@ -203,7 +203,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Issue read requests
             for (var i = 0; i < NumUniqueKeys; i++)
             {
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref inputArray[i].adId), ref input, ref output, Empty.Default);
+                var status = bContext.Read(inputArray[i].adId, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
@@ -362,7 +362,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private unsafe void Populate(TsavoriteKV<SpanByteStoreFunctions, StructAllocator> store)
         {
-            using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            using var session = store.NewSession<AdId, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(RandSeed);
@@ -384,21 +384,21 @@ namespace Tsavorite.test.recovery.sumstore
                 for (int j = 0; j < len; j++)
                     valueSpan[j] = i;
 
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), VLVector.FromPinnedSpan(valueSpan), Empty.Default);
+                _ = bContext.Upsert(key, VLVector.FromPinnedSpan(valueSpan), Empty.Default);
             }
             _ = bContext.CompletePending(true);
         }
 
         private unsafe void Populate(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
             {
                 var key = new TestObjectKey { key = i % (int)DeviceTypeRecoveryTests.NumUniqueKeys };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value);
+                _ = bContext.Upsert(key, value);
             }
             _ = bContext.CompletePending(true);
         }
@@ -429,7 +429,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private static void Read(TsavoriteKV<SpanByteStoreFunctions, StructAllocator> store)
         {
-            using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            using var session = store.NewSession<AdId, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(RandSeed);
@@ -441,7 +441,7 @@ namespace Tsavorite.test.recovery.sumstore
                 key.adId = i;
 
                 int[] output = null;
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output, Empty.Default);
+                var status = bContext.Read(key, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
 
                 var len = GetRandomLength(rng);
@@ -458,14 +458,14 @@ namespace Tsavorite.test.recovery.sumstore
 
         private static void Read(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
             {
                 var key = new TestObjectKey { key = i };
                 var output = new TestObjectOutput();
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output, Empty.Default);
+                var status = bContext.Read(key, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found, $"keyIndex {i}");
                 ClassicAssert.AreEqual(ExpectedValue(i), output.value.value);
             }

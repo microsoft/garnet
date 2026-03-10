@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 
 namespace Tsavorite.core
@@ -15,13 +14,27 @@ namespace Tsavorite.core
         /// <summary>
         /// Get 64-bit hash code
         /// </summary>
-        long GetHashCode64(ReadOnlySpan<byte> key);
+        long GetHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Equality comparison
         /// </summary>
         /// <param name="k1">Left side</param>
         /// <param name="k2">Right side</param>
-        bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
+        bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
     }
 }

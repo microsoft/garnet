@@ -2,18 +2,19 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     internal sealed class TxnKeyComparison
     {
-        public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext;
+        public TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext;
 
         public readonly Comparison<TxnKeyEntry> comparisonDelegate;
 
         internal TxnKeyComparison(
-            TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
+            TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
             this.UnifiedTransactionalContext = unifiedTransactionalContext;
             comparisonDelegate = Compare;

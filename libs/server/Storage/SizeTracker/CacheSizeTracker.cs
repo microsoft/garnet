@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -16,56 +15,35 @@ namespace Garnet.server
     /// </summary>
     public class CacheSizeTracker
     {
-        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator> mainLogTracker;
-        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator> readCacheTracker;
-        private long targetSize;
-        public long ReadCacheTargetSize;
+        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> mainLogTracker;
+        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> readCacheTracker;
 
         int isStarted = 0;
-        private const int deltaFraction = 10; // 10% of target size
+        private const int HighTargetSizeDeltaFraction = 10; // When memory usage grows, trigger trimming at 10% above target size (for both main log and readcache)
+        private const int LowTargetSizeDeltaFraction = HighTargetSizeDeltaFraction * 5;  // When trimming memory, trim down to 1/5 of HighTargetSizeDeltaFraction below target size (for both main log and readcache)
 
-        internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
+        internal bool IsStopped => (mainLogTracker == null || mainLogTracker.IsStopped) && (readCacheTracker == null || readCacheTracker.IsStopped);
+        internal bool IsStarted => isStarted == 1;
 
-        /// <summary>
-        /// Total memory size target
-        /// </summary>
+        /// <summary>Total memory size target for main log</summary>
         public long TargetSize
         {
-            get => targetSize;
+            get => mainLogTracker?.TargetSize ?? 0;
             set
             {
                 Debug.Assert(value >= 0);
-                targetSize = value;
-                mainLogTracker?.UpdateTargetSize(targetSize, targetSize / deltaFraction);
+                mainLogTracker?.UpdateTargetSize(value, value / HighTargetSizeDeltaFraction, value / LowTargetSizeDeltaFraction);
             }
         }
 
-        /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
-        internal struct LogSizeCalculator : ILogSizeCalculator
+        /// <summary>Total memory size target for readcache</summary>
+        public long ReadCacheTargetSize
         {
-            /// <summary>Calculate the size of a record in the cache</summary>
-            /// <param name="logRecord">Information about the record</param>
-            /// <returns>The size of the record</returns>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public readonly long CalculateRecordSize<TSourceLogRecord>(in TSourceLogRecord logRecord)
-                where TSourceLogRecord : ISourceLogRecord
+            get => readCacheTracker?.TargetSize ?? 0;
+            set
             {
-                long size = 0;
-                if (logRecord.Info.Tombstone)
-                    return size;
-
-                if (logRecord.Info.KeyIsOverflow)
-                    size += logRecord.KeyOverflow.TotalSize + MemoryUtils.ByteArrayOverhead;
-
-                if (logRecord.Info.ValueIsOverflow)
-                    size += logRecord.ValueOverflow.TotalSize + MemoryUtils.ByteArrayOverhead;
-                else if (logRecord.Info.ValueIsObject)
-                {
-                    var value = logRecord.ValueObject;
-                    if (value != null) // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)
-                        size += value.HeapMemorySize;
-                }
-                return size;
+                Debug.Assert(value >= 0);
+                readCacheTracker?.UpdateTargetSize(value, value / HighTargetSizeDeltaFraction, value / LowTargetSizeDeltaFraction);
             }
         }
 
@@ -79,68 +57,63 @@ namespace Garnet.server
             Debug.Assert(store != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
-            this.TargetSize = targetSize;
-            this.ReadCacheTargetSize = readCacheTargetSize;
-            var logSizeCalculator = new LogSizeCalculator();
-
+            // Subscribe to the eviction notifications. We don't hang onto the LogSubscribeDisposable because the CacheSizeTracker is never disposed once created.
             if (targetSize > 0)
             {
-                this.mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator>(store.Log, logSizeCalculator,
-                    targetSize, targetSize / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
-                store.Log.SubscribeEvictions(mainLogTracker);
-                store.Log.SubscribeDeserializations(new LogOperationObserver<StoreFunctions, StoreAllocator, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
-                store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
+                mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize,
+                        targetSize / HighTargetSizeDeltaFraction, targetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("MainLogSizeTracker"));
+                store.Log.SetLogSizeTracker(mainLogTracker);
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)
             {
-                this.readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
-                    readCacheTargetSize, readCacheTargetSize / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
-                store.ReadCache.SubscribeEvictions(readCacheTracker);
-                store.ReadCache.SubscribeDeserializations(new LogOperationObserver<StoreFunctions, StoreAllocator, LogSizeCalculator>(readCacheTracker, LogOperationType.Deserialize));
-                store.ReadCache.IsSizeBeyondLimit = () => readCacheTracker.IsSizeBeyondLimit;
+                readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.ReadCache, readCacheTargetSize,
+                        readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("ReadCacheSizeTracker"));
+                store.ReadCache.SetLogSizeTracker(readCacheTracker);
             }
         }
 
+        /// <summary>Start the trackers, ensuring that only one thread does so. We may start it on Checkpoint recovery before starting database operations.</summary>
         public void Start(CancellationToken token)
         {
             // Prevent multiple calls to Start
             var prevIsStarted = Interlocked.CompareExchange(ref isStarted, 1, 0);
-            if (prevIsStarted == 1) return;
-
-            mainLogTracker?.Start(token);
-            readCacheTracker?.Start(token);
+            if (prevIsStarted == 0)
+            {
+                mainLogTracker?.Start(token);
+                readCacheTracker?.Start(token);
+            }
         }
 
         /// <summary>Add to the tracked size of the cache.</summary>
         /// <param name="size">Size to be added</param>
-        public void AddTrackedSize(long size)
+        public void AddHeapSize(long size)
         {
-            if (size == 0) return;
-
             // mainLogTracker could be null if heap size limit is set just for the read cache
-            this.mainLogTracker?.IncrementSize(size);
+            if (size != 0)
+                mainLogTracker?.IncrementSize(size);
         }
 
         /// <summary>Add to the tracked size of read cache.</summary>
         /// <param name="size">Size to be added</param>
-        public void AddReadCacheTrackedSize(long size)
+        public void AddReadCacheHeapSize(long size)
         {
-            if (size == 0) return;
-
-            // readCacheTracker could be null if read cache is not enabled or heap size limit is set
-            // just for the main log
-            this.readCacheTracker?.IncrementSize(size);
+            // readCacheTracker could be null if read cache is not enabled or heap size limit is set only for the main log
+            if (size != 0)
+                readCacheTracker?.IncrementSize(size);
         }
 
         /// <summary>
-        /// If tracker has not started, prevent it from starting
+        /// If tracker has not started, prevent it from starting, else stop it.
         /// </summary>
-        /// <returns>True if tracker hasn't previously started</returns>
-        public bool TryPreventStart()
+        public void Stop()
         {
             var prevStarted = Interlocked.CompareExchange(ref isStarted, 1, 0);
-            return prevStarted == 0;
+            if (prevStarted != 0)
+            {
+                mainLogTracker?.Stop(wait: false);
+                readCacheTracker?.Stop(wait: false);
+            }
         }
     }
 }

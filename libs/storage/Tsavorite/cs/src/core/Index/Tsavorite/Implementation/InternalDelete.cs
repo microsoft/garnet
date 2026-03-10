@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -43,8 +42,12 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TContext userContext,
+        internal OperationStatus InternalDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TContext userContext,
                             ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var latchOperation = LatchOperation.None;
@@ -204,8 +207,12 @@ namespace Tsavorite.core
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="deleteInfo">DeleteInfo</param>
-        private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private OperationStatus CreateNewRecordDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref DeleteInfo deleteInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var sizeInfo = hlog.GetDeleteRecordSize(key);

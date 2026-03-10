@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -15,7 +16,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="unified"></param>
         internal static void CompletePendingForUnifiedStoreSession<TUnifiedContext>(ref Status status, ref UnifiedOutput output, ref TUnifiedContext unified)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             unified.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();

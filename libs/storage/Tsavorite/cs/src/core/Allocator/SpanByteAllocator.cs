@@ -37,7 +37,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+        public readonly void InitializeRecord<TKey>(TKey key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => newLogRecord.InitializeRecord(key, in sizeInfo);
 
         /// <inheritdoc/>
@@ -49,31 +53,52 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetRMWInitialRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetRMWInitialRecordSize(key, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, in inputLogRecord, ref input, varlenInput);
 
         /// <summary>Get record size required for a new tombstone record</summary>
-        public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => _this.GetDeleteRecordSize(key);
+        public readonly RecordSizeInfo GetDeleteRecordSize<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>
         public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(ref sizeInfo);
@@ -89,10 +114,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void MarkPageAtomic(long logicalAddress, long version) => _this.MarkPageAtomic(logicalAddress, version);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void ClearPage(long page, int offset = 0) => _this.ClearPage(page, offset);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

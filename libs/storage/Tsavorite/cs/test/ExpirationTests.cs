@@ -162,7 +162,7 @@ namespace Tsavorite.test.Expiration
         {
             static bool ShouldExpire(int key, int value) => value == GetValue(key) + 2;
 
-            public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
+            public override bool NeedInitialUpdate<TKey>(TKey key, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.NeedInitialUpdate);
                 switch (input.testOp)
@@ -470,12 +470,12 @@ namespace Tsavorite.test.Expiration
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = srcLogRecord.ValueSpan.Length, ValueIsObject = false };
 
             /// <inheritdoc/>
-            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref ExpirationInput input)
-                => new() { KeySize = key.Length, ValueSize = MinValueLen, ValueIsObject = false };
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref ExpirationInput input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = MinValueLen, ValueIsObject = false };
 
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ExpirationInput input)
-                => new() { KeySize = key.Length, ValueSize = value.Length, ValueIsObject = false };
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref ExpirationInput input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false };
 
             // Read functions
             public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ExpirationInput input, ref ExpirationOutput output, ref ReadInfo readInfo)
@@ -504,8 +504,8 @@ namespace Tsavorite.test.Expiration
         IDevice log;
         ExpirationFunctions functions;
         TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
-        ClientSession<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        BasicContext<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        ClientSession<TestSpanByteKey, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        BasicContext<TestSpanByteKey, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 
         [SetUp]
         public void Setup()
@@ -517,14 +517,14 @@ namespace Tsavorite.test.Expiration
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 19,
+                LogMemorySize = 1L << 19,
                 PageSize = 1L << 14
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             functions = new ExpirationFunctions();
-            session = store.NewSession<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions>(functions);
+            session = store.NewSession<TestSpanByteKey, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions>(functions);
             bContext = session.BasicContext;
         }
 
@@ -549,7 +549,7 @@ namespace Tsavorite.test.Expiration
             for (int i = 0; i < NumRecs; i++)
             {
                 keySpan[0] = i;
-                var keySpanByte = MemoryMarshal.Cast<int, byte>(keySpan);
+                var keySpanByte = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(keySpan));
 
                 var valueLen = GetRandomLength(rng);
                 for (int j = 0; j < valueLen; j++)
@@ -566,7 +566,7 @@ namespace Tsavorite.test.Expiration
             var keySpanByte = MemoryMarshal.Cast<int, byte>(keySpan);
             ExpirationOutput output = new();
 
-            var status = bContext.Read(keySpanByte, ref output, Empty.Default);
+            var status = bContext.Read(TestSpanByteKey.FromPinnedSpan(keySpanByte), ref output, Empty.Default);
             if (status.IsPending)
             {
                 ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);
@@ -584,7 +584,7 @@ namespace Tsavorite.test.Expiration
             var keySpanByte = MemoryMarshal.Cast<int, byte>(keySpan);
 
             ExpirationOutput output = new();
-            var status = bContext.RMW(keySpanByte, ref input, ref output);
+            var status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(keySpanByte), ref input, ref output);
             if (status.IsPending)
             {
                 ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);

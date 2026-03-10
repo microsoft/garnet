@@ -34,7 +34,7 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
+        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
         {
             int offset = 0;
             var newVal = GetNextArg(ref input, ref offset);

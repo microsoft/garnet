@@ -34,14 +34,9 @@ namespace Tsavorite.test.Objects
             DeleteDirectory(MethodTestDir);
         }
 
-        [Test]
-        [Category(ObjectIdMapCategory), Category(MultiLevelPageArrayCategory), Category(SmokeTestCategory)]
-        public unsafe void ObjectIdMapTest1([Values(1, 8)] int numThreads)
+        private void LoadMap(int numThreads, int chaptersPerThread, int pagesPerChapter)
         {
             Assert.That(map.objectArray.IsInitialized, Is.False);
-
-            // Allocate enough to fill past the first MultiLevelPageArray.InitialBookSize chapters.
-            var chaptersPerThread = MultiLevelPageArray.InitialBookSize / numThreads + 1;
 
             void runLoadThread(int tid)
             {
@@ -50,9 +45,9 @@ namespace Tsavorite.test.Objects
 
                 for (var chapter = 0; chapter < chaptersPerThread; ++chapter)
                 {
-                    for (int page = 0; page < MultiLevelPageArray.ChapterSize; ++page)
+                    for (int page = 0; page < pagesPerChapter; ++page)
                     {
-                        // Assert.That() does reflection and allocates a ConstraintResult class instance, so use a bare test to filter for it in inner loops.
+                        // Assert.That() does reflection and allocates a ConstraintResult class instance, which is slow, so use a bare test to filter for it in inner loops.
                         var objectId = map.Allocate();
                         if (objectId >= map.Count)
                             Assert.Fail("objectId should be < map.Count");
@@ -68,6 +63,32 @@ namespace Tsavorite.test.Objects
                 tasks[t] = Task.Factory.StartNew(() => runLoadThread(tid));
             }
             Task.WaitAll(tasks);
+        }
+
+        [Test]
+        [Category(ObjectIdMapCategory), Category(MultiLevelPageArrayCategory), Category(SmokeTestCategory)]
+        [Repeat(1000)]  // Repeat is an intended part of the test due to thread-timing non-determinism; writing the iteration count would slow things so we don't
+        public void ObjectIdMapTestStressInitialAllocs([Values(1, 8)] int numThreads)
+        {
+            // Focus on the initial allocation which lazily creates the book array.
+            LoadMap(numThreads, chaptersPerThread: 1, pagesPerChapter: 1);
+
+            Assert.That(map.Count, Is.EqualTo(numThreads));
+
+            // We don't run this test with enough threads to go beyond this.
+            Assert.That(map.objectArray.book.Length, Is.EqualTo(MultiLevelPageArray.InitialBookSize));
+        }
+
+        [Test]
+        [Category(ObjectIdMapCategory), Category(MultiLevelPageArrayCategory), Category(SmokeTestCategory)]
+        //[Repeat(100)]   // Repeat is an intended part of the test due to thread-timing non-determinism; writing the iteration count would slow things so we don't
+        public void ObjectIdMapTestStressAllocAndFree([Values(1, 8)] int numThreads)
+        {
+            Assert.That(map.objectArray.IsInitialized, Is.False);
+
+            // Allocate enough to fill past the first MultiLevelPageArray.InitialBookSize chapters.
+            var chaptersPerThread = MultiLevelPageArray.InitialBookSize / numThreads + 1;
+            LoadMap(numThreads, chaptersPerThread, pagesPerChapter: MultiLevelPageArray.ChapterSize);
 
             var allocatedCount = map.Count;
             Assert.That(allocatedCount, Is.EqualTo(chaptersPerThread * MultiLevelPageArray.ChapterSize * numThreads));
@@ -89,7 +110,7 @@ namespace Tsavorite.test.Objects
                 }
             }
 
-            Array.Clear(tasks);
+            Task[] tasks = new Task[numThreads];   // Task rather than Thread for propagation of exceptions.
             for (int t = 0; t < numThreads; t++)
             {
                 var tid = t;

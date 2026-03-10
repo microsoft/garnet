@@ -26,13 +26,13 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus RMWObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref TObjectContext objectContext, ref ObjectOutput output)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (objectContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
             // Perform RMW on object store
-            var status = objectContext.RMW(key, ref input, ref output);
+            var status = objectContext.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             return CompletePendingAndGetGarnetStatus(status, ref objectContext, ref output);
         }
@@ -47,13 +47,13 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus ReadObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref TObjectContext objectContext, ref ObjectOutput output)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (objectContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
             // Perform read on object store
-            var status = objectContext.Read(key, ref input, ref output);
+            var status = objectContext.Read((FixedSpanByteKey)key, ref input, ref output);
 
             return CompletePendingAndGetGarnetStatus(status, ref objectContext, ref output);
         }
@@ -69,7 +69,7 @@ namespace Garnet.server
         /// <param name="items">The list of items for the response</param>
         /// <param name="objectContext"></param>
         public unsafe GarnetStatus ObjectScan<TObjectContext>(GarnetObjectType objectType, PinnedSpanByte key, long cursor, string match, int count, out PinnedSpanByte[] items, ref TObjectContext objectContext)
-             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Debug.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
 
@@ -657,9 +657,9 @@ namespace Garnet.server
         /// <param name="objectContext">Basic context for the object store.</param>
         /// <returns></returns>
         public GarnetStatus DELETE_ObjectStore<TObjectContext>(PinnedSpanByte key, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.Delete(key.ReadOnlySpan);
+            var status = objectContext.Delete((FixedSpanByteKey)key);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
@@ -673,7 +673,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         public GarnetStatus ObjectScan<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
           => ReadObjectStoreOperation(key, ref input, ref objectContext, ref output);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -691,7 +691,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         private GarnetStatus CompletePendingAndGetGarnetStatus<TObjectContext>(Status status, ref TObjectContext objectContext, ref ObjectOutput output)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
@@ -716,7 +716,7 @@ namespace Garnet.server
         /// <param name="objectContext">The context of the object store.</param>
         /// <returns>The status of the operation.</returns>
         private GarnetStatus ObjectCollect<TObjectContext>(PinnedSpanByte searchKey, ReadOnlySpan<byte> typeObject, SingleWriterMultiReaderLock collectLock, ref ObjectInput input, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (!collectLock.TryWriteLock())
                 return GarnetStatus.NOTFOUND;

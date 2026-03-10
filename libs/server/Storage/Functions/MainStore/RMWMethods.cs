@@ -16,7 +16,11 @@ namespace Garnet.server
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
         /// <inheritdoc />
-        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+        public readonly bool NeedInitialUpdate<TKey>(TKey key, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             switch (input.header.cmd)
             {
@@ -46,8 +50,9 @@ namespace Garnet.server
                         var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
                         {
+                            // For custom functions, deliberately hiding the complexity of key types
                             var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                                .NeedInitialUpdate(key, ref input, ref writer);
+                                .NeedInitialUpdate(key.KeyBytes, ref input, ref writer);
                             return ret;
                         }
                         finally
@@ -1457,11 +1462,15 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref StringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+        public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
-                WriteLogRMW(key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
+                WriteLogRMW(key.KeyBytes, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }
     }
 }

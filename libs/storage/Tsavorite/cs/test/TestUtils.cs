@@ -222,9 +222,9 @@ namespace Tsavorite.test
 
         public enum KeyEquality { Equal, NotEqual }
 
-        public enum ReadCacheMode { UseReadCache, NoReadCache }
+        public enum ReadCacheMode { UseRC, NoRC }
 
-        public enum KeyContentionMode { Contention, NoContention }
+        public enum KeyContentionMode { Cont, NoCont }
 
         public enum BatchMode { Batch, NoBatch }
 
@@ -240,9 +240,15 @@ namespace Tsavorite.test
 
         public enum RandomMode { Rng, NoRng }
 
+        /// <summary>
+        /// Extract the status and output from the completed results, and Dispose() the completed results.
+        /// </summary>
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 
+        /// <summary>
+        /// Extract the status and output from the completed results, and Dispose() the completed results.
+        /// </summary>
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(completedOutputs.Next());
@@ -270,7 +276,11 @@ namespace Tsavorite.test
             }
         }
 
-        internal static unsafe bool FindHashBucketEntryForKey<TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, out HashBucketEntry entry)
+        internal static unsafe bool FindHashBucketEntryForKey<TKey, TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, out HashBucketEntry entry)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -304,10 +314,24 @@ namespace Tsavorite.test
         public static readonly IntKeyComparer Instance = new();
 
         /// <inheritdoc />
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<int>() == k2.AsRef<int>();
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<int>() == k2.KeyBytes.AsRef<int>();
 
         /// <inheritdoc />
-        public long GetHashCode64(ReadOnlySpan<byte> k) => Utility.GetHashCode(k.AsRef<int>());
+        public long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => Utility.GetHashCode(k.KeyBytes.AsRef<int>());
     }
 
     /// <summary>Deterministic equality comparer for longs</summary>
@@ -320,10 +344,24 @@ namespace Tsavorite.test
         public static readonly LongKeyComparer Instance = new();
 
         /// <inheritdoc />
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         /// <inheritdoc />
-        public long GetHashCode64(ReadOnlySpan<byte> k) => Utility.GetHashCode(k.AsRef<long>());
+        public long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => Utility.GetHashCode(k.KeyBytes.AsRef<long>());
     }
 
     /// <summary>Deterministic equality comparer for longs with hash modulo</summary>
@@ -333,9 +371,23 @@ namespace Tsavorite.test
 
         internal LongKeyComparerModulo(long mod) => this.mod = mod;
 
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsSliceRef<long>() == k2.AsSliceRef<long>();
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsSliceRef<long>() == k2.KeyBytes.AsSliceRef<long>();
 
-        public long GetHashCode64(ReadOnlySpan<byte> k) => mod == 0 ? k.AsSliceRef<long>() : k.AsSliceRef<long>() % mod;
+        public long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => mod == 0 ? k.KeyBytes.AsSliceRef<long>() : k.KeyBytes.AsSliceRef<long>() % mod;
     }
 
     /// <summary>Deterministic equality comparer for SpanBytes with hash modulo</summary>
@@ -345,27 +397,48 @@ namespace Tsavorite.test
 
         internal SpanByteKeyComparerModulo(HashModulo mod) => modRange = mod;
 
-        public readonly bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => SpanByteComparer.StaticEquals(k1, k2);
+        public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(ReadOnlySpan<byte> k)
+        public readonly long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            var value = SpanByteComparer.StaticGetHashCode64(k);
+            var value = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
         }
     }
 
     static class StaticTestUtils
     {
-        internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
-                this ITsavoriteContext<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where Functions : ISessionFunctions<TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
             => sessionContext.GetSinglePendingResult(out _);
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
-                this ITsavoriteContext<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where Functions : ISessionFunctions<TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
@@ -388,6 +461,13 @@ namespace Tsavorite.test
             return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];
         }
 
+        /// <summary>For use with stack-based byte vector indexed as a vector of T; usually just the 0th item</summary>
+        public static ref readonly T AsRef<T>(this TestSpanByteKey spanByte) where T : unmanaged
+        {
+            Debug.Assert(spanByte.KeyBytes.Length >= Unsafe.SizeOf<T>(), $"ReadOnlySpan<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.KeyBytes.Length}");
+            return ref MemoryMarshal.Cast<byte, T>(spanByte.KeyBytes)[0];
+        }
+
         /// <summary>For use with stack-based single T variable.</summary>
         public static ref T AsSliceRef<T>(this Span<byte> spanByte, int sliceIndex = 0) where T : unmanaged
             => ref Unsafe.As<byte, T>(ref spanByte[sliceIndex]);
@@ -400,6 +480,14 @@ namespace Tsavorite.test
         internal static Span<byte> Set<T>(this Span<byte> spanByte, T value) where T : unmanaged
         {
             spanByte.AsRef<T>() = value;
+            return spanByte;
+        }
+
+
+        /// <summary>For use with stack-based single T variable.</summary>
+        internal static TestSpanByteKey Set<T>(this TestSpanByteKey spanByte, T value) where T : unmanaged
+        {
+            MemoryMarshal.CreateSpan(ref MemoryMarshal.GetReference(spanByte.KeyBytes), spanByte.KeyBytes.Length).AsRef<T>() = value;
             return spanByte;
         }
 
