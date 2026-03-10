@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -64,7 +65,7 @@ namespace Garnet.server
         /// Read batch of keys on main store.
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
-            where TBatch : IReadArgBatch<StringInput, StringOutput>
+            where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif

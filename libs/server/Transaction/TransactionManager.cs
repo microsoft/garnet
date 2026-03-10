@@ -87,13 +87,13 @@ namespace Garnet.server
         long txnVersion;
         private TransactionStoreTypes storeTypes;
 
-        internal TransactionalContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
+        internal TransactionalContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
             => stringTransactionalContext;
-        internal TransactionalUnsafeContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
+        internal TransactionalUnsafeContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
             => stringBasicContext.Session.TransactionalUnsafeContext;
-        internal TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectTransactionalContext
+        internal TransactionalContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectTransactionalContext
             => objectTransactionalContext;
-        internal TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext
+        internal TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext
             => unifiedTransactionalContext;
 
         /// <summary>
@@ -299,10 +299,10 @@ namespace Garnet.server
 
             // Release context
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                stringTransactionalContext.ResetModified(key.ReadOnlySpan);
+                stringTransactionalContext.ResetModified((FixedSpanByteKey)key);
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
-                objectTransactionalContext.ResetModified(key.ReadOnlySpan);
-            unifiedTransactionalContext.ResetModified(key.ReadOnlySpan);
+                objectTransactionalContext.ResetModified((FixedSpanByteKey)key);
+            unifiedTransactionalContext.ResetModified((FixedSpanByteKey)key);
         }
 
         internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)

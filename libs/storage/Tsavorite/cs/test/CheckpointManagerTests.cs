@@ -56,12 +56,12 @@ namespace Tsavorite.test
                         LogDevice = log,
                         MutableFraction = 1,
                         PageSize = 1L << 10,
-                        MemorySize = 1L << 20,
+                        LogMemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
                     }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var s = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+                using var s = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bContext = s.BasicContext;
 
                 var logCheckpoints = new Dictionary<Guid, int>();
@@ -73,7 +73,7 @@ namespace Tsavorite.test
                     // Do some dummy update
                     var key = 0L;
                     var value = (long)random.Next();
-                    _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
 
                     var checkpointType = random.Next(5);
                     Guid result = default;

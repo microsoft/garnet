@@ -1,15 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using static Tsavorite.core.LogAddress;
 
 namespace Tsavorite.core
 {
-    using static LogAddress;
-
-    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -21,8 +19,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static LogRecord WriteNewRecordInfo(ReadOnlySpan<byte> key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress,
+        static LogRecord WriteNewRecordInfo<TKey>(TKey key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress,
             in RecordSizeInfo sizeInfo, bool inNewVersion, long previousAddress)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             logRecord.InfoRef.WriteInfo(inNewVersion, previousAddress);
@@ -184,7 +186,7 @@ namespace Tsavorite.core
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(newLogRecord.Key, ref stackCtx, newLogicalAddress);
+                : SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx, newLogicalAddress);
             if (result)
                 newLogRecord.InfoRef.UnsealAndValidate();
             return result;
@@ -214,7 +216,7 @@ namespace Tsavorite.core
                 // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
                 // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
                 // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
-                ReadCacheCheckTailAfterSplice(srcLogRecord.Key, ref stackCtx.hei, highestReadCacheAddressChecked);
+                ReadCacheCheckTailAfterSplice(srcLogRecord, ref stackCtx.hei, highestReadCacheAddressChecked);
             }
         }
 

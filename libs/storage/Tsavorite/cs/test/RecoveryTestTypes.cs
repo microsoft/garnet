@@ -2,24 +2,52 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    public struct AdId
+    public struct AdId : IKey
     {
         public const int Size = sizeof(long);
 
         public long adId;
 
+        // Not always pinned, so don't act like it is.
+        public readonly bool IsPinned => false;
+
+        [UnscopedRef]
+        public readonly ReadOnlySpan<byte> KeyBytes => MemoryMarshal.AsBytes<long>(new(in adId));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
         public override string ToString() => adId.ToString();
 
         public struct Comparer : IKeyComparer
         {
-            public long GetHashCode64(ReadOnlySpan<byte> key) => Utility.GetHashCode(key.AsRef<AdId>().adId);
+            public long GetHashCode64<TKey>(TKey key)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => Utility.GetHashCode(key.KeyBytes.AsRef<AdId>().adId);
 
-            public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<AdId>().adId == k2.AsRef<AdId>().adId;
+            public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+                where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => k1.KeyBytes.AsRef<AdId>().adId == k2.KeyBytes.AsRef<AdId>().adId;
         }
     }
 
@@ -75,7 +103,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref AdInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref AdInput input)
-            => new() { KeySize = key.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref AdInput input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = NumClicks.Size, ValueIsObject = false };
     }
 }

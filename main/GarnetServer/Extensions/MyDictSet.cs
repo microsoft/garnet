@@ -10,7 +10,7 @@ namespace Garnet
 {
     public class MyDictSet : CustomObjectFunctions
     {
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
+        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
 
         public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {

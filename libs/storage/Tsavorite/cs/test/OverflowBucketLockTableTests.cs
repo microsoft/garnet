@@ -19,9 +19,24 @@ namespace Tsavorite.test.LockTable
 
     internal class SingleBucketComparer : IKeyComparer
     {
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
-        public long GetHashCode64(ReadOnlySpan<byte> k) => 42L;
+        public long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+
+            => 42L;
     }
 
     // Used to signal Setup to use the SingleBucketComparer
@@ -60,7 +75,7 @@ namespace Tsavorite.test.LockTable
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 PageSize = 1L << 12,
-                MemorySize = 1L << 22
+                LogMemorySize = 1L << 22
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -79,7 +94,7 @@ namespace Tsavorite.test.LockTable
 
         void TryLock(long key, LockType lockType, int expectedCurrentReadLocks, bool expectedLockResult)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref key)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key))));
             PopulateHei(ref hei);
 
             // Check for existing lock
@@ -94,7 +109,7 @@ namespace Tsavorite.test.LockTable
 
         void Unlock(long key, LockType lockType)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref key)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key))));
             PopulateHei(ref hei);
             if (lockType == LockType.Shared)
                 store.LockTable.UnlockShared(ref hei);
@@ -120,7 +135,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(TestSpanByteKey.FromPinnedSpan(key)));
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
             ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
@@ -131,7 +146,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(TestSpanByteKey.FromPinnedSpan(key)));
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
             ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
@@ -185,7 +200,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref singleBucketKey)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref singleBucketKey))));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -221,7 +236,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref singleBucketKey)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref singleBucketKey))));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -306,10 +321,10 @@ namespace Tsavorite.test.LockTable
             {
                 keyNums[recordNum] = rng.Next(numKeys);
                 var key = SpanByte.FromPinnedVariable(ref keyNums[recordNum]);
-                var keyHash = store.GetKeyHash(key);
+                var keyHash = store.GetKeyHash(TestSpanByteKey.FromPinnedSpan(key));
                 return new()
                 {
-                    Key = PinnedSpanByte.FromPinnedSpan(key),
+                    Key = TestSpanByteKey.FromPinnedSpan(PinnedSpanByte.FromPinnedSpan(key)),
                     // LockType.None means split randomly between Shared and Exclusive
                     LockType = rng.Next(0, 100) < 25 ? LockType.Exclusive : LockType.Shared,
                     KeyHash = keyHash,
@@ -405,7 +420,7 @@ namespace Tsavorite.test.LockTable
                     while (true)
                     {
                         var key = rng.Next(lowKey, highKey + 1);    // +1 because the end # is not included
-                        if (!Array.Exists(threadStructs, it => it.Key.Length > 0 && it.Key.ReadOnlySpan.AsRef<long>() == key))
+                        if (!Array.Exists(threadStructs, it => it.Key.KeyBytes.Length > 0 && it.Key.KeyBytes.AsRef<long>() == key))
                             return key;
                     }
                 }
@@ -419,12 +434,12 @@ namespace Tsavorite.test.LockTable
                         var key = SpanByte.FromPinnedVariable(ref threadKeyNums[ii]);   // storage for the SpanByte in the pinned array
                         threadStructs[ii] = new()
                         {
-                            Key = PinnedSpanByte.FromPinnedSpan(key),
+                            Key = TestSpanByteKey.FromPinnedSpan(PinnedSpanByte.FromPinnedSpan(key)),
                             // LockType.None means split randomly between Shared and Exclusive
                             LockType = lockType == LockType.None ? (rng.Next(0, 100) > 50 ? LockType.Shared : LockType.Exclusive) : lockType,
-                            KeyHash = comparer.GetHashCode64(key),
+                            KeyHash = comparer.GetHashCode64(TestSpanByteKey.FromPinnedSpan(key)),
                         };
-                        threadStructs[ii].KeyHash = store.GetKeyHash(key);
+                        threadStructs[ii].KeyHash = store.GetKeyHash(TestSpanByteKey.FromPinnedSpan(key));
                     }
 
                     // Sort and lock

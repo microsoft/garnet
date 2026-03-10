@@ -262,9 +262,9 @@ namespace Garnet.server
         private unsafe bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
                 TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
                 byte* entryPtr, int length, bool asReplica)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var header = *(AofHeader*)entryPtr;
             var replayContext = aofReplayCoordinator.GetReplayContext();
@@ -348,7 +348,7 @@ namespace Garnet.server
         }
 
         static void StoreUpsert<TStringContext>(TStringContext stringContext, byte* keyPtr)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -360,13 +360,13 @@ namespace Garnet.server
             _ = stringInput.DeserializeFrom(curr);
 
             StringOutput output = default;
-            _ = stringContext.Upsert(key, ref stringInput, value, ref output);
+            _ = stringContext.Upsert((FixedSpanByteKey)key, ref stringInput, value, ref output);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
         static void StoreRMW<TStringContext>(TStringContext stringContext, byte* keyPtr)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -376,7 +376,7 @@ namespace Garnet.server
 
             var output = StringOutput.FromPinnedSpan(stackalloc byte[32]);
 
-            var status = stringContext.RMW(key, ref stringInput, ref output);
+            var status = stringContext.RMW((FixedSpanByteKey)key, ref stringInput, ref output);
             if (status.IsPending)
                 StorageSession.CompletePendingForSession(ref status, ref output, ref stringContext);
             if (!output.SpanByteAndMemory.IsSpanByte)
@@ -384,11 +384,11 @@ namespace Garnet.server
         }
 
         static void StoreDelete<TStringContext>(TStringContext stringContext, byte* keyPtr)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            => stringContext.Delete(SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => stringContext.Delete((FixedSpanByteKey)SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
 
         static void ObjectStoreUpsert<TObjectContext>(TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* keyPtr, byte* outputPtr, int outputLength)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -397,13 +397,13 @@ namespace Garnet.server
             var valueObject = garnetObjectSerializer.Deserialize(valueSpan.ToArray()); // TODO native deserializer to avoid alloc and copy
 
             var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
-            _ = objectContext.Upsert(key, valueObject);
+            _ = objectContext.Upsert((FixedSpanByteKey)key, valueObject);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
         static void ObjectStoreRMW<TObjectContext>(TObjectContext objectContext, byte* keyPtr, byte* outputPtr, int outputLength)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -413,7 +413,7 @@ namespace Garnet.server
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
-            var status = objectContext.RMW(key, ref objectInput, ref output);
+            var status = objectContext.RMW((FixedSpanByteKey)key, ref objectInput, ref output);
             if (status.IsPending)
                 StorageSession.CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
 
@@ -422,11 +422,11 @@ namespace Garnet.server
         }
 
         static void ObjectStoreDelete<TObjectContext>(TObjectContext objectContext, byte* keyPtr)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => objectContext.Delete(SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            => objectContext.Delete((FixedSpanByteKey)SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
 
         static void UnifiedStoreStringUpsert<TUnifiedContext>(TUnifiedContext unifiedContext, byte* keyPtr, byte* outputPtr, int outputLength)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -438,13 +438,13 @@ namespace Garnet.server
             _ = unifiedInput.DeserializeFrom(curr);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            _ = unifiedContext.Upsert(key, ref unifiedInput, value, ref output);
+            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref unifiedInput, value, ref output);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
         static void UnifiedStoreObjectUpsert<TUnifiedContext>(TUnifiedContext unifiedContext, GarnetObjectSerializer garnetObjectSerializer, byte* keyPtr, byte* outputPtr, int outputLength)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -453,13 +453,13 @@ namespace Garnet.server
             var valueObject = garnetObjectSerializer.Deserialize(valueSpan.ToArray()); // TODO native deserializer to avoid alloc and copy
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            _ = unifiedContext.Upsert(key, valueObject);
+            _ = unifiedContext.Upsert((FixedSpanByteKey)key, valueObject);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
         static void UnifiedStoreRMW<TUnifiedContext>(TUnifiedContext unifiedContext, byte* keyPtr, byte* outputPtr, int outputLength)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
@@ -469,7 +469,7 @@ namespace Garnet.server
 
             // Call RMW with the reconstructed key & UnifiedInput
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            var status = unifiedContext.RMW(key, ref unifiedInput, ref output);
+            var status = unifiedContext.RMW((FixedSpanByteKey)key, ref unifiedInput, ref output);
             if (status.IsPending)
                 StorageSession.CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
 
@@ -478,8 +478,8 @@ namespace Garnet.server
         }
 
         static void UnifiedStoreDelete<TUnifiedContext>(TUnifiedContext unifiedContext, byte* keyPtr)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-            => unifiedContext.Delete(SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            => unifiedContext.Delete((FixedSpanByteKey)SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
 
         /// <summary>
         /// On recovery apply records with header.version greater than CurrentVersion.

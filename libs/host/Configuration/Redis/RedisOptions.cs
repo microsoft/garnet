@@ -39,7 +39,7 @@ Specify your subject name via the cert-subject-name command line argument, if ap
         [RedisOption("port", nameof(Options.Port))]
         public Option<int> Port { get; set; }
 
-        [RedisOption("maxmemory", nameof(Options.MemorySize))]
+        [RedisOption("maxmemory", nameof(Options.LogMemorySize))]
         public Option<string> MaxMemory { get; set; }
 
         [RedisOption("logfile", nameof(Options.FileLogger))]
