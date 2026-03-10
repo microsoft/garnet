@@ -1771,7 +1771,7 @@ pub extern "C" fn bftree_drop(tree: *mut BfTree) {
 
 > **Reference:** `libs/server/Storage/Functions/FunctionsState.cs`
 > This class holds shared state accessible from Tsavorite session function callbacks
-> (e.g., `appendOnlyFile`, `watchVersionMap`, `objectStoreSizeTracker`).
+> (e.g., `appendOnlyFile`, `watchVersionMap`, `cacheSizeTracker`).
 >
 > **Prototype reference:** On `vectorApiPoC-storeV2`, `FunctionsState` has a
 > [`vectorManager` field](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Storage/Functions/FunctionsState.cs)
