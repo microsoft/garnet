@@ -98,7 +98,7 @@ namespace Tsavorite.benchmark
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,
                 PreallocateLog = true,
-                MemorySize = 1L << 35,
+                LogMemorySize = 1L << 35,
                 RevivificationSettings = revivificationSettings,
                 CheckpointDir = testLoader.BackupPath
             };
@@ -107,7 +107,7 @@ namespace Tsavorite.benchmark
             {
                 kvSettings.PageSize = 1L << 22;
                 kvSettings.SegmentSize = 1L << 26;
-                kvSettings.MemorySize = 1L << 26;
+                kvSettings.LogMemorySize = 1L << 26;
             }
 
             store = new(kvSettings
@@ -149,7 +149,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -176,7 +176,7 @@ namespace Tsavorite.benchmark
                         unsafe
                         {
                             // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                            var key = txn_keys_[idx].AsReadOnlySpan();
+                            var key = txn_keys_[idx];
 
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
@@ -245,7 +245,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
             while (!done)
@@ -270,7 +270,7 @@ namespace Tsavorite.benchmark
                     unsafe
                     {
                         // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                        var key = txn_keys_[idx].AsReadOnlySpan();
+                        var key = txn_keys_[idx];
 
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
@@ -431,7 +431,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -453,7 +453,7 @@ namespace Tsavorite.benchmark
                         }
 
                         // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                        uContext.Upsert(init_keys_[idx].AsReadOnlySpan(), value, Empty.Default);
+                        uContext.Upsert(init_keys_[idx], value, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -475,7 +475,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
             Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
@@ -494,7 +494,7 @@ namespace Tsavorite.benchmark
                     }
 
                     // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                    bContext.Upsert(init_keys_[idx].AsReadOnlySpan(), value, Empty.Default);
+                    bContext.Upsert(init_keys_[idx], value, Empty.Default);
                 }
             }
 

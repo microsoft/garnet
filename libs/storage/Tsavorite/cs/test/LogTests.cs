@@ -671,7 +671,8 @@ namespace Tsavorite.test
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
 
             byte[] data1 = new byte[1000];
-            for (int i = 0; i < 100; i++) data1[i] = (byte)i;
+            for (int i = 0; i < 100; i++)
+                data1[i] = (byte)i;
 
             for (int i = 0; i < 100; i++)
                 _ = log.Enqueue(data1);
@@ -936,7 +937,6 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        [Explicit("Dispose() sequencing issues result free pagePointers while operations are ongoing")]
         public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType, [Values] TestDeviceType deviceType)
         {
             string filename = Path.Join(MethodTestDir, "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log");

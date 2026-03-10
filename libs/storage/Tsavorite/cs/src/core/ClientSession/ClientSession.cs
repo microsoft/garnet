@@ -13,7 +13,11 @@ namespace Tsavorite.core
     /// <summary>
     /// Thread-independent session interface to Tsavorite
     /// </summary>
-    public sealed class ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : IClientSession, IDisposable
+    public sealed class ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : IClientSession, IDisposable
+         where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -26,12 +30,12 @@ namespace Tsavorite.core
 
         internal CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs;
 
-        readonly UnsafeContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> uContext;
-        readonly TransactionalUnsafeContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
-        readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
-        readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
-        readonly ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
-        readonly TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tcrContext;
+        readonly UnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> uContext;
+        readonly TransactionalUnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
+        readonly TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
+        readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
+        readonly ConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
+        readonly TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tcrContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -139,40 +143,38 @@ namespace Tsavorite.core
         /// <summary>
         /// Return a new interface to Tsavorite operations that supports manual epoch control.
         /// </summary>
-        public UnsafeContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> UnsafeContext => uContext;
+        public UnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> UnsafeContext => uContext;
 
         /// <summary>
         /// Return a new interface to Tsavorite operations that supports Transactional locking and manual epoch control.
         /// </summary>
-        public TransactionalUnsafeContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalUnsafeContext => luContext;
+        public TransactionalUnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalUnsafeContext => luContext;
 
         /// <summary>
         /// Return a session wrapper that supports Transactional locking.
         /// </summary>
-        public TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalContext => lContext;
+        public TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalContext => lContext;
 
         /// <summary>
         /// Return a session wrapper struct that passes through to client session
         /// </summary>
-        public BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
+        public BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
 
         /// <summary>
         /// Return the consistent read context;
         /// </summary>
-        public ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> ConsistentReadContext => crContext;
+        public ConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> ConsistentReadContext => crContext;
 
         /// <summary>
         /// Return the transactional consistent read context
         /// </summary>
-        public TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalConsistentReadContext => tcrContext;
+        public TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalConsistentReadContext => tcrContext;
 
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => store.GetKeyHash(key);
-
-        /// <inheritdoc/>
-        public long GetKeyHash(ref ReadOnlySpan<byte> key) => store.GetKeyHash(key);
+        public long GetKeyHash(TKey key)
+            => store.GetKeyHash(key);
 
         /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
@@ -190,7 +192,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
@@ -340,7 +342,7 @@ namespace Tsavorite.core
 
         #region Other Operations
 
-        internal void UnsafeResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal void UnsafeResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus status;
@@ -350,7 +352,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
@@ -364,7 +366,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool UnsafeIsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ReadOnlySpan<byte> key)
+        internal bool UnsafeIsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             RecordInfo modifiedInfo;

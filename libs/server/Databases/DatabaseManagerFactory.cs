@@ -38,7 +38,7 @@ namespace Garnet.server
             {
                 // Check if there are multiple databases to recover from checkpoint
                 var checkpointParentDir = serverOptions.StoreCheckpointBaseDirectory;
-                var checkpointDirBaseName = serverOptions.GetCheckpointDirectoryName(0);
+                var checkpointDirBaseName = GarnetServerOptions.GetCheckpointDirectoryName(0);
 
                 if (MultiDatabaseManager.TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName,
                         out var dbIds) && dbIds.Any(id => id != 0))
@@ -48,7 +48,7 @@ namespace Garnet.server
                 if (serverOptions.EnableAOF)
                 {
                     var aofParentDir = serverOptions.AppendOnlyFileBaseDirectory;
-                    var aofDirBaseName = serverOptions.GetAppendOnlyFileDirectoryName(0);
+                    var aofDirBaseName = GarnetServerOptions.GetAppendOnlyFileDirectoryName(0);
 
                     if (MultiDatabaseManager.TryGetSavedDatabaseIds(aofParentDir, aofDirBaseName,
                             out dbIds) && dbIds.Any(id => id != 0))

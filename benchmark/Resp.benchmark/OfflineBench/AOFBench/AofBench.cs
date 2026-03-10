@@ -21,7 +21,6 @@ namespace Resp.benchmark
                 QuietMode = true,
                 EnableAOF = options.EnableAOF,
                 EnableCluster = options.EnableCluster,
-                IndexSize = options.IndexSize,
                 ClusterConfigFlushFrequencyMs = -1,
                 FastAofTruncate = options.EnableCluster && options.UseAofNullDevice,
                 UseAofNullDevice = options.UseAofNullDevice,

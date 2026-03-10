@@ -129,7 +129,7 @@ namespace Resp.benchmark
         public bool EnableCluster { get; set; }
 
         [Option('i', "index", Required = false, Default = "1g", HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexSize { get; set; }
+        public string IndexMemorySize { get; set; }
 
         [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool UseAofNullDevice { get; set; }

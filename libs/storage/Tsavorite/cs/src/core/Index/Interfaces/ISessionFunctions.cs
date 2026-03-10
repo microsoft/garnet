@@ -153,7 +153,11 @@ namespace Tsavorite.core
         /// This is always called after the operation whether it succeeds or not (including when it has gone pending), so must have information indicating whether
         /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
         /// </remarks>
-        void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
@@ -163,7 +167,11 @@ namespace Tsavorite.core
         /// This is always called after the operation whether it succeeds or not, so must have information indicating whether
         /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
         /// </remarks>
-        void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+        void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor;
 
         #endregion Upserts
@@ -177,7 +185,12 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Initial update for RMW (insert at the tail of the log).
@@ -262,7 +275,11 @@ namespace Tsavorite.core
         /// This is always called after the operation whether it succeeds or not (including when it has gone pending), so must have information indicating whether
         /// the action is to be performed (such as by checking <see cref="RMWInfo.UserData"/>
         /// </remarks>
-        void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+        void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
@@ -314,7 +331,11 @@ namespace Tsavorite.core
         /// This is always called after the operation whether it succeeds or not, so must have information indicating whether
         /// the action is to be performed (such as by checking <see cref="DeleteInfo.UserData"/>
         /// </remarks>
-        void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+        void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 
@@ -330,8 +351,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Called before reading a single key to verify key freshness and enforce prefix consistency.
         /// </summary>
-        /// <param name="key">The key about to be read</param>
-        void BeforeConsistentReadCallback(PinnedSpanByte key);
+        /// <param name="hash">The key hash about to be read</param>
+        void BeforeConsistentReadCallback(long hash);
 
         /// <summary>
         /// Called after a single key read to update the session timestamp.
@@ -341,15 +362,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Called before reading a batch of keys to verify their freshness and enforce prefix consistency.
         /// </summary>
-        /// <typeparam name="TBatch"></typeparam>
-        /// <param name="batch"></param>
-        void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
-            where TBatch : IReadArgBatch<TInput, TOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-            ;
-
+        /// <param name="parameters"></param>
+        void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters);
 
         /// <summary>
         /// Called after reading a batch of keys to update the session timestamp.

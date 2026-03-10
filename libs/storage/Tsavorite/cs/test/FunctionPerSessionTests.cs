@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -69,8 +68,8 @@ namespace Tsavorite.test
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref long input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = RefCountedValueStruct.Size, ValueIsObject = false };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref long input)
-            => new() { KeySize = key.Length, ValueSize = RefCountedValueStruct.Size, ValueIsObject = false };
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref long input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = RefCountedValueStruct.Size, ValueIsObject = false };
     }
 
     public class RefCountedRemover : SessionFunctionsBase<Empty, Empty, Empty>
@@ -118,8 +117,8 @@ namespace Tsavorite.test
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref Empty input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = RefCountedValueStruct.Size, ValueIsObject = false };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref Empty input)
-            => new() { KeySize = key.Length, ValueSize = RefCountedValueStruct.Size, ValueIsObject = false };
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref Empty input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = RefCountedValueStruct.Size, ValueIsObject = false };
     }
 
     public class RefCountedReader : SessionFunctionsBase<Empty, RefCountedValueStruct, Empty>
@@ -174,35 +173,35 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void Should_create_multiple_sessions_with_different_callbacks()
         {
-            using var adderSession = store.NewSession<long, Empty, Empty, RefCountedAdder>(adder);
-            using var removerSession = store.NewSession<Empty, Empty, Empty, RefCountedRemover>(remover);
-            using var readerSession = store.NewSession<Empty, RefCountedValueStruct, Empty, RefCountedReader>(reader);
+            using var adderSession = store.NewSession<TestSpanByteKey, long, Empty, Empty, RefCountedAdder>(adder);
+            using var removerSession = store.NewSession<TestSpanByteKey, Empty, Empty, Empty, RefCountedRemover>(remover);
+            using var readerSession = store.NewSession<TestSpanByteKey, Empty, RefCountedValueStruct, Empty, RefCountedReader>(reader);
             var key = 101;
             var input = 1000L;
 
-            _ = adderSession.BasicContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input);
-            _ = adderSession.BasicContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input);
-            _ = adderSession.BasicContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input);
+            _ = adderSession.BasicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input);
+            _ = adderSession.BasicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input);
+            _ = adderSession.BasicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input);
 
             ClassicAssert.AreEqual(1, adder.InitialCount);
             ClassicAssert.AreEqual(2, adder.InPlaceCount);
 
             var empty = default(Empty);
-            _ = removerSession.BasicContext.RMW(SpanByte.FromPinnedVariable(ref key), ref empty);
+            _ = removerSession.BasicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref empty);
 
             ClassicAssert.AreEqual(1, remover.InPlaceCount);
 
             RefCountedValueStruct output = new();
-            _ = readerSession.BasicContext.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+            _ = readerSession.BasicContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output);
 
             ClassicAssert.AreEqual(2, output.ReferenceCount);
             ClassicAssert.AreEqual(1000L, output.Value);
 
             store.Log.FlushAndEvict(true);
 
-            _ = removerSession.BasicContext.RMW(SpanByte.FromPinnedVariable(ref key), ref empty);
+            _ = removerSession.BasicContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref empty);
             _ = removerSession.BasicContext.CompletePending(wait: true);
-            _ = readerSession.BasicContext.Read(SpanByte.FromPinnedVariable(ref key), ref empty, ref output);
+            _ = readerSession.BasicContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref empty, ref output);
 
             ClassicAssert.AreEqual(1, output.ReferenceCount);
             ClassicAssert.AreEqual(1000L, output.Value);

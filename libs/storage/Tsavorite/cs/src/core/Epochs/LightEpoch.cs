@@ -343,30 +343,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Thread resumes its epoch entry if it has not already been acquired
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SuspendIfProtected()
-        {
-            if (!ThisInstanceProtected())
-                return false;
-            Suspend();
-            return true;
-        }
-
-        /// <summary>
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
         internal long BumpCurrentEpoch()
         {
             Debug.Assert(ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
-            long nextEpoch = Interlocked.Increment(ref CurrentEpoch);
+            var nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)
                 Drain(nextEpoch);
             else
-                ComputeNewSafeToReclaimEpoch(nextEpoch);
+                _ = ComputeNewSafeToReclaimEpoch(nextEpoch);
 
             return nextEpoch;
         }
@@ -379,9 +367,9 @@ namespace Tsavorite.core
         /// <returns></returns>
         public void BumpCurrentEpoch(Action onDrain)
         {
-            long PriorEpoch = BumpCurrentEpoch() - 1;
+            var PriorEpoch = BumpCurrentEpoch() - 1;
 
-            int i = 0;
+            var i = 0;
             while (true)
             {
                 if (drainList[i].epoch == long.MaxValue)
@@ -391,7 +379,7 @@ namespace Tsavorite.core
                     {
                         drainList[i].action = onDrain;
                         drainList[i].epoch = PriorEpoch;
-                        Interlocked.Increment(ref drainCount);
+                        _ = Interlocked.Increment(ref drainCount);
                         break;
                     }
                 }
@@ -418,7 +406,7 @@ namespace Tsavorite.core
                     // We are at the end of the drain list and found no empty or reclaimable slot. ProtectAndDrain, which should clear one or more slots.
                     ProtectAndDrain();
                     i = 0;
-                    Thread.Yield();
+                    _ = Thread.Yield();
                 }
             }
 
@@ -429,27 +417,19 @@ namespace Tsavorite.core
         /// <summary>
         /// Looks at all threads and return the latest safe epoch
         /// </summary>
-        /// <returns>Safe epoch</returns>
-        internal long ComputeNewSafeToReclaimEpoch() => ComputeNewSafeToReclaimEpoch(CurrentEpoch);
-
-        /// <summary>
-        /// Looks at all threads and return the latest safe epoch
-        /// </summary>
         /// <param name="currentEpoch">Current epoch</param>
         /// <returns>Safe epoch</returns>
         long ComputeNewSafeToReclaimEpoch(long currentEpoch)
         {
-            long oldestOngoingCall = currentEpoch;
+            var oldestOngoingCall = currentEpoch;
 
-            for (int index = 1; index <= kTableSize; index++)
+            for (var index = 1; index <= kTableSize; index++)
             {
-                long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                var entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entry_epoch)
                 {
                     if (entry_epoch < oldestOngoingCall)
-                    {
                         oldestOngoingCall = entry_epoch;
-                    }
                 }
             }
 
@@ -469,13 +449,11 @@ namespace Tsavorite.core
                 // Barrier ensures we see the latest epoch table entries. Ensures
                 // that the last suspended thread drains all pending actions.
                 Thread.MemoryBarrier();
-                for (int index = 1; index <= kTableSize; index++)
+                for (var index = 1; index <= kTableSize; index++)
                 {
-                    long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
+                    var entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entry_epoch)
-                    {
                         return;
-                    }
                 }
                 Resume();
                 Release();
@@ -489,9 +467,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         void Drain(long nextEpoch)
         {
-            ComputeNewSafeToReclaimEpoch(nextEpoch);
+            _ = ComputeNewSafeToReclaimEpoch(nextEpoch);
 
-            for (int i = 0; i < kDrainListSize; i++)
+            for (var i = 0; i < kDrainListSize; i++)
             {
                 var trigger_epoch = drainList[i].epoch;
 
@@ -503,7 +481,7 @@ namespace Tsavorite.core
                         var trigger_action = drainList[i].action;
                         drainList[i].action = null;
                         drainList[i].epoch = long.MaxValue;
-                        Interlocked.Decrement(ref drainCount);
+                        _ = Interlocked.Decrement(ref drainCount);
 
                         // Execute the action
                         trigger_action();
@@ -682,7 +660,7 @@ namespace Tsavorite.core
             if (Metadata.threadId == 0) // run once per thread for performance
             {
                 Metadata.threadId = Environment.CurrentManagedThreadId;
-                uint code = (uint)Utility.Murmur3(Metadata.threadId);
+                var code = (uint)Utility.Murmur3(Metadata.threadId);
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
@@ -761,7 +739,7 @@ namespace Tsavorite.core
             public long epoch;
             public Action action;
 
-            public override string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
+            public override readonly string ToString() => $"epoch = {epoch}, action = {(action is null ? "n/a" : action.Method.ToString())}";
         }
     }
 }

@@ -231,7 +231,7 @@ namespace Garnet.server
 
                 public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    readSessionState.BeforeConsistentReadKeyCallback(PinnedSpanByte.FromPinnedSpan(logRecord.Key));
+                    readSessionState.BeforeConsistentReadKeyCallback(GarnetLog.HASH(logRecord.Key));
                     var status = base.Reader(in logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
                     readSessionState.AfterConsistentReadKeyCallback();
                     return status;

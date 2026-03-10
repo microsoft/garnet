@@ -20,10 +20,14 @@ namespace Tsavorite.core
         /// <param name="enableConsistentRead">Enable consistent read context</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(
+        public ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TKey, TInput, TOutput, TContext, TFunctions>(
             TFunctions functions,
             bool enableConsistentRead = false,
             ReadCopyOptions readCopyOptions = default)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         {
             if (functions == null)
@@ -38,7 +42,7 @@ namespace Tsavorite.core
                 if (_activeSessions == null)
                     _ = Interlocked.CompareExchange(ref _activeSessions, [], null);
             }
-            var session = new ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
+            var session = new ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             return session;

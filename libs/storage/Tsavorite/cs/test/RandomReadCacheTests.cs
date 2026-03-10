@@ -64,7 +64,7 @@ namespace Tsavorite.test.ReadCacheTests
             var kvSettings = new KVSettings()
             {
                 IndexSize = 1L << 26,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 12,
             };
 
@@ -72,7 +72,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 if (arg is ReadCacheMode rcm)
                 {
-                    if (rcm == ReadCacheMode.UseReadCache)
+                    if (rcm == ReadCacheMode.UseRC)
                     {
                         kvSettings.ReadCacheMemorySize = 1L << 15;
                         kvSettings.ReadCachePageSize = 1L << 12;
@@ -111,9 +111,9 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(1000)]
-        public void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
+        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
-            if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
+            if (numThreads == 1 && keyContentionMode == KeyContentionMode.Cont)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");
             if (numThreads > 2 && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
@@ -122,17 +122,20 @@ namespace Tsavorite.test.ReadCacheTests
 
             const int PendingMod = 16;
 
-            void LocalRead(BasicContext<PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
+            void LocalRead(BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
             {
                 // These are OK to be local to this LocalRead call; if it goes pending, they will be copied into IHeapContainers.
                 var keyString = $"{i}";
-                var inputString = $"{i * 2}";
                 var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
-                var input = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<char, byte>(inputString.AsSpan()));
 
                 SpanByteAndMemory output = default;
-
-                var status = sessionContext.Read(key, ref input, ref output);
+                Status status;
+                var inputString = $"{i * 2}";
+                fixed (char* _ = inputString)
+                {
+                    var input = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<char, byte>(inputString.AsSpan()));
+                    status = sessionContext.Read(TestSpanByteKey.CopySpan(key), ref input, ref output);
+                }
 
                 if (status.Found)
                 {
@@ -156,7 +159,7 @@ namespace Tsavorite.test.ReadCacheTests
                             status = completedOutputs.Current.Status;
                             output = completedOutputs.Current.Output;
                             // Note: do NOT overwrite 'key' here
-                            long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key)));
+                            long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key.KeyBytes)));
 
                             ClassicAssert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
                             ClassicAssert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
@@ -170,7 +173,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             void LocalRun(int startKey, int endKey)
             {
-                var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
+                var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
                 var sessionContext = session.BasicContext;
 
                 int numPending = 0;
@@ -188,7 +191,7 @@ namespace Tsavorite.test.ReadCacheTests
             const int MaxKeys = 8000;
 
             { // Write the values first (single-threaded, all keys)
-                var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
+                var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
                 var bContext = session.BasicContext;
                 for (int i = 0; i < MaxKeys; i++)
                 {
@@ -197,8 +200,17 @@ namespace Tsavorite.test.ReadCacheTests
                     var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>(valueString.AsSpan());
 
-                    var status = bContext.Upsert(key, value);
-                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    fixed (byte* keyPtr = key)
+                    {
+                        var status = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+
+                        if (status.IsPending)
+                        {
+                            _ = bContext.CompletePending(wait: true);
+                        }
+
+                        ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    }
                 }
             }
 
@@ -214,7 +226,7 @@ namespace Tsavorite.test.ReadCacheTests
             for (int t = 0; t < numThreads; t++)
             {
                 var tid = t;
-                if (keyContentionMode == KeyContentionMode.Contention)
+                if (keyContentionMode == KeyContentionMode.Cont)
                     tasks.Add(Task.Factory.StartNew(() => LocalRun(0, MaxKeys)));
                 else
                     tasks.Add(Task.Factory.StartNew(() => LocalRun(numKeysPerThread * tid, numKeysPerThread * (tid + 1))));

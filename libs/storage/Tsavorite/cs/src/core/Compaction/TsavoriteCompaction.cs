@@ -35,7 +35,7 @@ namespace Tsavorite.core
             if (untilAddress > hlogBase.SafeReadOnlyAddress)
                 throw new TsavoriteException("Can compact only until Log.SafeReadOnlyAddress");
 
-            using var storeSession = NewSession<TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new());
+            using var storeSession = NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new());
             var storebContext = storeSession.BasicContext;
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
@@ -74,7 +74,7 @@ namespace Tsavorite.core
 
             var originalUntilAddress = untilAddress;
 
-            using var storeSession = NewSession<TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new());
+            using var storeSession = NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new());
             var storebContext = storeSession.BasicContext;
 
             var tempKVSettings = new KVSettings(baseDir: null, loggerFactory: loggerFactory)
@@ -85,7 +85,7 @@ namespace Tsavorite.core
             };
 
             using (var tempKv = new TsavoriteKV<TStoreFunctions, TAllocator>(tempKVSettings, storeFunctions, allocatorFactory))
-            using (var tempKvSession = tempKv.NewSession<TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new()))
+            using (var tempKvSession = tempKv.NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>>(new()))
             {
                 var tempbContext = tempKvSession.BasicContext;
                 using (var iter1 = Log.Scan(hlogBase.BeginAddress, untilAddress))
@@ -93,7 +93,7 @@ namespace Tsavorite.core
                     while (iter1.GetNext())
                     {
                         if (iter1.Info.Tombstone || cf.IsDeleted(in iter1))
-                            _ = tempbContext.Delete(iter1.Key);
+                            _ = tempbContext.Delete(iter1);
                         else
                         {
                             var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
@@ -122,7 +122,7 @@ namespace Tsavorite.core
                         ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
                     // If record is not the latest in tempKv's memory for this key, ignore it (will not be returned if deleted)
-                    if (!tempbContext.ContainsKeyInMemory(iter3.Key, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
+                    if (!tempbContext.ContainsKeyInMemory(iter3, out var tempKeyAddress).Found || iter3.CurrentAddress != tempKeyAddress)
                         continue;
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
@@ -143,13 +143,13 @@ namespace Tsavorite.core
         }
 
         private void ScanImmutableTailToRemoveFromTempKv<TInput, TOutput, TContext, TFunctions>(ref long untilAddress, long scanUntil,
-                BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext)
+                BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext)
             where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext())
             {
-                _ = tempbContext.Delete(iter.Key, default);
+                _ = tempbContext.Delete(iter, default);
                 untilAddress = iter.NextAddress;
             }
         }

@@ -19,8 +19,8 @@ namespace Tsavorite.test
     internal class ObjectDiskDeleteTests : AllureTestBase
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
-        private ClientSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
-        private BasicContext<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
+        private ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -36,12 +36,12 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 14,
+                LogMemorySize = 1L << 14,
                 PageSize = 1L << 9
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+            session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             bContext = session.BasicContext;
         }
 
@@ -72,7 +72,7 @@ namespace Tsavorite.test
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), _value, 0);
+                _ = bContext.Upsert(_key, _value, 0);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -82,7 +82,7 @@ namespace Tsavorite.test
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
 
-                if (bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, 0).IsPending)
+                if (bContext.Read(key1, ref input, ref output, 0).IsPending)
                     _ = bContext.CompletePending(true);
                 else
                     ClassicAssert.AreEqual(value.value, output.value.value);
@@ -91,7 +91,7 @@ namespace Tsavorite.test
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new TestObjectKey { key = i };
-                _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key1));
+                _ = bContext.Delete(key1);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -100,7 +100,7 @@ namespace Tsavorite.test
                 var output = new TestObjectOutput();
                 var key1 = new TestObjectKey { key = i };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, 1);
+                var status = bContext.Read(key1, ref input, ref output, 1);
 
                 if (status.IsPending)
                 {
@@ -131,58 +131,58 @@ namespace Tsavorite.test
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), _value, 0);
+                _ = bContext.Upsert(_key, _value, 0);
             }
 
             var key100 = new TestObjectKey { key = 100 };
             var value100 = new TestObjectValue { value = 100 };
             var key200 = new TestObjectKey { key = 200 };
 
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key100));
+            _ = bContext.Delete(key100);
 
             var input = new TestObjectInput { value = 1000 };
             var output = new TestObjectOutput();
-            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key100), ref input, ref output, 1);
+            var status = bContext.Read(key100, ref input, ref output, 1);
             ClassicAssert.IsFalse(status.Found, status.ToString());
 
-            status = bContext.Upsert(SpanByte.FromPinnedVariable(ref key100), value100, 0);
+            status = bContext.Upsert(key100, value100, 0);
             ClassicAssert.IsTrue(!status.Found, status.ToString());
 
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref key100), ref input, ref output, 0);
+            status = bContext.Read(key100, ref input, ref output, 0);
             ClassicAssert.IsTrue(status.Found, status.ToString());
             ClassicAssert.AreEqual(value100.value, output.value.value);
 
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key100));
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key200));
+            _ = bContext.Delete(key100);
+            _ = bContext.Delete(key200);
 
             // This RMW should create new initial value, since item is deleted
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key200), ref input, 1);
+            status = bContext.RMW(key200, ref input, 1);
             ClassicAssert.IsFalse(status.Found);
 
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref key200), ref input, ref output, 0);
+            status = bContext.Read(key200, ref input, ref output, 0);
             ClassicAssert.IsTrue(status.Found, status.ToString());
             ClassicAssert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key200));
+            _ = bContext.Delete(key200);
 
             // Eliminate all records from memory
             for (int i = 201; i < 2000; i++)
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), _value, 0);
+                _ = bContext.Upsert(_key, _value, 0);
             }
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref key100), ref input, ref output, 1);
+            status = bContext.Read(key100, ref input, ref output, 1);
             ClassicAssert.IsTrue(status.IsPending);
             _ = bContext.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key200), ref input, 1);
+            status = bContext.RMW(key200, ref input, 1);
             ClassicAssert.IsTrue(status.IsPending);
             _ = bContext.CompletePending(true);
 
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref key200), ref input, ref output, 0);
+            status = bContext.Read(key200, ref input, ref output, 0);
             ClassicAssert.IsTrue(status.Found, status.ToString());
             ClassicAssert.AreEqual(input.value, output.value.value);
         }

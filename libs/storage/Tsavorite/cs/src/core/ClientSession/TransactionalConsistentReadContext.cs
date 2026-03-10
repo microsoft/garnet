@@ -11,20 +11,32 @@ namespace Tsavorite.core
     /// <summary>
     /// Transactional consistent read context that extends transactionalContext functionality with consistent read protocols.
     /// </summary>
-    public readonly struct TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
-        : ITsavoriteContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>, ITransactionalContext
+    public readonly struct TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+        : ITsavoriteContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>, ITransactionalContext
+        where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        public readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalContext { get; }
+        public readonly TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalContext { get; }
+
+        /// <inheritdoc/>
+        public long GetKeyHash<TOpKey>(TOpKey key)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => Session.store.GetKeyHash(key);
 
         /// <inheritdoc/>
         public bool IsNull => TransactionalContext.IsNull;
 
-        internal TransactionalConsistentReadContext(ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
+        internal TransactionalConsistentReadContext(ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            TransactionalContext = new TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
+            TransactionalContext = new TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
         }
 
         #region Begin/EndTransaction
@@ -105,9 +117,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
+        public Status Read(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            Session.functions.BeforeConsistentReadCallback(PinnedSpanByte.FromPinnedSpan(key));
+            var hash = GetKeyHash(key);
+            Session.functions.BeforeConsistentReadCallback(hash);
             var status = TransactionalContext.Read(key, ref input, ref output, userContext);
             Session.functions.AfterConsistentReadKeyCallback();
             return status;
@@ -115,12 +128,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
             => Read(key, ref input, ref output, ref readOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default)
+        public Status Read(TKey key, ref TOutput output, TContext userContext = default)
         {
             TInput input = default;
             return Read(key, ref input, ref output, userContext);
@@ -128,7 +141,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        public Status Read(TKey key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
         {
             TInput input = default;
             return Read(key, ref input, ref output, ref readOptions, userContext);
@@ -136,7 +149,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default)
+        public (Status status, TOutput output) Read(TKey key, TContext userContext = default)
         {
             TInput input = default;
             TOutput output = default;
@@ -145,7 +158,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default)
+        public (Status status, TOutput output) Read(TKey key, ref ReadOptions readOptions, TContext userContext = default)
         {
             TInput input = default;
             TOutput output = default;
@@ -154,9 +167,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Session.functions.BeforeConsistentReadCallback(PinnedSpanByte.FromPinnedSpan(key));
+            var hash = GetKeyHash(key);
+            Session.functions.BeforeConsistentReadCallback(hash);
             var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             Session.functions.AfterConsistentReadKeyCallback();
             return status;
@@ -169,13 +183,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status ReadAtAddress(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow reads from address!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
-            where TBatch : IReadArgBatch<TInput, TOutput>
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
@@ -183,7 +197,7 @@ namespace Tsavorite.core
             do
             {
                 Thread.Yield();
-                Session.functions.BeforeConsistentReadKeyBatchCallback(ref batch);
+                Session.functions.BeforeConsistentReadKeyBatchCallback(batch.Parameters);
                 TransactionalContext.ReadWithPrefetch(ref batch, userContext);
             } while (!Session.functions.AfterConsistentReadKeyBatchCallback(batch.Count));
         }
@@ -193,10 +207,10 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => TransactionalContext.Session;
+        public ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => TransactionalContext.Session;
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => TransactionalContext.GetKeyHash(key);
+        public long GetKeyHash(TKey key) => TransactionalContext.GetKeyHash(key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
@@ -216,52 +230,71 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
+        public Status Upsert(TKey key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
             => throw new TsavoriteException("Consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert(TKey key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
+
+        public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord => throw new TsavoriteException("Consistent read context does not allow writes!");
+        public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord => throw new TsavoriteException("Consistent read context does not allow writes!");
+        public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TOpKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord => throw new TsavoriteException("Consistent read context does not allow writes!");
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(TKey key, IHeapObject desiredValue, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, TContext userContext = default)
+        public Status Upsert(TKey key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
@@ -271,12 +304,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord
+        public Status Upsert<TSourceLogRecord>(TKey key, in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord
+        public Status Upsert<TSourceLogRecord>(TKey key, ref TInput input, in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
@@ -286,57 +319,57 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default) where TSourceLogRecord : ISourceLogRecord
+        public Status Upsert<TSourceLogRecord>(TKey key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default) where TSourceLogRecord : ISourceLogRecord
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
+        public Status RMW(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
+        public Status RMW(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status RMW(TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status RMW(TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default)
+        public Status RMW(TKey key, ref TInput input, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+        public Status RMW(TKey key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ReadOnlySpan<byte> key, TContext userContext = default)
+        public Status Delete(TKey key, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ReadOnlySpan<byte> key, ref DeleteOptions deleteOptions, TContext userContext = default)
+        public Status Delete(TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
             => throw new TsavoriteException("Transactional consistent read context does not allow writes!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(ReadOnlySpan<byte> key)
+        public void ResetModified(TKey key)
             => throw new TsavoriteException("Transactional consistent read context does not reset ResetModified!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(ReadOnlySpan<byte> key)
+        internal bool IsModified(TKey key)
             => throw new TsavoriteException("Transactional consistent read context does not allow IsModified!");
 
         /// <inheritdoc/>

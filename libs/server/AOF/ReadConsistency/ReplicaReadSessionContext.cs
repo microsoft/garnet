@@ -140,14 +140,14 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void BeforeConsistentReadKeyCallback(PinnedSpanByte key)
+        public void BeforeConsistentReadKeyCallback(long hash)
         {
             if (!inProgress.TryReadLock())
                 throw new GarnetException($"Failed to acquire inProgress lock at {nameof(BeforeConsistentReadKeyCallback)}");
             try
             {
                 ResetTimeoutCts();
-                appendOnlyFile.readConsistencyManager.BeforeConsistentReadKey(key, ref replicaReadContext, timeoutCts.Token);
+                appendOnlyFile.readConsistencyManager.BeforeConsistentReadKey(hash & long.MaxValue, ref replicaReadContext, timeoutCts.Token);
             }
             finally
             {

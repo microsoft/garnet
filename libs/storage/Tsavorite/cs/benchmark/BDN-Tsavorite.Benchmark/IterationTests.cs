@@ -44,7 +44,7 @@ namespace BenchmarkDotNetTests
 
         unsafe void PopulateStore()
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
             long keyNum = 0, valueNum = 0;
@@ -55,7 +55,7 @@ namespace BenchmarkDotNetTests
             {
                 keyNum = ii;
                 valueNum = ii + NumRecords;
-                _ = bContext.Upsert(key, value);
+                _ = bContext.Upsert(new SpanByteKey(key), value);
             }
 
             if (FlushAndEvict)
@@ -86,7 +86,7 @@ namespace BenchmarkDotNetTests
         [BenchmarkCategory("Cursor"), Benchmark]
         public void Cursor()
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
 
             var scanFunctions = new ScanFunctions();
             var cursor = 0L;

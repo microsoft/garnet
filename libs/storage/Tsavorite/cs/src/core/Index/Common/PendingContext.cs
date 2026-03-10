@@ -15,29 +15,23 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal struct PendingContext<TInput, TOutput, TContext>// : ISourceLogRecord
+        internal struct PendingContext<TInput, TOutput, TContext>
         {
             // User provided information
             internal OperationType type;
             internal readonly bool IsConditionalOp => type is OperationType.CONDITIONAL_INSERT or OperationType.CONDITIONAL_SCAN_PUSH;
 
             /// <summary>
-            /// DiskLogRecord carries a log record image. It is used for:
+            /// DiskLogRecord carries a log record image. It is used for pending ConditionalCopy operations, where it is one of:
             /// <list type="bullet">
-            ///     <item>Pending RUMD operations; in this case it contains only the key for all operations, and values for Upsert.
-            ///         Optionals (ETag and Expiration) are presumed to be carried in <see cref="input"/></item>
-            ///     <item>For pending ConditionalCopy operations, where it is one of:
-            ///         <list type="bullet">
-            ///             <item>A <see cref="DiskLogRecord"/> created by serializing from an in-memory <see cref="LogRecord"/></item>
-            ///             <item>A <see cref="DiskLogRecord"/> retrieved from the disk, for operations such as Compact</item>
-            ///         </list>
-            ///     </item>
+            ///     <item>A <see cref="DiskLogRecord"/> created by serializing from an in-memory <see cref="LogRecord"/></item>
+            ///     <item>A <see cref="DiskLogRecord"/> retrieved from the disk, for operations such as Compact</item>
             /// </list>
             /// </summary>
             internal DiskLogRecord diskLogRecord;
 
             /// <summary>The Key that was sent to this operation if it was RUMD.</summary>
-            internal SpanByteHeapContainer requestKey;
+            internal ConditionallyHoistedKey requestKey;
             /// <summary>The hash of <see cref="requestKey"/> if it is present.</summary>
             internal long keyHash;
 
@@ -91,7 +85,7 @@ namespace Tsavorite.core
             /// <inheritdoc/>
             public override readonly string ToString()
             {
-                var keyStr = requestKey is not null ? SpanByte.ToShortString(requestKey.Get(), 12) : "<null>";
+                var keyStr = !requestKey.IsEmpty ? SpanByte.ToShortString(requestKey.KeyBytes, 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
                 return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ETag={eTag}, ReadCopyOpt={readCopyOptions}";
             }
@@ -102,7 +96,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
-                // The async flag is often set when the PendingContext is created, so preserve that.
                 operationFlags = kNoOpFlags;
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
             }
@@ -110,7 +103,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(ReadCopyOptions readCopyOptions)
             {
-                // The async flag is often set when the PendingContext is created, so preserve that.
                 operationFlags = kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
             }
@@ -128,7 +120,6 @@ namespace Tsavorite.core
                 if (diskLogRecord.IsSet)
                     diskLogRecord.Dispose();
                 diskLogRecord = default;
-                requestKey?.Dispose();
                 requestKey = default;
                 input?.Dispose();
                 input = default;
@@ -145,11 +136,15 @@ namespace Tsavorite.core
             /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
             /// <param name="bufferPool">Allocator for backing storage</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void CopyInputsForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
+            internal void CopyInputsForReadOrRMW<TKey, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                CopyKey(key, bufferPool);
+                CopyKey(key, bufferPool, sessionFunctions);
 
                 if (this.input == default)
                 {
@@ -164,12 +159,17 @@ namespace Tsavorite.core
             }
 
             /// <summary>Copy the passed key into our <see cref="requestKey"/></summary>
-            internal void CopyKey(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool)
+            internal void CopyKey<TKey, TSessionFunctionsWrapper>(TKey key, SectorAlignedBufferPool bufferPool, TSessionFunctionsWrapper sessionFunctions)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                if (requestKey is null)
-                    requestKey = new(key, bufferPool);
+                if (requestKey.IsEmpty)
+                    requestKey = ConditionallyHoistedKey.Create(key, bufferPool);
                 else
-                    Debug.Assert(requestKey.Get().ReadOnlySpan.SequenceEqual(key), "pendingContext.requestKey should not change keys");
+                    Debug.Assert(sessionFunctions.Store.StoreFunctions.KeysEqual(requestKey, key), "pendingContext.requestKey should not change keys");
             }
 
             /// <summary>
@@ -212,6 +212,15 @@ namespace Tsavorite.core
             #endregion // Serialized Record Creation
 
             #region Shortcuts to contained DiskLogRecord
+            public readonly DiskLogRecord DiskLogRecord
+            {
+                get
+                {
+                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'DiskLogRecord'");
+                    return diskLogRecord;
+                }
+            }
+
             /// <inheritdoc/>
             public readonly RecordInfo Info
             {

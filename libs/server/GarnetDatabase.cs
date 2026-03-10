@@ -149,15 +149,7 @@ namespace Garnet.server
             StoreCollectionDbStorageSession?.Dispose();
             StoreExpiredKeyDeletionDbStorageSession?.Dispose();
 
-            if (SizeTracker != null)
-            {
-                // If tracker has previously started, wait for it to stop
-                if (!SizeTracker.TryPreventStart())
-                {
-                    while (!SizeTracker.Stopped)
-                        Thread.Yield();
-                }
-            }
+            SizeTracker?.Stop();
         }
     }
 }

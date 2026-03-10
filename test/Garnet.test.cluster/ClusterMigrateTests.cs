@@ -1565,7 +1565,6 @@ namespace Garnet.test.cluster
 
         [Test, Order(18)]
         [Category("CLUSTER")]
-        [Explicit("TODO: fix Dispose() sequencing")]
         public void ClusterMigrateLargePayload([Values] bool expiration, [Values] bool largePayload)
         {
             var r = new Random(674386);
@@ -1580,7 +1579,6 @@ namespace Garnet.test.cluster
 
         [Test, Order(19)]
         [Category("CLUSTER")]
-        [Explicit("TODO: fix Dispose() sequencing")]
         public void ClusterMigrateIncreasingPayload([Values] bool expiration, [Values] bool largeSameSize)
         {
             var r = new Random(674386);

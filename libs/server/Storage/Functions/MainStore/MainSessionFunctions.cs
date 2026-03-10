@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -33,20 +34,16 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void BeforeConsistentReadCallback(PinnedSpanByte key)
-            => readSessionState.BeforeConsistentReadKeyCallback(key);
+        public void BeforeConsistentReadCallback(long hash)
+            => readSessionState.BeforeConsistentReadKeyCallback(hash);
 
         /// <inheritdoc />
         public void AfterConsistentReadKeyCallback()
             => readSessionState.AfterConsistentReadKeyCallback();
 
         /// <inheritdoc />
-        public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
-            where TBatch : IReadArgBatch<StringInput, StringOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-            => readSessionState.BeforeConsistentReadKeyBatch(batch.Parameters);
+        public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters)
+            => readSessionState.BeforeConsistentReadKeyBatch(parameters);
 
         /// <inheritdoc />
         public bool AfterConsistentReadKeyBatchCallback(int keyCount)

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -9,9 +10,9 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus RMW_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.RMW(key, ref input, ref output);
+            var status = objectContext.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
@@ -27,9 +28,9 @@ namespace Garnet.server
         }
 
         public GarnetStatus Read_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
-        where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.Read(key, ref input, ref output);
+            var status = objectContext.Read((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);

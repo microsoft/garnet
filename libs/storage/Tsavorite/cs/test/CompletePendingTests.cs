@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -19,10 +18,23 @@ namespace Tsavorite.test
     {
         internal long? forceCollisionHash;
 
-        public long GetHashCode64(ReadOnlySpan<byte> key) => forceCollisionHash ?? Utility.GetHashCode(key.AsRef<KeyStruct>().kfield1);
+        public long GetHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => forceCollisionHash ?? Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
 
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) =>
-            k1.AsRef<KeyStruct>().kfield1 == k2.AsRef<KeyStruct>().kfield1 && k1.AsRef<KeyStruct>().kfield2 == k2.AsRef<KeyStruct>().kfield2;
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<KeyStruct>().kfield1 == k2.KeyBytes.AsRef<KeyStruct>().kfield1 && k1.KeyBytes.AsRef<KeyStruct>().kfield2 == k2.KeyBytes.AsRef<KeyStruct>().kfield2;
 
         public override string ToString() => $"forceHashCollision: {forceCollisionHash}";
     }
@@ -52,7 +64,7 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 29
+                LogMemorySize = 1L << 29
             }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
@@ -127,11 +139,11 @@ namespace Tsavorite.test
                 for (; completedOutputs.Next(); ++count)
                 {
                     ref var result = ref completedOutputs.Current;
-                    VerifyStructs((int)result.Key.AsRef<KeyStruct>().kfield1, in result.Key.AsRef<KeyStruct>(), in result.Input, ref result.Output, ref result.Context, useRMW);
+                    VerifyStructs((int)result.Key.KeyBytes.AsRef<KeyStruct>().kfield1, in result.Key.KeyBytes.AsRef<KeyStruct>(), in result.Input, ref result.Output, ref result.Context, useRMW);
                     if (!useRMW)
-                        ClassicAssert.AreEqual(keyAddressDict[(int)result.Key.AsRef<KeyStruct>().kfield1], result.RecordMetadata.Address);
-                    else if (keyAddressDict[(int)result.Key.AsRef<KeyStruct>().kfield1] != result.RecordMetadata.Address)
-                        rmwCopyUpdatedAddresses.Add((result.Key.AsRef<KeyStruct>(), result.RecordMetadata.Address));
+                        ClassicAssert.AreEqual(keyAddressDict[(int)result.Key.KeyBytes.AsRef<KeyStruct>().kfield1], result.RecordMetadata.Address);
+                    else if (keyAddressDict[(int)result.Key.KeyBytes.AsRef<KeyStruct>().kfield1] != result.RecordMetadata.Address)
+                        rmwCopyUpdatedAddresses.Add((result.Key.KeyBytes.AsRef<KeyStruct>(), result.RecordMetadata.Address));
                 }
                 completedOutputs.Dispose();
                 ClassicAssert.AreEqual(deferredPending + 1, count);
@@ -152,7 +164,7 @@ namespace Tsavorite.test
             {
                 ClassicAssert.IsTrue(completedOutputs.Next());
                 ClassicAssert.IsFalse(completedOutputs.Current.Status.Found);
-                ClassicAssert.AreEqual(keyStruct, completedOutputs.Current.Key.AsRef<KeyStruct>());
+                ClassicAssert.AreEqual(keyStruct, completedOutputs.Current.Key.KeyBytes.AsRef<KeyStruct>());
                 ClassicAssert.IsFalse(completedOutputs.Next());
                 completedOutputs.Dispose();
             }
@@ -162,7 +174,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW)
         {
-            using var session = store.NewSession<InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
             var bContext = session.BasicContext;
             ClassicAssert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
@@ -173,7 +185,7 @@ namespace Tsavorite.test
                 var keyStruct = NewKeyStruct(key);
                 var valueStruct = NewValueStruct(key);
                 processPending.keyAddressDict[key] = store.Log.TailAddress;
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyStruct), SpanByte.FromPinnedVariable(ref valueStruct));
+                _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
             }
 
             // Flush to make reads or RMWs go pending.
@@ -192,7 +204,7 @@ namespace Tsavorite.test
                 {
                     var ksUnfound = keyStruct;
                     ksUnfound.kfield1 += NumRecords * 10;
-                    if (bContext.Read(SpanByte.FromPinnedVariable(ref ksUnfound), ref inputStruct, ref outputStruct, contextStruct).IsPending)
+                    if (bContext.Read(ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
                     {
                         CompletedOutputIterator<InputStruct, OutputStruct, ContextStruct> completedOutputs;
                         if ((key & 1) == 0)
@@ -205,8 +217,8 @@ namespace Tsavorite.test
 
                 // We don't use context (though we verify it), and Read does not use input.
                 var status = useRMW
-                    ? bContext.RMW(SpanByte.FromPinnedVariable(ref keyStruct), ref inputStruct, ref outputStruct, contextStruct)
-                    : bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct), ref inputStruct, ref outputStruct, contextStruct);
+                    ? bContext.RMW(keyStruct, ref inputStruct, ref outputStruct, contextStruct)
+                    : bContext.Read(keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status.IsPending)
                 {
                     if (processPending.IsFirst())
@@ -244,7 +256,7 @@ namespace Tsavorite.test
 
                 // This should not be pending since we've not flushed.
                 var localKey = key;
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref localKey), ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
+                var status = bContext.Read(localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
                 ClassicAssert.IsFalse(status.IsPending);
                 ClassicAssert.AreEqual(address, recordMetadata.Address);
             }
@@ -273,25 +285,25 @@ namespace Tsavorite.test
         {
             const int valueMult = 1000;
 
-            using var session = store.NewSession<InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
             var bContext = session.BasicContext;
 
             // Insert first record
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyStruct), SpanByte.FromPinnedVariable(ref valueStruct));
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, _ /*outputStruct*/) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
+            var (status, _ /*outputStruct*/) = bContext.Read(keyStruct);
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with the same key and flush this too if requested.
             var secondValue = firstValue + 1;
             valueStruct.vfield2 = secondValue * valueMult;
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyStruct), SpanByte.FromPinnedVariable(ref valueStruct));
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
@@ -305,29 +317,29 @@ namespace Tsavorite.test
         {
             const int valueMult = 1000;
 
-            using var session = store.NewSession<InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
             var bContext = session.BasicContext;
 
             // Insert first record
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyStruct), SpanByte.FromPinnedVariable(ref valueStruct));
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
 
             // Force collisions to test having another key in the chain
-            comparer.forceCollisionHash = comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref keyStruct));
+            comparer.forceCollisionHash = comparer.GetHashCode64(keyStruct);
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, _ /*outputStruct*/) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
+            var (status, _ /*outputStruct*/) = bContext.Read(keyStruct);
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with a different key and flush this too if requested.
             var secondValue = firstValue + 1;
             keyStruct = new() { kfield1 = secondValue, kfield2 = secondValue * valueMult };
             valueStruct = new() { vfield1 = secondValue, vfield2 = secondValue * valueMult };
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyStruct), SpanByte.FromPinnedVariable(ref valueStruct));
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
@@ -342,19 +354,19 @@ namespace Tsavorite.test
             // Basic test of pending read
             const int valueMult = 1000;
 
-            using var session = store.NewSession<InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, PendingReadFunctions<ContextStruct>>(new PendingReadFunctions<ContextStruct>());
             var bContext = session.BasicContext;
 
             // Insert first record
             var firstValue = 0; // same as key
             var keyStruct = new KeyStruct { kfield1 = firstValue, kfield2 = firstValue * valueMult };
             var valueStruct = new ValueStruct { vfield1 = firstValue, vfield2 = firstValue * valueMult };
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyStruct), SpanByte.FromPinnedVariable(ref valueStruct));
+            _ = bContext.Upsert(keyStruct, SpanByte.FromPinnedVariable(ref valueStruct));
 
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, _ /*outputStruct*/) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
+            var (status, _ /*outputStruct*/) = bContext.Read(keyStruct);
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             (status, var outputStruct) = bContext.GetSinglePendingResult();

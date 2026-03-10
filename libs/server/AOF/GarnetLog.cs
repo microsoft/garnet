@@ -77,7 +77,7 @@ namespace Garnet.server
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HASH(ReadOnlySpan<byte> key)
-            => (long)HashUtils.MurmurHash2x64A(key) & long.MaxValue;
+            => GarnetKeyComparer.Instance.GetHashCode64((FixedSpanByteKey)key) & long.MaxValue;
 
         public AofAddress BeginAddress
         {
@@ -315,12 +315,14 @@ namespace Garnet.server
             => GetSubLog(0).UnsafeGetLogPageSizeBits();
 
         /// <summary>
-        /// Get read only address lag offset
-        /// TODO: Is this initialized only once? Is it same across sublogs?
+        /// UnsafeGetReadOnlyAddressAbove
         /// </summary>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="newTailAddress"></param>
+        /// <param name="numPagesAbove"></param>
         /// <returns></returns>
-        public long UnsafeGetReadOnlyAddressLagOffset()
-            => GetSubLog(0).UnsafeGetReadOnlyAddressLagOffset();
+        public long UnsafeGetReadOnlyAddressAbove(int physicalSublogIdx, long newTailAddress, int numPagesAbove)
+            => GetSubLog(0).UnsafeGetReadOnlyAddressAbove(newTailAddress, numPagesAbove);
 
         /// <summary>
         /// Shifts the begin address of the specified sublog or single log to the given address.

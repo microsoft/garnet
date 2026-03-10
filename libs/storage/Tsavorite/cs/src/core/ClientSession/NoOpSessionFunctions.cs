@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// Tsavorite proceed with the delete).
     /// </summary>
     /// <remarks>
-    /// Because this is used for copy operations, the <see cref="GetUpsertFieldInfo{TSourceLogRecord}(ReadOnlySpan{byte}, in TSourceLogRecord, ref TInput)"/>,
+    /// Because this is used for copy operations, the <see cref="GetUpsertFieldInfo{TKey, TSourceLogRecord}(TKey, in TSourceLogRecord, ref TInput)"/>,
     /// <see cref="InitialWriter{TSourceLogRecord}(ref LogRecord, in RecordSizeInfo, ref TInput, in TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
     /// <see cref="InPlaceWriter{TSourceLogRecord}(ref LogRecord, in RecordSizeInfo, ref TInput, in TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
     /// methods are implemented to allow for copy of log records via Upsert, but no other methods are implemented.
@@ -54,7 +54,12 @@ namespace Tsavorite.core
 
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
-        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+        public readonly bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => true;
 
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -67,15 +72,32 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord
              => throw new NotImplementedException("GetRMWModifiedFieldInfo is not supported in this ISessionFunctions implementation");
-        public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input)
+        public readonly RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => throw new NotImplementedException("GetRMWInitialFieldInfo is not supported in this ISessionFunctions implementation");
-        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input)
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => throw new NotImplementedException("GetUpsertFieldInfo(ReadOnlySpan<byte> value) is not supported in this ISessionFunctions implementation");
-        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input)
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => throw new NotImplementedException("IHeapObject value) is not supported in this ISessionFunctions implementation");
-        public readonly RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input)
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
-            => new() { KeySize = key.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
+            // TODO: Namespace!
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
 
         /// <summary>
         /// No reads during compaction
@@ -107,23 +129,43 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         { }
 
-        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
-        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
-        public readonly void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
-        public readonly void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        { }
+        public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        { }
+        public readonly void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        { }
+        public readonly void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        { }
 
         public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
 
-        public void BeforeConsistentReadCallback(PinnedSpanByte key) { }
+        public void BeforeConsistentReadCallback(long hash) { }
 
         public void AfterConsistentReadKeyCallback() { }
 
-        public void BeforeConsistentReadKeyBatchCallback<TBatch>(ref TBatch batch)
-            where TBatch : IReadArgBatch<TInput, TOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
-        { }
+        /// <inheritdoc />
+        public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters) { }
 
         public bool AfterConsistentReadKeyBatchCallback(int keyCount) => true;
     }

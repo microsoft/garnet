@@ -23,8 +23,8 @@ namespace Tsavorite.test.InputOutputParameterTests
         const int NumRecs = 10;
 
         private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private ClientSession<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         internal class UpsertInputFunctions : SessionFunctionsBase<int, int, Empty>
@@ -84,8 +84,8 @@ namespace Tsavorite.test.InputOutputParameterTests
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input)
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(int), ValueIsObject = false };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref int input)
-                => new() { KeySize = key.Length, ValueSize = sizeof(int), ValueIsObject = false };
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(int), ValueIsObject = false };
         }
 
         [SetUp]
@@ -98,13 +98,13 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 22,
+                LogMemorySize = 1L << 22,
                 SegmentSize = 1L << 22,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
+            session = store.NewSession<TestSpanByteKey, int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
             bContext = session.BasicContext;
         }
 
@@ -138,8 +138,8 @@ namespace Tsavorite.test.InputOutputParameterTests
                     var tailAddress = store.Log.TailAddress;
                     var upsertOptions = new UpsertOptions();
                     status = useRMW
-                        ? bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input, ref output, out var recordMetadata)
-                        : bContext.Upsert(SpanByte.FromPinnedVariable(ref key), ref input, SpanByte.FromPinnedVariable(ref key), ref output, ref upsertOptions, out recordMetadata);
+                        ? bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output, out var recordMetadata)
+                        : bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, SpanByte.FromPinnedVariable(ref key), ref output, ref upsertOptions, out recordMetadata);
                     if (loading)
                     {
                         if (useRMW)
@@ -160,7 +160,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
-                    _ = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output);
+                    _ = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output);
                     ClassicAssert.AreEqual(key * input + AddValue, output);
                 }
             }

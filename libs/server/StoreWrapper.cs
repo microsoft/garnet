@@ -356,9 +356,7 @@ namespace Garnet.server
             if (serverOptions.EnableCluster)
             {
                 if (serverOptions.Recover)
-                {
                     clusterProvider.Recover();
-                }
             }
             else
             {
@@ -420,7 +418,10 @@ namespace Garnet.server
         /// Recover checkpoint
         /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
-            => databaseManager.RecoverCheckpoint(replicaRecover, recoverFromToken, metadata);
+        {
+            StartSizeTrackers();    // We need to start this before recovery to have size tracking during the recovery process.
+            databaseManager.RecoverCheckpoint(replicaRecover, recoverFromToken, metadata);
+        }
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
@@ -826,9 +827,10 @@ namespace Garnet.server
             // Start generic node tasks
             StartGenericNodeTasks();
 
-            // Start object size trackers
-            databaseManager.StartSizeTrackers(ctsCommit.Token);
+            StartSizeTrackers();    // We may have already started this for recovery.
         }
+
+        private void StartSizeTrackers() => databaseManager.StartSizeTrackers(ctsCommit.Token);
 
         public bool HasKeysInSlots(List<int> slots)
         {
@@ -850,7 +852,7 @@ namespace Garnet.server
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
                     var objStoreFunctions = new ObjectSessionFunctions(functionsState);
-                    using var objectStoreSession = store?.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
+                    using var objectStoreSession = store?.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objStoreFunctions);
                     using var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext())
                     {

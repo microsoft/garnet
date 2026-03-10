@@ -176,16 +176,15 @@ namespace Garnet.server
         ///     It executes before store.Read is processed to ensure that the log sequence number of the associated key is ahead of the last read in accordance to the consistent read protocol
         ///     The replica read context is updated (<seealso cref="T:Garnet.server.ReplicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate"/>) after the actual store.Read call to ensure that we don't underestimate the true log sequence number.
         /// </summary>
-        /// <param name="key"></param>
+        /// <param name="hash"></param>
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="ct"></param>
-        public void BeforeConsistentReadKey(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        public void BeforeConsistentReadKey(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
         {
             // Check version
             CheckConsistencyManagerVersion(ref replicaReadSessionContext);
 
             // Verify key freshness
-            var hash = GarnetLog.HASH(key);
             VerifyKeyFreshness(hash, ref replicaReadSessionContext, ct);
         }
 
