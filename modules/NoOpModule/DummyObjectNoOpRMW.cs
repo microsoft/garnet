@@ -13,7 +13,7 @@ namespace NoOpModule
     public class DummyObjectNoOpRMW : CustomObjectFunctions
     {
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input,
+        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input,
             ref RespMemoryWriter writer) => true;
 
         /// <inheritdoc />

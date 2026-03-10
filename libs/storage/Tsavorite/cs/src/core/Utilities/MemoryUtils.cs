@@ -2,9 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using Tsavorite.core;
 
-namespace Garnet.server
+namespace Tsavorite.core
 {
     /// <summary>
     /// Utility class for memory related operations.
@@ -44,17 +43,12 @@ namespace Garnet.server
         /// <summary>.Net object avg. overhead for holding a priority queue entry</summary>
         public const int PriorityQueueEntryOverhead = 48;
 
-        internal static long CalculateHeapMemorySize(in LogRecord logRecord)
-        {
-            // For overflow byte[], round up key size to account for alignment during allocation and add overhead for allocating a byte array
-            var result = 0L;
-            if (logRecord.Info.KeyIsOverflow)
-                result += Utility.RoundUp(logRecord.Key.Length, IntPtr.Size) + ByteArrayOverhead;
-            if (logRecord.Info.ValueIsOverflow)
-                result += Utility.RoundUp(logRecord.ValueSpan.Length, IntPtr.Size) + ByteArrayOverhead;
-            else if (logRecord.Info.ValueIsObject)
-                result += logRecord.ValueObject.HeapMemorySize;
-            return result;
-        }
+        /// <summary>This is <see cref="Array.MaxLength"/> but that is a static expression, not a constant</summary>
+        public const int ArrayMaxLength = 0x7FFFFFC7;
+
+        /// <summary>Calculate the heap memory size of this <see cref="LogRecord"/></summary>
+        public static long CalculateHeapMemorySize<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => logRecord.CalculateHeapMemorySize();
     }
 }

@@ -13,23 +13,47 @@ using Tsavorite.core;
 namespace Tsavorite.test
 {
     [StructLayout(LayoutKind.Explicit)]
-    public struct KeyStruct
+    public struct KeyStruct : IKey
     {
         [FieldOffset(0)]
         public long kfield1;
         [FieldOffset(8)]
         public long kfield2;
 
+        // Not always pinned, so don't assume it is
+        public readonly bool IsPinned => false;
+
+        public ReadOnlySpan<byte> KeyBytes => MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateReadOnlySpan(ref kfield1, 2));
+
+        /// <inheritdoc/>
+        public bool HasNamespace => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => [];
+
         public override readonly string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}";
 
         public struct Comparer : IKeyComparer
         {
-            public readonly long GetHashCode64(ReadOnlySpan<byte> key) => Utility.GetHashCode(key.AsRef<KeyStruct>().kfield1);
+            public readonly long GetHashCode64<TKey>(TKey key)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                => Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
 
-            public readonly bool Equals(ReadOnlySpan<byte> key1, ReadOnlySpan<byte> key2)
+            public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey key1, TSecondKey key2)
+                where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
+                where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
             {
-                var k1 = key1.AsRef<KeyStruct>();
-                var k2 = key2.AsRef<KeyStruct>();
+                var k1 = key1.KeyBytes.AsRef<KeyStruct>();
+                var k2 = key2.KeyBytes.AsRef<KeyStruct>();
                 return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
             }
 
@@ -137,11 +161,11 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
-            => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.Length, ValueSize = value.Length };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
     }
 
     public class FunctionsCompaction : SessionFunctionsBase<InputStruct, OutputStruct, int>
@@ -207,11 +231,11 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
-            => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.Length, ValueSize = value.Length };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
     }
 
     public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
@@ -291,11 +315,11 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
-            => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeySize = key.Length, ValueSize = value.Length };
+        public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref InputStruct input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length };
     }
 
     public class SimpleLongSimpleFunctions : SimpleIntegerFunctionsBase<long>
@@ -374,17 +398,17 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInteger input)
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInteger input)
         {
-            Assert.That(key.Length, Is.EqualTo(sizeof(TInteger)));
-            return new() { KeySize = key.Length, ValueSize = sizeof(TInteger) };
+            Assert.That(key.KeyBytes.Length, Is.EqualTo(sizeof(TInteger)));
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger) };
         }
 
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInteger input)
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInteger input)
         {
             Assert.That(value.Length, Is.EqualTo(sizeof(TInteger)));
-            return new() { KeySize = key.Length, ValueSize = sizeof(TInteger) };
+            return new() { KeySize = key.KeyBytes.Length, ValueSize = sizeof(TInteger) };
         }
     }
 }

@@ -77,8 +77,8 @@ namespace Tsavorite.test
         }
 
         private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private ClientSession<TestSpanByteKey, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<TestSpanByteKey, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         const int NumRecords = 100;
@@ -96,12 +96,12 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());
+            session = store.NewSession<TestSpanByteKey, int, int, Empty, PostFunctions>(new PostFunctions());
             bContext = session.BasicContext;
             Populate();
         }
@@ -126,7 +126,7 @@ namespace Tsavorite.test
                 if ((expectedAddress % store.hlogBase.PageSize) == 0)
                     expectedAddress += PageHeader.Size;
                 var value = key * 100;
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
                 ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
             }
 
@@ -152,7 +152,7 @@ namespace Tsavorite.test
             // Execute the ReadOnly (InternalInsert) test
             store.Log.FlushAndEvict(wait: true);
             int key = TargetKey, value = TargetKey * 100;
-            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+            _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
             _ = bContext.CompletePending(wait: true);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
         }
@@ -164,7 +164,7 @@ namespace Tsavorite.test
         {
             // Execute the not-found test (InternalRMW).
             int key = NumRecords + 1, value = (NumRecords + 1) * 1000;
-            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
             ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
             session.functions.Clear();
 
@@ -173,15 +173,15 @@ namespace Tsavorite.test
             key = TargetKey;
             value = TargetKey * 1000;
 
-            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW). First delete the record so it has a tombstone; this will go to InitialUpdater.
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+            _ = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
 
-            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
             CompletePendingAndVerifyInsertedAddress();
             ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
         }
@@ -195,13 +195,13 @@ namespace Tsavorite.test
             var key = TargetKey;
             var value = TargetKey * 1000;
             store.Log.ShiftReadOnlyAddress(store.Log.ReadOnlyAddress, wait: true);
-            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
             CompletePendingAndVerifyInsertedAddress();
             ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
         }
@@ -214,7 +214,7 @@ namespace Tsavorite.test
             // Verify the key exists
             var key = TargetKey;
             var value = TargetKey * 1000;
-            var (status, _ /*output*/) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
+            var (status, _ /*output*/) = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.IsTrue(status.Found, "Expected the record to exist");
             session.functions.returnFalseFromPCU = true;
 
@@ -225,10 +225,10 @@ namespace Tsavorite.test
                 store.Log.FlushAndEvict(wait: true);
 
             // Call RMW
-            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+            _ = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
 
             // Verify the key no longer exists.
-            (status, _ /*output*/) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
+            (status, _ /*output*/) = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.IsFalse(status.Found, "Expected the record to no longer exist");
         }
 
@@ -239,14 +239,14 @@ namespace Tsavorite.test
         {
             // Execute the not-in-memory test (InternalDelete); InPlaceDeleter returns false to force a new record to be added.
             var key = TargetKey;
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+            _ = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
 
             // Execute the not-in-memory test (InternalDelete).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
             key++;
-            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+            _ = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
         }
     }

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -16,7 +15,11 @@ namespace Garnet.server
     public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate<TKey>(TKey key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var type = input.header.type;
 
@@ -29,7 +32,8 @@ namespace Garnet.server
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
             try
             {
-                return customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
+                // Deliberately hiding key type complexity from custom object commands
+                return customObjectCommand.NeedInitialUpdate(key.KeyBytes, ref input, ref writer);
             }
             finally
             {
@@ -98,7 +102,7 @@ namespace Garnet.server
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(dstLogRecord.ValueObject.HeapMemorySize);
+            functionsState.cacheSizeTracker?.AddHeapSize(dstLogRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
@@ -117,7 +121,7 @@ namespace Garnet.server
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
                     rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
+                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                 return true;
             }
             return false;
@@ -130,7 +134,7 @@ namespace Garnet.server
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
 
                 // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
@@ -168,7 +172,7 @@ namespace Garnet.server
                     return true;
                 if (output.HasRemoveKey)
                 {
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                    functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
@@ -334,7 +338,7 @@ namespace Garnet.server
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
             var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
+            functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -342,11 +346,15 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+        public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
-                WriteLogRMW(key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
+                WriteLogRMW(key.KeyBytes, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }
     }
 }

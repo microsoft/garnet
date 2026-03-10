@@ -19,12 +19,25 @@ namespace Tsavorite.test
 
         internal TestObjectValueComparerModulo(long mod) => this.mod = mod;
 
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<TestObjectKey>().key == k2.AsRef<TestObjectKey>().key;
+        public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<TestObjectKey>().key == k2.KeyBytes.AsRef<TestObjectKey>().key;
 
         // Force collisions to create a chain
-        public long GetHashCode64(ReadOnlySpan<byte> key)
+        public long GetHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            long hash = Utility.GetHashCode(key.AsRef<TestObjectKey>().key);
+            long hash = Utility.GetHashCode(key.KeyBytes.AsRef<TestObjectKey>().key);
             return mod > 0 ? hash % mod : hash;
         }
     }
@@ -111,7 +124,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 9,
                 SegmentSize = 1L << 18,
                 ObjectLogSegmentSize = 1L << 22
@@ -119,7 +132,7 @@ namespace Tsavorite.test
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             using var s = store.Log.Subscribe(new LogObserver());
@@ -129,7 +142,7 @@ namespace Tsavorite.test
             {
                 var _key = new TestObjectKey { key = i };
                 var _value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref _key), _value, Empty.Default);
+                _ = bContext.Upsert(_key, _value, Empty.Default);
                 if (i % 100 == 0)
                     store.Log.FlushAndEvict(true);
             }
@@ -199,14 +212,14 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << 15,
                 SegmentSize = 1L << 18
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             const int numRecords = 200;
@@ -222,7 +235,7 @@ namespace Tsavorite.test
                 }
                 var key = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, Empty.Default);
+                _ = bContext.Upsert(key, value, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
@@ -277,14 +290,14 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << 15,
                 SegmentSize = 1L << 18
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             var startTailAddress = store.Log.TailAddress;
@@ -293,7 +306,7 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
+                _ = bContext.Upsert(key1, value);
 
                 if (recordSize == 0)
                 {
@@ -339,7 +352,7 @@ namespace Tsavorite.test
             {
                 var key1 = new TestObjectKey { key = i + TotalRecords };
                 var value = new TestObjectValue { value = i + TotalRecords };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
+                _ = bContext.Upsert(key1, value);
             }
             scanCursorFuncs.Initialize(verifyKeys);
             ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
@@ -388,21 +401,21 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << 15,
                 SegmentSize = 1L << 18
             }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             for (int i = 0; i < TotalRecords; i++)
             {
                 var key1 = new TestObjectKey { key = i };
                 var value = new TestObjectValue { value = i };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
+                _ = bContext.Upsert(key1, value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();

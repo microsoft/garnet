@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -52,9 +51,13 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output,
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal OperationStatus InternalRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output,
                                     TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
@@ -88,9 +91,9 @@ namespace Tsavorite.core
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         pendingContext.eTag = srcLogRecord.ETag;
-                        if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
-                            return OperationStatus.SUCCESS;
-                        return CheckFalseActionStatus(ref readInfo);
+                        return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
+                            ? OperationStatus.SUCCESS
+                            : CheckFalseActionStatus(ref readInfo);
                     }
 
                     // FindInReadCache updated recSrc so update the readInfo accordingly.
@@ -235,8 +238,12 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output,
+        internal OperationStatus InternalReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, TKey key, ref TInput input, ref TOutput output,
                                     ref ReadOptions readOptions, TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (readAtAddress < hlogBase.BeginAddress)
@@ -266,7 +273,7 @@ namespace Tsavorite.core
             {
                 // We have NoKey and an in-memory address so we must get the record to get the key to get the hashcode check for index growth,
                 // possibly lock the bucket, etc.
-                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord.Key);
+                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(srcLogRecord);
             }
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
@@ -285,8 +292,8 @@ namespace Tsavorite.core
             try
             {
                 // We're not doing RETRY_LATER if there is a Closed record; we only return valid records here.
-                // Closed records may be reclaimed by revivification, so we do not return them.
-                if (srcLogRecord.Info.IsClosed)
+                // Closed records may be reclaimed by revivification, so we do not return them if we are using the revivification free list.
+                if (srcLogRecord.Info.IsClosed && RevivificationManager.UseFreeRecordPool)
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 
@@ -313,8 +320,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void CreatePendingReadContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
+        private void CreatePendingReadContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;

@@ -11,16 +11,6 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref UnifiedInput input)
-        {
-            return new RecordFieldInfo
-            {
-                KeySize = key.Length,
-                ValueSize = 0,
-                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
-            };
-        }
-
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
             ref UnifiedInput input) where TSourceLogRecord : ISourceLogRecord
         {
@@ -97,36 +87,65 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value,
-            ref UnifiedInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
+            // We know namespaces aren't present in string/object functions, so don't populate
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
+                ValueSize = 0,
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
+            };
+        }
+
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value,
+            ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+        {
+            // We know namespaces aren't present in string/object functions, so don't populate
+            return new RecordFieldInfo
+            {
+                KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
                 HasETag = input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref UnifiedInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key,
+        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key,
             in TSourceLogRecord inputLogRecord,
-            ref UnifiedInput input) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSourceLogRecord : ISourceLogRecord
         {
             return new RecordFieldInfo
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
                 HasETag = input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag,

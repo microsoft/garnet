@@ -159,8 +159,8 @@ namespace Tsavorite.core
 
             // Issue the last ObjectLog write for this partial flush.
             var buffer = GetCurrentBuffer();
-            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
-            Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");
+            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "alignedMainLogFlushAddress is not aligned to sector size");
+            Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilPosition {buffer.flushedUntilPosition} is not sector-aligned");
             Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
             if (buffer.currentPosition > buffer.flushedUntilPosition)
@@ -188,6 +188,7 @@ namespace Tsavorite.core
             FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
 
             // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
+            // If the write in FlushToMainLogDeviced completed fast, this decrement here may be the final one.
             _ = countdownCallbackAndContext.Decrement();
         }
 

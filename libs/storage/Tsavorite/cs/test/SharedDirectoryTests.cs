@@ -162,7 +162,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private static void Populate(TsavoriteKV<StructStoreFunctions, StructAllocator> store)
         {
-            using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            using var session = store.NewSession<AdId, AdInput, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Prepare the dataset
@@ -176,7 +176,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Process the batch of input data
             for (int i = 0; i < NumOps; i++)
             {
-                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref inputArray[i].adId), ref inputArray[i], Empty.Default);
+                _ = bContext.RMW(inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 if (i % CompletePendingInterval == 0)
                     _ = bContext.CompletePending(false);
@@ -206,13 +206,13 @@ namespace Tsavorite.test.recovery.sumstore
             var input = default(AdInput);
             var output = default(Output);
 
-            using var session = tsavoriteInstance.Store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            using var session = tsavoriteInstance.Store.NewSession<AdId, AdInput, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Issue read requests
             for (var i = 0; i < NumUniqueKeys; i++)
             {
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref inputArray[i].adId), ref input, ref output, Empty.Default);
+                var status = bContext.Read(inputArray[i].adId, ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }

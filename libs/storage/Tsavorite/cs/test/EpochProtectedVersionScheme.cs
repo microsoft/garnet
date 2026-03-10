@@ -286,7 +286,7 @@ namespace Tsavorite.test
         {
             if (Interlocked.CompareExchange(ref state.Word, nextState.Word, expectedState.Word) != expectedState.Word)
                 return false;
-            Debug.WriteLine("Moved to {0}, {1}", nextState.Phase, nextState.Version);
+            Debug.WriteLine("EPVS: Moved to {0}, {1}", nextState.Phase, nextState.Version);
             return true;
         }
 

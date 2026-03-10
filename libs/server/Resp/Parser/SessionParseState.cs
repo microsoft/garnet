@@ -238,18 +238,6 @@ namespace Garnet.server
         /// </summary>
         /// <param name="i">Index of buffer at which to start setting arguments</param>
         /// <param name="args">Arguments to set</param>
-        public void SetArguments(int i, params PinnedSpanByte[] args)
-        {
-            Debug.Assert(i + args.Length - 1 < Count);
-            for (var j = 0; j < args.Length; j++)
-                *(bufferPtr + i + j) = args[j];
-        }
-
-        /// <summary>
-        /// Set arguments starting at a specific index
-        /// </summary>
-        /// <param name="i">Index of buffer at which to start setting arguments</param>
-        /// <param name="args">Arguments to set</param>
         public void SetArguments(int i, params ReadOnlySpan<PinnedSpanByte> args)
         {
             Debug.Assert(i + args.Length - 1 < Count);

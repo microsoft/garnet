@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.IO;
 using Allure.NUnit;
 using Garnet.test;
@@ -38,7 +37,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(IntKeyComparer.Instance, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -63,7 +62,7 @@ namespace Tsavorite.test
         public void TryAddTest()
         {
             TryAddTestFunctions functions = new();
-            using var session = store.NewSession<RMWValueObj, RMWValueObj, Status, TryAddTestFunctions>(functions);
+            using var session = store.NewSession<TestSpanByteKey, RMWValueObj, RMWValueObj, Status, TryAddTestFunctions>(functions);
             var bContext = session.BasicContext;
 
             Status status;
@@ -72,24 +71,24 @@ namespace Tsavorite.test
             var value2 = new RMWValueObj { value = 2 };
 
             functions.noNeedInitialUpdater = true;
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value1); // needInitialUpdater false + NOTFOUND
+            status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value1); // needInitialUpdater false + NOTFOUND
             ClassicAssert.IsFalse(status.Found, status.ToString());
             ClassicAssert.IsFalse(value1.flag); // InitialUpdater is not called
             functions.noNeedInitialUpdater = false;
 
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value1); // InitialUpdater + NotFound
+            status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value1); // InitialUpdater + NotFound
             ClassicAssert.IsFalse(status.Found, status.ToString());
             ClassicAssert.IsTrue(value1.flag); // InitialUpdater is called
 
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2); // InPlaceUpdater + Found
+            status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value2); // InPlaceUpdater + Found
             ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
             store.Log.Flush(true);
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
+            status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
             ClassicAssert.IsTrue(status.Found, status.ToString());
 
             store.Log.FlushAndEvict(true);
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
+            status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePendingWithOutputs(out var outputs, true);
 
@@ -98,15 +97,15 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref value1, ref output, new(StatusCode.Found));
+            status = bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value1, ref output, new(StatusCode.Found));
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(true);
 
-            status = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
+            status = bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)));
             ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
-            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
+            status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(true);
         }
@@ -148,7 +147,7 @@ namespace Tsavorite.test
                 return true;
             }
 
-            public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
+            public override bool NeedInitialUpdate<TKey>(TKey key, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
                 => !noNeedInitialUpdater;
 
             public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
@@ -171,8 +170,8 @@ namespace Tsavorite.test
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RMWValueObj input)
                 => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref RMWValueObj input)
-                => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref RMWValueObj input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
             /// <inheritdoc/>
 
             public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
@@ -211,7 +210,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 MutableFraction = 0.1,
-                MemorySize = 1L << (PageSizeBits + 1),
+                LogMemorySize = 1L << (PageSizeBits + 1),
                 PageSize = 1L << PageSizeBits
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -234,7 +233,7 @@ namespace Tsavorite.test
         public void CopyUpdateFromHeadReadOnlyPageTest()
         {
             RMWSinglePageFunctions functions = new();
-            using var session = store.NewSession<long, long, Empty, RMWSinglePageFunctions>(functions);
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, RMWSinglePageFunctions>(functions);
             var bContext = session.BasicContext;
 
             // Two records is the most that can "fit" into the first Constants.kFirstValueAddress "range"; therefore when we close pages
@@ -245,7 +244,7 @@ namespace Tsavorite.test
             for (long key = 0; key < RecsPerPage - padding; key++)
             {
                 long value = ((int)key << 32) + key;
-                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+                var status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                 ClassicAssert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
             }
 
@@ -255,7 +254,7 @@ namespace Tsavorite.test
             for (long key = 0; key < RecsPerPage - padding; key++)
             {
                 long value = ((int)key << 32) + key;
-                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
+                var status = bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref value);
                 if (status.IsPending)
                     _ = bContext.CompletePending(wait: true);
             }

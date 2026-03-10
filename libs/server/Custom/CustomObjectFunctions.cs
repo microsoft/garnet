@@ -40,7 +40,7 @@ namespace Garnet.server
         /// <param name="input">Input</param>
         /// <param name="writer">Output</param>
         /// <returns>True if an initial update is needed, otherwise false</returns>
-        public virtual bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => throw new NotImplementedException();
+        public virtual bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => throw new NotImplementedException();
 
         /// <summary>
         /// Create initial value, given key and input. Optionally generate output for command.

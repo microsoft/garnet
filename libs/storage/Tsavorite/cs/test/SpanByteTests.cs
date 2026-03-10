@@ -22,7 +22,7 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void SpanByteTest1()
+        public unsafe void SpanByteTest1()
         {
             Span<byte> output = stackalloc byte[20];
             PinnedSpanByte input = default;
@@ -36,20 +36,23 @@ namespace Tsavorite.test.spanbyte
                     {
                         IndexSize = 1L << 13,
                         LogDevice = log,
-                        MemorySize = 1L << 17,
+                        LogMemorySize = 1L << 17,
                         PageSize = 1L << 12
                     }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
                 var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
                 var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
                 var output1 = SpanByteAndMemory.FromPinnedSpan(output);
 
-                _ = bContext.Upsert(key1, value1);
-                _ = bContext.Read(key1, ref input, ref output1);
+                fixed (byte* key1Ptr = key1)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(key1Ptr, key1.Length), value1);
+                    _ = bContext.Read(TestSpanByteKey.FromPointer(key1Ptr, key1.Length), ref input, ref output1);
+                }
 
                 ClassicAssert.IsTrue(output1.IsSpanByte);
                 ClassicAssert.IsTrue(output1.SpanByte.ReadOnlySpan.SequenceEqual(value1));
@@ -58,8 +61,11 @@ namespace Tsavorite.test.spanbyte
                 var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
                 var output2 = SpanByteAndMemory.FromPinnedSpan(output);
 
-                _ = bContext.Upsert(key2, value2);
-                _ = bContext.Read(key2, ref input, ref output2);
+                fixed (byte* key2Ptr = key2)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(key2Ptr, key2.Length), value2);
+                    _ = bContext.Read(TestSpanByteKey.FromPointer(key2Ptr, key2.Length), ref input, ref output2);
+                }
 
                 ClassicAssert.IsTrue(!output2.IsSpanByte);
                 ClassicAssert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
@@ -74,7 +80,7 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void MultiRead_SpanByte_Test()
+        public unsafe void MultiRead_SpanByte_Test()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
@@ -86,19 +92,22 @@ namespace Tsavorite.test.spanbyte
                     {
                         IndexSize = 1L << 16,
                         LogDevice = log,
-                        MemorySize = 1L << 15,
+                        LogMemorySize = 1L << 15,
                         PageSize = 1L << 12
                     }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
                 for (int i = 0; i < 200; i++)
                 {
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>($"{i + 1000}".AsSpan());
-                    _ = bContext.Upsert(key, value);
+                    fixed (byte* keyPtr = key)
+                    {
+                        _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                    }
                 }
 
                 // Read, evict all records to disk, read again
@@ -122,8 +131,12 @@ namespace Tsavorite.test.spanbyte
                     SpanByteAndMemory output = default;
 
                     var keySpan = MemoryMarshal.Cast<char, byte>($"{key}".AsSpan());
-                    status = bContext.Read(keySpan, ref output);
-                    ClassicAssert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
+
+                    fixed (byte* keyPtr = keySpan)
+                    {
+                        status = bContext.Read(TestSpanByteKey.FromPointer(keyPtr, keySpan.Length), ref output);
+                        ClassicAssert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
+                    }
 
                     if (evicted)
                         (status, output) = bContext.GetSinglePendingResult();
@@ -153,12 +166,12 @@ namespace Tsavorite.test.spanbyte
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1L << 17,
+                    LogMemorySize = 1L << 17,
                     PageSize = 1L << 10    // 1KB page
                 }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
             const int PageSize = 1024;
@@ -204,7 +217,7 @@ namespace Tsavorite.test.spanbyte
             void Set(long keyValue, Span<byte> valueSpan, int valueLength, byte tag)
             {
                 valueSpan[0] = tag;
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyValue), valueSpan.Slice(0, valueLength), Empty.Default);
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyValue)), valueSpan.Slice(0, valueLength), Empty.Default);
             }
         }
     }

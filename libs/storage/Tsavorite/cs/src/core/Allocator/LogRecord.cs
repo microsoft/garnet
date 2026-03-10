@@ -388,10 +388,14 @@ namespace Tsavorite.core
         /// Initialize record for <see cref="ObjectAllocator{TStoreFunctions}"/>--includes Overflow option for Key and Overflow and Object option for Value
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
+            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
 
             // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
             // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
@@ -400,18 +404,28 @@ namespace Tsavorite.core
             if (sizeInfo.KeyIsInline)
             {
                 InfoRef.SetKeyIsInline();
-                key.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
+                key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
             }
             else
             {
                 InfoRef.SetKeyIsOverflow();
-                var overflow = new OverflowByteArray(key.Length, startOffset: 0, endOffset: 0, zeroInit: false);
-                key.CopyTo(overflow.Span);
+                var overflow = new OverflowByteArray(key.KeyBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
+                key.KeyBytes.CopyTo(overflow.Span);
 
                 // This is record initialization so no object has been allocated for this field yet.
                 var objectId = objectIdMap.Allocate();
                 *(int*)keyAddress = objectId;
                 objectIdMap.Set(objectId, overflow);
+            }
+
+            // Serialize namespace, if any
+            //
+            // Since TKey is generic, the hope is this whole branch gets elided when using a no-namespace key type
+            if (key.HasNamespace)
+            {
+                var namespaceBytes = key.NamespaceBytes;
+                Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
+                namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
             }
 
             // Initialize Value metadata (but we don't have the value here to set yet; that's done in ISessionFunctions).
@@ -446,15 +460,29 @@ namespace Tsavorite.core
         /// Initialize record for <see cref="SpanByteAllocator{TStoreFunctions}"/>--does not include Overflow/Object options so is streamlined
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo)
+        public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
+            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
 
             InfoRef.SetKeyAndValueInline();
 
             // Serialize Key. Do nothing for the value; we've set it inline and the actual value setting is done in ISessionFunctions).
-            key.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
+            key.KeyBytes.CopyTo(new Span<byte>((byte*)keyAddress, sizeInfo.InlineKeySize));
+
+            // Serialize namespace, if any
+            //
+            // Since TKey is generic, the hope is this whole branch gets elided when using a no-namespace key type
+            if (key.HasNamespace)
+            {
+                var namespaceBytes = key.NamespaceBytes;
+                Debug.Assert(namespaceBytes.Length == 1, "Should have exactly 1 namespace byte, variable length is not implemented");
+                namespaceBytes.CopyTo(new Span<byte>((byte*)namespaceAddress, namespaceBytes.Length));
+            }
         }
 
         /// <summary>A ref to the record header</summary>
@@ -711,6 +739,37 @@ namespace Tsavorite.core
 
         public readonly int OptionalLength => ETagLen + ExpirationLen + ObjectLogPositionLen;
 
+        #region IKey
+        /// <inheritdoc/>
+        public readonly bool IsPinned => IsPinnedKey;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public readonly bool HasNamespace
+        {
+            get
+            {
+                // A 1-byte 0 values namespace is the "default" and should be ignored.
+                // Any non-zero value (including the ExtendedNamespaceIndicatorBit being set) means we have a namespace.
+                var indicator = *(byte*)NamespaceAddress;
+                return indicator != 0;
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes
+        {
+            get
+            {
+                Debug.Assert(HasNamespace, "Shouldn't call if !HasNamespace");
+
+                return Namespace;
+            }
+        }
+        #endregion
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetETagAddress(long optionalStartAddress) => optionalStartAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -731,7 +790,7 @@ namespace Tsavorite.core
             // caller. So all we need to do is initialize it to a consistent RecordLength state. We could make this a little leaner for this case but this is
             // called only on recovery from a failed TryAllocate (e.g. HeadAddress moved up so we couldn't complete the allocation), so it's not perf-critical.
             InfoRef = RecordInfo.InitialValid;
-            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, recordType: 0, out _ /*keyAddress*/, out _ /*valueAddress*/);
+            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, recordType: 0, out _ /*keyAddress*/, out _ /*namespaceAddress*/, out _ /*valueAddress*/);
         }
 
         /// <summary>
@@ -1260,7 +1319,32 @@ namespace Tsavorite.core
             return recordSize + keyLength + (int)valueLength;
         }
 
-        public void Dispose(Action<IHeapObject> objectDisposer)
+        public readonly long CalculateHeapMemorySize()
+        {
+            long size = 0;
+            if (!Info.Tombstone)
+            {
+                if (Info.KeyIsOverflow)
+                    size += KeyOverflow.HeapMemorySize;
+
+                if (Info.ValueIsOverflow)
+                    size += ValueOverflow.HeapMemorySize;
+                else if (Info.ValueIsObject)
+                {
+                    var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    var objectId = *(int*)valueAddress;
+                    if (objectId != ObjectIdMap.InvalidObjectId)
+                    {
+                        var valueObject = objectIdMap.GetHeapObject(objectId);
+                        if (valueObject is not null)    // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)
+                            size += valueObject.HeapMemorySize;
+                    }
+                }
+            }
+            return size;
+        }
+
+        public readonly void Dispose(Action<IHeapObject> objectDisposer)
         {
             if (IsSet)
                 ClearHeapFields(clearKey: true, objectDisposer);

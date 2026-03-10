@@ -100,7 +100,7 @@ namespace Resp.benchmark
                 Console.WriteLine($"aof-memory-size:{opts.AofMemorySize}");
                 Console.WriteLine($"aof-page-size:{opts.AofPageSize}");
                 Console.WriteLine($"cluster:{opts.EnableCluster}");
-                Console.WriteLine($"index:{opts.IndexSize}");
+                Console.WriteLine($"index:{opts.IndexMemorySize}");
                 Console.WriteLine($"aof-sublog-count:{opts.AofPhysicalSublogCount}");
                 Console.WriteLine("----------------------------------");
             }

@@ -97,12 +97,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref StringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
+            // We know namespaces aren't present in string functions, so don't populate
             var cmd = input.header.cmd;
             var fieldInfo = new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = 0,
                 HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
@@ -338,11 +343,16 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
+            // We know namespaces aren't present in string functions, so don't populate
             var fieldInfo = new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
             };
@@ -358,10 +368,18 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => throw new GarnetException("String store should not be called with IHeapObject");
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
         {
             if (inputLogRecord.Info.ValueIsObject)

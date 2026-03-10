@@ -73,8 +73,8 @@ namespace Tsavorite.test.LockTests
         }
 
         private TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
-        private ClientSession<long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
-        private BasicContext<long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
+        private ClientSession<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
+        private BasicContext<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
         private IDevice log;
         private LongKeyComparerModulo keyComparer = new(NumRecords);
 
@@ -93,7 +93,7 @@ namespace Tsavorite.test.LockTests
             }, StoreFunctions.Create(keyComparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<long, long, Empty, Functions>(new Functions());
+            session = store.NewSession<TestSpanByteKey, long, long, Empty, Functions>(new Functions());
             bContext = session.BasicContext;
         }
 
@@ -119,7 +119,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 long valueNum = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             // Update
@@ -132,7 +132,7 @@ namespace Tsavorite.test.LockTests
             {
                 var expectedOutput = key * ValueMult + numThreads * numIters;
                 long output = 0;
-                ClassicAssert.IsFalse(bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output).IsPending);
+                ClassicAssert.IsFalse(bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output).IsPending);
                 ClassicAssert.AreEqual(expectedOutput, output);
             }
         }
@@ -141,7 +141,7 @@ namespace Tsavorite.test.LockTests
         {
             for (long keyNum = 0; keyNum < numRecords; ++keyNum)
             {
-                var key = SpanByte.FromPinnedVariable(ref keyNum);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
                 for (var iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
@@ -164,7 +164,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 valueNum = keyNum * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
@@ -172,7 +172,9 @@ namespace Tsavorite.test.LockTests
             long collidingKeyNum = deleteKeyNum + NumRecords;
             keyNum = collidingKeyNum;
             valueNum = collidingKeyNum * ValueMult;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum), deleteKey = SpanByte.FromPinnedVariable(ref deleteKeyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
+            var value = SpanByte.FromPinnedVariable(ref valueNum);
+            var deleteKey = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref deleteKeyNum));
             ClassicAssert.IsFalse(bContext.Upsert(key, value).IsPending);
 
             // Now make sure we did collide
@@ -220,7 +222,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 long valueNum = keyNum * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             var expectedThrowAddress = store.Log.TailAddress;
@@ -239,9 +241,9 @@ namespace Tsavorite.test.LockTests
                 long input = 0;
                 var status = updateOp switch
                 {
-                    UpdateOp.RMW => bContext.RMW(SpanByte.FromPinnedVariable(ref insertKeyNum), ref input),
-                    UpdateOp.Upsert => bContext.Upsert(SpanByte.FromPinnedVariable(ref insertKeyNum), SpanByte.FromPinnedVariable(ref input)),
-                    UpdateOp.Delete => bContext.Delete(SpanByte.FromPinnedVariable(ref deleteKeyNum)),
+                    UpdateOp.RMW => bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), ref input),
+                    UpdateOp.Upsert => bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), SpanByte.FromPinnedVariable(ref input)),
+                    UpdateOp.Delete => bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref deleteKeyNum))),
                     _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
                 };
                 ClassicAssert.IsFalse(status.IsPending);

@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -637,7 +638,7 @@ namespace Garnet.server
                 db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TInput, TOutput, long>>(sessionFunctions);
+            using var session = store.NewSession<FixedSpanByteKey, TInput, TOutput, long, ISessionFunctions<TInput, TOutput, long>>(sessionFunctions);
             var basicContext = session.BasicContext;
             // region: Immutable || Mutable
             // state: RCUdSealed || RCUdUnsealed || Tombstoned || ElidedFromHashIndex || Live
@@ -664,7 +665,7 @@ namespace Garnet.server
                 {
                     state = "Tombstoned";
                 }
-                else if (!basicContext.ContainsKeyInMemory(iter.Key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
+                else if (!basicContext.ContainsKeyInMemory((FixedSpanByteKey)iter.Key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
                 {
                     // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
                     state = "RCUdUnsealed";

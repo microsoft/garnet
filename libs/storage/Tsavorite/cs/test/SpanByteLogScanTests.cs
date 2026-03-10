@@ -22,12 +22,25 @@ namespace Tsavorite.test.spanbyte
 
         internal SpanByteComparerModulo(long mod) => this.mod = mod;
 
-        public readonly bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => SpanByteComparer.StaticEquals(k1, k2);
+        public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(ReadOnlySpan<byte> k)
+        public readonly long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            long hash = SpanByteComparer.StaticGetHashCode64(k);
+            long hash = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return mod > 0 ? hash % mod : hash;
         }
     }
@@ -66,7 +79,7 @@ namespace Tsavorite.test.spanbyte
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 25,
+                LogMemorySize = 1L << 25,
                 PageSize = 1L << PageSizeBits
             }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -98,11 +111,11 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public unsafe void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             const long PageSize = 1L << PageSizeBits;
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(101);
@@ -111,8 +124,13 @@ namespace Tsavorite.test.spanbyte
             {
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
+
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                _ = bContext.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store);
@@ -151,7 +169,10 @@ namespace Tsavorite.test.spanbyte
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i + TotalRecords}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i + TotalRecords}".AsSpan());
-                _ = bContext.Upsert(key, value);
+                fixed (byte* keyPtr = key)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                }
             }
             scanCursorFuncs.Initialize(verifyKeys);
             ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 2");
@@ -193,9 +214,9 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void SpanByteScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public unsafe void SpanByteScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(101);
@@ -205,7 +226,10 @@ namespace Tsavorite.test.spanbyte
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                _ = bContext.Upsert(key, value);
+                fixed (byte* keyPtr = key)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store);
@@ -229,9 +253,9 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void SpanByteScanCursorWithRCUTest([Values(RCULocation.RCUBefore, RCULocation.RCUAfter)] RCULocation rcuLocation, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public unsafe void SpanByteScanCursorWithRCUTest([Values(RCULocation.RCUBefore, RCULocation.RCUAfter)] RCULocation rcuLocation, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(101);
@@ -241,7 +265,10 @@ namespace Tsavorite.test.spanbyte
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                _ = bContext.Upsert(key, value);
+                fixed (byte* keyPtr = key)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store)
@@ -298,7 +325,7 @@ namespace Tsavorite.test.spanbyte
                 this.filter = filter;
             }
 
-            void CheckForRCU()
+            unsafe void CheckForRCU()
             {
                 if (rcuLocation == RCULocation.RCUBefore && rcuRecord == numRecords + 1
                     || rcuLocation == RCULocation.RCUAfter && rcuRecord == numRecords - 1)
@@ -306,13 +333,16 @@ namespace Tsavorite.test.spanbyte
                     // Must run this on another thread because we are epoch-protected on this one.
                     Task.Run(() =>
                     {
-                        using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+                        using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
                         var bContext = session.BasicContext;
 
                         var valueFill = new string('x', 220);   // Update the specified key with a longer value that requires RCU.
                         var key = MemoryMarshal.Cast<char, byte>($"key_{rcuRecord}".AsSpan());
                         var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{rcuRecord}".AsSpan());
-                        _ = bContext.Upsert(key, value);
+                        fixed (byte* keyPtr = key)
+                        {
+                            _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                        }
                     }).Wait();
 
                     // If we RCU before Scan arrives at the record, then we won't see it and the values will be off by one (higher).
@@ -361,7 +391,7 @@ namespace Tsavorite.test.spanbyte
         [Category("TsavoriteKV")]
         [Category("Smoke")]
 
-        public void SpanByteJumpToBeginAddressTest()
+        public unsafe void SpanByteJumpToBeginAddressTest()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
@@ -373,13 +403,13 @@ namespace Tsavorite.test.spanbyte
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 PageSize = 1L << PageSizeBits
             }, StoreFunctions.Create(new SpanByteComparerModulo(0), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
             var bContext = session.BasicContext;
 
             const int numRecords = 200;
@@ -396,7 +426,11 @@ namespace Tsavorite.test.spanbyte
 
                 var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
-                _ = bContext.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                {
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), value);
+                }
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
@@ -429,7 +463,7 @@ namespace Tsavorite.test.spanbyte
         public void SpanByteIterationPendingCollisionTest([Values(HashModulo.Hundred)] HashModulo hashMod)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
-            using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
             IterationCollisionTestFunctions scanIteratorFunctions = new();
 
@@ -443,7 +477,7 @@ namespace Tsavorite.test.spanbyte
             for (int ii = 0; ii < totalRecords; ii++)
             {
                 key = value = ii;
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
             }
 
             // Evict so we can test the pending scan push

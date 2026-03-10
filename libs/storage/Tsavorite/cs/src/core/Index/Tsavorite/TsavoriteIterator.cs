@@ -60,8 +60,8 @@ namespace Tsavorite.core
     {
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> tempKv;
-        private readonly ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempKvSession;
-        private readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext;
+        private readonly ClientSession<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempKvSession;
+        private readonly BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext;
         private ITsavoriteScanIterator mainKvIter;
         private ITsavoriteScanIterator tempKvIter;
 
@@ -88,7 +88,7 @@ namespace Tsavorite.core
             };
 
             tempKv = new TsavoriteKV<TStoreFunctions, TAllocator>(tempKVSettings, store.storeFunctions, store.allocatorFactory);
-            tempKvSession = tempKv.NewSession<TInput, TOutput, TContext, TFunctions>(functions);
+            tempKvSession = tempKv.NewSession<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions>(functions);
             tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);
         }
@@ -120,10 +120,10 @@ namespace Tsavorite.core
                     if (mainKvIter.GetNext())
                     {
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
-                        if (IsTailmostMainKvRecord(mainKvIter.Key, mainKvIter.Info, ref stackCtx))
+                        if (IsTailmostMainKvRecord(mainKvIter, mainKvIter.Info, ref stackCtx))
                             return true;
 
-                        ProcessNonTailmostMainKvRecord(mainKvIter.Info, mainKvIter.Key);
+                        ProcessNonTailmostMainKvRecord(mainKvIter.Info, mainKvIter);
                         continue;
                     }
 
@@ -164,15 +164,14 @@ namespace Tsavorite.core
                     {
                         try
                         {
-                            var key = mainKvIter.Key;
-                            if (IsTailmostMainKvRecord(key, mainKvIter.Info, ref stackCtx))
+                            if (IsTailmostMainKvRecord(mainKvIter, mainKvIter.Info, ref stackCtx))
                             {
                                 // Push Iter records are in temp storage so do not need locks.
                                 stop = !scanFunctions.Reader(in mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress, mainKvIter.ETag), numRecords, out _);
                                 return !stop;
                             }
 
-                            ProcessNonTailmostMainKvRecord(mainKvIter.Info, key);
+                            ProcessNonTailmostMainKvRecord(mainKvIter.Info, mainKvIter);
                             continue;
                         }
                         catch (Exception ex)
@@ -216,7 +215,7 @@ namespace Tsavorite.core
             }
         }
 
-        private void ProcessNonTailmostMainKvRecord(RecordInfo recordInfo, ReadOnlySpan<byte> key)
+        private void ProcessNonTailmostMainKvRecord(RecordInfo recordInfo, ITsavoriteScanIterator key)
         {
             // Not the tailmost record in the tag chain so add it to or remove it from tempKV (we want to return only the latest version).
             if (recordInfo.Tombstone)
@@ -233,7 +232,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IsTailmostMainKvRecord(ReadOnlySpan<byte> key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+        bool IsTailmostMainKvRecord(ITsavoriteScanIterator key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
             if (store.FindTag(ref stackCtx.hei))
@@ -341,6 +340,24 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public int ActualSize => CurrentIter.ActualSize;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long CalculateHeapMemorySize() => CurrentIter.CalculateHeapMemorySize();
         #endregion // ISourceLogRecord
+
+        #region IKey
+        /// <inheritdoc/>
+        public bool IsPinned => IsPinnedKey;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public bool HasNamespace => CurrentIter.HasNamespace;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => CurrentIter.NamespaceBytes;
+        #endregion
     }
 }

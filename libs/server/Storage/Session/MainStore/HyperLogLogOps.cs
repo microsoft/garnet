@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -13,7 +14,7 @@ namespace Garnet.server
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
         /// </summary>
         public unsafe GarnetStatus HyperLogLogAdd<TStringContext>(PinnedSpanByte key, string[] elements, out bool updated, ref TStringContext context)
-             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             updated = false;
 
@@ -60,11 +61,11 @@ namespace Garnet.server
         /// <param name="context"></param>
         /// <returns></returns>
         public GarnetStatus HyperLogLogAdd<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
-          where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+          where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
         public unsafe GarnetStatus HyperLogLogLength<TStringContext>(Span<PinnedSpanByte> keys, out long count, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             metaCommandInfo.Initialize();
 
@@ -89,7 +90,7 @@ namespace Garnet.server
         /// <param name="context"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HyperLogLogLength<TStringContext>(ref StringInput input, out long count, out bool error, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             error = false;
             count = default;

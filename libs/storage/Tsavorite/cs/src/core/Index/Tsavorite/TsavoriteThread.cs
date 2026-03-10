@@ -58,7 +58,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                InternalCompletePendingRequests(sessionFunctions, completedOutputs);
+                InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, completedOutputs);
                 if (wait)
                     sessionFunctions.Ctx.WaitPending(epoch);
 

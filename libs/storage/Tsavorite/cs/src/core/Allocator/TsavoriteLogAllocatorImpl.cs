@@ -35,30 +35,6 @@ namespace Tsavorite.core
             Initialize();
         }
 
-        void ReturnPage(int index)
-        {
-            Debug.Assert(index < BufferSize);
-            if (pagePointers[index] != default)
-            {
-                _ = freePagePool.TryAdd(new()
-                {
-                    pointer = pagePointers[index],
-                    value = Empty.Default
-                });
-                pagePointers[index] = default;
-                _ = Interlocked.Decrement(ref AllocatedPageCount);
-            }
-        }
-
-        /// <summary>
-        /// Dispose memory allocator
-        /// </summary>
-        public override void Dispose()
-        {
-            base.Dispose();
-            freePagePool.Dispose();
-        }
-
         /// <summary>
         /// Allocate memory page, pinned in memory
         /// </summary>
@@ -68,13 +44,51 @@ namespace Tsavorite.core
             IncrementAllocatedPageCount();
 
             if (freePagePool.TryGet(out var item))
+            {
+                pageArrays[index] = item.array;
                 pagePointers[index] = item.pointer;
+            }
             else
             {
                 // No free pages are available so allocate new
                 AllocatePinnedPageArray(index);
             }
             PageHeader.Initialize(pagePointers[index]);
+        }
+
+        void ReturnPage(int index)
+        {
+            Debug.Assert(index < BufferSize);
+            if (pagePointers[index] != default)
+            {
+                _ = freePagePool.TryAdd(new()
+                {
+                    array = pageArrays[index],
+                    pointer = pagePointers[index],
+                    value = Empty.Default
+                });
+                pageArrays[index] = default;
+                pagePointers[index] = default;
+                _ = Interlocked.Decrement(ref AllocatedPageCount);
+            }
+        }
+
+        internal void FreePage(long page)
+        {
+            ClearPage(page, 0);
+
+            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
+            if (logSizeTracker is not null)
+                ReturnPage((int)(page % BufferSize));
+        }
+
+        /// <summary>
+        /// Dispose memory allocator
+        /// </summary>
+        public override void Dispose()
+        {
+            base.Dispose();
+            freePagePool.Dispose();
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -90,7 +104,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDeviceForSnapshot<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -100,13 +114,6 @@ namespace Tsavorite.core
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)alignedPageSize, callback, asyncResult,
                         device);
-        }
-
-        internal void FreePage(long page)
-        {
-            ClearPage(page, 0);
-            if (EmptyPageCount > 0)
-                ReturnPage((int)(page % BufferSize));
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
@@ -141,7 +148,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, ReadOnlySpan<byte> key,
+        internal override bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, TKey key,
                 long beginAddress, ref TScanFunctions scanFunctions)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 
