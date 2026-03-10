@@ -295,7 +295,7 @@ context for the stub — no additional Tsavorite context type is required.
   cannot be inlined into Tsavorite's log the way a `HashObject` or `SortedSetObject` can.
 - The stub pattern cleanly separates metadata persistence (Tsavorite checkpoint) from
   index operations (Bf-Tree).
-- A 50-byte fixed-size stub is a natural fit for the string context's inline byte values,
+- A 51-byte fixed-size stub is a natural fit for the string context's inline byte values,
   avoiding the overhead of `GarnetObjectBase` serialization.
 - The `RecordInfo.ValueIsObject` bit remains `false` for RangeIndex records, distinguishing
   them from collection objects.
@@ -376,14 +376,14 @@ RESP Client ("RI.SET r1 mykey myval")
 ## The Stub (RangeIndexManager.Index.cs)
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
-> the 50-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`.
+> the 51-byte `Index` struct, `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`.
 
 A fixed-size struct stored as a raw-byte (non-object) value in the unified store, accessed
 via the string context. Since `RecordInfo.ValueIsObject` is `false` for these records, the
 string context's `MainSessionFunctions` handles the RMW/Read/Delete callbacks.
 
 ```csharp
-[StructLayout(LayoutKind.Explicit, Size = 50)]
+[StructLayout(LayoutKind.Explicit, Size = 51)]
 private struct RangeIndexStub
 {
     [FieldOffset(0)]  public nint TreePtr;              // Pointer to live BfTree instance
@@ -394,7 +394,8 @@ private struct RangeIndexStub
     [FieldOffset(28)] public uint LeafPageSize;         // BfTree leaf_page_size
     [FieldOffset(32)] public byte StorageBackend;       // 0=Memory, 1=Disk, 2=Cache
     [FieldOffset(33)] public byte Flags;                // bit 0: WAL enabled
-    [FieldOffset(34)] public Guid ProcessInstanceId;    // Detects stale pointers after restart/eviction
+    [FieldOffset(34)] public byte SerializationPhase;        // 0=REST, 1=SERIALIZING, 2=SERIALIZED (transient, used during checkpoint)
+    [FieldOffset(35)] public Guid ProcessInstanceId;    // Detects stale pointers after restart/eviction
 }
 ```
 
@@ -406,6 +407,10 @@ private struct RangeIndexStub
 - `ProcessInstanceId` — Each `RangeIndexManager` instance generates a unique `Guid` at
   startup. When reading a stub, if `stub.ProcessInstanceId != this.processInstanceId`,
   the pointer is stale and the BfTree must be recreated from snapshot.
+- `SerializationPhase` — Transient state used during checkpoint to coordinate between
+  `CopyUpdater` and the snapshot flush callback (analogous to `SerializationPhase` in
+  `HeapObjectBase`). Values: `0` = REST, `1` = SERIALIZING, `2` = SERIALIZED.
+  Meaningless on disk — reset on recovery.
 - Config fields (`CacheSize`, `MinRecordSize`, etc.) — Persisted so recovery can
   reconstruct the BfTree with identical configuration.
 
@@ -953,7 +958,7 @@ internal sealed unsafe partial class StorageSession
 public sealed partial class RangeIndexManager : IDisposable
 {
     // --- Constants ---
-    internal const int IndexSizeBytes = 50; // sizeof(RangeIndexStub)
+    internal const int IndexSizeBytes = 51; // sizeof(RangeIndexStub)
     internal const long RISetAppendLogArg = long.MinValue;
     internal const long RecreateIndexArg = RISetAppendLogArg + 1;
     internal const long RIDelAppendLogArg = RecreateIndexArg + 1;
@@ -1037,7 +1042,7 @@ public sealed partial class RangeIndexManager : IDisposable
 #### 7b. `RangeIndexManager.Index.cs` — Stub struct + serialization
 
 > **Prototype reference:** [`VectorManager.Index.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Index.cs) —
-> 50-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `SetContextForMigration()`.
+> 51-byte `Index` struct with `CreateIndex()`, `ReadIndex()`, `RecreateIndex()`, `SetContextForMigration()`.
 
 <details>
 <summary>RangeIndexStub struct and serialization methods (click to expand)</summary>
@@ -1048,7 +1053,7 @@ public sealed partial class RangeIndexManager
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     private struct RangeIndexStub
     {
-        internal const int Size = 50;
+        internal const int Size = 51;
 
         [FieldOffset(0)]  public nint TreePtr;
         [FieldOffset(8)]  public ulong CacheSize;
@@ -1058,7 +1063,8 @@ public sealed partial class RangeIndexManager
         [FieldOffset(28)] public uint LeafPageSize;
         [FieldOffset(32)] public byte StorageBackend;
         [FieldOffset(33)] public byte Flags;
-        [FieldOffset(34)] public Guid ProcessInstanceId;
+        [FieldOffset(34)] public byte SerializationPhase;
+        [FieldOffset(35)] public Guid ProcessInstanceId;
     }
 
     /// Write a new stub into the value span of a LogRecord.
@@ -1279,6 +1285,39 @@ case RespCommand.RICREATE:
 
 #### CopyUpdater
 
+After copying the stub to the new record, we must handle the old record's BfTree
+carefully. This is the inline-bytes analogue of `CacheSerializedObjectData` in
+`HeapObjectBase.cs`, which uses a `SerializationPhase` state machine (`REST` →
+`SERIALIZING` → `SERIALIZED`) to coordinate between CopyUpdater and concurrent
+snapshot flush.
+
+**The problem:** During a checkpoint, the snapshot flush callback needs a consistent
+BfTree snapshot. But once CopyUpdater completes and the new record becomes visible,
+concurrent operations will modify the BfTree through the new record — racing with the
+snapshot flush trying to read the same BfTree for the old (checkpoint-version) record.
+
+**The solution:** The CopyUpdater itself snapshots the BfTree (under the exclusive RMW
+lock, before the new record is visible), producing a stable file. The snapshot flush
+callback then uses the already-written file instead of the live BfTree.
+
+A `SerializationPhase` state machine on the RangeIndexManager (per-index, keyed by
+`TreePtr`) coordinates this:
+- **`REST`** — no snapshot in progress
+- **`SERIALIZING`** — CopyUpdater or snapshot flush is writing the BfTree to disk
+- **`SERIALIZED`** — a stable snapshot file exists for this checkpoint version
+
+**Two cases in CopyUpdater:**
+
+1. **No checkpoint in progress** (`!srcLogRecord.Info.IsInNewVersion`):
+   Zero `TreePtr` in the old stub. Eviction sees `TreePtr == 0` and skips.
+
+2. **Checkpoint in progress** (`srcLogRecord.Info.IsInNewVersion`):
+   The old record is part of the checkpoint. Snapshot the BfTree now (transition
+   `REST` → `SERIALIZING` → `SERIALIZED`), then zero `TreePtr` in the old stub.
+   The snapshot flush callback sees `SERIALIZED` and uses the file, or sees
+   `SERIALIZING` and waits (spin-yield), matching the `CacheSerializedObjectData`
+   pattern.
+
 <details>
 <summary>CopyUpdater case (click to expand)</summary>
 
@@ -1297,6 +1336,27 @@ case RespCommand.RICREATE:
     else
     {
         srcLogRecord.ValueSpan.CopyTo(dstLogRecord.ValueSpan);
+    }
+
+    // Handle old record's BfTree — analogous to CacheSerializedObjectData.
+    ReadIndex(srcLogRecord.ValueSpan, out var treePtr, ...);
+    if (treePtr != nint.Zero)
+    {
+        if (srcLogRecord.Info.IsInNewVersion)
+        {
+            // Checkpoint in progress: snapshot the BfTree NOW, before the new
+            // record becomes visible and concurrent ops modify the tree.
+            // Uses SerializationPhase state machine to coordinate with flush callback.
+            functionsState.rangeIndexManager.SnapshotForCheckpoint(
+                treePtr, srcLogRecord.Key);
+        }
+
+        // Zero TreePtr in old record — safe now because either:
+        // (a) no checkpoint → eviction will skip, or
+        // (b) checkpoint → snapshot file already written above
+        ref var oldStub = ref Unsafe.As<byte, RangeIndexStub>(
+            ref MemoryMarshal.GetReference(srcLogRecord.ValueSpan));
+        oldStub.TreePtr = nint.Zero;
     }
     break;
 ```
@@ -1747,7 +1807,7 @@ internal readonly RangeIndexManager rangeIndexManager;
 > first access, restoring from snapshot at that point. This matches how VectorSet
 > handles recovery on the prototype branch.
 
-**Checkpoint:** No separate pre-checkpoint scan. BfTrees are snapshotted per-record
+**Checkpoint:** No separate pre-checkpoint scan. BfTrees are serialized per-record
 during the snapshot page flush via the `OnSnapshotRecord` callback (see section B below).
 
 **Recovery:** No proactive store scan needed. After Tsavorite recovery, the stubs contain
@@ -1972,11 +2032,22 @@ public void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
     ReadIndex(logRecord.ValueSpan, out var treePtr, ...);
     if (treePtr == nint.Zero) return;
 
-    // Flush BfTree state to its SSD backend file, then free native instance.
-    // The backend file path is deterministic from the key bytes.
-    // No copy needed — the backend file IS the snapshot for cold-read recovery.
-    rangeIndexManager.service.Snapshot(treePtr);
-    rangeIndexManager.service.Drop(treePtr);
+    // Acquire exclusive lock to ensure no concurrent RI operations are
+    // mid-flight on this BfTree when we snapshot + free it.
+    var keyHash = HashKeyToGuid(logRecord.Key);
+    rangeIndexManager.rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+    try
+    {
+        // Flush BfTree state to its SSD backend file, then free native instance.
+        // The backend file path is deterministic from the key bytes.
+        // No copy needed — the backend file IS the snapshot for cold-read recovery.
+        rangeIndexManager.service.Snapshot(treePtr);
+        rangeIndexManager.service.Drop(treePtr);
+    }
+    finally
+    {
+        rangeIndexManager.rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+    }
 }
 ```
 
@@ -2038,17 +2109,14 @@ The callbacks only fire on cold paths (page eviction / page load from disk).
 ### B. Checkpoint
 
 **No separate pre-checkpoint scan needed.** During a snapshot checkpoint, Tsavorite
-flushes pages to the snapshot file. At this point, the same per-record callback mechanism
-used for eviction (e.g., `DisposeRecord` with a snapshot-specific `DisposeReason`, or a
-new `OnSnapshotToDisk` callback) can be invoked for each record being written to the
-snapshot. For RangeIndex stubs, this callback snapshots the BfTree to disk alongside the
-Tsavorite snapshot page, using the deterministic path derived from the key bytes and
-checkpoint token.
+flushes pages to the snapshot file. A per-record callback is invoked for each record
+being written to the snapshot. For RangeIndex stubs, this callback ensures a stable
+BfTree snapshot file exists for the checkpoint.
 
 **Important: snapshot consistency.** The bf-tree `snapshot()` method flushes state to
 the **same SSD backend file** the tree uses for operations. It does not create a separate
 point-in-time copy. Subsequent writes to the BfTree modify the same file, overwriting the
-snapshotted state. For checkpoint correctness, we need a point-in-time copy.
+serialized state. For checkpoint correctness, we need a point-in-time copy.
 
 **Approach: reflink (copy-on-write) file clone.** After calling `snapshot()` to flush the
 BfTree state, create a **reflink copy** of the backend file to the checkpoint directory.
@@ -2058,8 +2126,6 @@ new blocks without affecting the checkpoint copy. On filesystems without reflink
 (ext4, NTFS), this falls back to a regular file copy.
 
 ```csharp
-// Linux: ioctl FICLONE or cp --reflink=auto
-// .NET: File.Copy as fallback; use ioctl for reflink
 private static void ReflinkCopy(string source, string destination)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(destination));
@@ -2069,7 +2135,17 @@ private static void ReflinkCopy(string source, string destination)
 }
 ```
 
-The per-record callback during snapshot page flush becomes:
+**Coordination with CopyUpdater via `SerializationPhase` state machine:**
+
+The CopyUpdater (Step 8) may have already serialized the BfTree for this checkpoint
+version (when `IsInNewVersion` was true). The `SerializationPhase` state machine
+(`REST` → `SERIALIZING` → `SERIALIZED`) coordinates this:
+
+- If `SERIALIZED`: CopyUpdater already wrote the file — the snapshot callback just
+  reflink-copies it to the checkpoint directory. No need to touch the live BfTree.
+- If `SERIALIZING`: Another thread is writing — spin-yield until `SERIALIZED`.
+- If `REST`: No CopyUpdate happened — the snapshot callback snapshots the BfTree itself
+  (under exclusive lock) and reflink-copies.
 
 > **Tsavorite change required:** Invoke a per-record callback during snapshot page flush,
 > analogous to `DisposeRecord` on eviction. This could be a new `DisposeReason` value
@@ -2088,21 +2164,40 @@ public void OnSnapshotRecord(ref LogRecord logRecord, Guid checkpointToken, stri
     ReadIndex(logRecord.ValueSpan, out var treePtr, ...);
     if (treePtr == nint.Zero) return;
 
-    // Derive paths deterministically from key bytes in the LogRecord
     var keyBytes = logRecord.Key;
     var backendPath = DeriveBackendPath(keyBytes, rangeIndexManager.dataDir);
     var checkpointPath = DeriveSnapshotPath(keyBytes, checkpointDir, checkpointToken);
 
-    // Acquire exclusive lock to block all RI operations on this index
-    // during the flush+copy window.
+    // Check SerializationPhase — CopyUpdater may have already serialized
+    while (true)
+    {
+        var phase = rangeIndexManager.GetSerializationPhase(treePtr);
+        if (phase == SerializationPhase.SERIALIZED)
+        {
+            // CopyUpdater already wrote the snapshot — just reflink-copy
+            ReflinkCopy(backendPath, checkpointPath);
+            return;
+        }
+        if (phase == SerializationPhase.SERIALIZING)
+        {
+            // Another thread is writing — wait
+            Thread.Yield();
+            continue;
+        }
+
+        // REST — we need to snapshot the BfTree ourselves
+        if (rangeIndexManager.TryTransitionSerializationPhase(treePtr,
+                SerializationPhase.REST, SerializationPhase.SERIALIZING))
+            break;
+    }
+
+    // Acquire exclusive lock, snapshot, reflink-copy
     var keyHash = HashKeyToGuid(keyBytes);
     rangeIndexManager.rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
     try
     {
-        // 1. Flush BfTree state to its SSD backend file
         rangeIndexManager.service.Snapshot(treePtr);
-
-        // 2. Reflink-copy the backend file to the checkpoint directory
+        rangeIndexManager.SetSerializationPhase(treePtr, SerializationPhase.SERIALIZED);
         ReflinkCopy(backendPath, checkpointPath);
     }
     finally
@@ -2112,7 +2207,8 @@ public void OnSnapshotRecord(ref LogRecord logRecord, Guid checkpointToken, stri
 }
 ```
 
-**After checkpoint:** Optionally clean up old snapshot files from previous checkpoints.
+**After checkpoint:** Reset all `SerializationPhase` states to `REST`. Optionally clean up
+old snapshot files from previous checkpoints.
 
 ---
 
@@ -2214,7 +2310,7 @@ and restores from the snapshot files at the expected paths.
 > keys require special 2-phase migration since BfTree data lives outside Tsavorite.
 
 **Problem:** During slot migration, individual keys are transferred to the target node.
-For a RangeIndex key, we can't just send the 50-byte stub — we must also send the
+For a RangeIndex key, we can't just send the 51-byte stub — we must also send the
 entire BfTree data (all entries in the index). The target node must recreate the BfTree
 from this data.
 
@@ -2263,7 +2359,7 @@ internal bool TransmitRangeIndexKeys()
         // 3. Read snapshot file bytes
         var snapshotBytes = File.ReadAllBytes(tempSnapshotPath);
 
-        // 4. Send to target: [stub (50 bytes)] + [snapshot_length (4 bytes)]
+        // 4. Send to target: [stub (51 bytes)] + [snapshot_length (4 bytes)]
         //                   + [snapshot_bytes (N bytes)]
         var payload = new byte[stubBytes.Length + 4 + snapshotBytes.Length];
         Buffer.BlockCopy(stubBytes, 0, payload, 0, stubBytes.Length);
