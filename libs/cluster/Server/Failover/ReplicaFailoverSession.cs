@@ -179,7 +179,7 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                await client.Gossip(configByteArray).ContinueWith(t =>
+                await client.Gossip(configByteArray).ContinueWith(async t =>
                 {
                     var resp = t.Result;
                     try
@@ -193,7 +193,7 @@ namespace Garnet.cluster
 
                             // Check if gossip is from a node that is known and trusted before merging
                             if (current.IsKnown(other.LocalNodeId))
-                                _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                                _ = await clusterProvider.clusterManager.ConfigMerger.EnqueueMergeRequestAsync(ClusterConfig.FromByteArray(returnedConfigArray)).ConfigureAwait(false);
                             else
                                 logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                         }

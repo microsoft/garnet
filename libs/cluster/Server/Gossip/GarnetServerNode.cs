@@ -177,7 +177,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         private Task Gossip(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray).ContinueWith(t =>
+            return gc.Gossip(configByteArray).ContinueWith(async t =>
             {
                 try
                 {
@@ -190,7 +190,7 @@ namespace Garnet.cluster
                         var current = clusterProvider.clusterManager.CurrentConfig;
                         // Check if gossip is from a node that is known and trusted before merging
                         if (current.IsKnown(other.LocalNodeId))
-                            clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                            _ = await clusterProvider.clusterManager.ConfigMerger.EnqueueMergeRequestAsync(ClusterConfig.FromByteArray(returnedConfigArray)).ConfigureAwait(false);
                         else
                             logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }

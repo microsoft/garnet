@@ -105,7 +105,7 @@ namespace Garnet.cluster
 
                 #region transferSlotOwnnershipToTargetNode
                 // Lock config merge to avoid a background epoch bump
-                clusterProvider.clusterManager.SuspendConfigMerge();
+                clusterProvider.clusterManager.ConfigMerger.SuspendConfigMerge();
                 configResumed = false;
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
 
@@ -140,7 +140,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
+                if (!configResumed) clusterProvider.clusterManager.ConfigMerger.ResumeConfigMerge();
                 clusterProvider.storeWrapper.store.ResumeRevivification();
                 _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
             }

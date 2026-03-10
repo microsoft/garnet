@@ -413,12 +413,12 @@ namespace Garnet.test.cluster
             }
 
             //Set-config-epoch
-            for (int i = 0; i < endpoints.Length; i++)
+            for (var i = 0; i < endpoints.Length; i++)
                 SetConfigEpoch(endpoints[i], i + 1, logger);
 
             //Initiate meet
             var _firstEndpoint = endpoints[0];
-            for (int i = 1; i < endpoints.Length; i++)
+            for (var i = 1; i < endpoints.Length; i++)
                 Meet(_firstEndpoint, endpoints[i], logger);
 
             //WaitForClusterJoin(clusterConfig);
@@ -427,8 +427,8 @@ namespace Garnet.test.cluster
             //Assign replicas
             if (replica_count > 0)
             {
-                int j = 0;
-                for (int i = primary_count; i < endpoints.Length; i++)
+                var j = 0;
+                for (var i = primary_count; i < endpoints.Length; i++)
                 {
                     var primaryId = GetLocalNodeId(j);
                     var replicaId = GetLocalNodeId(i);
@@ -441,10 +441,10 @@ namespace Garnet.test.cluster
                     WaitUntilNodeIdIsKnown(j, replicaId, logger);
 
                     var primaryEndpoint = endpoints[i];
-                    string resp = (string)ClusterReplicate(primaryEndpoint, primaryId, logger: logger);
+                    var resp = ClusterReplicate(primaryEndpoint, primaryId, logger: logger);
                     {
                         var msg = "";
-                        for (int k = 0; k < endpoints.Length; k++)
+                        for (var k = 0; k < endpoints.Length; k++)
                         {
                             var ns = ClusterNodes(k, logger).Nodes;
 
@@ -476,7 +476,7 @@ namespace Garnet.test.cluster
 
                 // WaitForReplicas to connect
                 j = 0;
-                for (int i = 0; i < primary_count; i++)
+                for (var i = 0; i < primary_count; i++)
                 {
                     WaitForConnectedReplicaCount(i, replica_count, logger);
                 }

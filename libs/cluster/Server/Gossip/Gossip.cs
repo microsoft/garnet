@@ -193,7 +193,7 @@ namespace Garnet.cluster
 
                     logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
                     // Merge without a check because node is trusted as meet was issued by admin
-                    _ = TryMerge(other, acquireLock);
+                    _ = await clusterProvider.clusterManager.ConfigMerger.EnqueueMergeRequestAsync(other).ConfigureAwait(false);
 
                     gossipStats.UpdateMeetRequestsSucceed();
 

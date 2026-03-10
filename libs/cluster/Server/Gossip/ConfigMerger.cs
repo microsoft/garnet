@@ -47,7 +47,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Suspends merge processing. Acquires the write lock to block background processing.
         /// </summary>
-        public void SuspendMergeProcessing()
+        public void SuspendConfigMerge()
         {
             suspensionLock.WriteLock();
         }
@@ -55,7 +55,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Resumes merge processing. Releases the write lock to allow background processing.
         /// </summary>
-        public void ResumeMergeProcessing()
+        public void ResumeConfigMerge()
         {
             suspensionLock.WriteUnlock();
         }
@@ -168,20 +168,11 @@ namespace Garnet.cluster
             var success = false;
             try
             {
-                // Dequeue first config from the queue
-                if (!processingQueueBundle.Entries.TryDequeue(out var mergedConfig))
-                    return;
-
                 // Consolidate all config merge requests
                 while (processingQueueBundle.Entries.TryDequeue(out var config))
                 {
-                    mergedConfig = mergedConfig
-                        .Merge(config, clusterProvider.clusterManager.WorkerBanList, logger)
-                        .HandleConfigEpochCollision(config, logger);
+                    _ = clusterProvider.clusterManager.TryMerge(config);
                 }
-
-                // Finally merge to local config
-                _ = clusterProvider.clusterManager.TryMerge(mergedConfig);
             }
             catch (Exception ex)
             {

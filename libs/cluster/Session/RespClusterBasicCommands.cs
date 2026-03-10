@@ -379,7 +379,9 @@ namespace Garnet.cluster
                 // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                 if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                 {
-                    _ = clusterProvider.clusterManager.TryMerge(other);
+                    ReleaseCurrentEpoch();
+                    _ = clusterProvider.clusterManager.ConfigMerger.EnqueueMergeRequestAsync(other).GetAwaiter().GetResult();
+                    AcquireCurrentEpoch();
 
                     // Remember that this connection is being used for another cluster node to talk to us
                     Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
