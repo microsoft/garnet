@@ -27,7 +27,7 @@ namespace Garnet.common
             if (ticks > 0)
             {
                 ticks -= DateTimeOffset.UtcNow.Ticks;
-                seconds = ticks > 0 ? (long)TimeSpan.FromTicks(ticks).TotalSeconds : -1;
+                seconds = ticks > 0 ? (ticks + TimeSpan.TicksPerSecond / 2) / TimeSpan.TicksPerSecond : -1;
             }
             return seconds;
         }
@@ -44,7 +44,7 @@ namespace Garnet.common
             if (ticks > 0)
             {
                 ticks -= DateTimeOffset.UtcNow.Ticks;
-                milliseconds = ticks > 0 ? (long)TimeSpan.FromTicks(ticks).TotalMilliseconds : -1;
+                milliseconds = ticks > 0 ? ticks / TimeSpan.TicksPerMillisecond : -1;
             }
             return milliseconds;
         }
