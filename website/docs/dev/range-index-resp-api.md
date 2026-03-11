@@ -318,9 +318,12 @@ prototype branch.
 | 4 | `libs/server/Resp/RangeIndex/RangeIndexManager.Cleanup.cs` | [`VectorManager.Cleanup.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Cleanup.cs) | Post-drop async cleanup: background task that scans and removes orphaned data |
 | 5 | `libs/server/Resp/RangeIndex/RangeIndexManager.Migration.cs` | [`VectorManager.Migration.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Migration.cs) | *(future)* Replication/migration support |
 | 6 | `libs/server/Resp/RangeIndex/RangeIndexManager.Replication.cs` | [`VectorManager.Replication.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/VectorManager.Replication.cs) | *(future)* Primary→replica replication |
-| 7 | `libs/server/Resp/RangeIndex/BfTreeService.cs` | [`DiskANNService.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/DiskANNService.cs) | Wraps native BfTree library via P/Invoke |
-| 8 | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | [`RespServerSessionVectors.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/RespServerSessionVectors.cs) | RESP command handlers (`NetworkRISET`, `NetworkRIGET`, etc.) |
-| 9 | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | *(inline in VectorManager methods)* | Storage session wrappers that acquire locks via manager and call `Try*` methods |
+| 7 | `libs/native/bftree-garnet/BfTreeInterop.csproj` | — | C# interop project: MSBuild cargo target + `ContentWithTargetPath` for native libs |
+| 8 | `libs/native/bftree-garnet/BfTreeService.cs` | [`DiskANNService.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/DiskANNService.cs) | High-level managed wrapper for native BfTree library |
+| 9 | `libs/native/bftree-garnet/NativeBfTreeMethods.cs` | — | `[LibraryImport]` P/Invoke declarations for `bftree_garnet` native library |
+| 10 | `libs/native/bftree-garnet/Cargo.toml` + `src/lib.rs` | [`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/main/diskann-garnet) | Rust FFI wrapper crate: `#[no_mangle] extern "C"` exports over `bf-tree` crate |
+| 11 | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | [`RespServerSessionVectors.cs`](https://github.com/microsoft/garnet/blob/vectorApiPoC-storeV2/libs/server/Resp/Vector/RespServerSessionVectors.cs) | RESP command handlers (`NetworkRISET`, `NetworkRIGET`, etc.) |
+| 12 | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | *(inline in VectorManager methods)* | Storage session wrappers that acquire locks via manager and call `Try*` methods |
 
 Additionally, several existing files are modified (see [Complete File Inventory](#complete-file-inventory)).
 
@@ -1435,20 +1438,26 @@ This approach is simpler and safer than a dedicated drop command:
 The Bf-Tree is a Rust library published on crates.io as
 [`bf-tree`](https://crates.io/crates/bf-tree) (source:
 [`microsoft/bf-tree`](https://github.com/microsoft/bf-tree)). It has no C FFI layer —
-that is provided by a thin **wrapper crate** in the Garnet repo, following the same
-pattern as [`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/metajack/diskann-garnet/diskann-garnet)
-which wraps DiskANN for the VectorSet prototype.
+that is provided by a thin **wrapper crate** in the Garnet repo. Unlike the
+[`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/main/diskann-garnet)
+approach (which publishes a separate NuGet from the DiskANN repo), the `bftree-garnet`
+crate and its C# interop wrapper live **inside the Garnet repo** and the native binaries
+ship inside the existing `Microsoft.Garnet` NuGet package. This avoids the need for a
+separate signing pipeline in the `bf-tree` repo, keeps versioning unified with Garnet,
+and follows the same pattern used by `native_device` (Tsavorite's native storage driver).
 
-#### 11a. Create `bftree-garnet` wrapper crate
+#### 11a. Project structure
 
 **Location:** `libs/native/bftree-garnet/` in the Garnet repo.
 
 ```
 libs/native/bftree-garnet/
-├── Cargo.toml
+├── Cargo.toml                    # Rust cdylib crate, depends on bf-tree from crates.io
 ├── src/
-│   └── lib.rs              # #[no_mangle] extern "C" fn FFI exports
-└── bftree-garnet.nuspec    # NuGet packaging spec
+│   └── lib.rs                    # #[no_mangle] extern "C" fn FFI exports
+└── BfTreeInterop.csproj          # C# project with MSBuild cargo target + interop code
+    ├── NativeBfTreeMethods.cs    #   [LibraryImport] P/Invoke declarations
+    └── BfTreeService.cs          #   High-level managed wrapper
 ```
 
 **`Cargo.toml`:**
@@ -1469,59 +1478,154 @@ bf-tree = "0.4"
 **`src/lib.rs`** — contains all `#[no_mangle] pub extern "C" fn` exports that wrap
 bf-tree's Rust API for C/P/Invoke consumption. See the Rust FFI code below.
 
-**Build:**
-```bash
-cd libs/native/bftree-garnet
-cargo build --release
-# Output: target/release/libbftree_garnet.so (Linux)
-#         target/release/bftree_garnet.dll (Windows)
+**`BfTreeInterop.csproj`** — a C# class library that:
+1. Contains the managed interop code (`NativeBfTreeMethods.cs`, `BfTreeService.cs`)
+2. Has an MSBuild `<Exec>` target that runs `cargo build --release` for local development
+3. Copies the native library to `$(OutDir)` for the current platform
+4. Declares `ContentWithTargetPath` items to include the native library under
+   `runtimes/{rid}/native/` for NuGet packaging
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- Local dev: build Rust crate for current platform -->
+  <Target Name="BuildRustCdylib" BeforeTargets="Build"
+          Condition="'$(CI)' != 'true'">
+    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml" />
+    <!-- Copy to output for local dev -->
+    <Copy Condition="$([MSBuild]::IsOSPlatform('Linux'))"
+          SourceFiles="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so"
+          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          SourceFiles="$(MSBuildThisFileDirectory)target/release/bftree_garnet.dll"
+          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- NuGet packaging: include pre-built native binaries for all platforms.
+       In CI, native binaries are placed here by the pipeline before dotnet build. -->
+  <ItemGroup>
+    <ContentWithTargetPath Include="runtimes/linux-x64/native/libbftree_garnet.so"
+                           TargetPath="runtimes/linux-x64/native/libbftree_garnet.so"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/linux-x64/native/libbftree_garnet.so')" />
+    <ContentWithTargetPath Include="runtimes/win-x64/native/bftree_garnet.dll"
+                           TargetPath="runtimes/win-x64/native/bftree_garnet.dll"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/win-x64/native/bftree_garnet.dll')" />
+  </ItemGroup>
+</Project>
 ```
 
-#### 11b. Package the native library for Garnet
-
-This follows the same approach used by the VectorSet prototype with
-[`diskann-garnet`](https://github.com/microsoft/DiskANN/tree/metajack/diskann-garnet/diskann-garnet):
-the Rust `cdylib` output is packaged into a NuGet with platform-specific binaries under
-`runtimes/{rid}/native/`, and referenced from Garnet's `Directory.Packages.props`.
-
-**NuGet package (recommended):**
-
-1. Build per platform (see 11a above).
-
-2. Create a `.nuspec` (e.g., `bftree-garnet.nuspec`) with the `runtimes/` layout:
-   ```
-   runtimes/linux-x64/native/libbftree_garnet.so
-   runtimes/win-x64/native/bftree_garnet.dll
-   runtimes/osx-x64/native/libbftree_garnet.dylib
-   ```
-
-3. Pack and publish (or use a local NuGet source for development):
-   ```bash
-   nuget pack -BasePath target/pkg -OutputDirectory /path/to/local-nuget
-   ```
-
-4. Reference from Garnet — add to `Directory.Packages.props`:
-   ```xml
-   <PackageVersion Include="bftree-garnet" Version="0.1.0" />
-   ```
-   And to `Garnet.server.csproj`:
-   ```xml
-   <PackageReference Include="bftree-garnet" />
-   ```
-
-**Direct file copy (for local development):**
-```bash
-cp libs/native/bftree-garnet/target/release/libbftree_garnet.so \
-   main/GarnetServer/bin/Debug/net10.0/
+**`Garnet.server.csproj`** references this project:
+```xml
+<ProjectReference Include="../../native/bftree-garnet/BfTreeInterop.csproj" />
 ```
 
-**CI/CD considerations:**
-- The Azure pipeline for external release must be updated to build the `bftree-garnet`
-  crate (for each target platform), package the NuGet, **sign it**, and publish it.
-- The pipeline should detect when the `bf-tree` crate version changes in
-  `libs/native/bftree-garnet/Cargo.toml` and trigger a new NuGet release.
-- The NuGet package must be signed before publishing, consistent with Garnet's existing
-  package signing requirements.
+#### 11b. Pipeline build and signing plan
+
+The native library is built as part of Garnet's existing release pipeline
+(`azure-pipelines-external-release.yml`). A new **Stage 1** builds the Rust crate on
+each target platform, then the existing .NET build/sign/pack stages consume the outputs.
+
+**Stage 1: Build Native (new, matrix job)**
+
+Two parallel agents build the Rust crate for their respective platforms:
+
+| Agent | Rust target | Output |
+|---|---|---|
+| Linux (ubuntu) | `x86_64-unknown-linux-gnu` | `libbftree_garnet.so` |
+| Windows | `x86_64-pc-windows-msvc` | `bftree_garnet.dll` |
+
+Each agent:
+1. Installs the Rust toolchain (e.g., via `rustup`)
+2. Runs `cargo build --release --manifest-path libs/native/bftree-garnet/Cargo.toml`
+3. Uploads the native library as a pipeline artifact
+
+```yaml
+# Pseudocode for azure-pipelines-external-release.yml additions:
+- stage: BuildNative
+  jobs:
+  - job: BuildNativeLinux
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - script: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source $HOME/.cargo/env
+        cargo build --release --manifest-path libs/native/bftree-garnet/Cargo.toml
+    - publish: libs/native/bftree-garnet/target/release/libbftree_garnet.so
+      artifact: native-linux-x64
+
+  - job: BuildNativeWindows
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - script: |
+        rustup default stable
+        cargo build --release --manifest-path libs/native/bftree-garnet/Cargo.toml
+    - publish: libs/native/bftree-garnet/target/release/bftree_garnet.dll
+      artifact: native-win-x64
+```
+
+**Stage 2: Build .NET + Sign + Pack (existing stage, modified)**
+
+Before the existing `dotnet build` step, download the native artifacts from Stage 1 and
+place them in the expected `runtimes/` layout:
+
+```yaml
+# Download and place native binaries
+- download: current
+  artifact: native-linux-x64
+- download: current
+  artifact: native-win-x64
+- script: |
+    mkdir -p libs/native/bftree-garnet/runtimes/linux-x64/native
+    mkdir -p libs/native/bftree-garnet/runtimes/win-x64/native
+    cp $(Pipeline.Workspace)/native-linux-x64/libbftree_garnet.so \
+       libs/native/bftree-garnet/runtimes/linux-x64/native/
+    cp $(Pipeline.Workspace)/native-win-x64/bftree_garnet.dll \
+       libs/native/bftree-garnet/runtimes/win-x64/native/
+```
+
+The rest of the existing pipeline continues unchanged, with two modifications:
+
+1. **ESRP binary signing** — extend the file pattern to include the new native DLL:
+   ```
+   Pattern: Garnet*.dll,Tsavorite*.dll,Garnet*.exe,HdrHistogram.dll,native_device.dll,bftree_garnet.dll,*Lua.dll
+   ```
+
+2. **`dotnet pack`** — no changes needed. The `ContentWithTargetPath` items in
+   `BfTreeInterop.csproj` automatically include the native binaries in the NuGet.
+
+**Signing summary:**
+
+| Artifact | Signed? | Method |
+|---|---|---|
+| `bftree_garnet.dll` (Windows) | ✅ Yes | ESRP Authenticode signing (`CP-230012`), added to existing binary signing glob |
+| `libbftree_garnet.so` (Linux) | ❌ No | Linux shared libraries are not Authenticode-signed (same as `libnative_device.so`) |
+| `Microsoft.Garnet.*.nupkg` | ✅ Yes | Existing ESRP NuGet signing step (`CP-401405`), no changes needed |
+| `garnet-server.*.nupkg` | ✅ Yes | Same existing step, no changes needed |
+
+**Local development experience:**
+
+- `dotnet build` triggers `cargo build --release` via the MSBuild target → copies the
+  current-platform native lib to the output directory → everything works out of the box
+- The `Condition="'$(CI)' != 'true'"` guard on the MSBuild target prevents the local
+  cargo build from running in CI (where pre-built binaries are provided by Stage 1)
+- No Rust toolchain is needed if you're not modifying FFI code — NuGet restore from
+  nuget.org brings pre-built binaries for all platforms in the published package
+
+**Version management:**
+
+- The `bf-tree` crate version is pinned in `libs/native/bftree-garnet/Cargo.toml`
+  (e.g., `bf-tree = "0.4"`)
+- To update: bump the version in `Cargo.toml`; the next pipeline run picks it up
+- No separate NuGet versioning — the native lib ships inside the existing
+  `Microsoft.Garnet` NuGet, versioned together with Garnet via `Version.props`
 
 #### 11c. Implement `BfTreeService` (C# interop wrapper)
 
@@ -1529,7 +1633,7 @@ cp libs/native/bftree-garnet/target/release/libbftree_garnet.so \
 > wraps the unmanaged DiskANN library. BfTreeService follows the same pattern with
 > P/Invoke to the Rust shared library.
 
-**File:** `libs/server/Resp/RangeIndex/BfTreeService.cs` (new)
+**File:** `libs/native/bftree-garnet/BfTreeService.cs` (new, inside BfTreeInterop project)
 
 <details>
 <summary>BfTreeService implementation (click to expand)</summary>
@@ -1842,7 +1946,7 @@ public enum RangeIndexResult
 
 ## Complete File Inventory
 
-### New Files (10 files)
+### New Files (12 files)
 
 | # | File Path | Purpose | Lines (est.) |
 |---|---|---|---|
@@ -1850,14 +1954,16 @@ public enum RangeIndexResult
 | 2 | `libs/server/Resp/RangeIndex/RangeIndexManager.Index.cs` | Stub struct, Create/Read/RecreateIndex | ~120 |
 | 3 | `libs/server/Resp/RangeIndex/RangeIndexManager.Locking.cs` | ReadRangeIndexLock, ReadRangeIndex, ReadOrCreateRangeIndex | ~250 |
 | 4 | `libs/server/Resp/RangeIndex/RangeIndexManager.Cleanup.cs` | Post-drop async cleanup | ~100 |
-| 5 | `libs/server/Resp/RangeIndex/BfTreeService.cs` | High-level BfTree operations wrapper | ~150 |
-| 6 | `libs/server/Resp/RangeIndex/NativeBfTreeMethods.cs` | P/Invoke declarations | ~60 |
-| 7 | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | RESP command handlers | ~400 |
-| 8 | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | Storage session wrappers | ~200 |
-| 9 | `libs/native/bftree-garnet/src/lib.rs` | Rust C FFI exports | ~200 |
-| 10 | `test/Garnet.test/RangeIndexTests.cs` | Integration tests | ~300 |
+| 5 | `libs/server/Resp/RangeIndex/RespServerSessionRangeIndex.cs` | RESP command handlers | ~400 |
+| 6 | `libs/server/Storage/Session/MainStore/RangeIndexOps.cs` | Storage session wrappers | ~200 |
+| 7 | `libs/native/bftree-garnet/BfTreeInterop.csproj` | C# interop project with MSBuild cargo target | ~50 |
+| 8 | `libs/native/bftree-garnet/NativeBfTreeMethods.cs` | [LibraryImport] P/Invoke declarations | ~60 |
+| 9 | `libs/native/bftree-garnet/BfTreeService.cs` | High-level managed BfTree operations wrapper | ~150 |
+| 10 | `libs/native/bftree-garnet/Cargo.toml` | Rust crate config, depends on bf-tree from crates.io | ~15 |
+| 11 | `libs/native/bftree-garnet/src/lib.rs` | Rust #[no_mangle] extern "C" FFI exports | ~200 |
+| 12 | `test/Garnet.test/RangeIndexTests.cs` | Integration tests | ~300 |
 
-### Modified Files (9 files)
+### Modified Files (10 files)
 
 | # | File Path | Change | Scope |
 |---|---|---|---|
@@ -1870,6 +1976,7 @@ public enum RangeIndexResult
 | 7 | `libs/server/Storage/Functions/FunctionsState.cs` | Add `rangeIndexManager` field | ~5 lines |
 | 8 | `libs/server/Storage/Session/StorageSession.cs` | Add `rangeIndexManager` field | ~5 lines |
 | 9 | `libs/server/API/IGarnetApi.cs` + `GarnetApi.cs` | Add RangeIndex* method declarations + delegation | ~60 lines |
+| 10 | `libs/server/Garnet.server.csproj` | Add `<ProjectReference>` to `BfTreeInterop.csproj` | ~2 lines |
 
 ---
 
