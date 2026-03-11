@@ -823,6 +823,7 @@ namespace Garnet.server
                         }
                     };
 
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
                     static RespCommand MatchedNone(RespServerSession session, int oldReadHead)
                     {
                         // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
@@ -2903,11 +2904,10 @@ namespace Garnet.server
             {
                 if (!skipReadCount)
                     count = -1;
+
                 cmd = FastParseCommand(ref count);
                 if (cmd != RespCommand.NONE)
-                {
                     return cmd;
-                }
 
                 if (skipReadCount)
                     count++;
@@ -2933,7 +2933,7 @@ namespace Garnet.server
                 // Move readHead to start of command payload
                 readHead = (int)(ptr - recvBufferPtr);
             }
-
+            
             // Try parsing the most important variable-length commands
             cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
 

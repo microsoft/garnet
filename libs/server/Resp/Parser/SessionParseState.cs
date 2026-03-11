@@ -77,6 +77,7 @@ namespace Garnet.server
 
             if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
             {
+                // Reset buffer pointer to the start of the root buffer (in case it had been moved)
                 bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
                 return;
             }

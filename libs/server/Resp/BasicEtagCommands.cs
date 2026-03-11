@@ -22,9 +22,10 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.GETETAG, ref metaCommandInfo, ref parseState);
+            var input = new UnifiedInput(RespCommand.GETETAG, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput);
 
-            var output = GetUnifiedOutput();
+            var output = new UnifiedOutput();
 
             var status = storageApi.GETETAG(key, ref input, ref output);
             etag = output.ETag;
@@ -32,7 +33,7 @@ namespace Garnet.server
             if (status != GarnetStatus.OK || output.IsOperationSkipped)
                 WriteNull();
             else
-                ProcessOutput(output.SpanByteAndMemory);
+                WriteInt64(output.ETag);
 
             return true;
         }

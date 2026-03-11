@@ -263,6 +263,9 @@ namespace Garnet.server
             var input = new UnifiedInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var isNx = cmd == RespCommand.RENAMENX;
+            if (!isNx)
+                input.header.SetSkipRespOutputFlag();
+            
             var output = isNx ? GetUnifiedOutput() : default;
 
             var status = storageApi.RENAME(key, ref input, ref output);
@@ -271,9 +274,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (output.IsOperationSkipped)
-                        WriteNull();
-                    else if (isNx)
+                    if (isNx)
                         ProcessOutput(output.SpanByteAndMemory);
                     else
                     {
@@ -355,7 +356,8 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.EXISTS, ref metaCommandInfo, ref parseState);
+            var input = new UnifiedInput(RespCommand.EXISTS, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput);
             var output = new UnifiedOutput();
 
             for (var i = 0; i < parseState.Count; i++)
@@ -363,16 +365,21 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(i);
                 var status = storageApi.EXISTS(key, ref input, ref output);
                 if (status == GarnetStatus.OK)
+                {
+                    if (i == 0)
+                    {
+                        if (metaCommandInfo.MetaCommand.IsETagCommand())
+                            etag = output.ETag;
+
+                        if (output.IsOperationSkipped)
+                        {
+                            WriteNull();
+                            return true;
+                        }
+                    }
+
                     exists++;
-            }
-
-            if (metaCommandInfo.MetaCommand.IsETagCommand())
-                etag = output.ETag;
-
-            if (output.IsOperationSkipped)
-            {
-                WriteNull();
-                return true;
+                }
             }
 
             while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
@@ -548,17 +555,10 @@ namespace Garnet.server
             etag = output.ETag;
 
             if (status == GarnetStatus.OK)
-            {
-                if (output.IsOperationSkipped)
-                    WriteNull();
-                else
-                    ProcessOutput(output.SpanByteAndMemory);
-            }
+                ProcessOutput(output.SpanByteAndMemory);
             else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_N2);
+
             return true;
         }
 
@@ -589,17 +589,10 @@ namespace Garnet.server
             etag = output.ETag;
 
             if (status == GarnetStatus.OK)
-            {
-                if (output.IsOperationSkipped)
-                    WriteNull();
-                else
-                    ProcessOutput(output.SpanByteAndMemory);
-            }
+                ProcessOutput(output.SpanByteAndMemory);
             else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_N2);
+
             return true;
         }
     }

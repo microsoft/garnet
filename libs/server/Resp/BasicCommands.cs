@@ -1482,13 +1482,9 @@ namespace Garnet.server
             var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
-            {
                 ProcessOutput(output.SpanByteAndMemory);
-            }
             else
-            {
                 WriteNull();
-            }
 
             return true;
         }

@@ -112,56 +112,52 @@ namespace Garnet.server
             }
 
             var keyCount = parseState.Count;
-            var keysDeleted = 0;
+            PinnedSpanByte key;
+            GarnetStatus status;
 
-            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            // Handle delete if no meta-command is specified.
+            if (metaCommandInfo.MetaCommand == RespMetaCommand.None)
             {
-                // Command currently does not support execution with any meta-commands when more than one key is specified
-                if (keyCount > 1)
-                {
-                    return AbortWithCommandUnsupportedWithMetaCommand(cmd.ToString(),
-                        metaCommandInfo.MetaCommand.ToString());
-                }
+                var keysDeleted = 0;
 
-                var input = new UnifiedInput(RespCommand.DEL, ref metaCommandInfo, ref parseState);
-                var output = new UnifiedOutput();
-
-                var key = parseState.GetArgSliceByRef(0);
-                var status = storageApi.DEL_Conditional(key, ref input, ref output);
-                etag = output.ETag;
-
-                if (output.IsOperationSkipped)
-                {
-                    WriteNull();
-                    return true;
-                }
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        keysDeleted++;
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        WriteNull();
-                        return true;
-                }
-            }
-            else
-            {
                 for (var c = 0; c < parseState.Count; c++)
                 {
-                    var key = parseState.GetArgSliceByRef(c);
-                    var status = storageApi.DELETE(key);
+                    key = parseState.GetArgSliceByRef(c);
+                    status = storageApi.DELETE(key);
 
                     // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                     if (status == GarnetStatus.OK)
                         keysDeleted++;
                 }
+
+                WriteInt32(keysDeleted);
+
+                return true;
             }
 
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
+            // Handle delete if meta-command is specified.
+            // Command currently does not support execution with any meta-commands when more than one key is specified
+            if (keyCount > 1)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(cmd.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
 
+            var input = new UnifiedInput(RespCommand.DEL, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput);
+            var output = new UnifiedOutput();
+
+            key = parseState.GetArgSliceByRef(0);
+            status = storageApi.DEL_Conditional(key, ref input, ref output);
+            etag = output.ETag;
+
+            if (status == GarnetStatus.NOTFOUND || output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
+            }
+
+            WriteInt32(1);
             return true;
         }
 
@@ -404,17 +400,9 @@ namespace Garnet.server
             etag = output.ETag;
 
             if (status == GarnetStatus.OK)
-            {
-                if (output.IsOperationSkipped)
-                    WriteNull();
-                else
-                    ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteSimpleString(CmdStrings.none, ref dcurr, dend))
-                    SendAndReset();
-            }
+                ProcessOutput(output.SpanByteAndMemory);
+            else 
+                WriteSimpleString(CmdStrings.none);
 
             return true;
         }
