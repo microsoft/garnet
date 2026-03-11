@@ -105,6 +105,7 @@ namespace Garnet.cluster
             gossipDelay = TimeSpan.FromSeconds(serverOptions.GossipDelay);
             clusterTimeout = serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(serverOptions.ClusterTimeout);
             numActiveTasks = 0;
+            activeMergeLock = new();
             GossipSamplePercent = serverOptions.GossipSamplePercent;
 
             // Run Background task
