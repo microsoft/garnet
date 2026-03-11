@@ -268,6 +268,9 @@ namespace Garnet.server
                 }
             }
 
+            if (added == 0)
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
@@ -286,10 +289,12 @@ namespace Garnet.server
             output.Result1 = added;
         }
 
-        private void HashCollect(ref ObjectInput input, ref ObjectOutput output)
+        private void HashCollect(ref ObjectOutput output)
         {
             DeleteExpiredItems();
             output.Result1 = 1;
+
+            // Method only changes metadata of the record, so value can be marked as unchanged.
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
@@ -306,18 +311,9 @@ namespace Garnet.server
             foreach (var item in hash)
             {
                 if (isExpirable && IsExpired(item.Key))
-                {
                     continue;
-                }
 
-                if (HashOperation.HKEYS == op)
-                {
-                    writer.WriteBulkString(item.Key);
-                }
-                else
-                {
-                    writer.WriteBulkString(item.Value);
-                }
+                writer.WriteBulkString(HashOperation.HKEYS == op ? item.Key : item.Value);
 
                 output.Result1++;
             }
@@ -389,8 +385,6 @@ namespace Garnet.server
         [SkipLocalsInit] // avoid zeroing the stackalloc buffer
         private void HashIncrementFloat(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            var op = input.header.HashOp;
-
             // This value is used to indicate partial command execution
             output.Result1 = int.MinValue;
 
@@ -486,6 +480,7 @@ namespace Garnet.server
                 output.Result1++;
             }
 
+            // Method only changes metadata of the record, so value can be marked as unchanged.
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
@@ -553,6 +548,7 @@ namespace Garnet.server
                 output.Result1++;
             }
 
+            // Method only changes metadata of the record, so value can be marked as unchanged.
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 

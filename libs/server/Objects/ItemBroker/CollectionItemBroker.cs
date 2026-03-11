@@ -669,13 +669,13 @@ namespace Garnet.server
                         return false;
                 }
 
-                // Upsert to ensure record eTags are updated
+                // Upsert to ensure record eTags are updated, if necessary
                 if (isSuccessful)
                 {
-                    if (!srcObjDeleted)
+                    if (!srcObjDeleted && srcObjOutput.ETag != LogRecord.NoETag)
                         storageSession.SET(srcKey, in srcObjOutput, ref objectTransactionalContext);
 
-                    if (!dstObjAdded && dstObj != null)
+                    if (!dstObjAdded && dstObj != null && dstObjOutput.ETag != LogRecord.NoETag)
                         storageSession.SET(dstKey, in dstObjOutput, ref objectTransactionalContext);
                 }
 

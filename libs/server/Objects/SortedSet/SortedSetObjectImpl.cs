@@ -182,11 +182,14 @@ namespace Garnet.server
                 this.UpdateSize(value, false);
             }
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            writer.WriteInt32(removedItems);
-
             if (removedItems == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteInt32(removedItems);
+            }
 
             output.Result1 = removedItems;
         }
@@ -270,8 +273,13 @@ namespace Garnet.server
                 }
             }
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            writer.WriteInt32(count);
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteInt32(count);
+            }
+
+            output.Result1 = count;
         }
 
         private void SortedSetIncrement(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -448,9 +456,12 @@ namespace Garnet.server
             var start = input.parseState.GetInt(0);
             var stop = input.parseState.GetInt(1);
 
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
             if (start > sortedSetDict.Count - 1)
             {
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                writer.WriteZero();
                 return;
             }
 
@@ -462,6 +473,13 @@ namespace Garnet.server
 
             // Calculate number of elements
             var elementCount = stop - start + 1;
+
+            if (elementCount <= 0)
+            {
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                writer.WriteZero();
+                return;
+            }
 
             // Using to list to avoid modified enumerator exception
             foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
@@ -476,7 +494,6 @@ namespace Garnet.server
             }
 
             // Write the number of elements
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteInt32(elementCount);
         }
 
@@ -722,6 +739,7 @@ namespace Garnet.server
                 output.Result1++;
             }
 
+            // Method only changes metadata of the record, so value can be marked as unchanged.
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
@@ -783,6 +801,7 @@ namespace Garnet.server
                 output.Result1++;
             }
 
+            // Method only changes metadata of the record, so value can be marked as unchanged.
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 
@@ -791,6 +810,8 @@ namespace Garnet.server
             DeleteExpiredItems();
 
             output.Result1 = 1;
+
+            // Method only changes metadata of the record, so value can be marked as unchanged.
             output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
         }
 

@@ -705,19 +705,39 @@ namespace Garnet.server
         {
             var ptr = recvBufferPtr + readHead;
             var remainingBytes = bytesRead - readHead;
-            var skipCountParse = count != -1;
 
-            // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
-            // i.e. an array with a single-digit length and single-digit first string length.
-            if ((!skipCountParse && (remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) ||
-                (skipCountParse && ((remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))))
+            var canFastParse = false;
+            var lengthIdx = 5;
+            var lenWithoutCommand = 10;
+
+            // Externally parsed count was not supplied
+            if (count == -1)
             {
-                // Extract total element count from the array header.
-                // NOTE: Subtracting one to account for first token being parsed.
-                count = !skipCountParse ? ptr[1] - '1' : count - 1;
+                // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
+                // i.e. an array with a single-digit length and single-digit first string length.
+                if ((remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8))
+                {
+                    canFastParse = true;
 
-                // Extract length of the first string header
-                var lengthIdx = skipCountParse ? 1 : 5;
+                    // Extract total element count from the array header.
+                    // NOTE: Subtracting one to account for first token being parsed.
+                    count = ptr[1] - '1';
+                }
+            }
+            // Externally parsed count was supplied
+            // Check if the count is single-digit and package starts with "$_\r\n" (_ = masked out),
+            // i.e. an array with a single-digit length and single-digit first string length.
+            else if (count is > 0 and <= 9 && (remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))
+            {
+                canFastParse = true;
+
+                count--;
+                lengthIdx = 1;
+                lenWithoutCommand = 6;
+            }
+
+            if (canFastParse)
+            {
                 var length = ptr[lengthIdx] - '0';
                 Debug.Assert(length is > 0 and <= 9);
 
@@ -726,7 +746,6 @@ namespace Garnet.server
                 // Ensure that the complete command string is contained in the package. Otherwise exit early.
                 // Include 10 bytes to account for array and command string headers, and terminator
                 // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
-                var lenWithoutCommand = skipCountParse ? 6 : 10;
                 var totalLen = length + lenWithoutCommand;
                 if (remainingBytes >= totalLen)
                 {
@@ -804,7 +823,6 @@ namespace Garnet.server
                         }
                     };
 
-                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
                     static RespCommand MatchedNone(RespServerSession session, int oldReadHead)
                     {
                         // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
@@ -816,7 +834,7 @@ namespace Garnet.server
             }
             else
             {
-                count = !skipCountParse ? 0 : count - 1;
+                count = count == -1 ? 0 : count - 1;
                 return FastParseInlineCommand(ref count);
             }
 
@@ -831,6 +849,7 @@ namespace Garnet.server
         /// the parsed command/subcommand name.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
+        /// <param name="specificErrorMessage">Error message</param>
         /// <returns>The parsed command name.</returns>
         private RespCommand FastParseArrayCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage)
         {

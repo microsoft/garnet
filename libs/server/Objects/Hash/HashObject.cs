@@ -246,7 +246,7 @@ namespace Garnet.server
                     HashRandomField(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HCOLLECT:
-                    HashCollect(ref input, ref output);
+                    HashCollect(ref output);
                     break;
                 case HashOperation.HSCAN:
                     Scan(ref input, ref output, respProtocolVersion);

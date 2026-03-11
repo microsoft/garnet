@@ -535,10 +535,10 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                 }
+                else if (output.IsOperationSkipped)
+                    WriteNull();
                 else
-                {
                     ProcessOutput(output.SpanByteAndMemory);
-                }
             }
 
             return true;

@@ -203,14 +203,14 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-                var newSize = logRecord.Info.ValueIsInline
-                    ? 0
-                    : (!logRecord.Info.ValueIsObject
-                        ? logRecord.ValueSpan.Length
-                        : logRecord.ValueObject.HeapMemorySize);
-                functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
-                return true;
-            }
+            var newSize = logRecord.Info.ValueIsInline
+                ? 0
+                : (!logRecord.Info.ValueIsObject
+                    ? logRecord.ValueSpan.Length
+                    : logRecord.ValueObject.HeapMemorySize);
+            functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
+            return true;
+        }
 
         /// <inheritdoc />
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)

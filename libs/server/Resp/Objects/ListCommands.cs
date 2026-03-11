@@ -37,7 +37,11 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 1) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { ListOp = lop };
+
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
@@ -57,7 +61,10 @@ namespace Garnet.server
             }
             else
             {
-                ProcessOutput(output.SpanByteAndMemory);
+                if (output.IsOperationSkipped)
+                    WriteNull();
+                else
+                    WriteInt32(output.Result1);
             }
             return true;
         }
@@ -439,9 +446,10 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState) { ListOp = ListOperation.LLEN };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput)
+            { ListOp = ListOperation.LLEN };
             var output = new ObjectOutput();
-
 
             var status = storageApi.ListLength(key, ref input, ref output);
             etag = output.ETag;
@@ -457,7 +465,10 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
             }
 
@@ -490,10 +501,12 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, arg1: start, arg2: stop) { ListOp = ListOperation.LTRIM };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, arg1: start,
+                arg2: stop, flags: RespInputFlags.SkipRespOutput)
+            { ListOp = ListOperation.LTRIM };
 
             // Prepare output
-            var output = GetObjectOutput();
+            var output = new ObjectOutput();
 
             var status = storageApi.ListTrim(key, ref input, ref output);
             etag = output.ETag;
@@ -501,15 +514,13 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
                 default:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteDirect(CmdStrings.RESP_OK);
                     break;
             }
 
@@ -604,17 +615,13 @@ namespace Garnet.server
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    //process output
                     ProcessOutput(output.SpanByteAndMemory);
-                    if (output.Result1 == -1)
-                        WriteNull();
                     break;
                 case GarnetStatus.NOTFOUND:
                     WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 
@@ -638,7 +645,9 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 1) { ListOp = ListOperation.LINSERT };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { ListOp = ListOperation.LINSERT };
             var output = new ObjectOutput();
 
             var statusOp = storageApi.ListInsert(key, ref input, ref output);
@@ -647,7 +656,10 @@ namespace Garnet.server
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -687,7 +699,9 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 2, arg1: nCount) { ListOp = ListOperation.LREM };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 2,
+                arg1: nCount, flags: RespInputFlags.SkipRespOutput)
+            { ListOp = ListOperation.LREM };
             var output = new ObjectOutput();
 
             var statusOp = storageApi.ListRemove(key, ref input, ref output);
@@ -696,7 +710,10 @@ namespace Garnet.server
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))

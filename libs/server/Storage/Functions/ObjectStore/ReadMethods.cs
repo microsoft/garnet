@@ -41,7 +41,10 @@ namespace Garnet.server
                     if (input.metaCommandInfo.MetaCommand != RespMetaCommand.None &&
                         !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _,
                             readOnlyContext: true))
+                    {
+                        output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
                         return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                    }
 
                     garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
 

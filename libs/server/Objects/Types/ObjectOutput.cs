@@ -31,6 +31,11 @@ namespace Garnet.server
         /// Indicates that the value has not changed
         /// </summary>
         ValueUnchanged = 1 << 2,
+
+        /// <summary>
+        /// Indicates that the operation was skipped
+        /// </summary>
+        OperationSkipped = 1 << 3,
     }
 
     /// <summary>
@@ -76,6 +81,11 @@ namespace Garnet.server
         /// </summary>
         public readonly bool HasRemoveKey =>
             (OutputFlags & ObjectOutputFlags.RemoveKey) == ObjectOutputFlags.RemoveKey;
+
+        /// <summary>
+        /// True if output flag OperationSkipped is set
+        /// </summary>
+        public readonly bool IsOperationSkipped => (OutputFlags & ObjectOutputFlags.OperationSkipped) != 0;
 
         public ObjectOutput() => SpanByteAndMemory = new(null);
 

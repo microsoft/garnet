@@ -34,9 +34,12 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1) { SetOp = SetOperation.SADD };
-            var output = new ObjectOutput();
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SADD };
 
+            // Prepare output
+            var output = new ObjectOutput();
 
             var status = storageApi.SetAdd(key, ref input, ref output);
             etag = output.ETag;
@@ -48,7 +51,10 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
             }
 
@@ -355,9 +361,12 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1) { SetOp = SetOperation.SREM };
-            var output = new ObjectOutput();
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SREM };
 
+            // Prepare output
+            var output = new ObjectOutput();
 
             var status = storageApi.SetRemove(key, ref input, ref output);
             etag = output.ETag;
@@ -365,7 +374,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -398,7 +410,11 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = SetOperation.SCARD };
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SCARD };
+
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = storageApi.SetLength(key, ref input, ref output);
@@ -407,7 +423,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))

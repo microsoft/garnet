@@ -43,8 +43,11 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = hop };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { HashOp = hop };
 
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = storageApi.HashSet(key, ref input, ref output);
@@ -53,11 +56,24 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
                 default:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                    {
+                        WriteNull();
+                        break;
+                    }
+
+                    switch (command)
+                    {
+                        case RespCommand.HSET or RespCommand.HSETNX:
+                            WriteInt32(output.Result1);
+                            break;
+                        case RespCommand.HMSET:
+                            WriteDirect(CmdStrings.RESP_OK);
+                            break;
+                    }
                     break;
             }
             return true;
@@ -122,7 +138,9 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, arg1: respProtocolVersion) { HashOp = HashOperation.HGETALL }; ;
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState,
+                arg1: respProtocolVersion)
+            { HashOp = HashOperation.HGETALL };
 
             // Prepare output
             var output = GetObjectOutput();
@@ -301,7 +319,11 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState) { HashOp = HashOperation.HLEN };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput)
+            { HashOp = HashOperation.HLEN };
+
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = storageApi.HashLength(key, ref input, ref output);
@@ -310,15 +332,16 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 
@@ -342,7 +365,9 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HSTRLEN };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { HashOp = HashOperation.HSTRLEN };
             var output = new ObjectOutput();
 
             var status = storageApi.HashStrLength(key, ref input, ref output);
@@ -351,7 +376,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -383,7 +411,9 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HDEL };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { HashOp = HashOperation.HDEL };
             var output = new ObjectOutput();
 
             var status = storageApi.HashDelete(key, ref input, ref output);
@@ -392,7 +422,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -423,7 +456,9 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = HashOperation.HEXISTS };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { HashOp = HashOperation.HEXISTS };
             var output = new ObjectOutput();
 
             var status = storageApi.HashExists(key, ref input, ref output);
@@ -432,7 +467,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))

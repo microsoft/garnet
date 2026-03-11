@@ -302,19 +302,18 @@ namespace Garnet.server
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            if (list.Count == 0)
+            if (list.Count == 0 || count == 0)
             {
                 writer.WriteNull();
-                count = 0;
-            }
-            else if (count > 1)
-            {
-                writer.WriteArrayLength(count);
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                return;
             }
 
-            while (count > 0 && list.Any())
+            writer.WriteArrayLength(count);
+
+            while (count > 0)
             {
-                LinkedListNode<byte[]> node = null;
+                LinkedListNode<byte[]> node;
                 if (removeFirst)
                 {
                     node = list.First;
@@ -326,7 +325,7 @@ namespace Garnet.server
                     list.RemoveLast();
                 }
 
-                UpdateSize(node.Value, false);
+                UpdateSize(node!.Value, false);
                 writer.WriteBulkString(node.Value);
 
                 count--;
@@ -341,11 +340,14 @@ namespace Garnet.server
 
             index = index < 0 ? list.Count + index : index;
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             if (index > list.Count - 1 || index < 0)
             {
-                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE);
+                if (!input.header.CheckSkipRespOutputFlag())
+                {
+                    using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE);
+                }
+
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
@@ -357,11 +359,16 @@ namespace Garnet.server
                 : (index == list.Count - 1 ? list.Last
                     : list.Nodes().ElementAtOrDefault(index));
 
-            UpdateSize(targetNode.Value, false);
+            UpdateSize(targetNode!.Value, false);
             targetNode.Value = element;
             UpdateSize(targetNode.Value);
 
-            writer.WriteDirect(CmdStrings.RESP_OK);
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteDirect(CmdStrings.RESP_OK);
+            }
+
             output.Result1 = 1;
         }
 
@@ -380,7 +387,6 @@ namespace Garnet.server
 
             count = count == 0 ? list.Count : count;
             var totalArrayHeaderLen = 0;
-            var lastFoundItemIndex = -1;
 
             if (!isDefaultCount)
             {
@@ -392,15 +398,14 @@ namespace Garnet.server
             {
                 var currentNode = list.First;
                 var currentIndex = 0;
-                var maxlenIndex = maxLen == 0 ? list.Count : maxLen;
+                var maxLenIndex = maxLen == 0 ? list.Count : maxLen;
                 do
                 {
-                    var nextNode = currentNode.Next;
+                    var nextNode = currentNode!.Next;
                     if (currentNode.Value.AsSpan().SequenceEqual(element))
                     {
                         if (rank == 1)
                         {
-                            lastFoundItemIndex = currentIndex;
                             writer.WriteInt32(currentIndex);
 
                             noOfFoundItem++;
@@ -417,21 +422,20 @@ namespace Garnet.server
                     currentNode = nextNode;
                     currentIndex++;
                 }
-                while (currentNode != null && currentIndex < maxlenIndex);
+                while (currentNode != null && currentIndex < maxLenIndex);
             }
             else // (rank < 0)
             {
                 var currentNode = list.Last;
                 var currentIndex = list.Count - 1;
-                var maxlenIndex = maxLen == 0 ? 0 : list.Count - maxLen;
+                var maxLenIndex = maxLen == 0 ? 0 : list.Count - maxLen;
                 do
                 {
-                    var nextNode = currentNode.Previous;
+                    var nextNode = currentNode!.Previous;
                     if (currentNode.Value.AsSpan().SequenceEqual(element))
                     {
                         if (rank == -1)
                         {
-                            lastFoundItemIndex = currentIndex;
                             writer.WriteInt32(currentIndex);
 
                             noOfFoundItem++;
@@ -448,7 +452,7 @@ namespace Garnet.server
                     currentNode = nextNode;
                     currentIndex--;
                 }
-                while (currentNode != null && currentIndex >= maxlenIndex);
+                while (currentNode != null && currentIndex >= maxLenIndex);
             }
 
             if (isDefaultCount && noOfFoundItem == 0)

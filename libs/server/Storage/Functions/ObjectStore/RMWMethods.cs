@@ -153,6 +153,7 @@ namespace Garnet.server
                 !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
             {
                 output.ETag = logRecord.ETag;
+                output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
                 return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
             }
 
@@ -165,7 +166,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
                 shouldUpdateETag |= hadETagPreMutation && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)

@@ -540,7 +540,7 @@ namespace Garnet.server
             }
         }
 
-        public GarnetStatus STRLEN<TStringContext>(PinnedSpanByte key, ref StringOutput output, ref StringInput input, ref TStringContext context) 
+        public GarnetStatus STRLEN<TStringContext>(PinnedSpanByte key, ref StringOutput output, ref StringInput input, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         => Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 

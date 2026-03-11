@@ -98,8 +98,8 @@ namespace Garnet.server
                     {
                         if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _))
                         {
-                            functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
                             output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                            functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
                             rmwInfo.Action = RMWAction.CancelOperation;
                         }
 

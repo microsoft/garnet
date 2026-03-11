@@ -174,19 +174,11 @@ namespace Garnet.server
             else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
             {
                 // Write a bulk string value of a random field from the hash value stored at key.
-                if (Set.Count > 0)
-                {
-                    var index = RandomNumberGenerator.GetInt32(0, Set.Count);
-                    var item = Set.ElementAt(index);
-                    Set.Remove(item);
-                    UpdateSize(item, false);
-                    writer.WriteBulkString(item);
-                }
-                else
-                {
-                    // If set empty return nil
-                    writer.WriteNull();
-                }
+                var index = RandomNumberGenerator.GetInt32(0, Set.Count);
+                var item = Set.ElementAt(index);
+                Set.Remove(item);
+                UpdateSize(item, false);
+                writer.WriteBulkString(item);
                 countDone++;
             }
 
@@ -201,6 +193,12 @@ namespace Garnet.server
             var countDone = 0;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            if (Set.Count == 0 || count == 0)
+            {
+                writer.WriteEmptyArray();
+                return;
+            }
 
             if (count > 0)
             {
@@ -227,17 +225,9 @@ namespace Garnet.server
             else if (count == int.MinValue) // no count parameter is present
             {
                 // Return a single random element from the set
-                if (Set.Count > 0)
-                {
-                    var index = RandomUtils.PickRandomIndex(Set.Count, seed);
-                    var item = Set.ElementAt(index);
-                    writer.WriteBulkString(item);
-                }
-                else
-                {
-                    // If set is empty, return nil
-                    writer.WriteNull();
-                }
+                var index = RandomUtils.PickRandomIndex(Set.Count, seed);
+                var item = Set.ElementAt(index);
+                writer.WriteBulkString(item);
                 countDone++;
             }
             else // count < 0
@@ -250,22 +240,14 @@ namespace Garnet.server
 
                 RandomUtils.PickKRandomIndexes(Set.Count, indexes, seed, false);
 
-                if (Set.Count > 0)
-                {
-                    // Write the size of the array reply
-                    writer.WriteArrayLength(countParameter);
+                // Write the size of the array reply
+                writer.WriteArrayLength(countParameter);
 
-                    foreach (var index in indexes)
-                    {
-                        var element = Set.ElementAt(index);
-                        writer.WriteBulkString(element);
-                        countDone++;
-                    }
-                }
-                else
+                foreach (var index in indexes)
                 {
-                    // If set is empty, return nil
-                    writer.WriteNull();
+                    var element = Set.ElementAt(index);
+                    writer.WriteBulkString(element);
+                    countDone++;
                 }
             }
 

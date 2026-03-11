@@ -118,7 +118,9 @@ namespace Garnet.server
             // Get the key for SortedSet
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZREM };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZREM };
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetRemove(key, ref input, ref output);
@@ -127,7 +129,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -158,7 +163,9 @@ namespace Garnet.server
             // Get the key for SortedSet
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZCARD };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZCARD };
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetLength(key, ref input, ref output);
@@ -167,8 +174,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process output
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -459,7 +468,7 @@ namespace Garnet.server
             }
 
             // Get number of keys
-            if (!parseState.TryGetInt(0, out var numKeys) || numKeys < 1)
+            if (!parseState.TryGetInt(0, out var numKeys))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
@@ -480,11 +489,9 @@ namespace Garnet.server
             var orderSpan = orderArg.ReadOnlySpan;
             var lowScoresFirst = true;
 
-            if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MIN))
-                lowScoresFirst = true;
-            else if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAX))
+            if (orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAX))
                 lowScoresFirst = false;
-            else
+            else if (!orderSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MIN))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -504,7 +511,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
 
-                if (!parseState.TryGetInt(numKeys + 3, out count) || count < 1)
+                if (!parseState.TryGetInt(numKeys + 3, out count))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
@@ -592,10 +599,12 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZCOUNT };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZCOUNT };
 
             // Prepare output
-            var output = GetObjectOutput();
+            var output = new ObjectOutput();
 
             var status = storageApi.SortedSetCount(key, ref input, ref output);
             etag = output.ETag;
@@ -603,7 +612,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -654,7 +666,9 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = op };
             var output = new ObjectOutput();
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
@@ -665,8 +679,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process response
-                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -707,7 +723,10 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZINCRBY };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1)
+            {
+                SortedSetOp = SortedSetOperation.ZINCRBY
+            };
 
             // Prepare output
             var output = GetObjectOutput();
