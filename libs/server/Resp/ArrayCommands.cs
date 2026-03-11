@@ -401,7 +401,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
                 ProcessOutput(output.SpanByteAndMemory);
-            else 
+            else
                 WriteSimpleString(CmdStrings.none);
 
             return true;
@@ -517,13 +517,10 @@ namespace Garnet.server
             }
 
             var output = GetStringOutput();
-            var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+            _ = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
             etag = output.ETag;
 
-            if (output.IsOperationSkipped)
-                WriteNull();
-            else
-                ProcessOutput(output.SpanByteAndMemory);
+            ProcessOutput(output.SpanByteAndMemory);
 
             return true;
         }

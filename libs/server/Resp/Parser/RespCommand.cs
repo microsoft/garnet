@@ -2933,7 +2933,7 @@ namespace Garnet.server
                 // Move readHead to start of command payload
                 readHead = (int)(ptr - recvBufferPtr);
             }
-            
+
             // Try parsing the most important variable-length commands
             cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
 

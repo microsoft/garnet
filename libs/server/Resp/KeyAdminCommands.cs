@@ -101,16 +101,9 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(valArgSlice);
 
-            StringInput input;
-            if (expiry > 0)
-            {
-                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, arg1: inputArg);
-            }
-            else
-            {
-                input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState);
-            }
+            var inputArg = expiry > 0 ? DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks : 0;
+            var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, arg1: inputArg,
+                flags: RespInputFlags.SkipRespOutput);
 
             var output = new StringOutput();
             var status = storageApi.SET_Conditional(key, ref input, ref output);
@@ -265,7 +258,7 @@ namespace Garnet.server
             var isNx = cmd == RespCommand.RENAMENX;
             if (!isNx)
                 input.header.SetSkipRespOutputFlag();
-            
+
             var output = isNx ? GetUnifiedOutput() : default;
 
             var status = storageApi.RENAME(key, ref input, ref output);
@@ -313,12 +306,6 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                if (output.IsOperationSkipped)
-                {
-                    WriteNull();
-                    return true;
-                }
-
                 ProcessOutput(output.SpanByteAndMemory);
             }
             else

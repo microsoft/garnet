@@ -156,9 +156,7 @@ namespace Garnet.server
             var status = storageApi.StringSetBit(key, ref input, ref output);
             etag = output.ETag;
 
-            if (output.IsOperationSkipped)
-                WriteNull();
-            else if (status == GarnetStatus.OK)
+            if (status == GarnetStatus.OK)
                 ProcessOutput(output.SpanByteAndMemory);
 
             return true;
@@ -192,8 +190,6 @@ namespace Garnet.server
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
-            else if (output.IsOperationSkipped)
-                WriteNull();
             else
                 ProcessOutput(output.SpanByteAndMemory);
 
@@ -232,10 +228,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                if (output.IsOperationSkipped)
-                    WriteNull();
-                else
-                    ProcessOutput(output.SpanByteAndMemory);
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
@@ -296,10 +289,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                if (output.IsOperationSkipped)
-                    WriteNull();
-                else
-                    ProcessOutput(output.SpanByteAndMemory);
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
@@ -535,8 +525,6 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                 }
-                else if (output.IsOperationSkipped)
-                    WriteNull();
                 else
                     ProcessOutput(output.SpanByteAndMemory);
             }

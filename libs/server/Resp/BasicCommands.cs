@@ -40,12 +40,6 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (output.IsOperationSkipped)
-                    {
-                        WriteNull();
-                        break;
-                    }
-
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
@@ -377,10 +371,7 @@ namespace Garnet.server
             {
                 sessionMetrics?.incr_total_found();
 
-                if (output.IsOperationSkipped)
-                    WriteNull();
-                else
-                    ProcessOutput(output.SpanByteAndMemory);
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
@@ -422,8 +413,8 @@ namespace Garnet.server
 
             var value = parseState.GetArgSliceByRef(2);
 
-            var output = GetStringOutput();
-            var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, arg1: valMetadata);
+            var output = new StringOutput();
+            var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, arg1: valMetadata, flags: RespInputFlags.SkipRespOutput);
             _ = storageApi.SET(key, ref input, ref output, value);
 
             etag = output.ETag;
@@ -448,7 +439,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var output = new StringOutput();
-            var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput);
             var status = storageApi.SET_Conditional(key, ref input, ref output);
 
             etag = output.ETag;
@@ -625,7 +617,7 @@ namespace Garnet.server
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
             var input = new StringInput(cmd, ref metaCommandInfo, arg1: valMetadata);
-            var output = GetStringOutput();
+            var output = new StringOutput();
 
             storageApi.SET(key, ref input, ref output, val);
             etag = output.ETag;
@@ -688,12 +680,13 @@ namespace Garnet.server
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 var output = GetStringOutput();
                 var status = storageApi.SET_Conditional(key, ref input, ref output);
+
                 etag = output.ETag;
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 var ok = status != GarnetStatus.NOTFOUND;
 
-                if (!ok || (metaCommandInfo.MetaCommand.IsETagCommand() && !output.IsOperationSkipped))
+                if (!ok)
                     WriteNull();
                 else
                     ProcessOutput(output.SpanByteAndMemory);

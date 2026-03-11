@@ -115,6 +115,11 @@ namespace Garnet.server
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
+                    if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    }
+
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                     {
@@ -131,6 +136,11 @@ namespace Garnet.server
 
                     break;
                 case RespCommand.SETKEEPTTL:
+                    if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    }
+
                     // Copy input to value; do not change expiration
                     _ = logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo);
                     break;
@@ -404,6 +414,10 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
+                    else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    }
 
                     // Nothing is set because being in this block means NX was already violated
                     output.ETag = logRecord.ETag;
@@ -416,6 +430,10 @@ namespace Garnet.server
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
+                    }
+                    else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -447,6 +465,10 @@ namespace Garnet.server
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
+                    }
+                    else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -762,9 +784,8 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
-                    else if (input.metaCommandInfo.MetaCommand.IsETagCommand())
+                    else if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !input.header.CheckSkipRespOutputFlag())
                     {
-                        // EXX when unsuccesful will write back NIL
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
@@ -848,6 +869,10 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
+                    else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
+                    }
 
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
@@ -869,6 +894,10 @@ namespace Garnet.server
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                    }
+                    else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
+                    {
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
                     inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
