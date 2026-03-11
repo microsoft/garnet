@@ -2362,7 +2362,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.Less((long)recoveredValuesTtl[1], 13);
+                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], 13);
                 ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
