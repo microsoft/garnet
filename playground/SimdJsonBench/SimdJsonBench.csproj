@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);CS8618;CS8002</NoWarn>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <PublicSign>true</PublicSign>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="SimdJsonSharp.Bindings" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+  </ItemGroup>
+
+  <!-- Copy native simdjson On-Demand DLL to output -->
+  <ItemGroup>
+    <None Include="native\simdjson_native.dll" CopyToOutputDirectory="PreserveNewest" Link="simdjson_native.dll" />
+  </ItemGroup>
+</Project>
