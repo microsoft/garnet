@@ -14,9 +14,9 @@
 	</ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\libs\cluster\Garnet.cluster.csproj" />
-    <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
-    <ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
+		<ProjectReference Include="..\..\libs\cluster\Garnet.cluster.csproj" />
+		<ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
+		<ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\modules\GarnetJSON\GarnetJSON.csproj" />
     <ProjectReference Include="..\..\modules\NoOpModule\NoOpModule.csproj" />

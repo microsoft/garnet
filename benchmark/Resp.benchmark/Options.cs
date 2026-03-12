@@ -113,6 +113,12 @@ namespace Resp.benchmark
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
 
+        [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
+        public bool AofBench { get; set; }
+
+        [Option("aof-bench-type", Required = false, Default = AofBenchType.Replay, HelpText = "Run AOF bench at replica.")]
+        public AofBenchType AofBenchType { get; set; }
+
         /*
          * InProc/AofBench server options
          */

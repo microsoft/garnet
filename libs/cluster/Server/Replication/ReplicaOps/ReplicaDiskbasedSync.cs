@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -41,6 +40,9 @@ namespace Garnet.cluster
                 // Update the configuration to make this node a replica of provided nodeId
                 if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out errorMessage, logger: logger))
                     return false;
+
+                // Create or update timestamp manager for sharded log if needed
+                storeWrapper.appendOnlyFile.CreateOrUpdateKeySequenceManager();
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
@@ -88,42 +90,44 @@ namespace Garnet.cluster
                         logger?.LogError("{msg}", errorMsg);
                         return errorMsg;
                     }
+
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                     gcs = new(
                         new IPEndPoint(IPAddress.Parse(address), port),
                         clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
                         clusterProvider.replicationManager.GetNetworkPool,
                         tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                         authUsername: clusterProvider.ClusterUsername,
-                        authPassword: clusterProvider.ClusterPassword);
-                    gcs.Connect();
-
-                    // Resetting here to decide later when to sync from
-                    clusterProvider.replicationManager.ReplicationOffset = 0;
-
-                    // The caller should have stopped accepting AOF records from old primary at this point
-                    // (TryREPLICAOF -> TryAddReplica -> UnsafeWaitForConfigTransition)
-
-                    // TODO: ensure we have quiesced reads (no writes on replica)
+                        authPassword: clusterProvider.ClusterPassword,
+                        clientName: nameof(TryReplicateDiskbasedSync));
+                    gcs.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token);
 
                     // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
                     // If FastCommit is enabled, we commit during AOF stream processing
                     if (!clusterProvider.serverOptions.EnableFastCommit)
                     {
-                        storeWrapper.appendOnlyFile?.Commit();
-                        storeWrapper.appendOnlyFile?.WaitForCommit();
+                        storeWrapper.appendOnlyFile?.Log.Commit();
+                        storeWrapper.appendOnlyFile?.Log.WaitForCommit();
                     }
 
-                    // Reset background replay iterator
-                    ResetReplayIterator();
+                    // Reset background replay iterator if this node was a replica
+                    clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+
+                    // Remove aofSync tasks if this node was a primary
+                    aofSyncDriverStore.Reset();
 
                     // Reset replication offset
-                    ReplicationOffset = 0;
+                    replicationOffset.SetValue(0);
 
                     // Reset the database in preparation for connecting to primary
                     storeWrapper.Reset();
 
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasks();
+
+                    // Stop advance time task when reconfiguring node to be replica
+                    if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
+                        clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
@@ -137,7 +141,10 @@ namespace Garnet.cluster
                     logger?.LogCheckpointEntry(LogLevel.Information, nameof(ReplicaSyncAttachTask), cEntry);
 
                     storeWrapper.RecoverAOF();
-                    logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
+                    logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
+
+                    var beginAddress = storeWrapper.appendOnlyFile.Log.BeginAddress;
+                    var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
 
                     // 1. Primary will signal checkpoint send complete
                     // 2. Replica will receive signal and recover checkpoint, initialize AOF
@@ -145,24 +152,20 @@ namespace Garnet.cluster
                     // 4. Replica responds with aofStartAddress sync
                     // 5. Primary will initiate aof sync task
                     // 6. Primary releases checkpoint
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
-
-                    // Exception injection point for testing cluster reset during disk-based replication
-                    await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
-                    var resp = await gcs.ExecuteReplicaSync(
+                    var resp = await gcs.ExecuteClusterInitiateReplicaSync(
                         nodeId,
                         PrimaryReplId,
                         cEntry.ToByteArray(),
-                        storeWrapper.appendOnlyFile.BeginAddress,
-                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                        beginAddress.Span,
+                        beginAddress.Span).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
+
                     if (options.AllowReplicaResetOnFailure)
-                    {
                         clusterProvider.clusterManager.TryResetReplica();
-                    }
+
                     return ex.Message;
                 }
                 finally
@@ -271,21 +274,21 @@ namespace Garnet.cluster
         /// <summary>
         /// Process request from primary to start recovery process from the retrieved checkpoint.
         /// </summary>
-        /// <param name="recoverMainStoreFromToken"></param>
-        /// <param name="replayAOF"></param>
+        /// <param name="recoverStoreFromToken"></param>
+        /// <param name="replayAOFMap"></param>
         /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
         /// <param name="errorMessage"></param>
         /// <returns></returns>
-        public long BeginReplicaRecover(
-            bool recoverMainStoreFromToken,
-            bool replayAOF,
+        public AofAddress TryReplicaDiskbasedRecovery(
+            bool recoverStoreFromToken,
+            ulong replayAOFMap,
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
-            long beginAddress,
-            long recoveredReplicationOffset,
+            in AofAddress beginAddress,
+            ref AofAddress recoveredReplicationOffset,
             out ReadOnlySpan<byte> errorMessage)
         {
             try
@@ -300,24 +303,27 @@ namespace Garnet.cluster
 
                 storeWrapper.RecoverCheckpoint(
                     replicaRecover: true,
-                    recoverMainStoreFromToken,
+                    recoverStoreFromToken,
                     remoteCheckpoint.metadata);
 
-                if (replayAOF)
+                if (replayAOFMap > 0)
                 {
-                    logger?.LogInformation("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
-                    recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset);
+                    logger?.LogError("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
+                    var replayUntil = recoveredReplicationOffset;
+                    for (var sublogIdx = 0; sublogIdx < recoveredReplicationOffset.Length; sublogIdx++)
+                        replayUntil[sublogIdx] = (((1UL) << sublogIdx) > 0) ? recoveredReplicationOffset[sublogIdx] : beginAddress[sublogIdx];
+                    recoveredReplicationOffset = storeWrapper.ReplayAOF(replayUntil);
                 }
 
                 logger?.LogInformation("Initializing AOF");
-                storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
+                storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
 
                 // Finally, advertise that we are caught up to the replication offset
-                ReplicationOffset = recoveredReplicationOffset;
-                logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", ReplicationOffset);
+                replicationOffset = recoveredReplicationOffset;
+                logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", replicationOffset);
 
                 // If checkpoint for main store was send add its token here in preparation for purge later on
-                if (recoverMainStoreFromToken)
+                if (recoverStoreFromToken)
                 {
                     cEntry.metadata.storeIndexToken = remoteCheckpoint.metadata.storeIndexToken;
                     cEntry.metadata.storeHlogToken = remoteCheckpoint.metadata.storeHlogToken;
@@ -328,7 +334,7 @@ namespace Garnet.cluster
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 logger?.LogInformation("Initializing CheckpointStore");
                 if (!InitializeCheckpointStore())
-                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(BeginReplicaRecover));
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TryReplicaDiskbasedRecovery));
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
@@ -338,13 +344,16 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
 
-                return ReplicationOffset;
+                // Start advance time signal processing background task
+                clusterProvider.replicationManager.StartAdvanceTimeBackgroundTask();
+
+                return this.replicationOffset;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(BeginReplicaRecover)}");
+                logger?.LogError(ex, $"{nameof(TryReplicaDiskbasedRecovery)}");
                 errorMessage = Encoding.ASCII.GetBytes(ex.Message);
-                return -1;
+                return AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             }
             finally
             {

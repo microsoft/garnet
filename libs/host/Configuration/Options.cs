@@ -204,6 +204,18 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [IntRangeValidation(1, 64)]
+        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
+        public int AofPhysicalSublogCount { get; set; }
+
+        [IntRangeValidation(1, 256)]
+        [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
+        public int AofReplayTaskCount { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
+        public int AofTailWitnessFreq { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -414,7 +426,7 @@ namespace Garnet
         public bool? FastAofTruncate { get; set; }
 
         [OptionValidation]
-        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
+        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]
@@ -438,7 +450,7 @@ namespace Garnet
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
 
         [OptionValidation]
-        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        [Option("aof-null-device", Required = false, HelpText = "With fast-aof-truncate replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool? UseAofNullDevice { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
@@ -771,6 +783,9 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
+            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
+                throw new Exception("Cannot use sharded-log without FastCommit!");
+
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
             {
                 if (!string.IsNullOrEmpty(AzureStorageConnectionString))
@@ -821,6 +836,9 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                AofPhysicalSublogCount = AofPhysicalSublogCount,
+                AofReplayTaskCount = AofReplayTaskCount,
+                AofTailWitnessFreq = AofTailWitnessFreq,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),

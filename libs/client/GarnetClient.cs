@@ -277,7 +277,21 @@ namespace Garnet.client
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "AUTH returned error");
+                logger?.LogError(e, "AUTH returned error!");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteForStringResultAsync(CLIENT, SETINFO).ConfigureAwait(false);
+                    _ = await ExecuteForStringResultAsync(CLIENT, clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error");
                 throw;
             }
 

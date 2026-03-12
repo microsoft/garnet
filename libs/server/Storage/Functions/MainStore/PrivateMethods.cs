@@ -694,9 +694,45 @@ namespace Garnet.server
             if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
-                key, value, ref input, epochAccessor, out _);
+            if (!functionsState.appendOnlyFile.serverOptions.MultiLogEnabled)
+            {
+                var header = new AofHeader
+                {
+                    opType = AofEntryType.StoreUpsert,
+                    storeVersion = version,
+                    sessionID = sessionId,
+                };
+
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
+                    header,
+                    key,
+                    value,
+                    ref input,
+                    epochAccessor,
+                    out _);
+            }
+            else
+            {
+                var header = new AofShardedHeader
+                {
+                    basicHeader = new AofHeader
+                    {
+                        opType = AofEntryType.StoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionId,
+                        padding = (byte)AofHeaderType.ShardedHeader
+                    },
+                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                };
+
+                functionsState.appendOnlyFile.Log.Enqueue(
+                    header,
+                    key,
+                    value,
+                    ref input,
+                    epochAccessor,
+                    out _);
+            }
         }
 
         /// <summary>
@@ -711,9 +747,43 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                key, ref input, epochAccessor, out _);
+            if (!functionsState.appendOnlyFile.serverOptions.MultiLogEnabled)
+            {
+                var header = new AofHeader
+                {
+                    opType = AofEntryType.StoreRMW,
+                    storeVersion = version,
+                    sessionID = sessionId
+                };
+
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
+                    header,
+                    key,
+                    ref input,
+                    epochAccessor,
+                    out _);
+            }
+            else
+            {
+                var header = new AofShardedHeader
+                {
+                    basicHeader = new AofHeader
+                    {
+                        padding = (byte)AofHeaderType.ShardedHeader,
+                        opType = AofEntryType.StoreRMW,
+                        storeVersion = version,
+                        sessionID = sessionId
+                    },
+                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                };
+
+                functionsState.appendOnlyFile.Log.Enqueue(
+                    header,
+                    key,
+                    ref input,
+                    epochAccessor,
+                    out _);
+            }
         }
 
         /// <summary>
@@ -724,11 +794,45 @@ namespace Garnet.server
         void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
-            if (functionsState.StoredProcMode)
-                return;
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID },
-                key, item2: default, epochAccessor, out _);
+            if (functionsState.StoredProcMode) return;
+
+            if (!functionsState.appendOnlyFile.serverOptions.MultiLogEnabled)
+            {
+                var header = new AofHeader
+                {
+                    opType = AofEntryType.StoreDelete,
+                    storeVersion = version,
+                    sessionID = sessionID
+                };
+
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
+                    header,
+                    key,
+                    item2: default,
+                    epochAccessor,
+                    out _);
+            }
+            else
+            {
+                var header = new AofShardedHeader
+                {
+                    basicHeader = new AofHeader
+                    {
+                        padding = (byte)AofHeaderType.ShardedHeader,
+                        opType = AofEntryType.StoreDelete,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    },
+                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                };
+
+                functionsState.appendOnlyFile.Log.Enqueue(
+                    header,
+                    key,
+                    value: default,
+                    epochAccessor,
+                    out _);
+            }
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref StringInput input)
