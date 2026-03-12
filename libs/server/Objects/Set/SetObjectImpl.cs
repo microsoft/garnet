@@ -15,8 +15,6 @@ namespace Garnet.server
     {
         private void SetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            var added = 0;
-
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -27,21 +25,19 @@ namespace Garnet.server
                 if (Set.Add(member.ToArray()))
 #endif
                 {
-                    added++;
+                    output.Result1++;
                     UpdateSize(member);
                 }
             }
 
-            if (added == 0)
+            if (output.Result1 == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(added);
+                writer.WriteInt32(output.Result1);
             }
-
-            output.Result1 = added;
         }
 
         private void SetMembers(ref ObjectOutput output, byte respProtocolVersion)
@@ -90,8 +86,6 @@ namespace Garnet.server
 
         private void SetRemove(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            var removed = 0;
-
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var field = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -102,35 +96,31 @@ namespace Garnet.server
                 if (Set.Remove(field.ToArray()))
 #endif
                 {
-                    removed++;
+                    output.Result1++;
                     UpdateSize(field, false);
                 }
             }
 
-            if (removed == 0)
+            if (output.Result1 == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(removed);
+                writer.WriteInt32(output.Result1);
             }
-
-            output.Result1 = removed;
         }
 
         private void SetLength(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SCARD key
-            var length = Set.Count;
+            output.Result1 = Set.Count;
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(length);
+                writer.WriteInt32(output.Result1);
             }
-
-            output.Result1 = length;
         }
 
         private void SetPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)

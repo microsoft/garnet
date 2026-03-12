@@ -55,7 +55,11 @@ namespace Garnet.server
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
+
+        // Info for currently parsed meta-command, if applicable
         internal MetaCommandInfo metaCommandInfo;
+
+        // Used for storing and outputting post-op record etag for meta-commands that require it
         private long etag;
 
         ClusterSlotVerificationInput csvi;

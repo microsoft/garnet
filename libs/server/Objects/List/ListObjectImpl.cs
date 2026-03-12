@@ -20,8 +20,6 @@ namespace Garnet.server
             // get the source string to remove
             var itemSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-            var removedCount = 0;
-
             //remove all equals to item
             if (count == 0)
             {
@@ -34,7 +32,7 @@ namespace Garnet.server
                         list.Remove(currentNode);
                         this.UpdateSize(currentNode.Value, false);
 
-                        removedCount++;
+                        output.Result1++;
                     }
                     currentNode = nextNode;
                 }
@@ -46,7 +44,7 @@ namespace Garnet.server
                 var currentNode = fromHeadToTail ? list.First : list.Last;
 
                 count = Math.Abs(count);
-                while (removedCount < count && currentNode != null)
+                while (output.Result1 < count && currentNode != null)
                 {
                     var nextNode = fromHeadToTail ? currentNode.Next : currentNode.Previous;
 
@@ -54,7 +52,7 @@ namespace Garnet.server
                     {
                         list.Remove(currentNode);
                         UpdateSize(currentNode.Value, false);
-                        removedCount++;
+                        output.Result1++;
                     }
 
                     currentNode = nextNode;
@@ -64,19 +62,17 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(removedCount);
+                writer.WriteInt32(output.Result1);
             }
 
-            if (removedCount == 0)
+            if (output.Result1 == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
-
-            output.Result1 = removedCount;
         }
 
         private void ListInsert(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // Result is -1 if the pivot was not found.
-            var result = -1;
+            output.Result1 = -1;
 
             if (list.Count > 0)
             {
@@ -103,7 +99,7 @@ namespace Garnet.server
                             list.AddAfter(currentNode, item);
 
                         UpdateSize(item);
-                        result = list.Count;
+                        output.Result1 = list.Count;
                         break;
                     }
                 }
@@ -113,13 +109,11 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(result);
+                writer.WriteInt32(output.Result1);
             }
 
-            if (result == -1)
+            if (output.Result1 == -1)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
-
-            output.Result1 = result;
         }
 
         private void ListIndex(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -253,15 +247,13 @@ namespace Garnet.server
 
         private void ListLength(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            var length = list.Count;
+            output.Result1 = list.Count;
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(length);
+                writer.WriteInt32(output.Result1);
             }
-
-            output.Result1 = length;
         }
 
         private void ListPush(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)

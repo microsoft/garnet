@@ -165,8 +165,6 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            var removedItems = 0;
-
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -175,23 +173,21 @@ namespace Garnet.server
                 if (!sortedSetDict.Remove(valueArray, out var key))
                     continue;
 
-                removedItems++;
+                output.Result1++;
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
 
                 this.UpdateSize(value, false);
             }
 
-            if (removedItems == 0)
+            if (output.Result1 == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(removedItems);
+                writer.WriteInt32(output.Result1);
             }
-
-            output.Result1 = removedItems;
         }
 
         private void SortedSetLength(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -199,15 +195,13 @@ namespace Garnet.server
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
 
-            var length = Count();
+            output.Result1 = Count();
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt64(length);
+                writer.WriteInt64(output.Result1);
             }
-
-            output.Result1 = length;
         }
 
         private void SortedSetScore(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -258,7 +252,6 @@ namespace Garnet.server
             Debug.Assert(parseSuccessful);
 
             // get the elements within the score range and write the result
-            var count = 0;
             if (sortedSet.Count > 0 && minValue <= sortedSet.Max.Score)
             {
                 foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
@@ -269,17 +262,15 @@ namespace Garnet.server
                         break;
                     if (minExclusive && item.Score == minValue)
                         continue;
-                    count++;
+                    output.Result1++;
                 }
             }
 
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(count);
+                writer.WriteInt32(output.Result1);
             }
-
-            output.Result1 = count;
         }
 
         private void SortedSetIncrement(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -700,8 +691,6 @@ namespace Garnet.server
                 writer.WriteArrayLength(length);
             }
 
-            var countDone = 0;
-
             while (count > 0)
             {
                 var max = input.header.SortedSetOp == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
@@ -717,11 +706,9 @@ namespace Garnet.server
                 writer.WriteBulkString(max.Element);
                 writer.WriteDoubleNumeric(max.Score);
 
-                countDone++;
+                output.Result1++;
                 count--;
             }
-
-            output.Result1 = countDone;
         }
 
         private void SortedSetPersist(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)

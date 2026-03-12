@@ -55,27 +55,51 @@ namespace Garnet.server
         /// </summary>
         public const int Size = 4;
 
+        /// <summary>
+        /// The RESP command for string and unified commands (replaced by <see cref="type"/> and corresponding operation type for object commands)
+        /// </summary>
         [FieldOffset(0)]
         internal RespCommand cmd;
 
+        /// <summary>
+        /// The object type for object commands
+        /// </summary>
         [FieldOffset(0)]
         internal GarnetObjectType type;
 
+        /// <summary>
+        /// Input flags for the command
+        /// </summary>
         [FieldOffset(2)]
         internal RespInputFlags flags;
 
+        /// <summary>
+        /// Command ID for custom commands
+        /// </summary>
         [FieldOffset(3)]
         internal byte SubId;
 
+        /// <summary>
+        /// Operation type for sorted set objects, valid only when <see cref="type"/> is <see cref="GarnetObjectType.SortedSet"/>
+        /// </summary>
         [FieldOffset(3)]
         internal SortedSetOperation SortedSetOp;
 
+        /// <summary>
+        /// Operation type for hash objects, valid only when <see cref="type"/> is <see cref="GarnetObjectType.Hash"/>
+        /// </summary>
         [FieldOffset(3)]
         internal HashOperation HashOp;
 
+        /// <summary>
+        /// Operation type for hash objects, valid only when <see cref="type"/> is <see cref="GarnetObjectType.Set"/>
+        /// </summary>
         [FieldOffset(3)]
         internal SetOperation SetOp;
 
+        /// <summary>
+        /// Operation type for hash objects, valid only when <see cref="type"/> is <see cref="GarnetObjectType.List"/>
+        /// </summary>
         [FieldOffset(3)]
         internal ListOperation ListOp;
 
