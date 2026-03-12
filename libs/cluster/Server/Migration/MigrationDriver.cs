@@ -105,7 +105,7 @@ namespace Garnet.cluster
 
                 #region transferSlotOwnnershipToTargetNode
                 // Lock config merge to avoid a background epoch bump
-                await clusterProvider.clusterManager.SuspendConfigMergeAsync().ConfigureAwait(false);
+                clusterProvider.clusterManager.SuspendConfigMerge();
                 configResumed = false;
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
 

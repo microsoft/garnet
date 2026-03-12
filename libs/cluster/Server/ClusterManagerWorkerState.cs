@@ -50,7 +50,7 @@ namespace Garnet.cluster
         {
             try
             {
-                SuspendConfigMergeAsync().GetAwaiter().GetResult();
+                SuspendConfigMerge();
                 errorMessage = default;
                 while (true)
                 {
@@ -99,7 +99,7 @@ namespace Garnet.cluster
         {
             try
             {
-                SuspendConfigMergeAsync().GetAwaiter().GetResult();
+                SuspendConfigMerge();
 
                 // Reset recovery operations before proceeding with reset
                 clusterProvider.replicationManager.ResetRecovery();

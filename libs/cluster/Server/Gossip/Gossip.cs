@@ -19,7 +19,7 @@ namespace Garnet.cluster
         public readonly TimeSpan gossipDelay;
         public readonly TimeSpan clusterTimeout;
         private volatile int numActiveTasks = 0;
-        private AsyncReaderWriterLock activeMergeLock;
+        private readonly common.ReaderWriterLock activeMergeLock;
         public readonly GarnetClusterConnectionStore clusterConnectionStore;
 
         public GossipStats gossipStats;
@@ -82,7 +82,7 @@ namespace Garnet.cluster
         /// Called when FORGET op executes and waits until ongoing merge operations complete before executing FORGET
         /// Multiple FORGET ops can execute at the same time.
         /// </summary>
-        public async Task SuspendConfigMergeAsync() => await activeMergeLock.WriteLockAsync().ConfigureAwait(false);
+        public void SuspendConfigMerge() => activeMergeLock.WriteLock();
 
         /// <summary>
         /// Resume config merge
@@ -113,7 +113,7 @@ namespace Garnet.cluster
         {
             try
             {
-                if (acquireLock) activeMergeLock.ReadLockAsync().GetAwaiter().GetResult();
+                if (acquireLock) activeMergeLock.ReadLock();
                 if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
                 {
                     logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);

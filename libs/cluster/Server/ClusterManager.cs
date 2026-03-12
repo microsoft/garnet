@@ -142,6 +142,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             DisposeBackgroundTasks();
+            activeMergeLock?.Dispose();
 
             clusterConfigDevice.Dispose();
             pool.Free();
