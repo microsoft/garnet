@@ -88,13 +88,14 @@ namespace Garnet.test.Resp
 
             // Initial command runs under default user
             _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, authCalls);
 
             // Auth as proper user, should get another call
-            authingAsFoo = true;
             _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
-            ClassicAssert.IsTrue(authedAsFoo);
+            ClassicAssert.AreEqual(2, authCalls);
 
             _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
+            ClassicAssert.AreEqual(2, authCalls);
 
             // Command after auth invalidation fails as no auth
             auth.IsAuthenticated = false;
@@ -109,7 +110,7 @@ namespace Garnet.test.Resp
             }
 
             _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
-            ClassicAssert.True(authCalls > oldAuthCalls);
+            ClassicAssert.AreEqual(3, authCalls);
         }
     }
 }
