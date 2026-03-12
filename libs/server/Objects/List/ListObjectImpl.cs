@@ -304,12 +304,15 @@ namespace Garnet.server
 
             if (list.Count == 0 || count == 0)
             {
-                writer.WriteNull();
+                writer.WriteEmptyArray();
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
-            writer.WriteArrayLength(count);
+            if (count > 1)
+            {
+                writer.WriteArrayLength(count);
+            }
 
             while (count > 0)
             {
