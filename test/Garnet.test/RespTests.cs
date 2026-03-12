@@ -1035,7 +1035,7 @@ namespace Garnet.test
             resp = (string)db.Execute($"{setCommand}", key, value, "keepttl");
             ClassicAssert.AreEqual(okResponse, resp);
             resp = (string)db.Execute($"{ttlCommand}", key);
-            ClassicAssert.IsTrue(int.TryParse(resp, out ttl) && ttl > 0 && ttl < 60);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl) && ttl > 0 && ttl <= 60);
 
             // ex .. nx, non-existing key
             ClassicAssert.IsTrue(db.KeyDelete(key));
@@ -2438,11 +2438,11 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (long)ttl);
 
             db.StringSet(key, val);
             ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (long)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
@@ -2462,6 +2462,34 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TtlRoundingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // String key: SET + EXPIRE then immediately TTL should return the same value
+            var key = "ttlRoundKey";
+            var val = "value";
+            var expire = 100;
+
+            db.StringSet(key, val);
+            db.KeyExpire(key, TimeSpan.FromSeconds(expire));
+            var ttl = (long)db.Execute("TTL", key);
+            // TTL should round to nearest second (matching Redis), not floor.
+            // Allow 5s tolerance for network/scheduling delays.
+            ClassicAssert.GreaterOrEqual(ttl, expire - 5, $"String TTL {ttl} too low (expected near {expire})");
+            ClassicAssert.LessOrEqual(ttl, expire, $"String TTL {ttl} exceeds {expire}");
+
+            // Object key: ZADD + EXPIRE then immediately TTL should return the same value
+            var objKey = "ttlRoundObjKey";
+            db.SortedSetAdd(objKey, "member", 1.0);
+            db.KeyExpire(objKey, TimeSpan.FromSeconds(expire));
+            ttl = (long)db.Execute("TTL", objKey);
+            ClassicAssert.GreaterOrEqual(ttl, expire - 5, $"Object TTL {ttl} too low (expected near {expire})");
+            ClassicAssert.LessOrEqual(ttl, expire, $"Object TTL {ttl} exceeds {expire}");
+        }
+
+        [Test]
         public void ObjectTTLTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -2471,11 +2499,11 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (long)ttl);
 
             db.SortedSetAdd(key, key, 1.0);
             ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (long)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
@@ -3667,11 +3695,11 @@ namespace Garnet.test
             var expireTimeInMilliseconds = 3000;
 
             var pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-2, (int)pttl);
+            ClassicAssert.AreEqual(-2, (long)pttl);
 
             db.StringSet(key, val);
             pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-1, (int)pttl);
+            ClassicAssert.AreEqual(-1, (long)pttl);
 
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
