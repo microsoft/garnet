@@ -25,7 +25,7 @@ Snapshot and restore are handled automatically by the cache checkpointing mechan
 
 ```
 RI.CREATE myindex
-    [MEMORY | DISK path | CACHE]
+    [DISK path | MEMORY]
     [CACHESIZE bytes]
     [MINRECORD bytes]
     [MAXRECORD bytes]
@@ -34,12 +34,23 @@ RI.CREATE myindex
     [WAL path]
 ```
 
+**Storage backends:**
+
+- **`DISK path`** (default) — Disk-backed tree. Base pages are stored in a data file on
+  disk. The circular buffer (`CACHESIZE`) acts as a hot-data cache. No data loss on
+  eviction. Total capacity is limited by disk space. Supports all operations including
+  scan. Snapshot and recovery use the tree's own data file.
+- **`MEMORY`** — Memory-only tree (maps to bf-tree's `cache_only` mode). All data
+  lives in the circular buffer. Total capacity is bounded by `CACHESIZE`. Scan
+  operations are **not supported**. Snapshot and recovery will be supported in a
+  future bf-tree release; Garnet will snapshot/recover memory-only trees the same way
+  as disk-backed trees once bf-tree adds this capability.
+
 **Examples:**
 ```
-RI.CREATE r1
-RI.CREATE r1 MEMORY CACHESIZE 33554432
+RI.CREATE r1 DISK /data/r1.bftree
 RI.CREATE r1 DISK /data/r1.bftree CACHESIZE 67108864 MAXKEYLEN 64 WAL /data/r1.wal
-RI.CREATE r1 CACHE CACHESIZE 16777216 MINRECORD 8 MAXRECORD 4096
+RI.CREATE r1 MEMORY CACHESIZE 16777216 MINRECORD 8 MAXRECORD 4096
 ```
 
 **Reply:** `+OK` or `-ERR <config error message>`
@@ -155,7 +166,7 @@ Array of bulk strings (values only).
 **Errors:**
 - `-ERR invalid count` if count is 0
 - `-ERR invalid start key` if key is empty or too long
-- `-ERR cache-only mode does not support scan` if the index is cache-only
+- `-ERR memory-only mode does not support scan` if the index is memory-only
 
 #### `RI.RANGE`
 
@@ -219,7 +230,7 @@ Keys and values are transmitted as raw bytes (bulk strings), matching Bf-Tree's 
 ## Example Session
 
 ```
-> RI.CREATE r1 MEMORY CACHESIZE 33554432
+> RI.CREATE r1 DISK /data/r1.bftree CACHESIZE 33554432
 +OK
 
 > RI.SET r1 "emp:001" "Alice,Engineering,L5"
@@ -280,6 +291,21 @@ raw-byte value (not a heap object) in Tsavorite's unified store. The stub contai
 configuration metadata, a native pointer (`nint`) to the live BfTree instance, and a
 `Guid` process-instance-id for stale-pointer detection after restart. A
 `RangeIndexManager` (partial class) owns the BfTree lifecycle outside of Tsavorite.
+
+RangeIndex supports two **storage backends**, configurable per index via `RI.CREATE`:
+
+- **Disk-backed** (default) — Bf-Tree stores leaf pages in a data file on disk, with a
+  circular buffer in memory as a hot-data cache. This is the primary mode for production
+  use. No data loss on eviction — evicted pages are written to disk. Total capacity is
+  limited by disk space. Snapshot uses `BfTree::snapshot()` which drains the circular
+  buffer and writes the index structure to the tree's own data file. Recovery uses
+  `BfTree::new_from_snapshot(config)` which opens the existing data file and resumes.
+- **Memory-only** — Bf-Tree uses a bounded in-memory circular buffer (bf-tree's
+  `cache_only` mode). Evicted pages are nullified. Total capacity is bounded by
+  `CACHESIZE`. Scan operations are not supported. Snapshot and recovery are planned
+  for a future bf-tree release; Garnet will treat memory-only trees identically to
+  disk-backed trees for persistence once bf-tree adds this capability. Until then,
+  snapshot/recovery calls throw `NotSupportedException` at the FFI boundary.
 
 This follows the same "stub-in-store with external data manager" pattern used by
 **VectorManager** on the
@@ -395,7 +421,7 @@ private struct RangeIndexStub
     [FieldOffset(20)] public uint MaxRecordSize;        // BfTree cb_max_record_size
     [FieldOffset(24)] public uint MaxKeyLen;            // BfTree cb_max_key_len
     [FieldOffset(28)] public uint LeafPageSize;         // BfTree leaf_page_size
-    [FieldOffset(32)] public byte StorageBackend;       // 0=Memory, 1=Disk, 2=Cache
+    [FieldOffset(32)] public byte StorageBackend;       // 0=Disk, 1=Memory
     [FieldOffset(33)] public byte Flags;                // bit 0: WAL enabled
     [FieldOffset(34)] public byte SerializationPhase;        // 0=REST, 1=SERIALIZING, 2=SERIALIZED (transient, used during checkpoint)
     [FieldOffset(35)] public Guid ProcessInstanceId;    // Detects stale pointers after restart/eviction
@@ -1488,22 +1514,36 @@ bf-tree's Rust API for C/P/Invoke consumption. See the Rust FFI code below.
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Garnet.server.BfTreeInterop</RootNamespace>
   </PropertyGroup>
 
   <!-- Local dev: build Rust crate for current platform -->
   <Target Name="BuildRustCdylib" BeforeTargets="Build"
-          Condition="'$(CI)' != 'true'">
-    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml" />
-    <!-- Copy to output for local dev -->
-    <Copy Condition="$([MSBuild]::IsOSPlatform('Linux'))"
-          SourceFiles="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so"
-          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <Copy Condition="$([MSBuild]::IsOSPlatform('Windows'))"
-          SourceFiles="$(MSBuildThisFileDirectory)target/release/bftree_garnet.dll"
-          DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+          Condition="'$(CI)' != 'true' AND '$(ContinuousIntegrationBuild)' != 'true'">
+    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml"
+          IgnoreExitCode="false" />
   </Target>
+
+  <!-- Include the native library so it propagates to consuming projects
+       via ProjectReference. Platform-conditional Content items with
+       CopyToOutputDirectory automatically copy to the output of any
+       project that references BfTreeInterop. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <Content Include="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so"
+             CopyToOutputDirectory="PreserveNewest" Link="libbftree_garnet.so"
+             Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <Content Include="$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll"
+             CopyToOutputDirectory="PreserveNewest" Link="bftree_garnet.dll"
+             Condition="Exists('$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib"
+             CopyToOutputDirectory="PreserveNewest" Link="libbftree_garnet.dylib"
+             Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib')" />
+  </ItemGroup>
 
   <!-- NuGet packaging: include pre-built native binaries for all platforms.
        In CI, native binaries are placed here by the pipeline before dotnet build. -->
@@ -1516,6 +1556,16 @@ bf-tree's Rust API for C/P/Invoke consumption. See the Rust FFI code below.
                            TargetPath="runtimes/win-x64/native/bftree_garnet.dll"
                            CopyToOutputDirectory="PreserveNewest"
                            Condition="Exists('runtimes/win-x64/native/bftree_garnet.dll')" />
+    <ContentWithTargetPath Include="runtimes/osx-x64/native/libbftree_garnet.dylib"
+                           TargetPath="runtimes/osx-x64/native/libbftree_garnet.dylib"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/osx-x64/native/libbftree_garnet.dylib')" />
+  </ItemGroup>
+
+  <!-- Exclude Rust build artifacts from the C# project -->
+  <ItemGroup>
+    <None Remove="target/**" />
+    <None Remove="src/**" />
   </ItemGroup>
 </Project>
 ```
@@ -1706,21 +1756,30 @@ internal sealed class BfTreeService : IDisposable
         ref SpanByteAndMemory output, out int resultCount)
     { /* same iterator pattern */ }
 
-    /// Take a snapshot. Returns snapshot file path.
-    internal string Snapshot(nint tree)
+    /// Scan all entries in the tree, ordered by key.
+    /// Useful for streaming the full tree state to a replica.
+    /// Internally calls ScanWithCount with start_key=\x00 and count=int.MaxValue.
+    /// Only supported for disk-backed trees (memory-only do not support scan).
+    internal List<ScanRecord> ScanAll(ScanReturnField returnField = ScanReturnField.KeyAndValue)
+        => ScanWithCount(new byte[] { 0 }, int.MaxValue, returnField);
+
+    /// Snapshot a disk-backed BfTree in place.
+    internal void Snapshot(nint tree)
     {
-        var pathPtr = NativeBfTreeMethods.bftree_snapshot(tree);
-        // Convert native string to managed
+        int result = NativeBfTreeMethods.bftree_snapshot(tree);
+        if (result != 0)
+            throw new InvalidOperationException("Failed to snapshot BfTree.");
     }
 
-    /// Restore from snapshot. Returns new tree pointer.
-    internal nint RestoreFromSnapshot(string snapshotPath,
+    /// Recover a disk-backed BfTree from its data file.
+    internal nint RecoverFromSnapshot(string filePath,
         ulong cacheSize, uint minRecordSize, uint maxRecordSize,
         uint maxKeyLen, uint leafPageSize)
     {
-        fixed (byte* pp = Encoding.UTF8.GetBytes(snapshotPath))
+        var pathBytes = Encoding.UTF8.GetBytes(filePath);
+        fixed (byte* pp = pathBytes)
             return NativeBfTreeMethods.bftree_new_from_snapshot(
-                pp, snapshotPath.Length,
+                pp, pathBytes.Length,
                 cacheSize, minRecordSize, maxRecordSize,
                 maxKeyLen, leafPageSize);
     }
@@ -1754,7 +1813,8 @@ internal static unsafe partial class NativeBfTreeMethods
         nint tree, byte* key, int keyLen, byte* value, int valueLen);
 
     [LibraryImport(LibName)] internal static partial int bftree_read(
-        nint tree, byte* key, int keyLen, byte* outBuffer, int outBufferLen);
+        nint tree, byte* key, int keyLen, byte* outBuffer, int outBufferLen,
+        int* outValueLen);
 
     [LibraryImport(LibName)] internal static partial void bftree_delete(
         nint tree, byte* key, int keyLen);
@@ -1772,10 +1832,10 @@ internal static unsafe partial class NativeBfTreeMethods
 
     [LibraryImport(LibName)] internal static partial void bftree_scan_drop(nint iter);
 
-    [LibraryImport(LibName)] internal static partial nint bftree_snapshot(nint tree);
+    [LibraryImport(LibName)] internal static partial int bftree_snapshot(nint tree);
 
     [LibraryImport(LibName)] internal static partial nint bftree_new_from_snapshot(
-        byte* configPath, int configPathLen,
+        byte* filePath, int filePathLen,
         ulong cacheSize, uint minRecord, uint maxRecord,
         uint maxKeyLen, uint leafPageSize);
 
@@ -1798,73 +1858,86 @@ internal enum BfTreeInsertResult
 <summary>Rust FFI exports (click to expand)</summary>
 
 ```rust
-use bf_tree::{BfTree, Config, LeafInsertResult, LeafReadResult, ScanReturnField, ScanIter};
-use std::ffi::c_char;
+use bf_tree::{BfTree, Config, LeafInsertResult, LeafReadResult, ScanReturnField,
+              ScanIter, StorageBackend};
+use std::path::Path;
 use std::slice;
 
+// Storage backend constants (matches C# StorageBackendType enum)
+const STORAGE_MEMORY: u8 = 1;
+
 #[no_mangle]
-pub extern "C" fn bftree_create(
-    cache_size: u64, min_record: u32, max_record: u32,
-    max_key_len: u32, leaf_page_size: u32, storage_backend: u8,
-    file_path: *const u8, file_path_len: i32,
+pub unsafe extern "C" fn bftree_create(
+    cb_size_byte: u64, cb_min_record_size: u32, cb_max_record_size: u32,
+    cb_max_key_len: u32, leaf_page_size: u32,
+    storage_backend: u8, file_path: *const u8, file_path_len: i32,
 ) -> *mut BfTree {
     let mut config = Config::default();
-    config.cb_size_byte(cache_size as usize);
-    config.cb_min_record_size(min_record as usize);
-    config.cb_max_record_size(max_record as usize);
-    config.cb_max_key_len(max_key_len as usize);
-    config.leaf_page_size(leaf_page_size as usize);
-    // ... set storage backend, file path
-    let tree = BfTree::with_config(config, None).unwrap();
-    Box::into_raw(Box::new(tree))
+    // ... apply non-zero config fields ...
+    if storage_backend == STORAGE_MEMORY {
+        config.cache_only(true);
+    } else {
+        // Disk-backed (default)
+        let path_str = /* UTF-8 from file_path */;
+        config.storage_backend(StorageBackend::Std);
+        config.file_path(Path::new(path_str));
+    }
+    match BfTree::with_config(config, None) {
+        Ok(tree) => Box::into_raw(Box::new(tree)),
+        Err(_) => std::ptr::null_mut(),
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn bftree_insert(
+pub unsafe extern "C" fn bftree_insert(
     tree: *mut BfTree, key: *const u8, key_len: i32,
     value: *const u8, value_len: i32,
-) -> i32 {
-    let tree = unsafe { &*tree };
-    let key = unsafe { slice::from_raw_parts(key, key_len as usize) };
-    let value = unsafe { slice::from_raw_parts(value, value_len as usize) };
-    match tree.insert(key, value) {
-        LeafInsertResult::Success => 0,
-        LeafInsertResult::InvalidKV(_) => 1,
-    }
-}
+) -> i32 { /* ... 0=Success, 1=InvalidKV */ }
 
 #[no_mangle]
-pub extern "C" fn bftree_read(
+pub unsafe extern "C" fn bftree_read(
     tree: *mut BfTree, key: *const u8, key_len: i32,
-    out_buffer: *mut u8, out_buffer_len: i32,
-) -> i32 {
-    let tree = unsafe { &*tree };
-    let key = unsafe { slice::from_raw_parts(key, key_len as usize) };
-    let buffer = unsafe { slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize) };
-    match tree.read(key, buffer) {
-        LeafReadResult::Found(n) => n as i32,
-        LeafReadResult::NotFound => -1,
-        LeafReadResult::Deleted => -2,
-        LeafReadResult::InvalidKey => -3,
-    }
-}
+    out_buffer: *mut u8, out_buffer_len: i32, out_value_len: *mut i32,
+) -> i32 { /* ... 0=Found, -1=NotFound, -2=Deleted, -3=InvalidKey */ }
 
 #[no_mangle]
-pub extern "C" fn bftree_delete(
+pub unsafe extern "C" fn bftree_delete(
     tree: *mut BfTree, key: *const u8, key_len: i32,
-) {
-    let tree = unsafe { &*tree };
-    let key = unsafe { slice::from_raw_parts(key, key_len as usize) };
-    tree.delete(key);
-}
+) { /* ... */ }
 
 #[no_mangle]
-pub extern "C" fn bftree_drop(tree: *mut BfTree) {
-    unsafe { drop(Box::from_raw(tree)); }
+pub unsafe extern "C" fn bftree_drop(tree: *mut BfTree) {
+    if !tree.is_null() { drop(Box::from_raw(tree)); }
 }
 
-// ... scan_with_count, scan_with_end_key, scan_next, scan_drop, snapshot,
-// new_from_snapshot follow similar patterns
+/// Snapshot a disk-backed BfTree in place. Returns 0 on success, -1 on failure.
+#[no_mangle]
+pub unsafe extern "C" fn bftree_snapshot(tree: *mut BfTree) -> i32 { /* ... */ }
+
+/// Recover a disk-backed BfTree from its data file. Returns tree ptr or null.
+#[no_mangle]
+pub unsafe extern "C" fn bftree_new_from_snapshot(
+    file_path: *const u8, file_path_len: i32,
+    cb_size_byte: u64, cb_min_record_size: u32, cb_max_record_size: u32,
+    cb_max_key_len: u32, leaf_page_size: u32,
+) -> *mut BfTree { /* ... BfTree::new_from_snapshot(config, None) */ }
+
+/// STUB: Snapshot a memory-only (cache_only) BfTree to disk. Returns -1 (not yet implemented).
+#[no_mangle]
+pub unsafe extern "C" fn bftree_snapshot_memory(
+    _tree: *mut BfTree, _path: *const u8, _path_len: i32,
+) -> i32 { -1 /* TODO: implement when bf-tree adds cache_only snapshot */ }
+
+/// STUB: Recover a memory-only (cache_only) BfTree from disk. Returns null (not yet implemented).
+#[no_mangle]
+pub unsafe extern "C" fn bftree_recover_memory(
+    _path: *const u8, _path_len: i32,
+    _cb_size_byte: u64, _cb_min_record_size: u32, _cb_max_record_size: u32,
+    _cb_max_key_len: u32, _leaf_page_size: u32,
+) -> *mut BfTree { std::ptr::null_mut() /* TODO: implement when bf-tree adds cache_only recovery */ }
+
+// scan_with_count, scan_with_end_key, scan_next, scan_drop follow similar patterns.
+// See libs/native/bftree-garnet/src/lib.rs for the full implementation.
 ```
 
 </details>
@@ -2008,13 +2081,28 @@ from automatic checkpoint/migration handling.
 
 ### The Four Persistence Boundaries
 
+Both storage backends support snapshot and recovery at the Garnet level. For
+**disk-backed** trees, snapshot and recovery are fully implemented via `BfTree::snapshot()`
+and `BfTree::new_from_snapshot(config)`. For **memory-only** trees, bf-tree's `cache_only`
+mode does not yet implement snapshot/recovery — Garnet will throw `NotSupportedException`
+at the FFI boundary until bf-tree adds this capability, at which point memory-only trees
+will be snapshotted/recovered identically to disk-backed trees.
+
+For disk-backed trees:
+- **Snapshot**: `BfTree::snapshot()` drains the circular buffer and writes the index
+  structure to the tree's own data file.
+- **Recovery**: `BfTree::new_from_snapshot(config)` reopens the existing data file and
+  resumes operations.
+
+The `StorageBackend` byte in the stub determines the behavior.
+
 | Boundary | What happens | RangeIndex action required |
 |---|---|---|
-| **Page flush** | Tsavorite evicts a hybrid log page from memory to disk. Stub is written as raw bytes. | Snapshot the BfTree to disk, free the native instance, and update `ProcessInstanceId` to a sentinel so the stale `TreePtr` is detected on re-read. Without this, cold BfTree instances leak native memory indefinitely. |
-| **Checkpoint** | Tsavorite takes a full or incremental checkpoint of the hybrid log. All stubs are included. | Snapshot ALL active BfTrees before checkpoint begins. |
-| **Recovery** | Tsavorite recovers from checkpoint. Stubs are loaded with stale `TreePtr` values. | Scan for `RangeIndexRecordType` records, restore each BfTree from its snapshot, update `TreePtr`. |
-| **Key migration** | Individual keys are transferred to another node during cluster slot migration. | Serialize the BfTree (full snapshot bytes) alongside the stub when transmitting. Receiver recreates the BfTree from the serialized bytes. |
-| **Replica sync** | Full checkpoint is sent to a replica. | Send BfTree snapshot files alongside the Tsavorite checkpoint files. Replica recovery restores BfTrees from those files. |
+| **Page flush** | Tsavorite evicts a hybrid log page from memory to disk. Stub is written as raw bytes. | For disk-backed trees: snapshot the BfTree via `snapshot()`, free the native instance, update `ProcessInstanceId` to a sentinel. For memory-only trees: snapshot once supported, otherwise free the native instance. |
+| **Checkpoint** | Tsavorite takes a full or incremental checkpoint of the hybrid log. All stubs are included. | For disk-backed trees: `snapshot()` flushes in place to the data file. Memory-only trees: snapshot once supported by bf-tree. |
+| **Recovery** | Tsavorite recovers from checkpoint. Stubs are loaded with stale `TreePtr` values. | For disk-backed trees: `new_from_snapshot(config)` reopens the data file. Memory-only trees: recover once supported, otherwise create a new empty tree. |
+| **Key migration** | Individual keys are transferred to another node during cluster slot migration. | For disk-backed trees: serialize the BfTree snapshot alongside the stub. Memory-only trees: same approach once snapshot is supported. |
+| **Replica sync** | Full checkpoint is sent to a replica. | For disk-backed trees: send BfTree data files alongside checkpoint, or use `ScanAll()` to stream the full tree state record-by-record. Memory-only trees: send snapshot once supported. |
 
 ### Design: Snapshot File Management
 
@@ -2521,33 +2609,33 @@ case "RISTORE":
 
 ---
 
-### F. Summary: New FFI Functions Required
+### F. Summary: FFI Functions for Persistence
 
-The BfTree Rust FFI layer needs additional functions for persistence:
+The core FFI functions for disk-backed tree persistence are already implemented in
+`libs/native/bftree-garnet/src/lib.rs`:
+
+- **`bftree_snapshot(tree)`** — Snapshots a disk-backed tree in place (drains circular
+  buffer, writes index to data file). Returns 0 on success.
+- **`bftree_new_from_snapshot(file_path, ...config)`** — Recovers a disk-backed tree
+  from its data file. Returns tree pointer or null.
+- **`bftree_create(..., storage_backend, file_path, ...)`** — Creates a new tree with
+  the specified backend (0=Disk, 1=Memory).
+- **`bftree_drop(tree)`** — Frees a tree instance.
+
+Memory-only trees will use the same `bftree_snapshot` and `bftree_new_from_snapshot`
+FFI once bf-tree adds `cache_only` snapshot support. Until then, the C# layer throws
+`NotSupportedException` before calling into the FFI.
+
+**Future:** For key migration, additional buffer-based serialization functions may be
+needed to avoid temp files:
 
 ```rust
-/// Snapshot to a specific file path (not the default path).
-#[no_mangle]
-pub extern "C" fn bftree_snapshot_to_path(
-    tree: *mut BfTree,
-    path: *const u8, path_len: i32,
-) -> i32;  // 0 = success, nonzero = error
-
-/// Restore from a specific snapshot file path.
-#[no_mangle]
-pub extern "C" fn bftree_new_from_snapshot_path(
-    path: *const u8, path_len: i32,
-    cache_size: u64, min_record: u32, max_record: u32,
-    max_key_len: u32, leaf_page_size: u32, storage_backend: u8,
-) -> *mut BfTree;  // null on failure
-
 /// Serialize BfTree to a byte buffer (for migration without temp files).
-/// Returns the number of bytes written, or -1 if buffer too small.
 #[no_mangle]
 pub extern "C" fn bftree_serialize_to_buffer(
     tree: *mut BfTree,
     buffer: *mut u8, buffer_len: i32,
-) -> i64;
+) -> i64;  // bytes written, or -1 if buffer too small
 
 /// Get the serialized size of a BfTree snapshot (for pre-allocating buffer).
 #[no_mangle]
@@ -2557,13 +2645,12 @@ pub extern "C" fn bftree_serialized_size(tree: *mut BfTree) -> i64;
 #[no_mangle]
 pub extern "C" fn bftree_deserialize_from_buffer(
     buffer: *const u8, buffer_len: i32,
-    cache_size: u64, min_record: u32, max_record: u32,
-    max_key_len: u32, leaf_page_size: u32, storage_backend: u8,
+    cb_size_byte: u64, cb_min_record_size: u32, cb_max_record_size: u32,
+    cb_max_key_len: u32, leaf_page_size: u32,
 ) -> *mut BfTree;  // null on failure
 ```
 
-These buffer-based variants are useful for key migration where we want to avoid writing
-temp files — the BfTree data can be serialized directly into the migration payload buffer.
+These are not yet implemented and will be added when migration support is built.
 
 ---
 
@@ -2580,7 +2667,7 @@ temp files — the BfTree data can be serialized directly into the migration pay
 | MOD | `libs/cluster/Session/RespClusterMigrateCommands.cs` | Handle `RISTORE` type during key migration |
 | MOD | `libs/cluster/Server/Migration/MigrateSessionKeys.cs` | Detect RangeIndex `RecordType`, serialize BfTree, 2-phase transmit |
 | MOD | `libs/cluster/Server/Migration/MigrateScanFunctions.cs` | Check `RecordType` during slot scan |
-| MOD | `libs/native/bftree-garnet/src/lib.rs` | Add `bftree_snapshot_to_path`, `bftree_serialize_to_buffer`, `bftree_deserialize_from_buffer` |
+| MOD | `libs/native/bftree-garnet/src/lib.rs` | *(future)* Add `bftree_serialize_to_buffer`, `bftree_deserialize_from_buffer` for migration |
 
 ---
 
