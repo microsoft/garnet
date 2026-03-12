@@ -263,7 +263,7 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
             }
-            
+
             // <[Get Key]>
             var key = parseState.GetArgSliceByRef(0);
 
