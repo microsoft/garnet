@@ -205,6 +205,7 @@ namespace Garnet.server
             if (count is not 1 and not 3 and not 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
+            }
 
             // <[Get Key]>
             var key = parseState.GetArgSliceByRef(0);
@@ -230,6 +231,8 @@ namespace Garnet.server
                     {
                         return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
+                }
+            }
 
             var input = new StringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1, arg1: useBitIndex ? 1 : 0);
 
@@ -259,7 +262,8 @@ namespace Garnet.server
             if (count is < 2 or > 5)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
-
+            }
+            
             // <[Get Key]>
             var key = parseState.GetArgSliceByRef(0);
 
