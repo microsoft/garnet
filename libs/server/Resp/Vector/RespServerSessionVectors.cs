@@ -754,7 +754,7 @@ namespace Garnet.server
                 delta ??= 2f;
                 searchExplorationFactor ??= 100;
                 filter ??= default;
-                maxFilteringEffort ??= count.Value * 100;
+                maxFilteringEffort ??= count.Value * 200;
 
                 // TODO: these stackallocs are dangerous, need logic to avoid stack overflow
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];
