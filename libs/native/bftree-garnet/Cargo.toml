@@ -1,0 +1,13 @@
+[package]
+name = "bftree-garnet"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "C FFI wrapper over bf-tree for Garnet P/Invoke interop"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bf-tree = "0.4"

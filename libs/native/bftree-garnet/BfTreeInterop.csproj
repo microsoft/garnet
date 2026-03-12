@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Garnet.server.BfTreeInterop</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Local dev: build Rust crate for current platform -->
+  <Target Name="BuildRustCdylib" BeforeTargets="Build"
+          Condition="'$(CI)' != 'true' AND '$(ContinuousIntegrationBuild)' != 'true'">
+    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml"
+          IgnoreExitCode="false" />
+  </Target>
+
+  <!-- Include the native library so it propagates to consuming projects via ProjectReference. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+    <Content Include="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="libbftree_garnet.so"
+             Visible="false"
+             Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.so')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <Content Include="$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="bftree_garnet.dll"
+             Visible="false"
+             Condition="Exists('$(MSBuildThisFileDirectory)target\release\bftree_garnet.dll')" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <Content Include="$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="libbftree_garnet.dylib"
+             Visible="false"
+             Condition="Exists('$(MSBuildThisFileDirectory)target/release/libbftree_garnet.dylib')" />
+  </ItemGroup>
+
+  <!-- NuGet packaging: include pre-built native binaries for all platforms.
+       In CI, native binaries are placed here by the pipeline before dotnet build. -->
+  <ItemGroup>
+    <ContentWithTargetPath Include="runtimes/linux-x64/native/libbftree_garnet.so"
+                           TargetPath="runtimes/linux-x64/native/libbftree_garnet.so"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/linux-x64/native/libbftree_garnet.so')" />
+    <ContentWithTargetPath Include="runtimes/win-x64/native/bftree_garnet.dll"
+                           TargetPath="runtimes/win-x64/native/bftree_garnet.dll"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/win-x64/native/bftree_garnet.dll')" />
+    <ContentWithTargetPath Include="runtimes/osx-x64/native/libbftree_garnet.dylib"
+                           TargetPath="runtimes/osx-x64/native/libbftree_garnet.dylib"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/osx-x64/native/libbftree_garnet.dylib')" />
+  </ItemGroup>
+
+  <!-- Exclude Rust build artifacts from the C# project -->
+  <ItemGroup>
+    <None Remove="target/**" />
+    <None Remove="src/**" />
+  </ItemGroup>
+
+</Project>
