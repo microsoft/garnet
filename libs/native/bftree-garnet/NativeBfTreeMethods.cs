@@ -161,5 +161,13 @@ namespace Garnet.server.BfTreeInterop
             uint cb_max_record_size,
             uint cb_max_key_len,
             uint leaf_page_size);
+
+        /// <summary>
+        /// No-op for measuring pure FFI transition overhead.
+        /// </summary>
+        [LibraryImport(LibName)]
+        internal static partial int bftree_noop(
+            nint tree,
+            byte* key, int key_len);
     }
 }

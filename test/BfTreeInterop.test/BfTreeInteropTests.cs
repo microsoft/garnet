@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -177,6 +178,29 @@ namespace BfTreeInterop.test
             var readResult = _tree.Read(key, out var value);
             Assert.That(readResult, Is.EqualTo(BfTreeReadResult.Deleted));
             Assert.That(value, Is.Empty);
+        }
+
+        [Test]
+        public void ReadIntoSpan_ZeroAlloc()
+        {
+            var key = "spankey"u8;
+            var expected = "spanvalue"u8;
+            _tree.Insert(key, expected);
+
+            Span<byte> buffer = stackalloc byte[256];
+            var result = _tree.Read(key, buffer, out int bytesWritten);
+            Assert.That(result, Is.EqualTo(BfTreeReadResult.Found));
+            Assert.That(bytesWritten, Is.EqualTo(expected.Length));
+            Assert.That(buffer[..bytesWritten].SequenceEqual(expected), Is.True);
+        }
+
+        [Test]
+        public void ReadIntoSpan_NotFound()
+        {
+            Span<byte> buffer = stackalloc byte[256];
+            var result = _tree.Read("nope"u8, buffer, out int bytesWritten);
+            Assert.That(result, Is.EqualTo(BfTreeReadResult.NotFound));
+            Assert.That(bytesWritten, Is.EqualTo(0));
         }
 
         // ---------------------------------------------------------------
@@ -374,6 +398,46 @@ namespace BfTreeInterop.test
                 Assert.That(r.Key.Length, Is.GreaterThan(0));
                 Assert.That(r.Value.Length, Is.EqualTo(0));
             }
+        }
+
+        // ---------------------------------------------------------------
+        // Zero-alloc callback scan tests
+        // ---------------------------------------------------------------
+
+        [Test]
+        public void ScanWithCallback_ZeroAlloc()
+        {
+            InsertTestData(10);
+
+            var keys = new List<string>();
+            Span<byte> scanBuf = stackalloc byte[8192];
+            int count = _tree.ScanWithCount("key:"u8, 100, scanBuf,
+                (key, value) =>
+                {
+                    keys.Add(Encoding.UTF8.GetString(key));
+                    return true;
+                });
+
+            Assert.That(count, Is.EqualTo(10));
+            Assert.That(keys, Has.Count.EqualTo(10));
+            Assert.That(keys[0], Is.EqualTo("key:0000"));
+        }
+
+        [Test]
+        public void ScanWithCallback_EarlyStop()
+        {
+            InsertTestData(10);
+
+            int seen = 0;
+            Span<byte> scanBuf = stackalloc byte[8192];
+            int count = _tree.ScanWithCount("key:"u8, 100, scanBuf,
+                (key, value) =>
+                {
+                    seen++;
+                    return seen < 3; // stop after 3 records
+                });
+
+            Assert.That(count, Is.EqualTo(3));
         }
 
         // ---------------------------------------------------------------

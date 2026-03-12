@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
+using Tsavorite.core;
 
 namespace Garnet.server.BfTreeInterop
 {
@@ -66,6 +68,14 @@ namespace Garnet.server.BfTreeInterop
         /// </summary>
         Memory = 1,
     }
+
+    /// <summary>
+    /// Callback for zero-allocation scan. Receives key and value as spans into the scan buffer.
+    /// </summary>
+    /// <param name="key">Key bytes (empty if ScanReturnField.Value).</param>
+    /// <param name="value">Value bytes (empty if ScanReturnField.Key).</param>
+    /// <returns>True to continue scanning, false to stop early.</returns>
+    public delegate bool ScanRecordAction(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value);
 
     /// <summary>
     /// A single record returned by a scan operation.
@@ -141,43 +151,92 @@ namespace Garnet.server.BfTreeInterop
             _storageBackend = storageBackend;
         }
 
+        // ---------------------------------------------------------------
+        // Point operations — PinnedSpanByte (zero-overhead for Garnet hot paths)
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Insert a key-value pair. Zero-overhead: passes pinned pointers directly to native code.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public BfTreeInsertResult Insert(PinnedSpanByte key, PinnedSpanByte value)
+        {
+            return (BfTreeInsertResult)NativeBfTreeMethods.bftree_insert(
+                _tree, key.ToPointer(), key.Length, value.ToPointer(), value.Length);
+        }
+
+        /// <summary>
+        /// Read the value for a key into a pinned output buffer. Zero-overhead.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public BfTreeReadResult Read(PinnedSpanByte key, byte* outputBuffer, int outputBufferLen, out int bytesWritten)
+        {
+            int valueLen = 0;
+            var result = NativeBfTreeMethods.bftree_read(
+                _tree, key.ToPointer(), key.Length, outputBuffer, outputBufferLen, &valueLen);
+            bytesWritten = valueLen;
+            return (BfTreeReadResult)result;
+        }
+
+        /// <summary>
+        /// Delete a key. Zero-overhead.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Delete(PinnedSpanByte key)
+        {
+            NativeBfTreeMethods.bftree_delete(_tree, key.ToPointer(), key.Length);
+        }
+
+        /// <summary>
+        /// No-op P/Invoke for measuring pure FFI transition overhead.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int Noop(PinnedSpanByte key)
+        {
+            return NativeBfTreeMethods.bftree_noop(_tree, key.ToPointer(), key.Length);
+        }
+
+        // ---------------------------------------------------------------
+        // Point operations — span-based (safe wrappers: fixed → PinnedSpanByte → native)
+        // ---------------------------------------------------------------
+
         /// <summary>
         /// Insert a key-value pair into the BfTree.
         /// </summary>
-        /// <returns>The insert result code.</returns>
         public BfTreeInsertResult Insert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             fixed (byte* kp = key, vp = value)
-            {
-                return (BfTreeInsertResult)NativeBfTreeMethods.bftree_insert(
-                    _tree, kp, key.Length, vp, value.Length);
-            }
+                return Insert(
+                    PinnedSpanByte.FromPinnedPointer(kp, key.Length),
+                    PinnedSpanByte.FromPinnedPointer(vp, value.Length));
         }
 
         /// <summary>
-        /// Read the value for a key.
+        /// Read the value for a key into a caller-provided buffer.
         /// </summary>
-        /// <param name="key">The key to look up.</param>
-        /// <param name="value">On success, receives the value bytes.</param>
-        /// <returns>The read result code.</returns>
+        public BfTreeReadResult Read(ReadOnlySpan<byte> key, Span<byte> outputBuffer, out int bytesWritten)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            fixed (byte* kp = key, bp = outputBuffer)
+                return Read(
+                    PinnedSpanByte.FromPinnedPointer(kp, key.Length),
+                    bp, outputBuffer.Length, out bytesWritten);
+        }
+
+        /// <summary>
+        /// Read the value for a key. Convenience overload that allocates a byte array.
+        /// For hot paths, prefer the PinnedSpanByte or span overloads.
+        /// </summary>
         public BfTreeReadResult Read(ReadOnlySpan<byte> key, out byte[] value)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             value = [];
             Span<byte> buffer = stackalloc byte[4096];
-            int valueLen = 0;
-            int result;
-            fixed (byte* kp = key, bp = buffer)
-            {
-                result = NativeBfTreeMethods.bftree_read(
-                    _tree, kp, key.Length, bp, buffer.Length, &valueLen);
-            }
-            if (result == (int)BfTreeReadResult.Found && valueLen > 0)
-            {
-                value = buffer[..valueLen].ToArray();
-            }
-            return (BfTreeReadResult)result;
+            var result = Read(key, buffer, out int bytesWritten);
+            if (result == BfTreeReadResult.Found && bytesWritten > 0)
+                value = buffer[..bytesWritten].ToArray();
+            return result;
         }
 
         /// <summary>
@@ -187,14 +246,47 @@ namespace Garnet.server.BfTreeInterop
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             fixed (byte* kp = key)
+                Delete(PinnedSpanByte.FromPinnedPointer(kp, key.Length));
+        }
+
+        /// <summary>
+        /// Scan entries starting from <paramref name="startKey"/>, returning up to
+        /// <paramref name="count"/> records. Invokes <paramref name="onRecord"/> for each
+        /// record without allocating per-record. Zero-allocation on the hot path.
+        /// </summary>
+        /// <param name="startKey">Key to start scanning from (inclusive).</param>
+        /// <param name="count">Maximum number of records to return.</param>
+        /// <param name="scanBuffer">Caller-provided buffer for scan output (must be large enough for max key+value).</param>
+        /// <param name="onRecord">Callback invoked for each record with key and value spans into <paramref name="scanBuffer"/>.</param>
+        /// <param name="returnField">Which fields to return.</param>
+        /// <returns>Number of records scanned.</returns>
+        public int ScanWithCount(
+            ReadOnlySpan<byte> startKey, int count,
+            Span<byte> scanBuffer,
+            ScanRecordAction onRecord,
+            ScanReturnField returnField = ScanReturnField.KeyAndValue)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            nint handle;
+            fixed (byte* skp = startKey)
             {
-                NativeBfTreeMethods.bftree_delete(_tree, kp, key.Length);
+                handle = NativeBfTreeMethods.bftree_scan_with_count(
+                    _tree, skp, startKey.Length, count, (byte)returnField);
+            }
+            try
+            {
+                return DrainScanIteratorWithCallback(handle, scanBuffer, returnField, onRecord);
+            }
+            finally
+            {
+                NativeBfTreeMethods.bftree_scan_drop(handle);
             }
         }
 
         /// <summary>
         /// Scan entries starting from <paramref name="startKey"/>, returning up to
-        /// <paramref name="count"/> records.
+        /// <paramref name="count"/> records. Convenience overload that returns a list.
+        /// For hot paths, prefer the callback-based overload to avoid per-record allocations.
         /// </summary>
         public List<ScanRecord> ScanWithCount(
             ReadOnlySpan<byte> startKey, int count,
@@ -209,7 +301,7 @@ namespace Garnet.server.BfTreeInterop
             }
             try
             {
-                return DrainScanIterator(handle, returnField);
+                return DrainScanIteratorToList(handle, returnField);
             }
             finally
             {
@@ -233,13 +325,15 @@ namespace Garnet.server.BfTreeInterop
             }
             try
             {
-                return DrainScanIterator(handle, returnField);
+                return DrainScanIteratorToList(handle, returnField);
             }
             finally
             {
                 NativeBfTreeMethods.bftree_scan_drop(handle);
             }
         }
+
+        private static readonly byte[] ScanAllStartKey = [0];
 
         /// <summary>
         /// Scan all entries in the tree, ordered by key.
@@ -249,7 +343,7 @@ namespace Garnet.server.BfTreeInterop
         public List<ScanRecord> ScanAll(
             ScanReturnField returnField = ScanReturnField.KeyAndValue)
         {
-            return ScanWithCount([0], int.MaxValue, returnField);
+            return ScanWithCount(ScanAllStartKey, int.MaxValue, returnField);
         }
 
         /// <summary>
@@ -332,9 +426,38 @@ namespace Garnet.server.BfTreeInterop
         }
 
         /// <summary>
-        /// Drains all records from a scan iterator into a list.
+        /// Drains scan iterator via callback — zero per-record allocation.
         /// </summary>
-        private static List<ScanRecord> DrainScanIterator(nint handle, ScanReturnField returnField)
+        private static int DrainScanIteratorWithCallback(
+            nint handle, Span<byte> buffer, ScanReturnField returnField, ScanRecordAction onRecord)
+        {
+            int count = 0;
+            while (true)
+            {
+                int keyLen = 0, valueLen = 0;
+                int hasNext;
+                fixed (byte* bp = buffer)
+                    hasNext = NativeBfTreeMethods.bftree_scan_next(
+                        handle, bp, buffer.Length, &keyLen, &valueLen);
+                if (hasNext == 0)
+                    break;
+
+                var key = returnField != ScanReturnField.Value
+                    ? buffer[..keyLen] : ReadOnlySpan<byte>.Empty;
+                var value = returnField != ScanReturnField.Key
+                    ? buffer[keyLen..(keyLen + valueLen)] : ReadOnlySpan<byte>.Empty;
+
+                count++;
+                if (!onRecord(key, value))
+                    break;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Drains scan iterator into a list — convenience, allocates per record.
+        /// </summary>
+        private static List<ScanRecord> DrainScanIteratorToList(nint handle, ScanReturnField returnField)
         {
             var results = new List<ScanRecord>();
             Span<byte> buffer = stackalloc byte[8192];
@@ -343,10 +466,8 @@ namespace Garnet.server.BfTreeInterop
                 int keyLen = 0, valueLen = 0;
                 int hasNext;
                 fixed (byte* bp = buffer)
-                {
                     hasNext = NativeBfTreeMethods.bftree_scan_next(
                         handle, bp, buffer.Length, &keyLen, &valueLen);
-                }
                 if (hasNext == 0)
                     break;
 

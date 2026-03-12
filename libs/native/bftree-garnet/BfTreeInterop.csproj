@@ -3,7 +3,14 @@
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Garnet.server.BfTreeInterop</RootNamespace>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../storage/Tsavorite/cs/src/core/Tsavorite.core.csproj" />
+  </ItemGroup>
 
   <!-- Local dev: build Rust crate for current platform -->
   <Target Name="BuildRustCdylib" BeforeTargets="Build"

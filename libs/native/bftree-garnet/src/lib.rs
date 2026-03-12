@@ -434,3 +434,14 @@ pub unsafe extern "C" fn bftree_recover_memory(
     // TODO: Implement when bf-tree adds cache_only recovery support.
     std::ptr::null_mut()
 }
+
+/// No-op function for measuring pure FFI transition overhead.
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn bftree_noop(
+    _tree: *mut BfTree,
+    _key: *const u8,
+    _key_len: i32,
+) -> i32 {
+    0
+}
