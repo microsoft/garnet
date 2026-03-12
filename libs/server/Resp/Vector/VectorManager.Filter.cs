@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 
 namespace Garnet.server
@@ -28,7 +29,7 @@ namespace Garnet.server
         ///
         /// No in-place compaction — the caller skips non-matching results using the bitmap.
         /// </summary>
-        private static int ApplyPostFilter(
+        internal static int ApplyPostFilter(
             ReadOnlySpan<byte> filter,
             int numResults,
             ReadOnlySpan<byte> attributesSpan,
@@ -51,38 +52,53 @@ namespace Garnet.server
             filterBitmap.Clear();
 
             // Collect unique selectors — byte-ranges into the filter expression.
-            var selectorRanges = program.GetSelectorRanges();
+            var selectorRanges = program.GetSelectorRanges(filter);
 
-            // Pre-allocate extraction buffer — reused across all candidates.
-            var extractedFields = new ExprToken[selectorRanges.Length];
+            // Pre-allocate extraction buffer on the stack — reused across all candidates.
+            // Max 32 selectors via stackalloc; rent from ArrayPool for pathological expressions.
+            const int MaxStackSelectors = 32;
+            ExprToken[] rentedBuffer = null;
+            Span<ExprToken> extractedFields = selectorRanges.Length <= MaxStackSelectors
+                ? stackalloc ExprToken[selectorRanges.Length]
+                : (rentedBuffer = ArrayPool<ExprToken>.Shared.Rent(selectorRanges.Length));
 
             var filteredCount = 0;
 
-            // Allocate the evaluation stack once and reuse it across all candidate evaluations
-            var stack = ExprRunner.CreateStack();
+            // Allocate the evaluation stack on the stack — reused across all candidate evaluations.
+            const int StackCapacity = 16;
+            Span<ExprToken> stackBuf = stackalloc ExprToken[StackCapacity];
+            var stack = new ExprStack(stackBuf);
 
             var remaining = attributesSpan;
 
-            for (var i = 0; i < numResults; i++)
+            try
             {
-                // Read attribute length-prefix + data
-                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
-                var attrData = remaining.Slice(sizeof(int), attrLen);
-
-                // Reset runtime tuple pool for this candidate
-                program.ResetRuntimePool();
-
-                // Single-pass extraction: scan JSON once, extract all needed fields.
-                AttributeExtractor.ExtractFields(attrData, program.FilterBytes, selectorRanges, extractedFields, program);
-
-                // Execute the compiled program against pre-extracted fields.
-                if (ExprRunner.Run(program, attrData, selectorRanges, extractedFields, stack))
+                for (var i = 0; i < numResults; i++)
                 {
-                    filterBitmap[i >> 3] |= (byte)(1 << (i & 7));
-                    filteredCount++;
-                }
+                    // Read attribute length-prefix + data
+                    var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                    var attrData = remaining.Slice(sizeof(int), attrLen);
 
-                remaining = remaining[(sizeof(int) + attrLen)..];
+                    // Reset runtime tuple pool for this candidate
+                    program.ResetRuntimePool();
+
+                    // Single-pass extraction: scan JSON once, extract all needed fields.
+                    AttributeExtractor.ExtractFields(attrData, filter, selectorRanges, extractedFields, program);
+
+                    // Execute the compiled program against pre-extracted fields.
+                    if (ExprRunner.Run(program, attrData, filter, selectorRanges, extractedFields, ref stack))
+                    {
+                        filterBitmap[i >> 3] |= (byte)(1 << (i & 7));
+                        filteredCount++;
+                    }
+
+                    remaining = remaining[(sizeof(int) + attrLen)..];
+                }
+            }
+            finally
+            {
+                if (rentedBuffer != null)
+                    ArrayPool<ExprToken>.Shared.Return(rentedBuffer);
             }
 
             return filteredCount;

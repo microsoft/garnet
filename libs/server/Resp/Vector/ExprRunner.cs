@@ -3,10 +3,26 @@
 
 using System;
 using System.Buffers.Text;
-using System.Collections.Generic;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Lightweight stack over a caller-supplied <see cref="Span{ExprToken}"/> buffer.
+    /// Zero heap allocation — designed for stackalloc use.
+    /// </summary>
+    internal ref struct ExprStack
+    {
+        private readonly Span<ExprToken> _buffer;
+        private int _count;
+
+        public ExprStack(Span<ExprToken> buffer) { _buffer = buffer; _count = 0; }
+        public int Count => _count;
+        public void Push(ExprToken t) => _buffer[_count++] = t;
+        public ExprToken Pop() => _buffer[--_count];
+        public ExprToken Peek() => _buffer[_count - 1];
+        public void Clear() => _count = 0;
+    }
+
     /// <summary>
     /// Stack-based VM that executes a compiled <see cref="ExprProgram"/> against
     /// raw JSON attribute bytes.
@@ -18,65 +34,20 @@ namespace Garnet.server
     /// </summary>
     internal static class ExprRunner
     {
-        private const int DefaultStackCapacity = 16;
-
         /// <summary>
-        /// Create a reusable evaluation stack with default capacity (16).
-        /// </summary>
-        public static Stack<ExprToken> CreateStack() => new Stack<ExprToken>(DefaultStackCapacity);
-
-        /// <summary>
-        /// Execute the compiled program against JSON attribute data.
-        /// Selectors trigger on-demand single-field extraction from <paramref name="json"/>.
-        /// </summary>
-        public static bool Run(ExprProgram program, ReadOnlySpan<byte> json, Stack<ExprToken> stack)
-        {
-            stack.Clear();
-            program.ResetRuntimePool();
-            var filterBytes = program.FilterBytes.AsSpan();
-
-            for (var i = 0; i < program.Length; i++)
-            {
-                var inst = program.Instructions[i];
-
-                if (inst.TokenType == ExprTokenType.Selector)
-                {
-                    var selectorName = filterBytes.Slice(inst.Utf8Start, inst.Utf8Length);
-                    var extracted = AttributeExtractor.ExtractField(json, selectorName, program);
-                    if (extracted.IsNone)
-                    {
-                        stack.Clear();
-                        return false;
-                    }
-                    stack.Push(extracted);
-                    continue;
-                }
-
-                if (!ExecuteInstruction(inst, program, filterBytes, json, stack))
-                    return false;
-            }
-
-            var returnValue = false;
-            if (stack.Count > 0)
-                returnValue = ToBool(stack.Peek(), filterBytes, json) != 0;
-
-            stack.Clear();
-            return returnValue;
-        }
-
-        /// <summary>
-        /// Execute the compiled program using pre-extracted field values (single-pass extraction).
+        /// Execute the compiled program using pre-extracted field values.
         /// Selectors are resolved from <paramref name="extractedFields"/> by matching byte ranges.
+        /// Uses <see cref="ExprStack"/> (backed by stackalloc) — zero heap allocation.
         /// </summary>
         public static bool Run(
             ExprProgram program,
             ReadOnlySpan<byte> json,
+            ReadOnlySpan<byte> filterBytes,
             (int Start, int Length)[] selectorRanges,
-            ExprToken[] extractedFields,
-            Stack<ExprToken> stack)
+            Span<ExprToken> extractedFields,
+            ref ExprStack stack)
         {
             stack.Clear();
-            var filterBytes = program.FilterBytes.AsSpan();
 
             for (var i = 0; i < program.Length; i++)
             {
@@ -104,7 +75,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                if (!ExecuteInstruction(inst, program, filterBytes, json, stack))
+                if (!ExecuteInstruction(inst, program, filterBytes, json, ref stack))
                     return false;
             }
 
@@ -121,7 +92,7 @@ namespace Garnet.server
             ExprProgram program,
             ReadOnlySpan<byte> filterBytes,
             ReadOnlySpan<byte> json,
-            Stack<ExprToken> stack)
+            ref ExprStack stack)
         {
             if (inst.TokenType != ExprTokenType.Op)
             {

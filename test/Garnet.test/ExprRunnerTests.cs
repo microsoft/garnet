@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Text;
 using Allure.NUnit;
 using Garnet.server;
@@ -183,15 +184,22 @@ namespace Garnet.test
         [Test]
         public void Runner_NonJsonAttributesExcluded()
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".year > 1950"), out _);
+            var filterBytes = Encoding.UTF8.GetBytes(".year > 1950");
+            var program = ExprCompiler.TryCompile(filterBytes, out _);
             ClassicAssert.IsNotNull(program);
 
+            var selectorRanges = program.GetSelectorRanges(filterBytes);
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length > 0 ? selectorRanges.Length : 1];
+            Span<ExprToken> stackBuf = stackalloc ExprToken[16];
+            var stack = new ExprStack(stackBuf);
+
             var nonJson = Encoding.UTF8.GetBytes("this is not json");
-            var stack = ExprRunner.CreateStack();
-            ClassicAssert.IsFalse(ExprRunner.Run(program, nonJson, stack));
+            AttributeExtractor.ExtractFields(nonJson, filterBytes, selectorRanges, extractedFields, program);
+            ClassicAssert.IsFalse(ExprRunner.Run(program, nonJson, filterBytes, selectorRanges, extractedFields, ref stack));
 
             var emptyJson = Encoding.UTF8.GetBytes("");
-            ClassicAssert.IsFalse(ExprRunner.Run(program, emptyJson, stack));
+            AttributeExtractor.ExtractFields(emptyJson, filterBytes, selectorRanges, extractedFields, program);
+            ClassicAssert.IsFalse(ExprRunner.Run(program, emptyJson, filterBytes, selectorRanges, extractedFields, ref stack));
         }
 
         [Test]

@@ -18,10 +18,10 @@ namespace Garnet.test
     public class ExprCompilerTests : AllureTestBase
     {
         /// <summary>
-        /// Helper to get the string content of a Str/Selector token from the program's FilterBytes.
+        /// Helper to get the string content of a Str/Selector token from the filter bytes.
         /// </summary>
-        private static string GetStr(ExprProgram program, ExprToken token)
-            => Encoding.UTF8.GetString(program.FilterBytes, token.Utf8Start, token.Utf8Length);
+        private static string GetStr(byte[] filterBytes, ExprToken token)
+            => Encoding.UTF8.GetString(filterBytes, token.Utf8Start, token.Utf8Length);
 
         [Test]
         public void Compiler_IntegerNumbers()
@@ -56,29 +56,32 @@ namespace Garnet.test
         [Test]
         public void Compiler_StringLiterals()
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("\"hello\""), out _);
+            var bytes = Encoding.UTF8.GetBytes("\"hello\"");
+            var program = ExprCompiler.TryCompile(bytes, out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("hello", GetStr(program, program.Instructions[0]));
+            ClassicAssert.AreEqual("hello", GetStr(bytes, program.Instructions[0]));
 
-            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("'world'"), out _);
+            bytes = Encoding.UTF8.GetBytes("'world'");
+            program = ExprCompiler.TryCompile(bytes, out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("world", GetStr(program, program.Instructions[0]));
+            ClassicAssert.AreEqual("world", GetStr(bytes, program.Instructions[0]));
         }
 
         [Test]
         public void Compiler_EscapedStringLiterals()
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("\"hello\\\"world\""), out _);
+            var bytes = Encoding.UTF8.GetBytes("\"hello\\\"world\"");
+            var program = ExprCompiler.TryCompile(bytes, out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
             ClassicAssert.IsTrue(program.Instructions[0].HasEscape);
             // The raw bytes include the escape sequences; verify it contains the key parts
-            var raw = GetStr(program, program.Instructions[0]);
+            var raw = GetStr(bytes, program.Instructions[0]);
             ClassicAssert.IsTrue(raw.Contains("hello") && raw.Contains("world"));
         }
 
@@ -106,11 +109,12 @@ namespace Garnet.test
         [Test]
         public void Compiler_Selectors()
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".year"), out _);
+            var bytes = Encoding.UTF8.GetBytes(".year");
+            var program = ExprCompiler.TryCompile(bytes, out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("year", GetStr(program, program.Instructions[0]));
+            ClassicAssert.AreEqual("year", GetStr(bytes, program.Instructions[0]));
         }
 
         [Test]
@@ -262,11 +266,12 @@ namespace Garnet.test
         [Test]
         public void Compiler_HyphenInSelector()
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(".my-field"), out _);
+            var bytes = Encoding.UTF8.GetBytes(".my-field");
+            var program = ExprCompiler.TryCompile(bytes, out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("my-field", GetStr(program, program.Instructions[0]));
+            ClassicAssert.AreEqual("my-field", GetStr(bytes, program.Instructions[0]));
         }
 
         [Test]

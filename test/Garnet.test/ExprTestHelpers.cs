@@ -24,10 +24,8 @@ namespace Garnet.test
             if (program == null)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
-            // For single-value expressions (no selectors), run returns bool.
-            // To get the actual value, we use RunAndReturnTop.
             var jsonBytes = Encoding.UTF8.GetBytes(json);
-            return RunAndReturnTop(program, jsonBytes);
+            return RunAndReturnTop(program, filterBytes, jsonBytes);
         }
 
         /// <summary>
@@ -41,7 +39,12 @@ namespace Garnet.test
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
             var jsonBytes = Encoding.UTF8.GetBytes(json);
-            return ExprRunner.Run(program, jsonBytes, ExprRunner.CreateStack());
+            var selectorRanges = program.GetSelectorRanges(filterBytes);
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length > 0 ? selectorRanges.Length : 1];
+            AttributeExtractor.ExtractFields(jsonBytes, filterBytes, selectorRanges, extractedFields, program);
+            Span<ExprToken> stackBuf = stackalloc ExprToken[16];
+            var stack = new ExprStack(stackBuf);
+            return ExprRunner.Run(program, jsonBytes, filterBytes, selectorRanges, extractedFields, ref stack);
         }
 
         /// <summary>
@@ -65,9 +68,9 @@ namespace Garnet.test
         /// <summary>
         /// Get the string content of a Str/Selector token from the program's filter bytes.
         /// </summary>
-        internal static string GetStr(ExprProgram program, ExprToken token)
+        internal static string GetStr(ExprProgram program, byte[] filterBytes, ExprToken token)
         {
-            return Encoding.UTF8.GetString(program.FilterBytes, token.Utf8Start, token.Utf8Length);
+            return Encoding.UTF8.GetString(filterBytes, token.Utf8Start, token.Utf8Length);
         }
 
         /// <summary>
@@ -75,10 +78,10 @@ namespace Garnet.test
         /// This is a test-only method that mirrors ExprRunner.Run but returns the raw result
         /// instead of a boolean, so tests can inspect numeric/string values.
         /// </summary>
-        private static ExprToken RunAndReturnTop(ExprProgram program, byte[] jsonBytes)
+        private static ExprToken RunAndReturnTop(ExprProgram program, byte[] filterBytes, byte[] jsonBytes)
         {
             ReadOnlySpan<byte> json = jsonBytes;
-            ReadOnlySpan<byte> filterBytes = program.FilterBytes;
+            ReadOnlySpan<byte> filter = filterBytes;
             var stack = new ExprToken[256];
             var stackLen = 0;
 
@@ -88,7 +91,7 @@ namespace Garnet.test
 
                 if (inst.TokenType == ExprTokenType.Selector)
                 {
-                    var selectorName = filterBytes.Slice(inst.Utf8Start, inst.Utf8Length);
+                    var selectorName = filter.Slice(inst.Utf8Start, inst.Utf8Length);
                     var extracted = AttributeExtractor.ExtractField(json, selectorName);
                     if (extracted.IsNone)
                         return ExprToken.NewNull();

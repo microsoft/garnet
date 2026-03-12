@@ -25,7 +25,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> json,
             ReadOnlySpan<byte> filterBytes,
             (int Start, int Length)[] selectorRanges,
-            ExprToken[] results,
+            Span<ExprToken> results,
             ExprProgram program = null)
         {
             for (var i = 0; i < selectorRanges.Length; i++)

@@ -302,12 +302,13 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Compiled filter expression program — the output of <see cref="ExprCompiler.TryCompile"/>
+    /// Compiled filter expression program — the output of
+    /// <see cref="ExprCompiler.TryCompile(ReadOnlySpan{byte}, out int)"/>
     /// and the input to <c>ExprRunner.Run</c>.
     ///
     /// Contains a flat postfix instruction sequence and the source bytes that string/selector
     /// tokens reference. All <see cref="ExprToken"/> values in the program are byte-range
-    /// references into <see cref="FilterBytes"/> (compile-time) or the per-candidate JSON
+    /// references into the caller-provided filter bytes (compile-time) or the per-candidate JSON
     /// bytes (runtime).
     ///
     /// <para><b>Compile-once, run-many:</b> The program is compiled once per query, then
@@ -321,12 +322,6 @@ namespace Garnet.server
 
         /// <summary>Number of instructions in the program.</summary>
         public int Length;
-
-        /// <summary>
-        /// The original filter expression bytes. Str and Selector tokens in
-        /// <see cref="Instructions"/> reference ranges within this buffer.
-        /// </summary>
-        public byte[] FilterBytes;
 
         /// <summary>
         /// Flat pool of tuple element tokens. Tuple tokens in <see cref="Instructions"/>
@@ -374,10 +369,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Get the unique selector (field name) byte-ranges referenced by this program.
-        /// Each range is an (offset, length) into <see cref="FilterBytes"/>.
+        /// Each range is an (offset, length) into the caller-provided filter bytes.
         /// Cached after first call.
         /// </summary>
-        public (int Start, int Length)[] GetSelectorRanges()
+        public (int Start, int Length)[] GetSelectorRanges(ReadOnlySpan<byte> filterBytes)
         {
             if (selectorRanges != null)
                 return selectorRanges;
@@ -392,11 +387,11 @@ namespace Garnet.server
 
                 var start = Instructions[i].Utf8Start;
                 var len = Instructions[i].Utf8Length;
-                var span = FilterBytes.AsSpan(start, len);
+                var span = filterBytes.Slice(start, len);
                 var found = false;
                 for (var j = 0; j < count; j++)
                 {
-                    if (FilterBytes.AsSpan(temp[j].Start, temp[j].Length).SequenceEqual(span))
+                    if (filterBytes.Slice(temp[j].Start, temp[j].Length).SequenceEqual(span))
                     {
                         found = true;
                         break;

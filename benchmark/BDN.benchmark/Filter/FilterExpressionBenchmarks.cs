@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers.Binary;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Garnet.server;
@@ -132,85 +133,126 @@ namespace BDN.benchmark.Filter
     {
         // --- Common: range / categorical filters ---
         private ExprProgram _comparison;        // .year > 1950
+        private byte[] _comparisonFilter;
         private ExprProgram _logicalAnd;        // .year > 1950 and .rating >= 4.0
+        private byte[] _logicalAndFilter;
         private ExprProgram _stringEq;          // .genre == "action"
+        private byte[] _stringEqFilter;
         private ExprProgram _containsArray;     // "classic" in .tags
+        private byte[] _containsArrayFilter;
 
         // --- Moderate: logical combinations ---
         private ExprProgram _logicalOr;         // .year < 1960 or .rating > 4.0
+        private byte[] _logicalOrFilter;
         private ExprProgram _not;               // not (.genre == "drama")
+        private byte[] _notFilter;
         private ExprProgram _stringNeq;         // .genre != "drama"
+        private byte[] _stringNeqFilter;
 
         // --- Less common: computed / advanced ---
         private ExprProgram _arithmetic;        // .rating * 2 > 8
+        private byte[] _arithmeticFilter;
         private ExprProgram _power;             // (.year - 2000) ** 2 < 100
+        private byte[] _powerFilter;
         private ExprProgram _containsString;    // "act" in .genre  (substring)
+        private byte[] _containsStringFilter;
 
         // --- Realistic combined ---
         private ExprProgram _combined;          // all ops together
+        private byte[] _combinedFilter;
 
         private byte[] _json;
-        private Stack<ExprToken> _stack;
 
         [GlobalSetup]
         public void Setup()
         {
-            _comparison = ExprCompiler.TryCompile(".year > 1950"u8, out _);
-            _logicalAnd = ExprCompiler.TryCompile(".year > 1950 and .rating >= 4.0"u8, out _);
-            _stringEq = ExprCompiler.TryCompile(".genre == \"action\""u8, out _);
-            _containsArray = ExprCompiler.TryCompile("\"classic\" in .tags"u8, out _);
-            _logicalOr = ExprCompiler.TryCompile(".year < 1960 or .rating > 4.0"u8, out _);
-            _not = ExprCompiler.TryCompile("not (.genre == \"drama\")"u8, out _);
-            _stringNeq = ExprCompiler.TryCompile(".genre != \"drama\""u8, out _);
-            _arithmetic = ExprCompiler.TryCompile(".rating * 2 > 8"u8, out _);
-            _power = ExprCompiler.TryCompile("(.year - 2000) ** 2 < 100"u8, out _);
-            _containsString = ExprCompiler.TryCompile("\"act\" in .genre"u8, out _);
-            _combined = ExprCompiler.TryCompile(".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8, out _);
+            _comparisonFilter = ".year > 1950"u8.ToArray();
+            _comparison = ExprCompiler.TryCompile(_comparisonFilter, out _);
+
+            _logicalAndFilter = ".year > 1950 and .rating >= 4.0"u8.ToArray();
+            _logicalAnd = ExprCompiler.TryCompile(_logicalAndFilter, out _);
+
+            _stringEqFilter = ".genre == \"action\""u8.ToArray();
+            _stringEq = ExprCompiler.TryCompile(_stringEqFilter, out _);
+
+            _containsArrayFilter = "\"classic\" in .tags"u8.ToArray();
+            _containsArray = ExprCompiler.TryCompile(_containsArrayFilter, out _);
+
+            _logicalOrFilter = ".year < 1960 or .rating > 4.0"u8.ToArray();
+            _logicalOr = ExprCompiler.TryCompile(_logicalOrFilter, out _);
+
+            _notFilter = "not (.genre == \"drama\")"u8.ToArray();
+            _not = ExprCompiler.TryCompile(_notFilter, out _);
+
+            _stringNeqFilter = ".genre != \"drama\""u8.ToArray();
+            _stringNeq = ExprCompiler.TryCompile(_stringNeqFilter, out _);
+
+            _arithmeticFilter = ".rating * 2 > 8"u8.ToArray();
+            _arithmetic = ExprCompiler.TryCompile(_arithmeticFilter, out _);
+
+            _powerFilter = "(.year - 2000) ** 2 < 100"u8.ToArray();
+            _power = ExprCompiler.TryCompile(_powerFilter, out _);
+
+            _containsStringFilter = "\"act\" in .genre"u8.ToArray();
+            _containsString = ExprCompiler.TryCompile(_containsStringFilter, out _);
+
+            _combinedFilter = ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8.ToArray();
+            _combined = ExprCompiler.TryCompile(_combinedFilter, out _);
 
             _json = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}");
-            _stack = ExprRunner.CreateStack();
+        }
+
+        private static bool RunFilter(ExprProgram program, byte[] filterBytes, byte[] json)
+        {
+            var selectorRanges = program.GetSelectorRanges(filterBytes);
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length];
+            program.ResetRuntimePool();
+            AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, program);
+            Span<ExprToken> stackBuf = stackalloc ExprToken[16];
+            var stack = new ExprStack(stackBuf);
+            return ExprRunner.Run(program, json, filterBytes, selectorRanges, extractedFields, ref stack);
         }
 
         // ── Common: range / categorical ──────────────────────────────────
 
         [Benchmark(Description = "1. .year > N  (range)")]
-        public bool Comparison() => ExprRunner.Run(_comparison, _json, _stack);
+        public bool Comparison() => RunFilter(_comparison, _comparisonFilter, _json);
 
         [Benchmark(Description = "2. .year > N and .rating >= M  (multi-range)")]
-        public bool LogicalAnd() => ExprRunner.Run(_logicalAnd, _json, _stack);
+        public bool LogicalAnd() => RunFilter(_logicalAnd, _logicalAndFilter, _json);
 
         [Benchmark(Description = "3. .genre == \"action\"  (category)")]
-        public bool StringEq() => ExprRunner.Run(_stringEq, _json, _stack);
+        public bool StringEq() => RunFilter(_stringEq, _stringEqFilter, _json);
 
         [Benchmark(Description = "4. \"x\" in .tags  (tag search)")]
-        public bool InArray() => ExprRunner.Run(_containsArray, _json, _stack);
+        public bool InArray() => RunFilter(_containsArray, _containsArrayFilter, _json);
 
         // ── Moderate: logical combinations ───────────────────────────────
 
         [Benchmark(Description = "5. A or B  (logical OR)")]
-        public bool LogicalOr() => ExprRunner.Run(_logicalOr, _json, _stack);
+        public bool LogicalOr() => RunFilter(_logicalOr, _logicalOrFilter, _json);
 
         [Benchmark(Description = "6. not (A)  (exclusion)")]
-        public bool Not() => ExprRunner.Run(_not, _json, _stack);
+        public bool Not() => RunFilter(_not, _notFilter, _json);
 
         [Benchmark(Description = "7. .genre != \"drama\"  (not-equal)")]
-        public bool StringNeq() => ExprRunner.Run(_stringNeq, _json, _stack);
+        public bool StringNeq() => RunFilter(_stringNeq, _stringNeqFilter, _json);
 
         // ── Less common: computed / advanced ─────────────────────────────
 
         [Benchmark(Description = "8. .rating * 2 > 8  (arithmetic)")]
-        public bool Arithmetic() => ExprRunner.Run(_arithmetic, _json, _stack);
+        public bool Arithmetic() => RunFilter(_arithmetic, _arithmeticFilter, _json);
 
         [Benchmark(Description = "9. (.year-2000)**2 < 100  (power)")]
-        public bool Power() => ExprRunner.Run(_power, _json, _stack);
+        public bool Power() => RunFilter(_power, _powerFilter, _json);
 
         [Benchmark(Description = "10. \"act\" in .genre  (substring)")]
-        public bool InString() => ExprRunner.Run(_containsString, _json, _stack);
+        public bool InString() => RunFilter(_containsString, _containsStringFilter, _json);
 
         // ── Realistic combined ───────────────────────────────────────────
 
         [Benchmark(Description = "11. Combined (all ops)")]
-        public bool Combined() => ExprRunner.Run(_combined, _json, _stack);
+        public bool Combined() => RunFilter(_combined, _combinedFilter, _json);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -225,45 +267,58 @@ namespace BDN.benchmark.Filter
     public class FilterRunByJsonBenchmarks
     {
         private ExprProgram _numericFilter;
+        private byte[] _numericFilterBytes;
         private ExprProgram _arrayFilter;
+        private byte[] _arrayFilterBytes;
 
         private byte[] _small;   // 2 fields, no array
         private byte[] _medium;  // 5 fields, 2-element array
         private byte[] _large;   // 12 fields, 3-element array, nested object
 
-        private Stack<ExprToken> _stack;
-
         [GlobalSetup]
         public void Setup()
         {
-            _numericFilter = ExprCompiler.TryCompile(".year > 1950 and .rating >= 4.0"u8, out _);
-            _arrayFilter = ExprCompiler.TryCompile("\"classic\" in .tags"u8, out _);
+            _numericFilterBytes = ".year > 1950 and .rating >= 4.0"u8.ToArray();
+            _numericFilter = ExprCompiler.TryCompile(_numericFilterBytes, out _);
+
+            _arrayFilterBytes = "\"classic\" in .tags"u8.ToArray();
+            _arrayFilter = ExprCompiler.TryCompile(_arrayFilterBytes, out _);
 
             _small = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5}");
             _medium = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}");
             _large = Encoding.UTF8.GetBytes("{\"id\":12345,\"title\":\"Test Movie\",\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"studio\":\"Universal\",\"budget\":50000000,\"tags\":[\"classic\",\"popular\",\"award-winning\"],\"metadata\":{\"source\":\"imdb\",\"verified\":true},\"active\":true}");
-            _stack = ExprRunner.CreateStack();
+        }
+
+        private static bool RunFilter(ExprProgram program, byte[] filterBytes, byte[] json)
+        {
+            var selectorRanges = program.GetSelectorRanges(filterBytes);
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length];
+            program.ResetRuntimePool();
+            AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, program);
+            Span<ExprToken> stackBuf = stackalloc ExprToken[16];
+            var stack = new ExprStack(stackBuf);
+            return ExprRunner.Run(program, json, filterBytes, selectorRanges, extractedFields, ref stack);
         }
 
         // --- Numeric filter (zero-alloc regardless of JSON size) ---
         [Benchmark(Description = "Numeric AND · Small JSON")]
-        public bool Numeric_Small() => ExprRunner.Run(_numericFilter, _small, _stack);
+        public bool Numeric_Small() => RunFilter(_numericFilter, _numericFilterBytes, _small);
 
         [Benchmark(Description = "Numeric AND · Medium JSON")]
-        public bool Numeric_Medium() => ExprRunner.Run(_numericFilter, _medium, _stack);
+        public bool Numeric_Medium() => RunFilter(_numericFilter, _numericFilterBytes, _medium);
 
         [Benchmark(Description = "Numeric AND · Large JSON")]
-        public bool Numeric_Large() => ExprRunner.Run(_numericFilter, _large, _stack);
+        public bool Numeric_Large() => RunFilter(_numericFilter, _numericFilterBytes, _large);
 
         // --- Array filter (uses runtime pool, zero-alloc) ---
         [Benchmark(Description = "in .tags · Small JSON (no tags → false)")]
-        public bool Array_Small() => ExprRunner.Run(_arrayFilter, _small, _stack);
+        public bool Array_Small() => RunFilter(_arrayFilter, _arrayFilterBytes, _small);
 
         [Benchmark(Description = "in .tags · Medium JSON (2 elem)")]
-        public bool Array_Medium() => ExprRunner.Run(_arrayFilter, _medium, _stack);
+        public bool Array_Medium() => RunFilter(_arrayFilter, _arrayFilterBytes, _medium);
 
         [Benchmark(Description = "in .tags · Large JSON (3 elem)")]
-        public bool Array_Large() => ExprRunner.Run(_arrayFilter, _large, _stack);
+        public bool Array_Large() => RunFilter(_arrayFilter, _arrayFilterBytes, _large);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -278,49 +333,189 @@ namespace BDN.benchmark.Filter
     public class FilterBatchBenchmarks
     {
         private ExprProgram _numericAnd;
+        private byte[] _numericAndFilter;
         private ExprProgram _combined;
+        private byte[] _combinedFilter;
         private byte[] _small;
         private byte[] _medium;
-        private Stack<ExprToken> _stack;
 
         [GlobalSetup]
         public void Setup()
         {
-            _numericAnd = ExprCompiler.TryCompile(".year > 1950 and .rating >= 4.0"u8, out _);
-            _combined = ExprCompiler.TryCompile(".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8, out _);
+            _numericAndFilter = ".year > 1950 and .rating >= 4.0"u8.ToArray();
+            _numericAnd = ExprCompiler.TryCompile(_numericAndFilter, out _);
+
+            _combinedFilter = ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8.ToArray();
+            _combined = ExprCompiler.TryCompile(_combinedFilter, out _);
+
             _small = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5}");
             _medium = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}");
-            _stack = ExprRunner.CreateStack();
+        }
+
+        private static int RunBatch(ExprProgram program, byte[] filterBytes, byte[] small, byte[] medium, int N)
+        {
+            var selectorRanges = program.GetSelectorRanges(filterBytes);
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length];
+            Span<ExprToken> stackBuf = stackalloc ExprToken[16];
+            var stack = new ExprStack(stackBuf);
+
+            var matched = 0;
+            for (var i = 0; i < N; i++)
+            {
+                var json = (i % 3 == 0) ? small : medium;
+                program.ResetRuntimePool();
+                AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, program);
+                if (ExprRunner.Run(program, json, filterBytes, selectorRanges, extractedFields, ref stack))
+                    matched++;
+            }
+            return matched;
         }
 
         [Benchmark(Description = "Numeric AND · N candidates (zero-alloc)")]
         [Arguments(10)]
         [Arguments(100)]
         [Arguments(1000)]
-        public int NumericAnd(int N)
-        {
-            var matched = 0;
-            for (var i = 0; i < N; i++)
-            {
-                var json = (i % 3 == 0) ? _small : _medium;
-                if (ExprRunner.Run(_numericAnd, json, _stack)) matched++;
-            }
-            return matched;
-        }
+        public int NumericAnd(int N) => RunBatch(_numericAnd, _numericAndFilter, _small, _medium, N);
 
         [Benchmark(Description = "Combined + array · N candidates")]
         [Arguments(10)]
         [Arguments(100)]
         [Arguments(1000)]
-        public int Combined(int N)
+        public int Combined(int N) => RunBatch(_combined, _combinedFilter, _small, _medium, N);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  6. END-TO-END ApplyPostFilter  (compile + extract + evaluate N candidates)
+    //     Exercises the full pipeline including length-prefixed attribute span layout
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// End-to-end benchmark of <see cref="VectorManager.ApplyPostFilter"/>.
+    /// Builds a realistic length-prefixed attribute span (as produced by VSIM),
+    /// then calls ApplyPostFilter which compiles the filter, extracts fields,
+    /// and evaluates each candidate.
+    /// </summary>
+    [MemoryDiagnoser]
+    public class FilterApplyPostFilterBenchmarks
+    {
+        // Filters of varying complexity
+        private byte[] _numericFilter;
+        private byte[] _stringFilter;
+        private byte[] _arrayFilter;
+        private byte[] _combinedFilter;
+
+        // Pre-built length-prefixed attribute spans for different candidate counts
+        private byte[] _attrs10;
+        private byte[] _attrs100;
+        private byte[] _attrs1000;
+
+        // Bitmap buffers (ceil(N/8) bytes)
+        private byte[] _bitmap10;
+        private byte[] _bitmap100;
+        private byte[] _bitmap1000;
+
+        [GlobalSetup]
+        public void Setup()
         {
-            var matched = 0;
-            for (var i = 0; i < N; i++)
+            _numericFilter = ".year > 1950 and .rating >= 4.0"u8.ToArray();
+            _stringFilter = ".genre == \"action\""u8.ToArray();
+            _arrayFilter = "\"classic\" in .tags"u8.ToArray();
+            _combinedFilter = ".rating * 2 > 8 and (.year >= 1980 or \"classic\" in .tags) and .genre == \"action\""u8.ToArray();
+
+            // Build diverse JSON candidates — mix of matching and non-matching
+            var candidates = new[]
             {
-                var json = (i % 3 == 0) ? _small : _medium;
-                if (ExprRunner.Run(_combined, json, _stack)) matched++;
-            }
-            return matched;
+                // Matches numeric+string+combined: year>1950, rating>=4.0, genre=action
+                Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}"),
+                // Matches numeric only: year>1950, rating>=4.0, genre=drama
+                Encoding.UTF8.GetBytes("{\"year\":2005,\"rating\":4.2,\"genre\":\"drama\",\"director\":\"Nolan\",\"tags\":[\"modern\"]}"),
+                // Doesn't match numeric: year<1950
+                Encoding.UTF8.GetBytes("{\"year\":1940,\"rating\":3.8,\"genre\":\"noir\",\"director\":\"Wilder\"}"),
+                // Matches all: year>1950, rating>=4.0, genre=action, has classic tag
+                Encoding.UTF8.GetBytes("{\"year\":1999,\"rating\":4.9,\"genre\":\"action\",\"director\":\"Wachowski\",\"tags\":[\"classic\",\"scifi\",\"popular\"]}"),
+                // Large JSON (12 fields) — matches numeric
+                Encoding.UTF8.GetBytes("{\"id\":12345,\"title\":\"Test Movie\",\"year\":2010,\"rating\":4.1,\"genre\":\"comedy\",\"director\":\"Anderson\",\"studio\":\"Fox\",\"budget\":50000000,\"tags\":[\"indie\"],\"metadata\":{\"source\":\"imdb\",\"verified\":true},\"active\":true}"),
+                // Small JSON — doesn't match (missing fields)
+                Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5}"),
+                // Large JSON — matches combined
+                Encoding.UTF8.GetBytes("{\"id\":99,\"title\":\"Action Hero\",\"year\":2020,\"rating\":4.8,\"genre\":\"action\",\"director\":\"Bay\",\"studio\":\"Paramount\",\"budget\":200000000,\"tags\":[\"classic\",\"blockbuster\"],\"metadata\":{\"source\":\"rotten\"},\"active\":true}"),
+            };
+
+            _attrs10 = BuildAttributeSpan(candidates, 10);
+            _attrs100 = BuildAttributeSpan(candidates, 100);
+            _attrs1000 = BuildAttributeSpan(candidates, 1000);
+
+            _bitmap10 = new byte[(10 + 7) / 8];
+            _bitmap100 = new byte[(100 + 7) / 8];
+            _bitmap1000 = new byte[(1000 + 7) / 8];
         }
+
+        /// <summary>
+        /// Build a length-prefixed attribute span: for each candidate, write [int32 len][json bytes].
+        /// Cycles through the candidate array to fill N entries.
+        /// </summary>
+        private static byte[] BuildAttributeSpan(byte[][] candidates, int count)
+        {
+            // Calculate total size
+            var totalSize = 0;
+            for (var i = 0; i < count; i++)
+                totalSize += sizeof(int) + candidates[i % candidates.Length].Length;
+
+            var result = new byte[totalSize];
+            var offset = 0;
+            for (var i = 0; i < count; i++)
+            {
+                var json = candidates[i % candidates.Length];
+                BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(offset), json.Length);
+                offset += sizeof(int);
+                json.CopyTo(result, offset);
+                offset += json.Length;
+            }
+            return result;
+        }
+
+        // ── Numeric filter: .year > 1950 and .rating >= 4.0 ────────────
+
+        [Benchmark(Description = "Numeric AND · 10 candidates")]
+        public int Numeric_10() => VectorManager.ApplyPostFilter(_numericFilter, 10, _attrs10, _bitmap10);
+
+        [Benchmark(Description = "Numeric AND · 100 candidates")]
+        public int Numeric_100() => VectorManager.ApplyPostFilter(_numericFilter, 100, _attrs100, _bitmap100);
+
+        [Benchmark(Description = "Numeric AND · 1000 candidates")]
+        public int Numeric_1000() => VectorManager.ApplyPostFilter(_numericFilter, 1000, _attrs1000, _bitmap1000);
+
+        // ── String filter: .genre == "action" ───────────────────────────
+
+        [Benchmark(Description = "String EQ · 10 candidates")]
+        public int String_10() => VectorManager.ApplyPostFilter(_stringFilter, 10, _attrs10, _bitmap10);
+
+        [Benchmark(Description = "String EQ · 100 candidates")]
+        public int String_100() => VectorManager.ApplyPostFilter(_stringFilter, 100, _attrs100, _bitmap100);
+
+        [Benchmark(Description = "String EQ · 1000 candidates")]
+        public int String_1000() => VectorManager.ApplyPostFilter(_stringFilter, 1000, _attrs1000, _bitmap1000);
+
+        // ── Array filter: "classic" in .tags ────────────────────────────
+
+        [Benchmark(Description = "Array IN · 10 candidates")]
+        public int Array_10() => VectorManager.ApplyPostFilter(_arrayFilter, 10, _attrs10, _bitmap10);
+
+        [Benchmark(Description = "Array IN · 100 candidates")]
+        public int Array_100() => VectorManager.ApplyPostFilter(_arrayFilter, 100, _attrs100, _bitmap100);
+
+        [Benchmark(Description = "Array IN · 1000 candidates")]
+        public int Array_1000() => VectorManager.ApplyPostFilter(_arrayFilter, 1000, _attrs1000, _bitmap1000);
+
+        // ── Combined filter: rating*2>8 and (year>=1980 or "classic" in .tags) and genre=="action"
+
+        [Benchmark(Description = "Combined · 10 candidates")]
+        public int Combined_10() => VectorManager.ApplyPostFilter(_combinedFilter, 10, _attrs10, _bitmap10);
+
+        [Benchmark(Description = "Combined · 100 candidates")]
+        public int Combined_100() => VectorManager.ApplyPostFilter(_combinedFilter, 100, _attrs100, _bitmap100);
+
+        [Benchmark(Description = "Combined · 1000 candidates")]
+        public int Combined_1000() => VectorManager.ApplyPostFilter(_combinedFilter, 1000, _attrs1000, _bitmap1000);
     }
 }

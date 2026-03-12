@@ -23,6 +23,8 @@ namespace Garnet.server
         /// <summary>
         /// Compile a filter expression (as UTF-8 bytes) into a flat postfix program.
         /// Returns null on syntax error; optionally reports the error position.
+        /// The returned program does NOT own a copy of the filter bytes —
+        /// the caller must pass them explicitly to all downstream consumers.
         /// </summary>
         public static ExprProgram TryCompile(ReadOnlySpan<byte> expr, out int errpos)
         {
@@ -30,8 +32,6 @@ namespace Garnet.server
             if (expr.IsEmpty)
                 return null;
 
-            // Keep the original expression bytes — tokens will reference ranges within them
-            var filterBytes = expr.ToArray();
             var exprLen = expr.Length;
 
             // Tuple pool: collects all tuple element tokens across all tuples
@@ -159,7 +159,6 @@ namespace Garnet.server
             {
                 Instructions = program.ToArray(),
                 Length = program.Count,
-                FilterBytes = filterBytes,
                 TuplePool = tuplePool.Count > 0 ? tuplePool.ToArray() : [],
                 TuplePoolLength = tuplePool.Count,
             };
