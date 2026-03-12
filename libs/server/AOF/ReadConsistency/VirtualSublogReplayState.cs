@@ -3,7 +3,6 @@
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -16,7 +15,8 @@ namespace Garnet.server
         readonly long[] sketch = new long[SketchSlotSize];
         long sketchMaxValue;
         readonly object @lock = new();
-        TaskCompletionSource<bool> update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly SemaphoreSlim updateSignal = new(0);
+        int waiterCount;
 
         public readonly long Max => sketchMaxValue;
 
@@ -75,32 +75,47 @@ namespace Garnet.server
         /// </summary>
         void SignalAdvanceTime()
         {
-            TaskCompletionSource<bool> release;
+            var releaseCount = 0;
 
             lock (@lock)
             {
-                release = update;
-                update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                releaseCount = waiterCount;
             }
-            _ = release.TrySetResult(true);
+
+            if (releaseCount > 0)
+                updateSignal.Release(releaseCount);
         }
 
         /// <summary>
-        /// Waits asynchronously until the session's frontier sequence number for the specified hash reaches or exceeds
+        /// Waits until the session's frontier sequence number for the specified hash reaches or exceeds
         /// the given maximum sequence number.
         /// </summary>
         /// <param name="hash">The hash value identifying the session whose sequence number is being monitored.</param>
         /// <param name="maximumSessionSequenceNumber">The target sequence number to wait for.</param>
         /// <param name="ct">A cancellation token that can be used to cancel the wait operation.</param>
-        /// <returns>A task that completes when the session's frontier sequence number for the specified hash reaches or exceeds
-        /// the target value, or immediately if the condition is already met.</returns>
-        public readonly Task WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, CancellationToken ct)
+        public void WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, CancellationToken ct)
         {
-            lock (@lock)
+            while (true)
             {
-                if (maximumSessionSequenceNumber >= GetFrontierSequenceNumber(hash))
-                    return update.Task.WaitAsync(ct);
-                return Task.CompletedTask;
+                lock (@lock)
+                {
+                    if (maximumSessionSequenceNumber < GetFrontierSequenceNumber(hash))
+                        return;
+
+                    waiterCount++;
+                }
+
+                try
+                {
+                    updateSignal.Wait(ct);
+                }
+                finally
+                {
+                    lock (@lock)
+                    {
+                        waiterCount--;
+                    }
+                }
             }
         }
     }

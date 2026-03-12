@@ -160,7 +160,7 @@ namespace Garnet.server
                     vsrs[virtualSublogIdx].WaitForSequenceNumber(
                         hash,
                         replicaReadSessionContext.maximumSessionSequenceNumber,
-                        ct).Wait(ct);
+                        ct);
                 }
             }
 
