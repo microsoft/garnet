@@ -175,7 +175,7 @@ namespace Tsavorite.test
 
             // Enter in some entries then wait on this separate thread
             _ = await log.EnqueueAsync(entry).ConfigureAwait(false);
-            _ = await log.EnqueueAsync(entry).ConfigureAwait(false).ConfigureAwait(false);
+            _ = await log.EnqueueAsync(entry).ConfigureAwait(false);
             var commitTask = await log.CommitAsync(null, null, token);
             _ = await log.EnqueueAsync(entry).ConfigureAwait(false);
             _ = await log.CommitAsync(commitTask, null, token).ConfigureAwait(false);
