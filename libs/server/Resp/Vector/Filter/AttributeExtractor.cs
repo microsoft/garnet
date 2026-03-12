@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Buffers.Text;
 
 namespace Garnet.server.Vector.Filter
@@ -11,33 +10,33 @@ namespace Garnet.server.Vector.Filter
     /// Ultra-lightweight top-level JSON field extractor.
     /// Returns fields directly as <see cref="ExprToken"/> values.
     ///
-    /// 1. Zero heap allocations while seeking the requested key.
-    /// 2. A single parse (and allocation) when the key matches.
-    /// 3. Supports: strings (with \n \r \t \\ \" escapes), numbers, booleans, null,
-    ///    and flat arrays of these primitives. Nested objects return null.
-    /// 4. Operates on raw UTF-8 bytes (ReadOnlySpan&lt;byte&gt;) — no JsonDocument DOM.
+    /// All string values are zero-copy byte-range references (Utf8Start, Utf8Length)
+    /// into the source JSON span — no string allocations.
     /// </summary>
     internal static class AttributeExtractor
     {
         /// <summary>
         /// Extract multiple top-level fields from a JSON object in a single pass.
-        /// <paramref name="fieldNames"/> lists the fields to extract.
-        /// <paramref name="results"/> must be at least <paramref name="fieldNames"/>.Length long.
-        /// Entries for fields not found are set to default (IsNone).
+        /// Selectors are byte-ranges in <paramref name="filterBytes"/>.
+        /// Extracted values are byte-ranges in <paramref name="json"/>.
         /// Returns the number of fields successfully extracted.
         /// </summary>
-        public static int ExtractFields(ReadOnlySpan<byte> json, string[] fieldNames, ExprToken[] results)
+        public static int ExtractFields(
+            ReadOnlySpan<byte> json,
+            ReadOnlySpan<byte> filterBytes,
+            (int Start, int Length)[] selectorRanges,
+            ExprToken[] results,
+            ExprProgram program = null)
         {
-            // Clear results
-            for (var i = 0; i < fieldNames.Length; i++)
+            for (var i = 0; i < selectorRanges.Length; i++)
                 results[i] = default;
 
             var s = TrimWhiteSpace(json);
             if (s.IsEmpty || s[0] != (byte)'{') return 0;
-            s = s[1..]; // Skip '{'
+            s = s[1..];
 
             var found = 0;
-            var needed = fieldNames.Length;
+            var needed = selectorRanges.Length;
 
             while (true)
             {
@@ -45,25 +44,23 @@ namespace Garnet.server.Vector.Filter
                 if (s.IsEmpty) return found;
                 if (s[0] == (byte)'}') return found;
 
-                // Expect a key string
                 if (s[0] != (byte)'"') return found;
 
                 var afterOpenQuote = s[1..];
                 if (!SkipString(ref s)) return found;
                 var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
 
-                // Check against all requested field names
                 var matchIndex = -1;
-                for (var i = 0; i < fieldNames.Length; i++)
+                for (var i = 0; i < selectorRanges.Length; i++)
                 {
-                    if (results[i].IsNone && MatchKey(keyContent, fieldNames[i]))
+                    if (results[i].IsNone &&
+                        keyContent.SequenceEqual(filterBytes.Slice(selectorRanges[i].Start, selectorRanges[i].Length)))
                     {
                         matchIndex = i;
                         break;
                     }
                 }
 
-                // Expect ':'
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty || s[0] != (byte)':') return found;
                 s = s[1..];
@@ -73,9 +70,9 @@ namespace Garnet.server.Vector.Filter
 
                 if (matchIndex >= 0)
                 {
-                    results[matchIndex] = ParseValueToken(json, ref s);
+                    results[matchIndex] = ParseValueToken(json, ref s, program);
                     found++;
-                    if (found == needed) return found; // All fields found — early exit
+                    if (found == needed) return found;
                 }
                 else
                 {
@@ -86,75 +83,112 @@ namespace Garnet.server.Vector.Filter
                 if (s.IsEmpty) return found;
                 if (s[0] == (byte)',') { s = s[1..]; continue; }
                 if (s[0] == (byte)'}') return found;
-                return found; // Malformed JSON
+                return found;
             }
         }
 
         /// <summary>
-        /// Extract a top-level field from a JSON object and return it as an ExprToken.
-        /// Returns default (IsNone) if the field is not found or the JSON is malformed.
+        /// Extract a single top-level field, with an <see cref="ExprProgram"/> for runtime
+        /// tuple pool support (needed for JSON array fields used with the IN operator).
         /// </summary>
-        public static ExprToken ExtractField(ReadOnlySpan<byte> json, string fieldName)
+        public static ExprToken ExtractField(ReadOnlySpan<byte> json, ReadOnlySpan<byte> fieldNameUtf8, ExprProgram program)
         {
             var s = TrimWhiteSpace(json);
             if (s.IsEmpty || s[0] != (byte)'{') return default;
-            s = s[1..]; // Skip '{'
+            s = s[1..];
 
             while (true)
             {
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (s[0] == (byte)'}') return default; // End of object, field not found
+                if (s[0] == (byte)'}') return default;
 
-                // Expect a key string
                 if (s[0] != (byte)'"') return default;
 
-                // Extract key content (between quotes)
                 var afterOpenQuote = s[1..];
                 if (!SkipString(ref s)) return default;
-                // Key content is between afterOpenQuote and s (minus the closing quote byte)
                 var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
 
-                var match = MatchKey(keyContent, fieldName);
+                var match = keyContent.SequenceEqual(fieldNameUtf8);
 
-                // Expect ':'
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty || s[0] != (byte)':') return default;
-                s = s[1..]; // Skip ':'
+                s = s[1..];
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
 
                 if (match)
-                {
-                    // Found the field — parse the value into a token
-                    return ParseValueToken(json, ref s);
-                }
-                else
-                {
-                    // Skip the value
-                    if (!SkipValue(ref s)) return default;
-                }
+                    return ParseValueToken(json, ref s, program);
 
-                // Look for ',' or '}'
+                if (!SkipValue(ref s)) return default;
+
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
                 if (s[0] == (byte)',') { s = s[1..]; continue; }
-                if (s[0] == (byte)'}') return default; // End of object, not found
-                return default; // Malformed JSON
+                if (s[0] == (byte)'}') return default;
+                return default;
             }
         }
 
-        // ======================== Value parsing (allocating) ========================
+        /// <summary>
+        /// Extract a single top-level field from a JSON object.
+        /// <paramref name="fieldNameUtf8"/> is the raw UTF-8 bytes of the field name.
+        /// Returns default (IsNone) if not found.
+        /// </summary>
+        public static ExprToken ExtractField(ReadOnlySpan<byte> json, ReadOnlySpan<byte> fieldNameUtf8)
+        {
+            var s = TrimWhiteSpace(json);
+            if (s.IsEmpty || s[0] != (byte)'{') return default;
+            s = s[1..];
 
-        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
+            while (true)
+            {
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+                if (s[0] == (byte)'}') return default;
+
+                if (s[0] != (byte)'"') return default;
+
+                var afterOpenQuote = s[1..];
+                if (!SkipString(ref s)) return default;
+                var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
+
+                var match = keyContent.SequenceEqual(fieldNameUtf8);
+
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty || s[0] != (byte)':') return default;
+                s = s[1..];
+
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+
+                if (match)
+                    return ParseValueToken(json, ref s);
+
+                if (!SkipValue(ref s)) return default;
+
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)'}') return default;
+                return default;
+            }
+        }
+
+        // ======================== Value parsing ========================
+
+        /// <summary>Max array elements before rejecting.</summary>
+        private const int MaxArrayElements = 64;
+
+        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ExprProgram program = null)
         {
             s = TrimWhiteSpace(s);
             if (s.IsEmpty) return default;
 
             var c = s[0];
             if (c == (byte)'"') return ParseStringToken(json, ref s);
-            if (c == (byte)'[') return ParseArrayToken(json, ref s);
+            if (c == (byte)'[') return program != null ? ParseArrayToken(json, ref s, program) : ParseArrayTokenNoPool(json, ref s);
             if (c == (byte)'{') return default; // Nested objects not supported
             if (c == (byte)'t') return ParseLiteralToken(ref s, "true"u8, ExprTokenType.Num, 1);
             if (c == (byte)'f') return ParseLiteralToken(ref s, "false"u8, ExprTokenType.Num, 0);
@@ -177,30 +211,19 @@ namespace Garnet.server.Vector.Filter
                 if (s[0] == (byte)'\\')
                 {
                     hasEscape = true;
-                    s = s[2..]; // Skip escape sequence
+                    s = s[2..];
                     continue;
                 }
                 if (s[0] == (byte)'"')
                 {
-                    var content = body[..(body.Length - s.Length)];
-                    if (!hasEscape)
-                    {
-                        // Zero-allocation: store byte offset+length into the source JSON
-                        var absoluteStart = json.Length - body.Length;
-                        s = s[1..]; // Skip closing quote
-                        return ExprToken.NewJsonStr(absoluteStart, content.Length);
-                    }
-                    else
-                    {
-                        // Escaped strings must be materialized (rare path)
-                        var value = UnescapeJsonString(content);
-                        s = s[1..]; // Skip closing quote
-                        return ExprToken.NewStr(value);
-                    }
+                    var contentLen = body.Length - s.Length;
+                    var absoluteStart = json.Length - body.Length;
+                    s = s[1..]; // Skip closing quote
+                    return ExprToken.NewStr(absoluteStart, contentLen, hasEscape);
                 }
                 s = s[1..];
             }
-            return default; // Unterminated string
+            return default;
         }
 
         private static ExprToken ParseNumberToken(ref ReadOnlySpan<byte> s)
@@ -225,7 +248,6 @@ namespace Garnet.server.Vector.Filter
             if (s.Length < literal.Length) return default;
             if (!s[..literal.Length].SequenceEqual(literal)) return default;
 
-            // Verify delimiter follows (space, comma, bracket, brace, or end)
             if (s.Length > literal.Length)
             {
                 var next = (char)s[literal.Length];
@@ -237,52 +259,57 @@ namespace Garnet.server.Vector.Filter
             return type == ExprTokenType.Null ? ExprToken.NewNull() : ExprToken.NewNum(num);
         }
 
-        /// <summary>Max array elements before rejecting.</summary>
-        private const int MaxArrayElements = 64;
-
-        private static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
+        /// <summary>
+        /// Parse a JSON array and return a Tuple token. Elements are parsed and stored
+        /// in the caller's <paramref name="program"/> runtime pool so the runner can 
+        /// iterate them during IN evaluation.
+        /// </summary>
+        internal static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ExprProgram program)
         {
             if (s.IsEmpty || s[0] != (byte)'[') return default;
-            s = s[1..]; // Skip '['
+            s = s[1..];
             s = TrimWhiteSpace(s);
 
-            // Handle empty array
-            if (!s.IsEmpty && s[0] == (byte)']')
-            {
-                s = s[1..];
-                return ExprToken.NewTuple([], 0);
-            }
+            // Empty array
+            if (!s.IsEmpty && s[0] == (byte)']') { s = s[1..]; return ExprToken.NewTuple(0, 0); }
 
-            // Rent from pool instead of allocating a new scratch array every call
-            var elements = ArrayPool<ExprToken>.Shared.Rent(MaxArrayElements);
+            Span<ExprToken> localBuf = stackalloc ExprToken[MaxArrayElements];
             var count = 0;
 
-            try
+            while (true)
             {
-                while (true)
-                {
-                    s = TrimWhiteSpace(s);
-                    if (s.IsEmpty || count >= MaxArrayElements) return default;
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+                if (count >= MaxArrayElements) { SkipBracketed(ref s, (byte)'[', (byte)']'); return ExprToken.NewNull(); }
 
-                    var ele = ParseValueToken(json, ref s);
-                    if (ele.IsNone) return default;
-                    elements[count++] = ele;
+                var elem = ParseValueToken(json, ref s);
+                if (elem.IsNone) return default;
+                localBuf[count++] = elem;
 
-                    s = TrimWhiteSpace(s);
-                    if (s.IsEmpty) return default;
-                    if (s[0] == (byte)',') { s = s[1..]; continue; }
-                    if (s[0] == (byte)']') { s = s[1..]; break; }
-                    return default; // Malformed
-                }
-
-                var result = new ExprToken[count];
-                Array.Copy(elements, result, count);
-                return ExprToken.NewTuple(result, count);
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return default;
+                if (s[0] == (byte)']') { s = s[1..]; break; }
+                if (s[0] != (byte)',') return default;
+                s = s[1..];
             }
-            finally
+
+            if (program != null)
             {
-                ArrayPool<ExprToken>.Shared.Return(elements, clearArray: true);
+                // Store into runtime pool
+                var arr = new ExprToken[count];
+                for (var i = 0; i < count; i++) arr[i] = localBuf[i];
+                return program.AppendRuntimeTuple(arr, count);
             }
+
+            // No program available — return null (shouldn't happen in normal flow)
+            return ExprToken.NewNull();
+        }
+
+        private static ExprToken ParseArrayTokenNoPool(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
+        {
+            // Standalone extraction without a program — just skip the array
+            if (!SkipValue(ref s)) return default;
+            return ExprToken.NewNull();
         }
 
         // ======================== Fast skipping (non-allocating) ========================
@@ -307,20 +334,20 @@ namespace Garnet.server.Vector.Filter
         private static bool SkipString(ref ReadOnlySpan<byte> s)
         {
             if (s.IsEmpty || s[0] != (byte)'"') return false;
-            s = s[1..]; // Skip opening quote
+            s = s[1..];
             while (!s.IsEmpty)
             {
                 if (s[0] == (byte)'\\') { s = s[2..]; continue; }
                 if (s[0] == (byte)'"') { s = s[1..]; return true; }
                 s = s[1..];
             }
-            return false; // Unterminated
+            return false;
         }
 
         private static bool SkipBracketed(ref ReadOnlySpan<byte> s, byte opener, byte closer)
         {
             var depth = 1;
-            s = s[1..]; // Skip opener
+            s = s[1..];
             while (!s.IsEmpty && depth > 0)
             {
                 if (s[0] == (byte)'"')
@@ -351,7 +378,6 @@ namespace Garnet.server.Vector.Filter
         }
 
         // ======================== Shared byte-level helpers ========================
-        // These are used by both AttributeExtractor and ExprCompiler.
 
         internal static bool IsDigit(byte b) => b >= (byte)'0' && b <= (byte)'9';
 
@@ -361,9 +387,6 @@ namespace Garnet.server.Vector.Filter
 
         internal static bool IsWhiteSpace(byte b) => b == (byte)' ' || b == (byte)'\t' || b == (byte)'\n' || b == (byte)'\r';
 
-        /// <summary>
-        /// Returns the span with leading whitespace removed.
-        /// </summary>
         internal static ReadOnlySpan<byte> TrimWhiteSpace(ReadOnlySpan<byte> s)
         {
             var i = 0;
@@ -374,47 +397,5 @@ namespace Garnet.server.Vector.Filter
         private static bool IsNumberChar(byte b) =>
             IsDigit(b) || b == (byte)'-' || b == (byte)'+' ||
             b == (byte)'.' || b == (byte)'e' || b == (byte)'E';
-
-        private static bool MatchKey(ReadOnlySpan<byte> key, string fieldName)
-        {
-            if (key.Length != fieldName.Length) return false;
-            for (var i = 0; i < key.Length; i++)
-            {
-                if (key[i] != (byte)fieldName[i]) return false;
-            }
-            return true;
-        }
-
-        private static string UnescapeJsonString(ReadOnlySpan<byte> content)
-        {
-            // Worst case: each byte is a character
-            var chars = new char[content.Length];
-            var len = 0;
-            var i = 0;
-            while (i < content.Length)
-            {
-                if (content[i] == (byte)'\\' && i + 1 < content.Length)
-                {
-                    i++;
-                    chars[len++] = (char)content[i] switch
-                    {
-                        'n' => '\n',
-                        'r' => '\r',
-                        't' => '\t',
-                        '\\' => '\\',
-                        '"' => '"',
-                        '/' => '/',
-                        _ => (char)content[i],
-                    };
-                    i++;
-                }
-                else
-                {
-                    chars[len++] = (char)content[i];
-                    i++;
-                }
-            }
-            return new string(chars, 0, len);
-        }
     }
 }

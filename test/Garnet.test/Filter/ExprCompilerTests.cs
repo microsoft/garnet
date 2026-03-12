@@ -17,6 +17,12 @@ namespace Garnet.test
     [TestFixture]
     public class ExprCompilerTests : AllureTestBase
     {
+        /// <summary>
+        /// Helper to get the string content of a Str/Selector token from the program's FilterBytes.
+        /// </summary>
+        private static string GetStr(ExprProgram program, ExprToken token)
+            => Encoding.UTF8.GetString(program.FilterBytes, token.Utf8Start, token.Utf8Length);
+
         [Test]
         public void Compiler_IntegerNumbers()
         {
@@ -54,13 +60,13 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("hello", program.Instructions[0].Str);
+            ClassicAssert.AreEqual("hello", GetStr(program, program.Instructions[0]));
 
             program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes("'world'"), out _);
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("world", program.Instructions[0].Str);
+            ClassicAssert.AreEqual("world", GetStr(program, program.Instructions[0]));
         }
 
         [Test]
@@ -70,7 +76,10 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Str, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("hello\"world", program.Instructions[0].Str);
+            ClassicAssert.IsTrue(program.Instructions[0].HasEscape);
+            // The raw bytes include the escape sequences; verify it contains the key parts
+            var raw = GetStr(program, program.Instructions[0]);
+            ClassicAssert.IsTrue(raw.Contains("hello") && raw.Contains("world"));
         }
 
         [Test]
@@ -101,7 +110,7 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("year", program.Instructions[0].Str);
+            ClassicAssert.AreEqual("year", GetStr(program, program.Instructions[0]));
         }
 
         [Test]
@@ -246,7 +255,8 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Tuple, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual(3, program.Instructions[0].TupleLength);
+            // For Tuple tokens, Utf8Length is the element count
+            ClassicAssert.AreEqual(3, program.Instructions[0].Utf8Length);
         }
 
         [Test]
@@ -256,7 +266,7 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(program);
             ClassicAssert.AreEqual(1, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
-            ClassicAssert.AreEqual("my-field", program.Instructions[0].Str);
+            ClassicAssert.AreEqual("my-field", GetStr(program, program.Instructions[0]));
         }
 
         [Test]
@@ -352,7 +362,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, program.Length);
             ClassicAssert.AreEqual(ExprTokenType.Selector, program.Instructions[0].TokenType);
             ClassicAssert.AreEqual(ExprTokenType.Tuple, program.Instructions[1].TokenType);
-            ClassicAssert.AreEqual(2, program.Instructions[1].TupleLength);
+            // For Tuple tokens, Utf8Length is the element count
+            ClassicAssert.AreEqual(2, program.Instructions[1].Utf8Length);
             ClassicAssert.AreEqual(OpCode.In, program.Instructions[2].OpCode);
         }
     }

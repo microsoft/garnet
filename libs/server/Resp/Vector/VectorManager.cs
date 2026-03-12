@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -914,7 +914,7 @@ namespace Garnet.server
         /// <summary>
         /// Apply post-filtering to vector search results using a compiled filter expression.
         ///
-        /// Architecture (modeled after Redis expr.c + fastjson.c):
+        /// Architecture
         /// 1. The filter string is compiled ONCE into a flat postfix program (ExprCompiler).
         /// 2. Unique selectors (field names) are collected from the program.
         /// 3. For each candidate, ALL needed fields are extracted in a single JSON pass
@@ -944,17 +944,16 @@ namespace Garnet.server
             var program = ExprCompiler.TryCompile(filter, out _);
             if (program == null)
             {
-                return 0; // If the filter doesn't compile, treat it as filtering out all results (matches Redis behavior)
-            }
+                return 0; // If the filter doesn't compile, treat it as filtering out all results 
 
             // Clear the bitmap
             filterBitmap.Clear();
 
-            // Collect unique selectors — these are the JSON fields we need per candidate.
-            var selectors = program.GetSelectors();
+            // Collect unique selectors — byte-ranges into the filter expression.
+            var selectorRanges = program.GetSelectorRanges();
 
             // Pre-allocate extraction buffer — reused across all candidates.
-            var extractedFields = new ExprToken[selectors.Length];
+            var extractedFields = new ExprToken[selectorRanges.Length];
 
             var filteredCount = 0;
 
@@ -969,11 +968,14 @@ namespace Garnet.server
                 var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
                 var attrData = remaining.Slice(sizeof(int), attrLen);
 
+                // Reset runtime tuple pool for this candidate
+                program.ResetRuntimePool();
+
                 // Single-pass extraction: scan JSON once, extract all needed fields.
-                AttributeExtractor.ExtractFields(attrData, selectors, extractedFields);
+                AttributeExtractor.ExtractFields(attrData, program.FilterBytes, selectorRanges, extractedFields, program);
 
                 // Execute the compiled program against pre-extracted fields.
-                if (ExprRunner.Run(program, attrData, selectors, extractedFields, stack))
+                if (ExprRunner.Run(program, attrData, selectorRanges, extractedFields, stack))
                 {
                     filterBitmap[i >> 3] |= (byte)(1 << (i & 7));
                     filteredCount++;

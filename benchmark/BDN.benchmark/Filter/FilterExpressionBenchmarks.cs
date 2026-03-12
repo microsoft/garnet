@@ -11,7 +11,7 @@ namespace BDN.benchmark.Filter
     //  1. COMPILATION  (one-time cost per VSIM query)
     // ════════════════════════════════════════════════════════════════════════
 
-    /// <summary>Compile filter string → postfix program. Always allocates (List, Stack, ExprToken[]).</summary>
+    /// <summary>Compile filter string → postfix program.</summary>
     [MemoryDiagnoser]
     public class FilterCompileBenchmarks
     {
@@ -80,41 +80,41 @@ namespace BDN.benchmark.Filter
 
         // --- Number fields (zero-alloc) ---
         [Benchmark(Description = "Number · Small JSON (1st field)")]
-        public void Num_Small() => AttributeExtractor.ExtractField(_small, "year");
+        public void Num_Small() => AttributeExtractor.ExtractField(_small, "year"u8);
 
         [Benchmark(Description = "Number · Medium JSON (2nd field)")]
-        public void Num_Medium() => AttributeExtractor.ExtractField(_medium, "rating");
+        public void Num_Medium() => AttributeExtractor.ExtractField(_medium, "rating"u8);
 
         [Benchmark(Description = "Number · Large JSON (skip 8 fields)")]
-        public void Num_Large() => AttributeExtractor.ExtractField(_large, "budget");
+        public void Num_Large() => AttributeExtractor.ExtractField(_large, "budget"u8);
 
-        // --- String fields (zero-alloc for non-escaped) ---
+        // --- String fields (zero-alloc) ---
         [Benchmark(Description = "String · Medium JSON")]
-        public void Str_Medium() => AttributeExtractor.ExtractField(_medium, "genre");
+        public void Str_Medium() => AttributeExtractor.ExtractField(_medium, "genre"u8);
 
         [Benchmark(Description = "String · Large JSON (skip 5)")]
-        public void Str_Large() => AttributeExtractor.ExtractField(_large, "director");
+        public void Str_Large() => AttributeExtractor.ExtractField(_large, "director"u8);
 
-        // --- Array fields (ALLOCATES ExprToken[count]) ---
-        [Benchmark(Description = "Array[2] · Medium JSON → alloc")]
-        public void Arr_Medium() => AttributeExtractor.ExtractField(_medium, "tags");
+        // --- Array fields (zero-alloc with runtime pool) ---
+        [Benchmark(Description = "Array[2] · Medium JSON")]
+        public void Arr_Medium() => AttributeExtractor.ExtractField(_medium, "tags"u8);
 
-        [Benchmark(Description = "Array[3] · Large JSON → alloc")]
-        public void Arr_Large() => AttributeExtractor.ExtractField(_large, "tags");
+        [Benchmark(Description = "Array[3] · Large JSON")]
+        public void Arr_Large() => AttributeExtractor.ExtractField(_large, "tags"u8);
 
         // --- Boolean (zero-alloc) ---
         [Benchmark(Description = "Boolean · Large JSON (skip nested obj)")]
-        public void Bool_Large() => AttributeExtractor.ExtractField(_large, "active");
+        public void Bool_Large() => AttributeExtractor.ExtractField(_large, "active"u8);
 
         // --- Missing field (zero-alloc) ---
         [Benchmark(Description = "Missing · Small JSON")]
-        public void Miss_Small() => AttributeExtractor.ExtractField(_small, "missing");
+        public void Miss_Small() => AttributeExtractor.ExtractField(_small, "missing"u8);
 
         [Benchmark(Description = "Missing · Medium JSON")]
-        public void Miss_Medium() => AttributeExtractor.ExtractField(_medium, "missing");
+        public void Miss_Medium() => AttributeExtractor.ExtractField(_medium, "missing"u8);
 
         [Benchmark(Description = "Missing · Large JSON")]
-        public void Miss_Large() => AttributeExtractor.ExtractField(_large, "missing");
+        public void Miss_Large() => AttributeExtractor.ExtractField(_large, "missing"u8);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -182,7 +182,7 @@ namespace BDN.benchmark.Filter
         [Benchmark(Description = "3. .genre == \"action\"  (category)")]
         public bool StringEq() => ExprRunner.Run(_stringEq, _json, _stack);
 
-        [Benchmark(Description = "4. \"x\" in .tags  (tag search) → ALLOC")]
+        [Benchmark(Description = "4. \"x\" in .tags  (tag search)")]
         public bool InArray() => ExprRunner.Run(_containsArray, _json, _stack);
 
         // ── Moderate: logical combinations ───────────────────────────────
@@ -209,7 +209,7 @@ namespace BDN.benchmark.Filter
 
         // ── Realistic combined ───────────────────────────────────────────
 
-        [Benchmark(Description = "11. Combined (all ops) → ALLOC")]
+        [Benchmark(Description = "11. Combined (all ops)")]
         public bool Combined() => ExprRunner.Run(_combined, _json, _stack);
     }
 
@@ -255,14 +255,14 @@ namespace BDN.benchmark.Filter
         [Benchmark(Description = "Numeric AND · Large JSON")]
         public bool Numeric_Large() => ExprRunner.Run(_numericFilter, _large, _stack);
 
-        // --- Array filter (allocates when array is found) ---
+        // --- Array filter (uses runtime pool, zero-alloc) ---
         [Benchmark(Description = "in .tags · Small JSON (no tags → false)")]
         public bool Array_Small() => ExprRunner.Run(_arrayFilter, _small, _stack);
 
-        [Benchmark(Description = "in .tags · Medium JSON (2 elem) → alloc")]
+        [Benchmark(Description = "in .tags · Medium JSON (2 elem)")]
         public bool Array_Medium() => ExprRunner.Run(_arrayFilter, _medium, _stack);
 
-        [Benchmark(Description = "in .tags · Large JSON (3 elem) → alloc")]
+        [Benchmark(Description = "in .tags · Large JSON (3 elem)")]
         public bool Array_Large() => ExprRunner.Run(_arrayFilter, _large, _stack);
     }
 
@@ -308,7 +308,7 @@ namespace BDN.benchmark.Filter
             return matched;
         }
 
-        [Benchmark(Description = "Combined + array · N candidates (allocs)")]
+        [Benchmark(Description = "Combined + array · N candidates")]
         [Arguments(10)]
         [Arguments(100)]
         [Arguments(1000)]

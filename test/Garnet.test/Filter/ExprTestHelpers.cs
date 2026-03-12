@@ -19,7 +19,8 @@ namespace Garnet.test
         /// </summary>
         internal static ExprToken EvaluateFilter(string expression, string json)
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), out var errpos);
+            var filterBytes = Encoding.UTF8.GetBytes(expression);
+            var program = ExprCompiler.TryCompile(filterBytes, out var errpos);
             if (program == null)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
@@ -34,7 +35,8 @@ namespace Garnet.test
         /// </summary>
         internal static bool EvaluateFilterTruthy(string expression, string json)
         {
-            var program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), out var errpos);
+            var filterBytes = Encoding.UTF8.GetBytes(expression);
+            var program = ExprCompiler.TryCompile(filterBytes, out var errpos);
             if (program == null)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
@@ -52,12 +54,31 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Get the string content of a Str token from a byte source (json or filter bytes).
+        /// </summary>
+        internal static string GetStr(byte[] sourceBytes, ExprToken token)
+        {
+            if (token.TokenType != ExprTokenType.Str) return null;
+            return Encoding.UTF8.GetString(sourceBytes, token.Utf8Start, token.Utf8Length);
+        }
+
+        /// <summary>
+        /// Get the string content of a Str/Selector token from the program's filter bytes.
+        /// </summary>
+        internal static string GetStr(ExprProgram program, ExprToken token)
+        {
+            return Encoding.UTF8.GetString(program.FilterBytes, token.Utf8Start, token.Utf8Length);
+        }
+
+        /// <summary>
         /// Execute a compiled program and return the top-of-stack value (for testing).
         /// This is a test-only method that mirrors ExprRunner.Run but returns the raw result
         /// instead of a boolean, so tests can inspect numeric/string values.
         /// </summary>
-        private static ExprToken RunAndReturnTop(ExprProgram program, ReadOnlySpan<byte> json)
+        private static ExprToken RunAndReturnTop(ExprProgram program, byte[] jsonBytes)
         {
+            ReadOnlySpan<byte> json = jsonBytes;
+            ReadOnlySpan<byte> filterBytes = program.FilterBytes;
             var stack = new ExprToken[256];
             var stackLen = 0;
 
@@ -67,15 +88,10 @@ namespace Garnet.test
 
                 if (inst.TokenType == ExprTokenType.Selector)
                 {
-                    var extracted = AttributeExtractor.ExtractField(json, inst.Str);
+                    var selectorName = filterBytes.Slice(inst.Utf8Start, inst.Utf8Length);
+                    var extracted = AttributeExtractor.ExtractField(json, selectorName);
                     if (extracted.IsNone)
                         return ExprToken.NewNull();
-
-                    // Materialize JSON refs to strings for test convenience (OK to allocate in tests)
-                    if (extracted.IsJsonRef)
-                    {
-                        extracted = ExprToken.NewStr(Encoding.UTF8.GetString(json.Slice(extracted.Utf8Start, extracted.Utf8Length)));
-                    }
 
                     stack[stackLen++] = extracted;
                     continue;
@@ -96,52 +112,52 @@ namespace Garnet.test
                 switch (inst.OpCode)
                 {
                     case OpCode.Not:
-                        result.Num = TokenToBool(b) == 0 ? 1 : 0;
+                        result.Num = ToBool(b, filterBytes, json) == 0 ? 1 : 0;
                         break;
                     case OpCode.Pow:
-                        result.Num = Math.Pow(TokenToNum(a), TokenToNum(b));
+                        result.Num = Math.Pow(ToNum(a, filterBytes, json), ToNum(b, filterBytes, json));
                         break;
                     case OpCode.Mul:
-                        result.Num = TokenToNum(a) * TokenToNum(b);
+                        result.Num = ToNum(a, filterBytes, json) * ToNum(b, filterBytes, json);
                         break;
                     case OpCode.Div:
-                        result.Num = TokenToNum(a) / TokenToNum(b);
+                        result.Num = ToNum(a, filterBytes, json) / ToNum(b, filterBytes, json);
                         break;
                     case OpCode.Mod:
-                        result.Num = TokenToNum(a) % TokenToNum(b);
+                        result.Num = ToNum(a, filterBytes, json) % ToNum(b, filterBytes, json);
                         break;
                     case OpCode.Add:
-                        result.Num = TokenToNum(a) + TokenToNum(b);
+                        result.Num = ToNum(a, filterBytes, json) + ToNum(b, filterBytes, json);
                         break;
                     case OpCode.Sub:
-                        result.Num = TokenToNum(a) - TokenToNum(b);
+                        result.Num = ToNum(a, filterBytes, json) - ToNum(b, filterBytes, json);
                         break;
                     case OpCode.Gt:
-                        result.Num = TokenToNum(a) > TokenToNum(b) ? 1 : 0;
+                        result.Num = ToNum(a, filterBytes, json) > ToNum(b, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.Gte:
-                        result.Num = TokenToNum(a) >= TokenToNum(b) ? 1 : 0;
+                        result.Num = ToNum(a, filterBytes, json) >= ToNum(b, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.Lt:
-                        result.Num = TokenToNum(a) < TokenToNum(b) ? 1 : 0;
+                        result.Num = ToNum(a, filterBytes, json) < ToNum(b, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.Lte:
-                        result.Num = TokenToNum(a) <= TokenToNum(b) ? 1 : 0;
+                        result.Num = ToNum(a, filterBytes, json) <= ToNum(b, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.Eq:
-                        result.Num = TokensEqual(a, b) ? 1 : 0;
+                        result.Num = AreEqual(a, b, program, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.Neq:
-                        result.Num = !TokensEqual(a, b) ? 1 : 0;
+                        result.Num = !AreEqual(a, b, program, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.In:
-                        result.Num = EvalIn(a, b) ? 1 : 0;
+                        result.Num = EvalIn(a, b, program, filterBytes, json) ? 1 : 0;
                         break;
                     case OpCode.And:
-                        result.Num = TokenToBool(a) != 0 && TokenToBool(b) != 0 ? 1 : 0;
+                        result.Num = ToBool(a, filterBytes, json) != 0 && ToBool(b, filterBytes, json) != 0 ? 1 : 0;
                         break;
                     case OpCode.Or:
-                        result.Num = TokenToBool(a) != 0 || TokenToBool(b) != 0 ? 1 : 0;
+                        result.Num = ToBool(a, filterBytes, json) != 0 || ToBool(b, filterBytes, json) != 0 ? 1 : 0;
                         break;
                 }
 
@@ -151,61 +167,142 @@ namespace Garnet.test
             return stackLen > 0 ? stack[stackLen - 1] : ExprToken.NewNull();
         }
 
-        private static double TokenToNum(ExprToken t)
+        /// <summary>
+        /// Resolve the UTF-8 bytes for a Str token. Filter-origin tokens reference
+        /// filterBytes; extracted tokens reference json.
+        /// </summary>
+        private static ReadOnlySpan<byte> GetStrSpan(ExprToken t, ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
+        {
+            return t.IsFilterOrigin
+                ? filterBytes.Slice(t.Utf8Start, t.Utf8Length)
+                : json.Slice(t.Utf8Start, t.Utf8Length);
+        }
+
+        private static double ToNum(ExprToken t, ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
         {
             if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num;
-            if (t.TokenType == ExprTokenType.Str && t.Str != null)
+            if (t.TokenType == ExprTokenType.Str)
             {
-                return double.TryParse(t.Str, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowLeadingSign,
-                    System.Globalization.CultureInfo.InvariantCulture, out var result) ? result : 0;
+                var slice = GetStrSpan(t, filterBytes, json);
+                // Try parsing UTF-8 bytes as a number
+                if (double.TryParse(Encoding.UTF8.GetString(slice.ToArray()),
+                    System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowLeadingSign,
+                    System.Globalization.CultureInfo.InvariantCulture, out var result))
+                    return result;
+                return 0;
             }
             return 0;
         }
 
-        private static double TokenToBool(ExprToken t)
+        private static double ToBool(ExprToken t, ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
         {
             if (t.IsNone) return 0;
             if (t.TokenType == ExprTokenType.Num) return t.Num != 0 ? 1 : 0;
-            if (t.TokenType == ExprTokenType.Str)
-            {
-                if (t.IsJsonRef) return t.Utf8Length == 0 ? 0 : 1;
-                return (t.Str == null || t.Str.Length == 0) ? 0 : 1;
-            }
+            if (t.TokenType == ExprTokenType.Str) return t.Utf8Length == 0 ? 0 : 1;
             if (t.TokenType == ExprTokenType.Null) return 0;
             return 1;
         }
 
-        private static bool TokensEqual(ExprToken a, ExprToken b)
+        private static bool AreEqual(ExprToken a, ExprToken b, ExprProgram program,
+            ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
         {
             if (a.IsNone || b.IsNone) return a.IsNone && b.IsNone;
+
             if (a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
-                return string.Equals(a.Str, b.Str, StringComparison.Ordinal);
+            {
+                var aSpan = GetStrSpan(a, filterBytes, json);
+                var bSpan = GetStrSpan(b, filterBytes, json);
+                if (!a.HasEscape && !b.HasEscape)
+                    return aSpan.SequenceEqual(bSpan);
+                return UnescapedEquals(aSpan, a.HasEscape, bSpan, b.HasEscape);
+            }
+
             if (a.TokenType == ExprTokenType.Num && b.TokenType == ExprTokenType.Num)
                 return a.Num == b.Num;
+
             if (a.TokenType == ExprTokenType.Null || b.TokenType == ExprTokenType.Null)
                 return a.TokenType == b.TokenType;
-            return TokenToNum(a) == TokenToNum(b);
+
+            return ToNum(a, filterBytes, json) == ToNum(b, filterBytes, json);
         }
 
-        private static bool EvalIn(ExprToken a, ExprToken b)
+        private static bool EvalIn(ExprToken a, ExprToken b, ExprProgram program,
+            ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
         {
             if (b.IsNone) return false;
+
+            // Tuple membership: for Tuple tokens, Utf8Start = pool start, Utf8Length = element count
             if (b.TokenType == ExprTokenType.Tuple)
             {
-                for (var i = 0; i < b.TupleLength; i++)
+                var poolStart = b.Utf8Start;
+                var poolLen = b.Utf8Length;
+                for (var i = 0; i < poolLen; i++)
                 {
-                    if (TokensEqual(a, b.TupleElements[i]))
+                    if (AreEqual(a, program.TuplePool[poolStart + i], program, filterBytes, json))
                         return true;
                 }
                 return false;
             }
+
+            // String substring check
             if (!a.IsNone && a.TokenType == ExprTokenType.Str && b.TokenType == ExprTokenType.Str)
             {
-                if (a.Str == null || b.Str == null) return false;
-                return b.Str.IndexOf(a.Str, StringComparison.Ordinal) >= 0;
+                var needle = GetStrSpan(a, filterBytes, json);
+                var haystack = GetStrSpan(b, filterBytes, json);
+                if (needle.Length == 0) return true;
+                if (needle.Length > haystack.Length) return false;
+                return haystack.IndexOf(needle) >= 0;
             }
+
             return false;
         }
+
+        private static bool UnescapedEquals(ReadOnlySpan<byte> a, bool aEscaped, ReadOnlySpan<byte> b, bool bEscaped)
+        {
+            var ai = 0;
+            var bi = 0;
+            while (ai < a.Length && bi < b.Length)
+            {
+                byte ac, bc;
+                if (aEscaped && ai < a.Length - 1 && a[ai] == (byte)'\\')
+                {
+                    ai++;
+                    ac = UnescapeByte(a[ai]);
+                }
+                else
+                {
+                    ac = a[ai];
+                }
+
+                if (bEscaped && bi < b.Length - 1 && b[bi] == (byte)'\\')
+                {
+                    bi++;
+                    bc = UnescapeByte(b[bi]);
+                }
+                else
+                {
+                    bc = b[bi];
+                }
+
+                if (ac != bc) return false;
+                ai++;
+                bi++;
+            }
+
+            return ai == a.Length && bi == b.Length;
+        }
+
+        private static byte UnescapeByte(byte b) => b switch
+        {
+            (byte)'n' => (byte)'\n',
+            (byte)'r' => (byte)'\r',
+            (byte)'t' => (byte)'\t',
+            (byte)'\\' => (byte)'\\',
+            (byte)'"' => (byte)'"',
+            (byte)'\'' => (byte)'\'',
+            (byte)'/' => (byte)'/',
+            _ => b,
+        };
     }
 }
