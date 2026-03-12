@@ -3220,11 +3220,12 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var basic = (int)db.ScriptEvaluate("local x = loadstring('return 123'); return x()");
-            ClassicAssert.AreEqual(123, basic);
+            // load and loadstring are not part of the sandbox allowed functions
+            var loadExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = load('return 123'); return x()"));
+            ClassicAssert.True(loadExc.Message.Contains("attempt to call a nil value"));
 
-            var rejectNullExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return \"\\0\"'); return x()"));
-            ClassicAssert.True(rejectNullExc.Message.Contains("bad argument to loadstring, interior null byte"));
+            var loadstringExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return 123'); return x()"));
+            ClassicAssert.True(loadstringExc.Message.Contains("attempt to call a nil value"));
         }
 
         [Test]
