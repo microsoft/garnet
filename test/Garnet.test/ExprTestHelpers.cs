@@ -3,7 +3,7 @@
 
 using System;
 using System.Text;
-using Garnet.server.Vector.Filter;
+using Garnet.server;
 
 namespace Garnet.test
 {

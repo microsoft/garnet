@@ -5,7 +5,7 @@ using System;
 using System.Buffers.Text;
 using System.Collections.Generic;
 
-namespace Garnet.server.Vector.Filter
+namespace Garnet.server
 {
     /// <summary>
     /// Shunting-Yard compiler that tokenizes and compiles a filter expression string

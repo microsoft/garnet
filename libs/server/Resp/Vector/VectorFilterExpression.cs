@@ -4,12 +4,12 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Garnet.server.Vector.Filter
+namespace Garnet.server
 {
     /// <summary>
     /// Token types for the filter expression virtual machine.
     ///
-    /// The filter engine uses a stack-based postfix VM 
+    /// The filter engine uses a stack-based postfix VM
     /// A filter string like <c>.year >= 2000 and .rating > 7</c> is compiled into a flat
     /// array of <see cref="ExprToken"/> instructions in postfix (reverse-Polish) order:
     ///

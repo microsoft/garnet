@@ -4,7 +4,7 @@
 using System;
 using System.Buffers.Text;
 
-namespace Garnet.server.Vector.Filter
+namespace Garnet.server
 {
     /// <summary>
     /// Ultra-lightweight top-level JSON field extractor.
@@ -261,7 +261,7 @@ namespace Garnet.server.Vector.Filter
 
         /// <summary>
         /// Parse a JSON array and return a Tuple token. Elements are parsed and stored
-        /// in the caller's <paramref name="program"/> runtime pool so the runner can 
+        /// in the caller's <paramref name="program"/> runtime pool so the runner can
         /// iterate them during IN evaluation.
         /// </summary>
         internal static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ExprProgram program)

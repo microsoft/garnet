@@ -5,7 +5,7 @@ using System;
 using System.Buffers.Text;
 using System.Collections.Generic;
 
-namespace Garnet.server.Vector.Filter
+namespace Garnet.server
 {
     /// <summary>
     /// Stack-based VM that executes a compiled <see cref="ExprProgram"/> against

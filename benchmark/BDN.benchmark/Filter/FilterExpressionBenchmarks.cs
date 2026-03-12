@@ -3,7 +3,7 @@
 
 using System.Text;
 using BenchmarkDotNet.Attributes;
-using Garnet.server.Vector.Filter;
+using Garnet.server;
 
 namespace BDN.benchmark.Filter
 {
