@@ -20,12 +20,28 @@ namespace Garnet.test
         internal static ExprToken EvaluateFilter(string expression, string json)
         {
             var filterBytes = Encoding.UTF8.GetBytes(expression);
-            var program = ExprCompiler.TryCompile(filterBytes, out var errpos);
-            if (program == null)
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            var instrCount = ExprCompiler.TryCompile(filterBytes, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out var errpos);
+            if (instrCount < 0)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
             var jsonBytes = Encoding.UTF8.GetBytes(json);
-            return RunAndReturnTop(program, filterBytes, jsonBytes);
+
+            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[64];
+            var program = new ExprProgram
+            {
+                Instructions = instrBuf[..instrCount],
+                Length = instrCount,
+                TuplePool = tuplePoolBuf[..tupleCount],
+                TuplePoolLength = tupleCount,
+                RuntimePool = runtimePoolBuf,
+                RuntimePoolLength = 0,
+            };
+
+            return RunAndReturnTop(ref program, filterBytes, jsonBytes);
         }
 
         /// <summary>
@@ -34,26 +50,55 @@ namespace Garnet.test
         internal static bool EvaluateFilterTruthy(string expression, string json)
         {
             var filterBytes = Encoding.UTF8.GetBytes(expression);
-            var program = ExprCompiler.TryCompile(filterBytes, out var errpos);
-            if (program == null)
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            var instrCount = ExprCompiler.TryCompile(filterBytes, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out var errpos);
+            if (instrCount < 0)
                 throw new InvalidOperationException($"Compilation failed at position {errpos}");
 
             var jsonBytes = Encoding.UTF8.GetBytes(json);
-            var selectorRanges = program.GetSelectorRanges(filterBytes);
-            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length > 0 ? selectorRanges.Length : 1];
-            AttributeExtractor.ExtractFields(jsonBytes, filterBytes, selectorRanges, extractedFields, program);
+
+            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[64];
+            var program = new ExprProgram
+            {
+                Instructions = instrBuf[..instrCount],
+                Length = instrCount,
+                TuplePool = tuplePoolBuf[..tupleCount],
+                TuplePoolLength = tupleCount,
+                RuntimePool = runtimePoolBuf,
+                RuntimePoolLength = 0,
+            };
+
+            Span<(int, int)> selectorBuf = stackalloc (int, int)[32];
+            var selectorCount = 0;
+            for (var i = 0; i < instrCount; i++)
+            {
+                if (instrBuf[i].TokenType != ExprTokenType.Selector) continue;
+                var s = instrBuf[i].Utf8Start;
+                var l = instrBuf[i].Utf8Length;
+                ReadOnlySpan<byte> span = filterBytes.AsSpan(s, l);
+                var found = false;
+                for (var j = 0; j < selectorCount; j++)
+                    if (((ReadOnlySpan<byte>)filterBytes.AsSpan(selectorBuf[j].Item1, selectorBuf[j].Item2)).SequenceEqual(span)) { found = true; break; }
+                if (!found) selectorBuf[selectorCount++] = (s, l);
+            }
+            var selectorRanges = selectorBuf[..selectorCount];
+
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorCount > 0 ? selectorCount : 1];
+            AttributeExtractor.ExtractFields(jsonBytes, filterBytes, selectorRanges, extractedFields, ref program);
             Span<ExprToken> stackBuf = stackalloc ExprToken[16];
             var stack = new ExprStack(stackBuf);
-            return ExprRunner.Run(program, jsonBytes, filterBytes, selectorRanges, extractedFields, ref stack);
+            return ExprRunner.Run(ref program, jsonBytes, filterBytes, selectorRanges, extractedFields, ref stack);
         }
 
         /// <summary>
-        /// Try to compile a filter expression. Returns true on success.
+        /// Try to compile a filter expression. Returns instruction count (&gt;0) on success.
         /// </summary>
-        internal static bool TryCompile(string expression, out ExprProgram program)
+        internal static int TryCompile(string expression, Span<ExprToken> instrBuf, Span<ExprToken> tuplePoolBuf, Span<ExprToken> tokensBuf, Span<ExprToken> opsStackBuf, out int tupleCount)
         {
-            program = ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), out _);
-            return program != null;
+            return ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out tupleCount, out _);
         }
 
         /// <summary>
@@ -78,7 +123,7 @@ namespace Garnet.test
         /// This is a test-only method that mirrors ExprRunner.Run but returns the raw result
         /// instead of a boolean, so tests can inspect numeric/string values.
         /// </summary>
-        private static ExprToken RunAndReturnTop(ExprProgram program, byte[] filterBytes, byte[] jsonBytes)
+        private static ExprToken RunAndReturnTop(ref ExprProgram program, byte[] filterBytes, byte[] jsonBytes)
         {
             ReadOnlySpan<byte> json = jsonBytes;
             ReadOnlySpan<byte> filter = filterBytes;

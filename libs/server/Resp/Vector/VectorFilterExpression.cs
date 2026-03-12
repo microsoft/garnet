@@ -90,31 +90,71 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// A 16-byte blittable union token for the filter expression VM.
+    /// A 16-byte blittable union token — the universal data type for the filter expression VM.
     ///
-    /// All strings are represented as (Utf8Start, Utf8Length) byte-range references into
-    /// a source buffer — either the filter expression bytes (for compile-time literals and
-    /// selectors) or the JSON bytes (for extracted values). No managed string or array
-    /// references, so the struct is GC-free and span-friendly.
+    /// <para><b>Design goals:</b></para>
+    /// <list type="bullet">
+    ///   <item><description><b>Zero allocation</b> — no managed references (string, array, object).
+    ///     Safe for <c>stackalloc</c>, <c>Span&lt;ExprToken&gt;</c>, and contiguous buffers.</description></item>
+    ///   <item><description><b>Fixed 16-byte size</b> — power-of-two for optimal array indexing
+    ///     (<c>index &lt;&lt; 4</c>). Four tokens fit exactly in one 64-byte cache line.</description></item>
+    ///   <item><description><b>Tagged union</b> — <see cref="TokenType"/> discriminates which
+    ///     payload fields are active. Only one interpretation of the union is valid at a time.</description></item>
+    ///   <item><description><b>Zero-copy strings</b> — string values are (offset, length) byte-range
+    ///     references into an external buffer, not copies. The <see cref="Flags"/> byte tracks
+    ///     which buffer (filter vs JSON) and whether escape handling is needed.</description></item>
+    /// </list>
     ///
-    /// <para><b>Layout (16 bytes, explicit):</b></para>
+    /// <para><b>Memory layout (16 bytes, explicit):</b></para>
     /// <code>
-    ///   [0]     ExprTokenType  (1 byte)
-    ///   [1]     OpCode         (1 byte, overlaps with Flags)
-    ///   [8..15] double Num     — OR —
-    ///   [8..11] int Utf8Start  + [12..15] int Utf8Length
+    ///   ExprToken — [StructLayout(LayoutKind.Explicit, Size = 16)]
+    ///
+    ///   Byte offset:  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
+    ///                ┌────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┬────┐
+    ///                │Type│ Op │Flag│         padding (5 bytes)   │       Union payload (8 bytes)     │
+    ///                │Code│Code│  s │                             │                                   │
+    ///                └────┴────┴────┴────────────────────────────┴───────────────────────────────────┘
+    ///                ◄─── header (8 bytes) ──────────────────────►◄─── payload (8 bytes) ───────────►
+    ///
+    ///   The payload at offset 8 is a UNION (overlapping fields):
+    ///     ● double Num       [8..15]  — 8 bytes, for numbers and booleans
+    ///     ● int Utf8Start    [8..11]  — 4 bytes ┐ for strings, selectors, tuples
+    ///     ● int Utf8Length   [12..15] — 4 bytes ┘
+    ///
+    ///   Header fields:
+    ///     [0] TokenType   — discriminator tag (ExprTokenType enum)
+    ///     [1] OpCode      — operator opcode (valid when TokenType == Op)
+    ///     [2] Flags       — bitfield:
+    ///                         bit 0 (0x01): HasEscape    — string contains \", \\, \n etc.
+    ///                         bit 1 (0x02): FilterOrigin — bytes reference filter, not JSON
+    ///                         bit 2 (0x04): RuntimeTuple — tuple in RuntimePool, not TuplePool
+    ///                         bits 3–7:     Reserved for future use
+    ///     [3..7]          — padding (ensures 8-byte alignment for the double in the union)
     /// </code>
     ///
+    /// <para><b>Payload usage by token type:</b></para>
     /// <list type="table">
-    ///   <listheader><term>TokenType</term><description>Payload used</description></listheader>
+    ///   <listheader><term>TokenType</term><description>Payload interpretation</description></listheader>
     ///   <item><term>Num</term><description><see cref="Num"/> (double). Booleans are 1.0/0.0.</description></item>
-    ///   <item><term>Str</term><description><see cref="Utf8Start"/>+<see cref="Utf8Length"/> into JSON bytes.</description></item>
-    ///   <item><term>Selector</term><description><see cref="Utf8Start"/>+<see cref="Utf8Length"/> into filter bytes.</description></item>
+    ///   <item><term>Str</term><description><see cref="Utf8Start"/>+<see cref="Utf8Length"/> — byte range into
+    ///     JSON bytes (default) or filter bytes (when <see cref="IsFilterOrigin"/> is set).
+    ///     If <see cref="HasEscape"/> is set, the span contains JSON escape sequences that
+    ///     require unescape-aware comparison.</description></item>
+    ///   <item><term>Selector</term><description><see cref="Utf8Start"/>+<see cref="Utf8Length"/> — field name
+    ///     byte range into filter bytes (e.g. "year" from ".year &gt; 2000"). Always FilterOrigin.</description></item>
     ///   <item><term>Tuple</term><description><see cref="Utf8Start"/> = start index, <see cref="Utf8Length"/> = count
-    ///     in the program's <see cref="ExprProgram.TuplePool"/>.</description></item>
-    ///   <item><term>Op</term><description><see cref="OpCode"/>.</description></item>
-    ///   <item><term>Null</term><description>No payload.</description></item>
+    ///     in either <see cref="ExprProgram.TuplePool"/> (compile-time <c>[1, "x", 3]</c> literals)
+    ///     or <see cref="ExprProgram.RuntimePool"/> (JSON array extraction, when <see cref="IsRuntimeTuple"/>).</description></item>
+    ///   <item><term>Op</term><description><see cref="OpCode"/> identifies the operation. No payload used.</description></item>
+    ///   <item><term>Null</term><description>No payload. Represents JSON null or missing fields.</description></item>
+    ///   <item><term>None</term><description>Default/uninitialized. All bytes zero. Used as sentinel.</description></item>
     /// </list>
+    ///
+    /// <para><b>Factory methods:</b> All construction goes through static methods (<see cref="NewNum"/>,
+    /// <see cref="NewStr"/>, <see cref="NewFilterStr"/>, <see cref="NewSelector"/>, <see cref="NewOp"/>,
+    /// <see cref="NewNull"/>, <see cref="NewTuple"/>, <see cref="NewRuntimeTuple"/>) that initialize
+    /// from <c>default</c> (all-zeros) and set only the relevant fields. This ensures padding bytes
+    /// are always zero.</para>
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 16)]
     internal struct ExprToken
@@ -302,32 +342,23 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Compiled filter expression program — the output of
-    /// <see cref="ExprCompiler.TryCompile(ReadOnlySpan{byte}, out int)"/>
-    /// and the input to <c>ExprRunner.Run</c>.
-    ///
-    /// Contains a flat postfix instruction sequence and the source bytes that string/selector
-    /// tokens reference. All <see cref="ExprToken"/> values in the program are byte-range
-    /// references into the caller-provided filter bytes (compile-time) or the per-candidate JSON
-    /// bytes (runtime).
-    ///
-    /// <para><b>Compile-once, run-many:</b> The program is compiled once per query, then
-    /// executed against every candidate element's raw JSON bytes. The program itself is
-    /// read-only during execution.</para>
+    /// Compiled filter expression program — zero-allocation ref struct.
+    /// All storage is caller-provided via <see cref="Span{ExprToken}"/> buffers
+    /// (typically stackalloc'd). The program does not own any heap memory.
     /// </summary>
-    internal sealed class ExprProgram
+    internal ref struct ExprProgram
     {
         /// <summary>The compiled postfix instruction sequence.</summary>
-        public ExprToken[] Instructions;
+        public Span<ExprToken> Instructions;
 
         /// <summary>Number of instructions in the program.</summary>
         public int Length;
 
         /// <summary>
         /// Flat pool of tuple element tokens. Tuple tokens in <see cref="Instructions"/>
-        /// store (StartIndex, Count) into this array.
+        /// store (StartIndex, Count) into this span.
         /// </summary>
-        public ExprToken[] TuplePool;
+        public Span<ExprToken> TuplePool;
 
         /// <summary>Number of elements used in <see cref="TuplePool"/>.</summary>
         public int TuplePoolLength;
@@ -337,73 +368,27 @@ namespace Garnet.server
         /// Reused across candidate evaluations. Runtime elements are appended
         /// and reset before each candidate evaluation via <see cref="ResetRuntimePool"/>.
         /// </summary>
-        public ExprToken[] RuntimePool;
+        public Span<ExprToken> RuntimePool;
 
         /// <summary>Current write position in <see cref="RuntimePool"/>.</summary>
         public int RuntimePoolLength;
 
         /// <summary>
-        /// Append elements to the runtime pool and return a Tuple token.
-        /// The pool auto-grows if needed.
+        /// Append elements from a stackalloc'd source span into the runtime pool.
+        /// Returns a RuntimeTuple token referencing the appended range.
         /// </summary>
-        public ExprToken AppendRuntimeTuple(ExprToken[] elements, int count)
+        public ExprToken AppendRuntimeTuple(ReadOnlySpan<ExprToken> elements)
         {
-            if (count == 0)
+            if (elements.Length == 0)
                 return ExprToken.NewTuple(0, 0);
 
-            RuntimePool ??= new ExprToken[64];
-            if (RuntimePoolLength + count > RuntimePool.Length)
-                System.Array.Resize(ref RuntimePool, System.Math.Max(RuntimePool.Length * 2, RuntimePoolLength + count));
-
             var start = RuntimePoolLength;
-            System.Array.Copy(elements, 0, RuntimePool, start, count);
-            RuntimePoolLength += count;
-            return ExprToken.NewRuntimeTuple(start, count);
+            elements.CopyTo(RuntimePool.Slice(start));
+            RuntimePoolLength += elements.Length;
+            return ExprToken.NewRuntimeTuple(start, elements.Length);
         }
 
         /// <summary>Reset the runtime pool for a new candidate evaluation.</summary>
         public void ResetRuntimePool() => RuntimePoolLength = 0;
-
-        /// <summary>Cached unique selector byte-ranges (deduplicated).</summary>
-        private (int Start, int Length)[] selectorRanges;
-
-        /// <summary>
-        /// Get the unique selector (field name) byte-ranges referenced by this program.
-        /// Each range is an (offset, length) into the caller-provided filter bytes.
-        /// Cached after first call.
-        /// </summary>
-        public (int Start, int Length)[] GetSelectorRanges(ReadOnlySpan<byte> filterBytes)
-        {
-            if (selectorRanges != null)
-                return selectorRanges;
-
-            // Deduplicate by content
-            var count = 0;
-            var temp = new (int Start, int Length)[Length]; // upper bound
-            for (var i = 0; i < Length; i++)
-            {
-                if (Instructions[i].TokenType != ExprTokenType.Selector)
-                    continue;
-
-                var start = Instructions[i].Utf8Start;
-                var len = Instructions[i].Utf8Length;
-                var span = filterBytes.Slice(start, len);
-                var found = false;
-                for (var j = 0; j < count; j++)
-                {
-                    if (filterBytes.Slice(temp[j].Start, temp[j].Length).SequenceEqual(span))
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    temp[count++] = (start, len);
-            }
-
-            selectorRanges = new (int, int)[count];
-            System.Array.Copy(temp, selectorRanges, count);
-            return selectorRanges;
-        }
     }
 }

@@ -185,21 +185,48 @@ namespace Garnet.test
         public void Runner_NonJsonAttributesExcluded()
         {
             var filterBytes = Encoding.UTF8.GetBytes(".year > 1950");
-            var program = ExprCompiler.TryCompile(filterBytes, out _);
-            ClassicAssert.IsNotNull(program);
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            var instrCount = ExprCompiler.TryCompile(filterBytes, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+            ClassicAssert.IsTrue(instrCount > 0);
 
-            var selectorRanges = program.GetSelectorRanges(filterBytes);
-            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length > 0 ? selectorRanges.Length : 1];
-            Span<ExprToken> stackBuf = stackalloc ExprToken[16];
-            var stack = new ExprStack(stackBuf);
+            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[64];
+            var program = new ExprProgram
+            {
+                Instructions = instrBuf[..instrCount],
+                Length = instrCount,
+                TuplePool = tuplePoolBuf[..tupleCount],
+                TuplePoolLength = tupleCount,
+                RuntimePool = runtimePoolBuf,
+                RuntimePoolLength = 0,
+            };
+
+            // Compute selector ranges
+            Span<(int, int)> selectorBuf = stackalloc (int, int)[32];
+            var selectorCount = 0;
+            for (var idx = 0; idx < instrCount; idx++)
+            {
+                if (instrBuf[idx].TokenType != ExprTokenType.Selector) continue;
+                var found = false;
+                for (var j = 0; j < selectorCount; j++)
+                    if (((ReadOnlySpan<byte>)filterBytes.AsSpan(selectorBuf[j].Item1, selectorBuf[j].Item2)).SequenceEqual(filterBytes.AsSpan(instrBuf[idx].Utf8Start, instrBuf[idx].Utf8Length))) { found = true; break; }
+                if (!found) selectorBuf[selectorCount++] = (instrBuf[idx].Utf8Start, instrBuf[idx].Utf8Length);
+            }
+            var selectorRanges = selectorBuf[..selectorCount];
+
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorCount > 0 ? selectorCount : 1];
+            Span<ExprToken> stackBuf2 = stackalloc ExprToken[16];
+            var stack = new ExprStack(stackBuf2);
 
             var nonJson = Encoding.UTF8.GetBytes("this is not json");
-            AttributeExtractor.ExtractFields(nonJson, filterBytes, selectorRanges, extractedFields, program);
-            ClassicAssert.IsFalse(ExprRunner.Run(program, nonJson, filterBytes, selectorRanges, extractedFields, ref stack));
+            AttributeExtractor.ExtractFields(nonJson, filterBytes, selectorRanges, extractedFields, ref program);
+            ClassicAssert.IsFalse(ExprRunner.Run(ref program, nonJson, filterBytes, selectorRanges, extractedFields, ref stack));
 
             var emptyJson = Encoding.UTF8.GetBytes("");
-            AttributeExtractor.ExtractFields(emptyJson, filterBytes, selectorRanges, extractedFields, program);
-            ClassicAssert.IsFalse(ExprRunner.Run(program, emptyJson, filterBytes, selectorRanges, extractedFields, ref stack));
+            AttributeExtractor.ExtractFields(emptyJson, filterBytes, selectorRanges, extractedFields, ref program);
+            ClassicAssert.IsFalse(ExprRunner.Run(ref program, emptyJson, filterBytes, selectorRanges, extractedFields, ref stack));
         }
 
         [Test]

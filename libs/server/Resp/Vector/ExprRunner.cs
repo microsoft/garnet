@@ -17,7 +17,9 @@ namespace Garnet.server
 
         public ExprStack(Span<ExprToken> buffer) { _buffer = buffer; _count = 0; }
         public int Count => _count;
+        public bool IsFull => _count >= _buffer.Length;
         public void Push(ExprToken t) => _buffer[_count++] = t;
+        public bool TryPush(ExprToken t) { if (_count >= _buffer.Length) return false; _buffer[_count++] = t; return true; }
         public ExprToken Pop() => _buffer[--_count];
         public ExprToken Peek() => _buffer[_count - 1];
         public void Clear() => _count = 0;
@@ -40,10 +42,10 @@ namespace Garnet.server
         /// Uses <see cref="ExprStack"/> (backed by stackalloc) — zero heap allocation.
         /// </summary>
         public static bool Run(
-            ExprProgram program,
+            ref ExprProgram program,
             ReadOnlySpan<byte> json,
             ReadOnlySpan<byte> filterBytes,
-            (int Start, int Length)[] selectorRanges,
+            ReadOnlySpan<(int Start, int Length)> selectorRanges,
             Span<ExprToken> extractedFields,
             ref ExprStack stack)
         {
@@ -66,7 +68,11 @@ namespace Garnet.server
                                 stack.Clear();
                                 return false;
                             }
-                            stack.Push(extractedFields[j]);
+                            if (!stack.TryPush(extractedFields[j]))
+                            {
+                                stack.Clear();
+                                return false;
+                            }
                             found = true;
                             break;
                         }
@@ -75,7 +81,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                if (!ExecuteInstruction(inst, program, filterBytes, json, ref stack))
+                if (!ExecuteInstruction(inst, ref program, filterBytes, json, ref stack))
                     return false;
             }
 
@@ -89,14 +95,14 @@ namespace Garnet.server
 
         private static bool ExecuteInstruction(
             ExprToken inst,
-            ExprProgram program,
+            ref ExprProgram program,
             ReadOnlySpan<byte> filterBytes,
             ReadOnlySpan<byte> json,
             ref ExprStack stack)
         {
             if (inst.TokenType != ExprTokenType.Op)
             {
-                stack.Push(inst);
+                if (!stack.TryPush(inst)) { stack.Clear(); return false; }
                 return true;
             }
 
@@ -144,13 +150,13 @@ namespace Garnet.server
                     result.Num = ToNum(a, filterBytes, json) <= ToNum(b, filterBytes, json) ? 1 : 0;
                     break;
                 case OpCode.Eq:
-                    result.Num = AreEqual(a, b, program, filterBytes, json) ? 1 : 0;
+                    result.Num = AreEqual(a, b, ref program, filterBytes, json) ? 1 : 0;
                     break;
                 case OpCode.Neq:
-                    result.Num = !AreEqual(a, b, program, filterBytes, json) ? 1 : 0;
+                    result.Num = !AreEqual(a, b, ref program, filterBytes, json) ? 1 : 0;
                     break;
                 case OpCode.In:
-                    result.Num = EvalIn(a, b, program, filterBytes, json) ? 1 : 0;
+                    result.Num = EvalIn(a, b, ref program, filterBytes, json) ? 1 : 0;
                     break;
                 case OpCode.And:
                     result.Num = ToBool(a, filterBytes, json) != 0 && ToBool(b, filterBytes, json) != 0 ? 1 : 0;
@@ -160,7 +166,7 @@ namespace Garnet.server
                     break;
             }
 
-            stack.Push(result);
+            if (!stack.TryPush(result)) { stack.Clear(); return false; }
             return true;
         }
 
@@ -199,7 +205,7 @@ namespace Garnet.server
             return 1;
         }
 
-        private static bool AreEqual(ExprToken a, ExprToken b, ExprProgram program,
+        private static bool AreEqual(ExprToken a, ExprToken b, ref ExprProgram program,
             ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
         {
             if (a.IsNone || b.IsNone) return a.IsNone && b.IsNone;
@@ -223,7 +229,7 @@ namespace Garnet.server
             return ToNum(a, filterBytes, json) == ToNum(b, filterBytes, json);
         }
 
-        private static bool EvalIn(ExprToken a, ExprToken b, ExprProgram program,
+        private static bool EvalIn(ExprToken a, ExprToken b, ref ExprProgram program,
             ReadOnlySpan<byte> filterBytes, ReadOnlySpan<byte> json)
         {
             if (b.IsNone) return false;
@@ -236,7 +242,7 @@ namespace Garnet.server
                 var pool = b.IsRuntimeTuple ? program.RuntimePool : program.TuplePool;
                 for (var i = 0; i < poolLen; i++)
                 {
-                    if (AreEqual(a, pool[poolStart + i], program, filterBytes, json))
+                    if (AreEqual(a, pool[poolStart + i], ref program, filterBytes, json))
                         return true;
                 }
                 return false;

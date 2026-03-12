@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers.Text;
-using System.Collections.Generic;
 
 namespace Garnet.server
 {
@@ -17,28 +16,36 @@ namespace Garnet.server
     /// </summary>
     internal static class ExprCompiler
     {
-        private const int DefaultCapacity = 16;
-        private const int MaxTupleElements = 64;
-
         /// <summary>
         /// Compile a filter expression (as UTF-8 bytes) into a flat postfix program.
-        /// Returns null on syntax error; optionally reports the error position.
-        /// The returned program does NOT own a copy of the filter bytes —
-        /// the caller must pass them explicitly to all downstream consumers.
+        /// Zero heap allocation — the caller provides ALL buffers.
+        /// Returns the instruction count (&gt;0) on success, or -1 on error.
         /// </summary>
-        public static ExprProgram TryCompile(ReadOnlySpan<byte> expr, out int errpos)
+        public static int TryCompile(
+            ReadOnlySpan<byte> expr,
+            Span<ExprToken> instrBuf,
+            Span<ExprToken> tuplePoolBuf,
+            Span<ExprToken> tokensBuf,
+            Span<ExprToken> opsStackBuf,
+            out int tupleCount,
+            out int errpos)
         {
+            tupleCount = 0;
             errpos = -1;
             if (expr.IsEmpty)
-                return null;
+                return -1;
 
             var exprLen = expr.Length;
 
-            // Tuple pool: collects all tuple element tokens across all tuples
-            var tuplePool = new List<ExprToken>(DefaultCapacity);
+            // All scratch provided by caller — zero stackalloc here.
+            var tokens = tokensBuf;
+            var maxTokens = tokens.Length;
+            var tokenCount = 0;
+
+            var tuplePoolLocal = tuplePoolBuf;
+            var tuplePoolLen = 0;
 
             // Phase 1: Tokenize into a flat list
-            var tokens = new List<ExprToken>(DefaultCapacity);
             var remaining = expr;
 
             while (!remaining.IsEmpty)
@@ -51,13 +58,13 @@ namespace Garnet.server
                 var minusIsNumber = false;
                 if (remaining[0] == (byte)'-' && remaining.Length > 1 && (AttributeExtractor.IsDigit(remaining[1]) || remaining[1] == (byte)'.'))
                 {
-                    if (tokens.Count == 0)
+                    if (tokenCount == 0)
                     {
                         minusIsNumber = true;
                     }
                     else
                     {
-                        var prev = tokens[tokens.Count - 1];
+                        var prev = tokens[tokenCount - 1];
                         if (prev.TokenType == ExprTokenType.Op && prev.OpCode != OpCode.CParen)
                             minusIsNumber = true;
                     }
@@ -67,8 +74,9 @@ namespace Garnet.server
                 if (AttributeExtractor.IsDigit(remaining[0]) || (minusIsNumber && remaining[0] == (byte)'-'))
                 {
                     var t = ParseNumber(ref remaining);
-                    if (t.IsNone) { errpos = exprLen - remaining.Length; return null; }
-                    tokens.Add(t);
+                    if (t.IsNone) { errpos = exprLen - remaining.Length; return -1; }
+                    if (tokenCount >= maxTokens) { errpos = exprLen - remaining.Length; return -1; }
+                    tokens[tokenCount++] = t;
                     continue;
                 }
 
@@ -76,8 +84,9 @@ namespace Garnet.server
                 if (remaining[0] == (byte)'"' || remaining[0] == (byte)'\'')
                 {
                     var t = ParseString(exprLen, ref remaining);
-                    if (t.IsNone) { errpos = exprLen - remaining.Length; return null; }
-                    tokens.Add(t);
+                    if (t.IsNone) { errpos = exprLen - remaining.Length; return -1; }
+                    if (tokenCount >= maxTokens) { errpos = exprLen - remaining.Length; return -1; }
+                    tokens[tokenCount++] = t;
                     continue;
                 }
 
@@ -85,16 +94,18 @@ namespace Garnet.server
                 if (remaining[0] == (byte)'.' && remaining.Length > 1 && IsSelectorChar(remaining[1]))
                 {
                     var t = ParseSelector(exprLen, ref remaining);
-                    tokens.Add(t);
+                    if (tokenCount >= maxTokens) { errpos = exprLen - remaining.Length; return -1; }
+                    tokens[tokenCount++] = t;
                     continue;
                 }
 
                 // Tuple literal [1, "foo", 42]
                 if (remaining[0] == (byte)'[')
                 {
-                    var t = ParseTuple(exprLen, tuplePool, ref remaining);
-                    if (t.IsNone) { errpos = exprLen - remaining.Length; return null; }
-                    tokens.Add(t);
+                    var t = ParseTuple(exprLen, tuplePoolLocal, ref tuplePoolLen, ref remaining);
+                    if (t.IsNone) { errpos = exprLen - remaining.Length; return -1; }
+                    if (tokenCount >= maxTokens) { errpos = exprLen - remaining.Length; return -1; }
+                    tokens[tokenCount++] = t;
                     continue;
                 }
 
@@ -102,21 +113,23 @@ namespace Garnet.server
                 if (AttributeExtractor.IsLetter(remaining[0]) || IsOperatorSpecialChar(remaining[0]))
                 {
                     var t = ParseOperatorOrLiteral(ref remaining);
-                    if (t.IsNone) { errpos = exprLen - remaining.Length; return null; }
-                    tokens.Add(t);
+                    if (t.IsNone) { errpos = exprLen - remaining.Length; return -1; }
+                    if (tokenCount >= maxTokens) { errpos = exprLen - remaining.Length; return -1; }
+                    tokens[tokenCount++] = t;
                     continue;
                 }
 
                 errpos = exprLen - remaining.Length;
-                return null;
+                return -1;
             }
 
             // Phase 2: Shunting-yard compilation to postfix
-            var program = new List<ExprToken>(DefaultCapacity);
-            var opsStack = new Stack<ExprToken>(DefaultCapacity);
+            var opsStack = opsStackBuf;
+            var opsCount = 0;
+            var instrCount = 0;
             var stackItems = 0;
 
-            for (var i = 0; i < tokens.Count; i++)
+            for (var i = 0; i < tokenCount; i++)
             {
                 var token = tokens[i];
 
@@ -126,48 +139,47 @@ namespace Garnet.server
                     token.TokenType == ExprTokenType.Selector ||
                     token.TokenType == ExprTokenType.Null)
                 {
-                    program.Add(token);
+                    if (instrCount >= instrBuf.Length) { errpos = 0; return -1; }
+                    instrBuf[instrCount++] = token;
                     stackItems++;
                     continue;
                 }
 
                 if (token.TokenType == ExprTokenType.Op)
                 {
-                    if (!ProcessOperator(token, program, opsStack, ref stackItems, out errpos))
-                        return null;
+                    if (!ProcessOperator(token, instrBuf, ref instrCount, opsStack, ref opsCount, ref stackItems, out errpos))
+                        return -1;
                     continue;
                 }
             }
 
-            while (opsStack.Count > 0)
+            while (opsCount > 0)
             {
-                var op = opsStack.Pop();
+                var op = opsStack[--opsCount];
                 if (op.OpCode == OpCode.OParen)
                 {
                     errpos = 0;
-                    return null;
+                    return -1;
                 }
                 var arity = OpTable.GetArity(op.OpCode);
-                if (stackItems < arity) { errpos = 0; return null; }
-                program.Add(op);
+                if (stackItems < arity) { errpos = 0; return -1; }
+                if (instrCount >= instrBuf.Length) { errpos = 0; return -1; }
+                instrBuf[instrCount++] = op;
                 stackItems = stackItems - arity + 1;
             }
 
-            if (stackItems != 1) { errpos = 0; return null; }
+            if (stackItems != 1) { errpos = 0; return -1; }
 
-            return new ExprProgram
-            {
-                Instructions = program.ToArray(),
-                Length = program.Count,
-                TuplePool = tuplePool.Count > 0 ? tuplePool.ToArray() : [],
-                TuplePoolLength = tuplePool.Count,
-            };
+            tupleCount = tuplePoolLen;
+            return instrCount;
         }
 
         private static bool ProcessOperator(
             ExprToken op,
-            List<ExprToken> program,
-            Stack<ExprToken> opsStack,
+            Span<ExprToken> instrBuf,
+            ref int instrCount,
+            Span<ExprToken> opsStack,
+            ref int opsCount,
             ref int stackItems,
             out int errpos)
         {
@@ -175,7 +187,8 @@ namespace Garnet.server
 
             if (op.OpCode == OpCode.OParen)
             {
-                opsStack.Push(op);
+                if (opsCount >= opsStack.Length) { errpos = 0; return false; }
+                opsStack[opsCount++] = op;
                 return true;
             }
 
@@ -183,34 +196,37 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    if (opsStack.Count == 0) { errpos = 0; return false; }
-                    var topOp = opsStack.Pop();
+                    if (opsCount == 0) { errpos = 0; return false; }
+                    var topOp = opsStack[--opsCount];
                     if (topOp.OpCode == OpCode.OParen)
                         return true;
                     var arity = OpTable.GetArity(topOp.OpCode);
                     if (stackItems < arity) { errpos = 0; return false; }
-                    program.Add(topOp);
+                    if (instrCount >= instrBuf.Length) { errpos = 0; return false; }
+                    instrBuf[instrCount++] = topOp;
                     stackItems = stackItems - arity + 1;
                 }
             }
 
             var curPrec = OpTable.GetPrecedence(op.OpCode);
 
-            while (opsStack.Count > 0)
+            while (opsCount > 0)
             {
-                var topOp = opsStack.Peek();
+                var topOp = opsStack[opsCount - 1];
                 if (topOp.OpCode == OpCode.OParen) break;
                 var topPrec = OpTable.GetPrecedence(topOp.OpCode);
                 if (topPrec < curPrec) break;
                 if (op.OpCode == OpCode.Pow && topPrec <= curPrec) break;
-                opsStack.Pop();
+                opsCount--;
                 var arity = OpTable.GetArity(topOp.OpCode);
                 if (stackItems < arity) { errpos = 0; return false; }
-                program.Add(topOp);
+                if (instrCount >= instrBuf.Length) { errpos = 0; return false; }
+                instrBuf[instrCount++] = topOp;
                 stackItems = stackItems - arity + 1;
             }
 
-            opsStack.Push(op);
+            if (opsCount >= opsStack.Length) { errpos = 0; return false; }
+            opsStack[opsCount++] = op;
             return true;
         }
 
@@ -293,10 +309,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Parse a tuple literal [1, "foo", 42]. Elements are stored in the shared
-        /// <paramref name="tuplePool"/>, and the token stores (poolStartIndex, count).
+        /// Parse a tuple literal [1, "foo", 42]. Elements are stored in the caller-provided
+        /// <paramref name="tuplePool"/> span, and the token stores (poolStartIndex, count).
         /// </summary>
-        private static ExprToken ParseTuple(int exprLen, List<ExprToken> tuplePool, ref ReadOnlySpan<byte> s)
+        private static ExprToken ParseTuple(int exprLen, Span<ExprToken> tuplePool, ref int tuplePoolLen, ref ReadOnlySpan<byte> s)
         {
             s = s[1..]; // Skip '['
             s = AttributeExtractor.TrimWhiteSpace(s);
@@ -308,14 +324,14 @@ namespace Garnet.server
                 return ExprToken.NewTuple(0, 0);
             }
 
-            var poolStart = tuplePool.Count;
+            var poolStart = tuplePoolLen;
             var count = 0;
 
             while (true)
             {
                 s = AttributeExtractor.TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
-                if (count >= MaxTupleElements) return default;
+                if (tuplePoolLen >= tuplePool.Length) return default; // pool full
 
                 ExprToken ele;
                 if (AttributeExtractor.IsDigit(s[0]) || s[0] == (byte)'-')
@@ -332,7 +348,7 @@ namespace Garnet.server
                 }
                 if (ele.IsNone) return default;
 
-                tuplePool.Add(ele);
+                tuplePool[tuplePoolLen++] = ele;
                 count++;
 
                 s = AttributeExtractor.TrimWhiteSpace(s);

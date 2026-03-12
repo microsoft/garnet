@@ -34,23 +34,32 @@ namespace BDN.benchmark.Filter
             _combined = ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8.ToArray();
         }
 
+        private static void Compile(byte[] filter)
+        {
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out _, out _);
+        }
+
         [Benchmark(Description = "Comparison (.year > N)")]
-        public void Comparison() => ExprCompiler.TryCompile(_comparison, out _);
+        public void Comparison() => Compile(_comparison);
 
         [Benchmark(Description = "Logical AND (2 clauses)")]
-        public void LogicalAnd() => ExprCompiler.TryCompile(_logicalAnd, out _);
+        public void LogicalAnd() => Compile(_logicalAnd);
 
         [Benchmark(Description = "String equality")]
-        public void StringEq() => ExprCompiler.TryCompile(_stringEq, out _);
+        public void StringEq() => Compile(_stringEq);
 
         [Benchmark(Description = "Arithmetic + power")]
-        public void Arithmetic() => ExprCompiler.TryCompile(_arithmetic, out _);
+        public void Arithmetic() => Compile(_arithmetic);
 
         [Benchmark(Description = "Containment (in)")]
-        public void Containment() => ExprCompiler.TryCompile(_containment, out _);
+        public void Containment() => Compile(_containment);
 
         [Benchmark(Description = "Combined (all ops)")]
-        public void Combined() => ExprCompiler.TryCompile(_combined, out _);
+        public void Combined() => Compile(_combined);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -131,128 +140,112 @@ namespace BDN.benchmark.Filter
     [MemoryDiagnoser]
     public class FilterRunByExprBenchmarks
     {
-        // --- Common: range / categorical filters ---
-        private ExprProgram _comparison;        // .year > 1950
         private byte[] _comparisonFilter;
-        private ExprProgram _logicalAnd;        // .year > 1950 and .rating >= 4.0
         private byte[] _logicalAndFilter;
-        private ExprProgram _stringEq;          // .genre == "action"
         private byte[] _stringEqFilter;
-        private ExprProgram _containsArray;     // "classic" in .tags
         private byte[] _containsArrayFilter;
-
-        // --- Moderate: logical combinations ---
-        private ExprProgram _logicalOr;         // .year < 1960 or .rating > 4.0
         private byte[] _logicalOrFilter;
-        private ExprProgram _not;               // not (.genre == "drama")
         private byte[] _notFilter;
-        private ExprProgram _stringNeq;         // .genre != "drama"
         private byte[] _stringNeqFilter;
-
-        // --- Less common: computed / advanced ---
-        private ExprProgram _arithmetic;        // .rating * 2 > 8
         private byte[] _arithmeticFilter;
-        private ExprProgram _power;             // (.year - 2000) ** 2 < 100
         private byte[] _powerFilter;
-        private ExprProgram _containsString;    // "act" in .genre  (substring)
         private byte[] _containsStringFilter;
-
-        // --- Realistic combined ---
-        private ExprProgram _combined;          // all ops together
         private byte[] _combinedFilter;
-
         private byte[] _json;
 
         [GlobalSetup]
         public void Setup()
         {
             _comparisonFilter = ".year > 1950"u8.ToArray();
-            _comparison = ExprCompiler.TryCompile(_comparisonFilter, out _);
-
             _logicalAndFilter = ".year > 1950 and .rating >= 4.0"u8.ToArray();
-            _logicalAnd = ExprCompiler.TryCompile(_logicalAndFilter, out _);
-
             _stringEqFilter = ".genre == \"action\""u8.ToArray();
-            _stringEq = ExprCompiler.TryCompile(_stringEqFilter, out _);
-
             _containsArrayFilter = "\"classic\" in .tags"u8.ToArray();
-            _containsArray = ExprCompiler.TryCompile(_containsArrayFilter, out _);
-
             _logicalOrFilter = ".year < 1960 or .rating > 4.0"u8.ToArray();
-            _logicalOr = ExprCompiler.TryCompile(_logicalOrFilter, out _);
-
             _notFilter = "not (.genre == \"drama\")"u8.ToArray();
-            _not = ExprCompiler.TryCompile(_notFilter, out _);
-
             _stringNeqFilter = ".genre != \"drama\""u8.ToArray();
-            _stringNeq = ExprCompiler.TryCompile(_stringNeqFilter, out _);
-
             _arithmeticFilter = ".rating * 2 > 8"u8.ToArray();
-            _arithmetic = ExprCompiler.TryCompile(_arithmeticFilter, out _);
-
             _powerFilter = "(.year - 2000) ** 2 < 100"u8.ToArray();
-            _power = ExprCompiler.TryCompile(_powerFilter, out _);
-
             _containsStringFilter = "\"act\" in .genre"u8.ToArray();
-            _containsString = ExprCompiler.TryCompile(_containsStringFilter, out _);
-
             _combinedFilter = ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8.ToArray();
-            _combined = ExprCompiler.TryCompile(_combinedFilter, out _);
-
             _json = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}");
         }
 
-        private static bool RunFilter(ExprProgram program, byte[] filterBytes, byte[] json)
+        /// <summary>
+        /// Compile filter, build ExprProgram, extract fields, and evaluate — all on the stack.
+        /// </summary>
+        private static bool RunFilter(byte[] filterBytes, byte[] json)
         {
-            var selectorRanges = program.GetSelectorRanges(filterBytes);
-            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length];
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            var instrCount = ExprCompiler.TryCompile(filterBytes, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+            if (instrCount < 0) return false;
+
+            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[64];
+            var program = new ExprProgram
+            {
+                Instructions = instrBuf[..instrCount],
+                Length = instrCount,
+                TuplePool = tuplePoolBuf[..tupleCount],
+                TuplePoolLength = tupleCount,
+                RuntimePool = runtimePoolBuf,
+                RuntimePoolLength = 0,
+            };
+
+            Span<(int Start, int Length)> selectorBuf = stackalloc (int, int)[32];
+            var selectorCount = VectorManager.GetSelectorRanges(program.Instructions, program.Length, filterBytes, selectorBuf);
+            var selectorRanges = selectorBuf[..selectorCount];
+
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorCount > 0 ? selectorCount : 1];
             program.ResetRuntimePool();
-            AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, program);
+            AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, ref program);
+
             Span<ExprToken> stackBuf = stackalloc ExprToken[16];
             var stack = new ExprStack(stackBuf);
-            return ExprRunner.Run(program, json, filterBytes, selectorRanges, extractedFields, ref stack);
+            return ExprRunner.Run(ref program, json, filterBytes, selectorRanges, extractedFields, ref stack);
         }
 
         // ── Common: range / categorical ──────────────────────────────────
 
         [Benchmark(Description = "1. .year > N  (range)")]
-        public bool Comparison() => RunFilter(_comparison, _comparisonFilter, _json);
+        public bool Comparison() => RunFilter(_comparisonFilter, _json);
 
         [Benchmark(Description = "2. .year > N and .rating >= M  (multi-range)")]
-        public bool LogicalAnd() => RunFilter(_logicalAnd, _logicalAndFilter, _json);
+        public bool LogicalAnd() => RunFilter(_logicalAndFilter, _json);
 
         [Benchmark(Description = "3. .genre == \"action\"  (category)")]
-        public bool StringEq() => RunFilter(_stringEq, _stringEqFilter, _json);
+        public bool StringEq() => RunFilter(_stringEqFilter, _json);
 
         [Benchmark(Description = "4. \"x\" in .tags  (tag search)")]
-        public bool InArray() => RunFilter(_containsArray, _containsArrayFilter, _json);
+        public bool InArray() => RunFilter(_containsArrayFilter, _json);
 
         // ── Moderate: logical combinations ───────────────────────────────
 
         [Benchmark(Description = "5. A or B  (logical OR)")]
-        public bool LogicalOr() => RunFilter(_logicalOr, _logicalOrFilter, _json);
+        public bool LogicalOr() => RunFilter(_logicalOrFilter, _json);
 
         [Benchmark(Description = "6. not (A)  (exclusion)")]
-        public bool Not() => RunFilter(_not, _notFilter, _json);
+        public bool Not() => RunFilter(_notFilter, _json);
 
         [Benchmark(Description = "7. .genre != \"drama\"  (not-equal)")]
-        public bool StringNeq() => RunFilter(_stringNeq, _stringNeqFilter, _json);
+        public bool StringNeq() => RunFilter(_stringNeqFilter, _json);
 
         // ── Less common: computed / advanced ─────────────────────────────
 
         [Benchmark(Description = "8. .rating * 2 > 8  (arithmetic)")]
-        public bool Arithmetic() => RunFilter(_arithmetic, _arithmeticFilter, _json);
+        public bool Arithmetic() => RunFilter(_arithmeticFilter, _json);
 
         [Benchmark(Description = "9. (.year-2000)**2 < 100  (power)")]
-        public bool Power() => RunFilter(_power, _powerFilter, _json);
+        public bool Power() => RunFilter(_powerFilter, _json);
 
         [Benchmark(Description = "10. \"act\" in .genre  (substring)")]
-        public bool InString() => RunFilter(_containsString, _containsStringFilter, _json);
+        public bool InString() => RunFilter(_containsStringFilter, _json);
 
         // ── Realistic combined ───────────────────────────────────────────
 
         [Benchmark(Description = "11. Combined (all ops)")]
-        public bool Combined() => RunFilter(_combined, _combinedFilter, _json);
+        public bool Combined() => RunFilter(_combinedFilter, _json);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -266,9 +259,7 @@ namespace BDN.benchmark.Filter
     [MemoryDiagnoser]
     public class FilterRunByJsonBenchmarks
     {
-        private ExprProgram _numericFilter;
         private byte[] _numericFilterBytes;
-        private ExprProgram _arrayFilter;
         private byte[] _arrayFilterBytes;
 
         private byte[] _small;   // 2 fields, no array
@@ -279,46 +270,65 @@ namespace BDN.benchmark.Filter
         public void Setup()
         {
             _numericFilterBytes = ".year > 1950 and .rating >= 4.0"u8.ToArray();
-            _numericFilter = ExprCompiler.TryCompile(_numericFilterBytes, out _);
-
             _arrayFilterBytes = "\"classic\" in .tags"u8.ToArray();
-            _arrayFilter = ExprCompiler.TryCompile(_arrayFilterBytes, out _);
 
             _small = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5}");
             _medium = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}");
             _large = Encoding.UTF8.GetBytes("{\"id\":12345,\"title\":\"Test Movie\",\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"studio\":\"Universal\",\"budget\":50000000,\"tags\":[\"classic\",\"popular\",\"award-winning\"],\"metadata\":{\"source\":\"imdb\",\"verified\":true},\"active\":true}");
         }
 
-        private static bool RunFilter(ExprProgram program, byte[] filterBytes, byte[] json)
+        private static bool RunFilter(byte[] filterBytes, byte[] json)
         {
-            var selectorRanges = program.GetSelectorRanges(filterBytes);
-            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length];
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            var instrCount = ExprCompiler.TryCompile(filterBytes, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+            if (instrCount < 0) return false;
+
+            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[64];
+            var program = new ExprProgram
+            {
+                Instructions = instrBuf[..instrCount],
+                Length = instrCount,
+                TuplePool = tuplePoolBuf[..tupleCount],
+                TuplePoolLength = tupleCount,
+                RuntimePool = runtimePoolBuf,
+                RuntimePoolLength = 0,
+            };
+
+            Span<(int Start, int Length)> selectorBuf = stackalloc (int, int)[32];
+            var selectorCount = VectorManager.GetSelectorRanges(program.Instructions, program.Length, filterBytes, selectorBuf);
+            var selectorRanges = selectorBuf[..selectorCount];
+
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorCount > 0 ? selectorCount : 1];
             program.ResetRuntimePool();
-            AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, program);
+            AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, ref program);
+
             Span<ExprToken> stackBuf = stackalloc ExprToken[16];
             var stack = new ExprStack(stackBuf);
-            return ExprRunner.Run(program, json, filterBytes, selectorRanges, extractedFields, ref stack);
+            return ExprRunner.Run(ref program, json, filterBytes, selectorRanges, extractedFields, ref stack);
         }
 
-        // --- Numeric filter (zero-alloc regardless of JSON size) ---
+        // --- Numeric filter ---
         [Benchmark(Description = "Numeric AND · Small JSON")]
-        public bool Numeric_Small() => RunFilter(_numericFilter, _numericFilterBytes, _small);
+        public bool Numeric_Small() => RunFilter(_numericFilterBytes, _small);
 
         [Benchmark(Description = "Numeric AND · Medium JSON")]
-        public bool Numeric_Medium() => RunFilter(_numericFilter, _numericFilterBytes, _medium);
+        public bool Numeric_Medium() => RunFilter(_numericFilterBytes, _medium);
 
         [Benchmark(Description = "Numeric AND · Large JSON")]
-        public bool Numeric_Large() => RunFilter(_numericFilter, _numericFilterBytes, _large);
+        public bool Numeric_Large() => RunFilter(_numericFilterBytes, _large);
 
-        // --- Array filter (uses runtime pool, zero-alloc) ---
+        // --- Array filter ---
         [Benchmark(Description = "in .tags · Small JSON (no tags → false)")]
-        public bool Array_Small() => RunFilter(_arrayFilter, _arrayFilterBytes, _small);
+        public bool Array_Small() => RunFilter(_arrayFilterBytes, _small);
 
         [Benchmark(Description = "in .tags · Medium JSON (2 elem)")]
-        public bool Array_Medium() => RunFilter(_arrayFilter, _arrayFilterBytes, _medium);
+        public bool Array_Medium() => RunFilter(_arrayFilterBytes, _medium);
 
         [Benchmark(Description = "in .tags · Large JSON (3 elem)")]
-        public bool Array_Large() => RunFilter(_arrayFilter, _arrayFilterBytes, _large);
+        public bool Array_Large() => RunFilter(_arrayFilterBytes, _large);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -332,9 +342,7 @@ namespace BDN.benchmark.Filter
     [MemoryDiagnoser]
     public class FilterBatchBenchmarks
     {
-        private ExprProgram _numericAnd;
         private byte[] _numericAndFilter;
-        private ExprProgram _combined;
         private byte[] _combinedFilter;
         private byte[] _small;
         private byte[] _medium;
@@ -343,19 +351,36 @@ namespace BDN.benchmark.Filter
         public void Setup()
         {
             _numericAndFilter = ".year > 1950 and .rating >= 4.0"u8.ToArray();
-            _numericAnd = ExprCompiler.TryCompile(_numericAndFilter, out _);
-
             _combinedFilter = ".rating * 2 > 8 and (.year >= 1980 or \"modern\" in .tags) and .genre == \"action\""u8.ToArray();
-            _combined = ExprCompiler.TryCompile(_combinedFilter, out _);
-
             _small = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5}");
             _medium = Encoding.UTF8.GetBytes("{\"year\":1980,\"rating\":4.5,\"genre\":\"action\",\"director\":\"Spielberg\",\"tags\":[\"classic\",\"popular\"]}");
         }
 
-        private static int RunBatch(ExprProgram program, byte[] filterBytes, byte[] small, byte[] medium, int N)
+        private static int RunBatch(byte[] filterBytes, byte[] small, byte[] medium, int N)
         {
-            var selectorRanges = program.GetSelectorRanges(filterBytes);
-            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorRanges.Length];
+            Span<ExprToken> instrBuf = stackalloc ExprToken[128];
+            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[64];
+            Span<ExprToken> tokensBuf = stackalloc ExprToken[128];
+            Span<ExprToken> opsStackBuf = stackalloc ExprToken[128];
+            var instrCount = ExprCompiler.TryCompile(filterBytes, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+            if (instrCount < 0) return 0;
+
+            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[64];
+            var program = new ExprProgram
+            {
+                Instructions = instrBuf[..instrCount],
+                Length = instrCount,
+                TuplePool = tuplePoolBuf[..tupleCount],
+                TuplePoolLength = tupleCount,
+                RuntimePool = runtimePoolBuf,
+                RuntimePoolLength = 0,
+            };
+
+            Span<(int Start, int Length)> selectorBuf = stackalloc (int, int)[32];
+            var selectorCount = VectorManager.GetSelectorRanges(program.Instructions, program.Length, filterBytes, selectorBuf);
+            var selectorRanges = selectorBuf[..selectorCount];
+
+            Span<ExprToken> extractedFields = stackalloc ExprToken[selectorCount > 0 ? selectorCount : 1];
             Span<ExprToken> stackBuf = stackalloc ExprToken[16];
             var stack = new ExprStack(stackBuf);
 
@@ -364,8 +389,8 @@ namespace BDN.benchmark.Filter
             {
                 var json = (i % 3 == 0) ? small : medium;
                 program.ResetRuntimePool();
-                AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, program);
-                if (ExprRunner.Run(program, json, filterBytes, selectorRanges, extractedFields, ref stack))
+                AttributeExtractor.ExtractFields(json, filterBytes, selectorRanges, extractedFields, ref program);
+                if (ExprRunner.Run(ref program, json, filterBytes, selectorRanges, extractedFields, ref stack))
                     matched++;
             }
             return matched;
@@ -375,13 +400,13 @@ namespace BDN.benchmark.Filter
         [Arguments(10)]
         [Arguments(100)]
         [Arguments(1000)]
-        public int NumericAnd(int N) => RunBatch(_numericAnd, _numericAndFilter, _small, _medium, N);
+        public int NumericAnd(int N) => RunBatch(_numericAndFilter, _small, _medium, N);
 
         [Benchmark(Description = "Combined + array · N candidates")]
         [Arguments(10)]
         [Arguments(100)]
         [Arguments(1000)]
-        public int Combined(int N) => RunBatch(_combined, _combinedFilter, _small, _medium, N);
+        public int Combined(int N) => RunBatch(_combinedFilter, _small, _medium, N);
     }
 
     // ════════════════════════════════════════════════════════════════════════

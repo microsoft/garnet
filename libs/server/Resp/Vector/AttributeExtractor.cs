@@ -24,9 +24,9 @@ namespace Garnet.server
         public static int ExtractFields(
             ReadOnlySpan<byte> json,
             ReadOnlySpan<byte> filterBytes,
-            (int Start, int Length)[] selectorRanges,
+            ReadOnlySpan<(int Start, int Length)> selectorRanges,
             Span<ExprToken> results,
-            ExprProgram program = null)
+            ref ExprProgram program)
         {
             for (var i = 0; i < selectorRanges.Length; i++)
                 results[i] = default;
@@ -70,7 +70,7 @@ namespace Garnet.server
 
                 if (matchIndex >= 0)
                 {
-                    results[matchIndex] = ParseValueToken(json, ref s, program);
+                    results[matchIndex] = ParseValueToken(json, ref s, ref program);
                     found++;
                     if (found == needed) return found;
                 }
@@ -91,7 +91,7 @@ namespace Garnet.server
         /// Extract a single top-level field, with an <see cref="ExprProgram"/> for runtime
         /// tuple pool support (needed for JSON array fields used with the IN operator).
         /// </summary>
-        public static ExprToken ExtractField(ReadOnlySpan<byte> json, ReadOnlySpan<byte> fieldNameUtf8, ExprProgram program)
+        public static ExprToken ExtractField(ReadOnlySpan<byte> json, ReadOnlySpan<byte> fieldNameUtf8, ref ExprProgram program)
         {
             var s = TrimWhiteSpace(json);
             if (s.IsEmpty || s[0] != (byte)'{') return default;
@@ -119,7 +119,7 @@ namespace Garnet.server
                 if (s.IsEmpty) return default;
 
                 if (match)
-                    return ParseValueToken(json, ref s, program);
+                    return ParseValueToken(json, ref s, ref program);
 
                 if (!SkipValue(ref s)) return default;
 
@@ -181,14 +181,32 @@ namespace Garnet.server
         /// <summary>Max array elements before rejecting.</summary>
         private const int MaxArrayElements = 64;
 
-        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ExprProgram program = null)
+        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ref ExprProgram program)
         {
             s = TrimWhiteSpace(s);
             if (s.IsEmpty) return default;
 
             var c = s[0];
             if (c == (byte)'"') return ParseStringToken(json, ref s);
-            if (c == (byte)'[') return program != null ? ParseArrayToken(json, ref s, program) : ParseArrayTokenNoPool(json, ref s);
+            if (c == (byte)'[') return ParseArrayToken(json, ref s, ref program);
+            if (c == (byte)'{') return default;
+            if (c == (byte)'t') return ParseLiteralToken(ref s, "true"u8, ExprTokenType.Num, 1);
+            if (c == (byte)'f') return ParseLiteralToken(ref s, "false"u8, ExprTokenType.Num, 0);
+            if (c == (byte)'n') return ParseLiteralToken(ref s, "null"u8, ExprTokenType.Null, 0);
+            if (IsDigit(c) || c == (byte)'-' || c == (byte)'+')
+                return ParseNumberToken(ref s);
+
+            return default;
+        }
+
+        private static ExprToken ParseValueToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s)
+        {
+            s = TrimWhiteSpace(s);
+            if (s.IsEmpty) return default;
+
+            var c = s[0];
+            if (c == (byte)'"') return ParseStringToken(json, ref s);
+            if (c == (byte)'[') return ParseArrayTokenNoPool(json, ref s);
             if (c == (byte)'{') return default; // Nested objects not supported
             if (c == (byte)'t') return ParseLiteralToken(ref s, "true"u8, ExprTokenType.Num, 1);
             if (c == (byte)'f') return ParseLiteralToken(ref s, "false"u8, ExprTokenType.Num, 0);
@@ -264,7 +282,7 @@ namespace Garnet.server
         /// in the caller's <paramref name="program"/> runtime pool so the runner can
         /// iterate them during IN evaluation.
         /// </summary>
-        internal static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ExprProgram program)
+        internal static ExprToken ParseArrayToken(ReadOnlySpan<byte> json, ref ReadOnlySpan<byte> s, ref ExprProgram program)
         {
             if (s.IsEmpty || s[0] != (byte)'[') return default;
             s = s[1..];
@@ -293,12 +311,16 @@ namespace Garnet.server
                 s = s[1..];
             }
 
-            if (program != null)
+            if (program.RuntimePool.Length > 0)
             {
-                // Store into runtime pool
-                var arr = new ExprToken[count];
-                for (var i = 0; i < count; i++) arr[i] = localBuf[i];
-                return program.AppendRuntimeTuple(arr, count);
+                // Copy directly into the runtime pool — zero heap allocation.
+                var start = program.RuntimePoolLength;
+                if (start + count > program.RuntimePool.Length)
+                    return ExprToken.NewNull(); // Pool exhausted — skip array gracefully
+                for (var i = 0; i < count; i++)
+                    program.RuntimePool[start + i] = localBuf[i];
+                program.RuntimePoolLength += count;
+                return ExprToken.NewRuntimeTuple(start, count);
             }
 
             // No program available — return null (shouldn't happen in normal flow)
