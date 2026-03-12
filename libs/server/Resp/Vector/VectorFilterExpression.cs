@@ -373,21 +373,6 @@ namespace Garnet.server
         /// <summary>Current write position in <see cref="RuntimePool"/>.</summary>
         public int RuntimePoolLength;
 
-        /// <summary>
-        /// Append elements from a stackalloc'd source span into the runtime pool.
-        /// Returns a RuntimeTuple token referencing the appended range.
-        /// </summary>
-        public ExprToken AppendRuntimeTuple(ReadOnlySpan<ExprToken> elements)
-        {
-            if (elements.Length == 0)
-                return ExprToken.NewTuple(0, 0);
-
-            var start = RuntimePoolLength;
-            elements.CopyTo(RuntimePool.Slice(start));
-            RuntimePoolLength += elements.Length;
-            return ExprToken.NewRuntimeTuple(start, elements.Length);
-        }
-
         /// <summary>Reset the runtime pool for a new candidate evaluation.</summary>
         public void ResetRuntimePool() => RuntimePoolLength = 0;
     }

@@ -94,31 +94,6 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Try to compile a filter expression. Returns instruction count (&gt;0) on success.
-        /// </summary>
-        internal static int TryCompile(string expression, Span<ExprToken> instrBuf, Span<ExprToken> tuplePoolBuf, Span<ExprToken> tokensBuf, Span<ExprToken> opsStackBuf, out int tupleCount)
-        {
-            return ExprCompiler.TryCompile(Encoding.UTF8.GetBytes(expression), instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out tupleCount, out _);
-        }
-
-        /// <summary>
-        /// Get the string content of a Str token from a byte source (json or filter bytes).
-        /// </summary>
-        internal static string GetStr(byte[] sourceBytes, ExprToken token)
-        {
-            if (token.TokenType != ExprTokenType.Str) return null;
-            return Encoding.UTF8.GetString(sourceBytes, token.Utf8Start, token.Utf8Length);
-        }
-
-        /// <summary>
-        /// Get the string content of a Str/Selector token from the program's filter bytes.
-        /// </summary>
-        internal static string GetStr(ExprProgram program, byte[] filterBytes, ExprToken token)
-        {
-            return Encoding.UTF8.GetString(filterBytes, token.Utf8Start, token.Utf8Length);
-        }
-
-        /// <summary>
         /// Execute a compiled program and return the top-of-stack value (for testing).
         /// This is a test-only method that mirrors ExprRunner.Run but returns the raw result
         /// instead of a boolean, so tests can inspect numeric/string values.

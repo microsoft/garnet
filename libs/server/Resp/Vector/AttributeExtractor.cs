@@ -88,50 +88,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Extract a single top-level field, with an <see cref="ExprProgram"/> for runtime
-        /// tuple pool support (needed for JSON array fields used with the IN operator).
-        /// </summary>
-        public static ExprToken ExtractField(ReadOnlySpan<byte> json, ReadOnlySpan<byte> fieldNameUtf8, ref ExprProgram program)
-        {
-            var s = TrimWhiteSpace(json);
-            if (s.IsEmpty || s[0] != (byte)'{') return default;
-            s = s[1..];
-
-            while (true)
-            {
-                s = TrimWhiteSpace(s);
-                if (s.IsEmpty) return default;
-                if (s[0] == (byte)'}') return default;
-
-                if (s[0] != (byte)'"') return default;
-
-                var afterOpenQuote = s[1..];
-                if (!SkipString(ref s)) return default;
-                var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
-
-                var match = keyContent.SequenceEqual(fieldNameUtf8);
-
-                s = TrimWhiteSpace(s);
-                if (s.IsEmpty || s[0] != (byte)':') return default;
-                s = s[1..];
-
-                s = TrimWhiteSpace(s);
-                if (s.IsEmpty) return default;
-
-                if (match)
-                    return ParseValueToken(json, ref s, ref program);
-
-                if (!SkipValue(ref s)) return default;
-
-                s = TrimWhiteSpace(s);
-                if (s.IsEmpty) return default;
-                if (s[0] == (byte)',') { s = s[1..]; continue; }
-                if (s[0] == (byte)'}') return default;
-                return default;
-            }
-        }
-
-        /// <summary>
         /// Extract a single top-level field from a JSON object.
         /// <paramref name="fieldNameUtf8"/> is the raw UTF-8 bytes of the field name.
         /// Returns default (IsNone) if not found.

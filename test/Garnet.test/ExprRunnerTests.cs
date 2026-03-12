@@ -108,21 +108,16 @@ namespace Garnet.test
         [Test]
         public void Runner_InOperatorWithJsonArray()
         {
-            // NOTE: In the current refactored API, JSON arrays are returned as Null by the extractor
-            // (tuple pool pattern not yet extended to runtime). So IN on a JSON array field
-            // will evaluate to false when the field is an array.
             var json = "{\"tags\":[\"classic\",\"popular\"]}";
-            // The extractor returns Null for array fields, so the selector resolution fails (returns false)
-            ClassicAssert.IsFalse(ExprTestHelpers.EvaluateFilterTruthy("\"classic\" in .tags", json));
+            ClassicAssert.IsTrue(ExprTestHelpers.EvaluateFilterTruthy("\"classic\" in .tags", json));
             ClassicAssert.IsFalse(ExprTestHelpers.EvaluateFilterTruthy("\"modern\" in .tags", json));
         }
 
         [Test]
         public void Runner_InOperatorWithNumericJsonArray()
         {
-            // NOTE: Same as above — JSON arrays are returned as Null by the current extractor
             var json = "{\"scores\":[1,2,3]}";
-            ClassicAssert.IsFalse(ExprTestHelpers.EvaluateFilterTruthy("2 in .scores", json));
+            ClassicAssert.IsTrue(ExprTestHelpers.EvaluateFilterTruthy("2 in .scores", json));
             ClassicAssert.IsFalse(ExprTestHelpers.EvaluateFilterTruthy("5 in .scores", json));
         }
 
