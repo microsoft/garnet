@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -92,7 +92,8 @@ namespace Garnet.test.cluster
         public Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning},
-            {"ClusterReplicationMultiRestartRecover", LogLevel.Trace}
+            {"ClusterReplicationMultiRestartRecover", LogLevel.Trace},
+            {"ClusterReplicationStoredProc", LogLevel.Error}
         };
 
         [SetUp]
@@ -1213,7 +1214,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(24)]
         [Category("REPLICATION")]
-        public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst)
+        public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst, [Values] bool objectStore)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1231,8 +1232,16 @@ namespace Garnet.test.cluster
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
             // Register custom procedure
-            context.nodes[primaryNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
-            context.nodes[replicaNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+            if (objectStore)
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+            }
+            else
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+            }
 
             // Setup cluster
             context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -1243,21 +1252,19 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
 
             if (attachFirst)
-            {
-                // Issue replicate
-                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
-                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
-            }
+                ClusterReplicate();
 
-            // Execute custom proc before replicat attach
-            ExecuteRateLimit();
+            if (objectStore)
+                ExecuteRateLimit();
+            else
+            {
+                string[] increment = ["10", "15"];
+                ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, [expectedKeys[0]], [increment[0]]);
+                ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, [expectedKeys[1]], [increment[1]]);
+            }
 
             if (!attachFirst)
-            {
-                // Issue replicate
-                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
-                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
-            }
+                ClusterReplicate();
 
             // Validate primary keys
             var resp = primaryServer.Execute("KEYS", ["*"]);
@@ -1270,11 +1277,18 @@ namespace Garnet.test.cluster
 
             void ExecuteRateLimit()
             {
-                primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
                 var resp = primaryServer.Execute("RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
                 resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
+            }
+
+            void ClusterReplicate()
+            {
+                // Issue replicate
+                var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+                context.clusterTestUtils.WaitForReplicaRecovery(replicaNodeIndex, logger: context.logger);
             }
         }
 
@@ -1394,23 +1408,23 @@ namespace Garnet.test.cluster
 
                             keyCount++;
 
-                            await Task.Delay(10);
+                            await Task.Delay(10).ConfigureAwait(false);
                         }
                     },
                     cancellation
                 );
 
-            await Task.Delay(100, cancellation);
+            await Task.Delay(100, cancellation).ConfigureAwait(false);
 
             // Force replica to continually fault
             ExceptionInjectionHelper.EnableException(faultType);
 
             // Give it enough time to die horribly
-            await Task.Delay(100, cancellation);
+            await Task.Delay(100, cancellation).ConfigureAwait(false);
 
             // Stop primary writes
             primaryInsertCancel.Cancel();
-            await continuallyWriteToPrimaryTask;
+            await continuallyWriteToPrimaryTask.ConfigureAwait(false);
 
             // Resolve fault on replica
             ExceptionInjectionHelper.DisableException(faultType);
@@ -1460,7 +1474,7 @@ namespace Garnet.test.cluster
             var restartRecover = 10;
             tasks.Add(Task.Run(() => RestartRecover(restartRecover)));
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
             // Validate that replica has the same keys as primary
@@ -1532,7 +1546,7 @@ namespace Garnet.test.cluster
             context.RestartNode(replica);
 
             // Delay a bit for replication init tasks to fire off
-            await Task.Delay(100, cancellation);
+            await Task.Delay(100, cancellation).ConfigureAwait(false);
 
             // Make sure replica did not promote to Primary
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
@@ -1649,7 +1663,7 @@ namespace Garnet.test.cluster
                                         writtenToPrimary1[key] = value;
                                     }
 
-                                    await Task.Delay(10, writeTaskCancel.Token);
+                                    await Task.Delay(10, writeTaskCancel.Token).ConfigureAwait(false);
                                 }
                                 catch
                                 {
@@ -1690,7 +1704,7 @@ namespace Garnet.test.cluster
                                         writtenToPrimary2[key] = value;
                                     }
 
-                                    await Task.Delay(10, writeTaskCancel.Token);
+                                    await Task.Delay(10, writeTaskCancel.Token).ConfigureAwait(false);
                                 }
                                 catch
                                 {
@@ -1712,7 +1726,7 @@ namespace Garnet.test.cluster
                                 {
                                     try
                                     {
-                                        _ = await node.Store.CommitAOFAsync(writeTaskCancel.Token);
+                                        _ = await node.Store.CommitAOFAsync(writeTaskCancel.Token).ConfigureAwait(false);
                                     }
                                     catch (TaskCanceledException)
                                     {
@@ -1727,7 +1741,7 @@ namespace Garnet.test.cluster
 
                                 try
                                 {
-                                    await Task.Delay(100, writeTaskCancel.Token);
+                                    await Task.Delay(100, writeTaskCancel.Token).ConfigureAwait(false);
                                 }
                                 catch
                                 {
@@ -1741,14 +1755,14 @@ namespace Garnet.test.cluster
                 // Wait for a bit, optionally injecting a fault
                 if (faultType == ExceptionInjectionType.None)
                 {
-                    await Task.Delay(10_000, cancellation);
+                    await Task.Delay(10_000, cancellation).ConfigureAwait(false);
                 }
                 else
                 {
                     var timer = Stopwatch.StartNew();
 
                     // Things start fine
-                    await Task.Delay(1_000, cancellation);
+                    await Task.Delay(1_000, cancellation).ConfigureAwait(false);
 
                     // Wait for something to get replicated
                     var replica1Happened = false;
@@ -1787,12 +1801,12 @@ namespace Garnet.test.cluster
                             }
                         }
 
-                        await Task.Delay(100, cancellation);
+                        await Task.Delay(100, cancellation).ConfigureAwait(false);
                     } while (!replica1Happened || !replica2Happened);
 
                     // Things fail for a bit
                     ExceptionInjectionHelper.EnableException(faultType);
-                    await Task.Delay(2_000, cancellation);
+                    await Task.Delay(2_000, cancellation).ConfigureAwait(false);
 
                     // Things recover
                     ExceptionInjectionHelper.DisableException(faultType);
@@ -1802,7 +1816,7 @@ namespace Garnet.test.cluster
                     // Wait out the rest of the duration
                     if (timer.ElapsedMilliseconds < 10_000)
                     {
-                        await Task.Delay((int)(10_000 - timer.ElapsedMilliseconds), cancellation);
+                        await Task.Delay((int)(10_000 - timer.ElapsedMilliseconds), cancellation).ConfigureAwait(false);
                     }
                 }
 
@@ -1810,7 +1824,7 @@ namespace Garnet.test.cluster
                 writeTaskCancel.Cancel();
 
                 // Wait for all our writes and checkpoints to spin down
-                await Task.WhenAll(writeToPrimary1Task, writeToPrimary2Task, checkpointTask);
+                await Task.WhenAll(writeToPrimary1Task, writeToPrimary2Task, checkpointTask).ConfigureAwait(false);
             }
 
             // Shutdown all primaries
@@ -1820,7 +1834,7 @@ namespace Garnet.test.cluster
             // Sometimes we can intervene post-Primary crash but pre-Replica crash, simulate that
             if (replicaFailoverBeforeShutdown)
             {
-                await UpgradeReplicasAsync(context, replica1, replica2, cancellation);
+                await UpgradeReplicasAsync(context, replica1, replica2, cancellation).ConfigureAwait(false);
             }
 
             // Shutdown the (old) replicas
@@ -1834,7 +1848,7 @@ namespace Garnet.test.cluster
             // If we didn't promte pre-crash, promote now that Replicas came back
             if (!replicaFailoverBeforeShutdown)
             {
-                await UpgradeReplicasAsync(context, replica1, replica2, cancellation);
+                await UpgradeReplicasAsync(context, replica1, replica2, cancellation).ConfigureAwait(false);
             }
 
             // Confirm that at least some of the data is available on each Replica
@@ -1875,7 +1889,7 @@ namespace Garnet.test.cluster
                 // Wait for roles to update
                 while (true)
                 {
-                    await Task.Delay(10, cancellation);
+                    await Task.Delay(10, cancellation).ConfigureAwait(false);
 
                     if (context.clusterTestUtils.RoleCommand(replica1).Value != "master")
                     {
@@ -2097,14 +2111,14 @@ namespace Garnet.test.cluster
             // Execute first hash set workload
             var hashSetKey = "myhash";
             ExecuteHashSet(hashSetKey, elements);
-            await Task.Delay(3000);
+            await Task.Delay(3000).ConfigureAwait(false);
             ManualCollect();
             ValidateHashSet(hashSetKey);
 
             // Execute second hash set workload
             hashSetKey = "myhash2";
             ExecuteHashSet(hashSetKey, elements);
-            await Task.Delay(3000);
+            await Task.Delay(3000).ConfigureAwait(false);
             ManualCollect();
             ValidateHashSet(hashSetKey);
 

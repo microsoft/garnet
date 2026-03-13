@@ -96,6 +96,8 @@ namespace Garnet.server
         internal TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext
             => unifiedTransactionalContext;
 
+        bool IsReplaying { get; set; } = false;
+
         /// <summary>
         /// Array to keep pointer keys in keyBuffer
         /// </summary>
@@ -187,10 +189,11 @@ namespace Garnet.server
             this.keyCount = 0;
         }
 
-        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isRecovering = false)
+        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isReplaying = false)
         {
             var running = false;
             scratchBufferAllocator.Reset();
+            IsReplaying = isReplaying;
             try
             {
                 // If cluster is enabled reset slot verification state cache
@@ -243,7 +246,7 @@ namespace Garnet.server
                     // If the transaction was invoked during AOF replay skip the finalize step altogether
                     // Finalize logs to AOF accordingly, so let the replay pick up the commits from AOF as
                     // part of normal AOF replay.
-                    if (!isRecovering)
+                    if (!isReplaying)
                     {
                         proc.Finalize(garnetTxFinalizeApi, ref procInput, ref output);
                     }

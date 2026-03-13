@@ -164,6 +164,7 @@ namespace Garnet.test.cluster
         /// <param name="OnDemandCheckpoint"></param>
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
+        /// <param name="useAofNullDevice"></param>
         /// <param name="DisableStorageTier"></param>
         /// <param name="EnableIncrementalSnapshots"></param>
         /// <param name="FastCommit"></param>
@@ -178,11 +179,25 @@ namespace Garnet.test.cluster
         /// <param name="enableLua"></param>
         /// <param name="asyncReplay"></param>
         /// <param name="enableDisklessSync"></param>
+        /// <param name="replicaDisklessSyncDelay"></param>
+        /// <param name="replicaDisklessSyncFullSyncAofThreshold"></param>
         /// <param name="luaMemoryMode"></param>
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
+        /// <param name="deviceType"></param>
+        /// <param name="clusterReplicationReestablishmentTimeout"></param>
+        /// <param name="aofSizeLimit"></param>
+        /// <param name="compactionFrequencySecs"></param>
+        /// <param name="compactionType"></param>
+        /// <param name="latencyMonitory"></param>
+        /// <param name="loggingFrequencySecs"></param>
+        /// <param name="checkpointThrottleFlushDelayMs"></param>
+        /// <param name="clusterReplicaResumeWithData"></param>
+        /// <param name="replicaSyncTimeout"></param>
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
+        /// <param name="clusterPreferredEndpointType"></param>
+        /// <param name="useClusterAnnounceHostname"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,

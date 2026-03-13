@@ -113,6 +113,23 @@ namespace Garnet.test
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETBIT", key, "-1", "1"));
             ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
                                    ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("SETBIT", key, "9223372036854775807", "1"));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
+        }
+
+        [Test]
+        [Category("SETBIT")]
+        public void BitmapSetBitBoundaryValidationNegativeTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const long offsetBeyondMax = (512L * 1024 * 1024 * 8);
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETBIT", "setbit_boundary_neg", offsetBeyondMax.ToString(), "1"));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
         }
 
         [Test, Order(2)]
@@ -129,6 +146,10 @@ namespace Garnet.test
             }
 
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("GETBIT", key, "-1"));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("GETBIT", key, "9223372036854775807"));
             ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
                                    ex.Message);
         }
@@ -2114,6 +2135,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(14, count);
         }
 
+        [Test]
+        [Category("BITCOUNT")]
+        public void BitmapBitCountLongBitOffsetParsingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitCountLongBitOffsetParsingTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var offset = (long)int.MaxValue + 1024;
+            var count = (long)db.Execute("BITCOUNT", key, (-offset).ToString(), "-1", "BIT");
+
+            ClassicAssert.AreEqual(8, count);
+        }
+
+        [Test]
+        [Category("BITCOUNT")]
+        public void BitmapBitCountInvalidArityTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BITCOUNT", "mykey", "0"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'BITCOUNT' command", ex.Message);
+        }
+
         [Test, Order(34)]
         [Category("BITPOS")]
         public void BitmapBitPosFixedTests()
@@ -2163,6 +2211,62 @@ namespace Garnet.test
             _ = db.StringSet(key, value);
             pos = db.StringBitPosition(key, false, 7, 15, StringIndexType.Bit);
             ClassicAssert.AreEqual(8, pos);
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosLongBitOffsetParsingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosLongBitOffsetParsingTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var longOffset = (long)int.MaxValue + 1;
+            var pos = (long)db.Execute("BITPOS", key, "1", longOffset.ToString(), longOffset.ToString(), "BIT");
+
+            ClassicAssert.AreEqual(-1, pos);
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosLongOffsetBoundaryValidationTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosLongOffsetBoundaryValidationTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var maxBitOffset = BitmapManager.MaxOffsetForBitmapLength;
+            var maxByteOffset = BitmapManager.MaxBitmapPayloadBytes - 1L;
+
+            var pos = (long)db.Execute("BITPOS", key, "1", (maxBitOffset + 1).ToString(), (maxBitOffset + 1).ToString(), "BIT");
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (maxByteOffset + 1).ToString(), (maxByteOffset + 1).ToString(), "BYTE");
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (-maxBitOffset - 1).ToString(), "-1", "BIT");
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = (long)db.Execute("BITPOS", key, "1", (-maxByteOffset - 1).ToString(), "-1", "BYTE");
+            ClassicAssert.AreEqual(-1, pos);
+        }
+
+        [Test]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitModifierRequiresStartAndEndTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "BitmapBitPosBitModifierRequiresStartAndEndTest";
+            _ = db.StringSet(key, new byte[] { 0xff });
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BITPOS", key, "1", "0", "BIT"));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", ex.Message);
         }
 
         [Test, Order(35)]
@@ -2382,6 +2486,14 @@ namespace Garnet.test
                                    ex.Message);
 
             ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "u32", @"-1"));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "u8", "9223372036854775807"));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
+
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "i64", "#9223372036854775807"));
             ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
                                    ex.Message);
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -66,7 +66,7 @@ namespace Tsavorite.test.recovery.objects
                 Prepare(out var log, out var objlog, out var store);
 
                 if (syncMode == CompletionSyncMode.Async)
-                    _ = await store.RecoverAsync();
+                    _ = await store.RecoverAsync().ConfigureAwait(false);
                 else
                     _ = store.Recover();
 

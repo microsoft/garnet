@@ -48,6 +48,11 @@ namespace Garnet.test.cluster
         public virtual bool RequiresExistingKey => false;
 
         /// <summary>
+        /// Check if command requires object parameters to avoid ASCII encoding loss.
+        /// </summary>
+        public virtual bool RequiresObjectParameters => false;
+
+        /// <summary>
         /// Command name
         /// </summary>
         public abstract string Command { get; }
@@ -79,6 +84,12 @@ namespace Garnet.test.cluster
         /// </summary>
         /// <returns></returns>
         public abstract string[] GetSingleSlotRequest();
+
+        /// <summary>
+        /// Generate a request for this command that references a single slot.
+        /// </summary>
+        /// <returns></returns>
+        public virtual object[] GetSingleSlotObjectRequest() => throw new NotImplementedException();
 
         /// <summary>
         /// Generate a request for this command that references at least two slots
@@ -684,6 +695,7 @@ namespace Garnet.test.cluster
     {
         private int counter = -1;
 
+        public override bool RequiresObjectParameters => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(RESTORE);
@@ -703,6 +715,23 @@ namespace Garnet.test.cluster
 
             var ssk = GetSingleSlotKeys;
             return [$"{ssk[0]}-{counter}", "0", Encoding.ASCII.GetString(payload)];
+        }
+
+        public override object[] GetSingleSlotObjectRequest()
+        {
+            counter += 1;
+
+            var payload = new byte[]
+            {
+                0x00, // value type
+                0x03, // length of payload
+                0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                0x0B, 0x00, // RDB version
+                0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
+            };
+
+            var ssk = GetSingleSlotKeys;
+            return [$"{ssk[0]}-{counter}", "0", payload];
         }
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
@@ -833,7 +862,7 @@ namespace Garnet.test.cluster
         public override string[] GetSingleSlotRequest()
         {
             var ssk = GetSingleSlotKeys;
-            return [ssk[0], "15"];
+            return [ssk[0], "15", "32"];
         }
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();

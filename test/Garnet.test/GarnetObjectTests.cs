@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -62,7 +62,7 @@ namespace Garnet.test
             var obj = new SortedSetObject();
 
             LocalWrite();
-            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
             store.Dispose();
             CreateStore();
             _ = store.Recover();
@@ -99,7 +99,7 @@ namespace Garnet.test
             IGarnetObject obj = new SortedSetObject();
 
             LocalWrite();
-            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
+            _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
             store.Dispose();
             CreateStore();
             _ = store.Recover();
