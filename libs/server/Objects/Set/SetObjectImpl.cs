@@ -130,9 +130,20 @@ namespace Garnet.server
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            if (Set.Count == 0 || count == 0)
+            if (count == 0)
             {
-                writer.WriteEmptyArray();
+                writer.WriteNull();
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                return;
+            }
+
+            if (Set.Count == 0)
+            {
+                if (count != int.MinValue)
+                    writer.WriteEmptyArray();
+                else
+                    writer.WriteNull();
+
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
@@ -184,9 +195,18 @@ namespace Garnet.server
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            if (Set.Count == 0 || count == 0)
+            if (count == 0)
             {
-                writer.WriteEmptyArray();
+                writer.WriteNull();
+                return;
+            }
+
+            if (Set.Count == 0)
+            {
+                if (count != int.MinValue)
+                    writer.WriteEmptyArray();
+                else
+                    writer.WriteNull();
                 return;
             }
 

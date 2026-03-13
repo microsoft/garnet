@@ -29,11 +29,12 @@ namespace Garnet.server
             var currIdx = 0;
             var key = parseState.GetArgSliceByRef(currIdx++);
             ReadOnlySpan<byte> error = default;
+            var options = SortedSetAddOption.None;
 
             // If the first argument is not a score field - parse and validate options
             if (!parseState.TryGetDouble(currIdx, out _))
             {
-                var options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep);
+                options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep);
 
                 // No options were parsed - invalid Score encountered
                 if (nextIdxStep == 0)
@@ -79,7 +80,8 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZADD };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: currIdx,
+                arg1: (int)options) { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = GetObjectOutput();
 

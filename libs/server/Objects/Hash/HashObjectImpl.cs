@@ -139,7 +139,10 @@ namespace Garnet.server
             var includedCount = ((input.arg1 >> 1) & 1) == 1;
             var seed = input.arg2;
 
+            var countDone = 0;
+
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
             if (includedCount)
             {
                 var count = Count();
@@ -147,6 +150,7 @@ namespace Garnet.server
                 if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
                     writer.WriteEmptyArray();
+                    output.Result1 = 0;
                     return;
                 }
 
@@ -177,7 +181,7 @@ namespace Garnet.server
                         writer.WriteBulkString(pair.Value);
                     }
 
-                    output.Result1++;
+                    countDone++;
                 }
             }
             else // No count parameter is present, we just return a random field
@@ -187,14 +191,17 @@ namespace Garnet.server
                 if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
                     writer.WriteNull();
+                    output.Result1 = 0;
                     return;
                 }
 
                 var index = RandomUtils.PickRandomIndex(count, seed);
                 var pair = ElementAt(index);
                 writer.WriteBulkString(pair.Key);
-                output.Result1 = 1;
+                countDone = 1;
             }
+
+            output.Result1 = countDone;
         }
 
         private void HashSet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)

@@ -42,40 +42,20 @@ namespace Garnet.server
             var addedOrChanged = 0;
             double incrResult = 0;
 
-            var options = SortedSetAddOption.None;
-            var currTokenIdx = 0;
+            var options = (SortedSetAddOption)input.arg1;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            // Try to parse a Score field
-            var isFirstScoreParsed = false;
-            if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
-            {
-                // Try to get and validate options before the Score field, if any
-                options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep);
-                currTokenIdx += nextIdxStep;
-            }
-            else
-            {
-                isFirstScoreParsed = true;
-                currTokenIdx++;
-            }
+            var currTokenIdx = 0;
 
             while (currTokenIdx < input.parseState.Count)
             {
-                if (!isFirstScoreParsed)
+                if (!input.parseState.TryGetDouble(currTokenIdx++, out var score))
                 {
-                    if (!input.parseState.TryGetDouble(currTokenIdx++, out score))
-                    {
-                        // Invalid Score encountered
-                        writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                        output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
-                        return;
-                    }
-                }
-                else
-                {
-                    isFirstScoreParsed = false;
+                    // Invalid Score encountered
+                    writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                    return;
                 }
 
                 // Member
@@ -639,9 +619,7 @@ namespace Garnet.server
             DeleteExpiredItems();
 
             if (sortedSet.Count == 0)
-            {
                 return default;
-            }
 
             var element = popMaxScoreElement ? sortedSet.Max : sortedSet.Min;
             sortedSet.Remove(element);

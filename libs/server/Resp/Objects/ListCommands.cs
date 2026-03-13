@@ -85,7 +85,7 @@ namespace Garnet.server
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
 
-            var popCount = 1;
+            var popCount = int.MinValue;
 
             if (parseState.Count == 2)
             {

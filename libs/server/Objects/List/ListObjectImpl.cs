@@ -20,6 +20,8 @@ namespace Garnet.server
             // get the source string to remove
             var itemSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
+            var removedCount = 0;
+
             //remove all equals to item
             if (count == 0)
             {
@@ -32,7 +34,7 @@ namespace Garnet.server
                         list.Remove(currentNode);
                         this.UpdateSize(currentNode.Value, false);
 
-                        output.Result1++;
+                        removedCount++;
                     }
                     currentNode = nextNode;
                 }
@@ -44,7 +46,7 @@ namespace Garnet.server
                 var currentNode = fromHeadToTail ? list.First : list.Last;
 
                 count = Math.Abs(count);
-                while (output.Result1 < count && currentNode != null)
+                while (removedCount < count && currentNode != null)
                 {
                     var nextNode = fromHeadToTail ? currentNode.Next : currentNode.Previous;
 
@@ -52,7 +54,7 @@ namespace Garnet.server
                     {
                         list.Remove(currentNode);
                         UpdateSize(currentNode.Value, false);
-                        output.Result1++;
+                        removedCount++;
                     }
 
                     currentNode = nextNode;
@@ -62,11 +64,13 @@ namespace Garnet.server
             if (!input.header.CheckSkipRespOutputFlag())
             {
                 using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteInt32(output.Result1);
+                writer.WriteInt32(removedCount);
             }
 
-            if (output.Result1 == 0)
+            if (removedCount == 0)
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+
+            output.Result1 = removedCount;
         }
 
         private void ListInsert(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -289,21 +293,37 @@ namespace Garnet.server
 
             var count = input.arg1;
 
-            if (list.Count < count)
-                count = list.Count;
-
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            if (list.Count == 0 || count == 0)
+            if (count == 0)
             {
-                writer.WriteEmptyArray();
+                writer.WriteNull();
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }
 
-            if (count > 1)
+            if (list.Count == 0)
+            {
+                if (count == int.MinValue)
+                    writer.WriteNull();
+                else 
+                    writer.WriteEmptyArray();
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                return;
+            }
+
+            if (list.Count < count)
+                count = list.Count;
+            
+            // If count != int.MinValue, it means that a count was provided and the caller is expecting an array response.
+            if (count != int.MinValue)
             {
                 writer.WriteArrayLength(count);
+            }
+            // If count == int.MinValue, it means that a count was not provided and the caller is expecting a string element.
+            else
+            {
+                count = 1;
             }
 
             while (count > 0)
