@@ -25,8 +25,8 @@ namespace Garnet.server
                 return false;
             }
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            if (metaCmd != RespMetaCommand.None || srcLogRecord.Info.HasETag)
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
+            if (isETagCmd || srcLogRecord.Info.HasETag)
             {
                 output.ETag = srcLogRecord.ETag;
 

@@ -67,9 +67,9 @@ namespace Garnet.server
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
-            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var isEtagCommand = input.metaCommandInfo.MetaCommand.IsETagCommand();
             long updatedEtag = LogRecord.NoETag;
-            if (metaCmd != RespMetaCommand.None)
+            if (isEtagCommand)
                 _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedEtag, initContext: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
@@ -379,11 +379,10 @@ namespace Garnet.server
 
             var hadETagPreMutation = logRecord.Info.HasETag;
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var isETagCmd = metaCmd.IsETagCommand();
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var updatedEtag = logRecord.ETag;
 
-            if ((metaCmd != RespMetaCommand.None || hadETagPreMutation) &&
+            if ((isETagCmd || hadETagPreMutation) &&
                 !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
             {
                 output.ETag = logRecord.ETag;
@@ -448,11 +447,6 @@ namespace Garnet.server
                     if (input.arg1 == 0)
                         logRecord.RemoveExpiration();
                     else if (!logRecord.TrySetExpiration(input.arg1))
-                        return IPUResult.Failed;
-
-                    // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
-                    // due to srcRecordInfo having expiration set; here, that srcRecordInfo is us, so we should do nothing if input.arg1 == 0.
-                    if (sizeInfo.FieldInfo.HasExpiration && input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
                         return IPUResult.Failed;
 
                     break;
@@ -542,13 +536,17 @@ namespace Garnet.server
                             (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, logRecord.ValueSpan.Length);
 
                     if (overflow)
+                    {
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
-                    else
-                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
-
-                    if (bitFieldArgs.secondaryCommand == RespCommand.GET)
                         shouldUpdateETag = false;
-
+                    }
+                    else
+                    {
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
+                        if (bitFieldArgs.secondaryCommand == RespCommand.GET)
+                            shouldUpdateETag = false;
+                    }
+                    
                     break;
 
                 case RespCommand.PFADD:
@@ -845,12 +843,11 @@ namespace Garnet.server
             var cmd = input.header.cmd;
 
             var hadETagPreMutation = srcLogRecord.Info.HasETag;
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var isETagCmd = metaCmd.IsETagCommand();
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var shouldUpdateETag = hadETagPreMutation || isETagCmd;
             var updatedEtag = srcLogRecord.ETag;
 
-            if (metaCmd != RespMetaCommand.None || hadETagPreMutation)
+            if (isETagCmd || hadETagPreMutation)
             {
                 // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
                 var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedEtag);
@@ -864,7 +861,7 @@ namespace Garnet.server
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(metaCmd == RespMetaCommand.None);
+                        Debug.Assert(!isETagCmd);
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);

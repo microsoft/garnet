@@ -92,9 +92,9 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DEL:
-                    var metaCmd = input.metaCommandInfo.MetaCommand;
+                    var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
                     rmwInfo.Action = RMWAction.ExpireAndStop;
-                    if (metaCmd != RespMetaCommand.None || srcLogRecord.Info.HasETag)
+                    if (isETagCmd || srcLogRecord.Info.HasETag)
                     {
                         if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _))
                         {
@@ -138,12 +138,11 @@ namespace Garnet.server
             }
 
             var hadETagPreMutation = srcLogRecord.Info.HasETag;
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var isETagCmd = metaCmd.IsETagCommand();
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var shouldUpdateETag = hadETagPreMutation || isETagCmd;
             var updatedEtag = srcLogRecord.ETag;
 
-            if (metaCmd != RespMetaCommand.None || hadETagPreMutation)
+            if (isETagCmd || hadETagPreMutation)
             {
                 // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
                 var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedEtag);
@@ -286,14 +285,13 @@ namespace Garnet.server
                 return IPUResult.Failed;
             }
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
             var hadETagPreMutation = logRecord.Info.HasETag;
-            var isETagCmd = metaCmd.IsETagCommand();
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var shouldUpdateETag = hadETagPreMutation || isETagCmd;
             var hasExpiration = logRecord.Info.HasExpiration;
             var updatedEtag = logRecord.ETag;
 
-            if ((metaCmd != RespMetaCommand.None || hadETagPreMutation) &&
+            if ((isETagCmd || hadETagPreMutation) &&
                 !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
             {
                 output.ETag = logRecord.ETag;
