@@ -60,7 +60,7 @@ namespace Tsavorite.test
                         _ = log.Enqueue(entry);
 
                     if (isAsync)
-                        await log.CommitAsync();
+                        await log.CommitAsync().ConfigureAwait(false);
                     else
                         log.Commit();
                 }
@@ -171,7 +171,7 @@ namespace Tsavorite.test
                 try
                 {
                     if (IsAsync(iteratorType))
-                        await log.CommitAsync();
+                        await log.CommitAsync().ConfigureAwait(false);
                     else
                         log.Commit();
                 }
@@ -189,11 +189,11 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable().ConfigureAwait(false))
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                     break;
                 case IteratorType.AsyncMemoryOwner:
-                    await foreach ((IMemoryOwner<byte> result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                    await foreach ((IMemoryOwner<byte> result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).ConfigureAwait(false))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                         result.Dispose();

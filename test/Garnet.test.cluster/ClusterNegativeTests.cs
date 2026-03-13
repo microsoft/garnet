@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -513,7 +513,7 @@ namespace Garnet.test.cluster
 
             for (var i = 0; i < 10; i++)
             {
-                await Task.Delay(500);
+                await Task.Delay(500).ConfigureAwait(false);
                 var cluster = context.clusterTestUtils.ClusterNodes(3);
                 var replicaWithHashSlots = cluster.Nodes.FirstOrDefault(x => x.IsReplica && x.Slots.Count > 0);
                 if (replicaWithHashSlots != null)

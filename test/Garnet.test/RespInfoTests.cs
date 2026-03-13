@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -85,13 +85,13 @@ namespace Garnet.test
             // hydrate
             var startingHA = server.Provider.StoreWrapper.store.Log.HeadAddress;
             await HydrateStore(db, (db, key, value) => db.StringSetAsync(key, value),
-                () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress);
+                () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress).ConfigureAwait(false);
 
             // Wait for the immediate expirations to kick in
-            await Task.Delay(500);
+            await Task.Delay(500).ConfigureAwait(false);
 
             // now we have a differentiated region for mutable and immutable region in object store and main store
-            var result = await db.ExecuteAsync("INFO", "HLOGSCAN");
+            var result = await db.ExecuteAsync("INFO", "HLOGSCAN").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(!result.IsNull);
         }
@@ -120,19 +120,19 @@ namespace Garnet.test
 
                 if (chance < percentKeysWithExpirationsButNotExpired)
                 {
-                    await setAction(db, key, value);
-                    _ = await db.KeyExpireAsync(key, TimeSpan.FromHours(2));
+                    await setAction(db, key, value).ConfigureAwait(false);
+                    _ = await db.KeyExpireAsync(key, TimeSpan.FromHours(2)).ConfigureAwait(false);
                 }
                 else if (chance > percentKeysWithExpirationsButNotExpired &&
                     chance < percentKeysWithExpirationsButNotExpired + percentKeysWithExpirationAndExpired)
                 {
-                    await setAction(db, key, value);
-                    _ = await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(2));
+                    await setAction(db, key, value).ConfigureAwait(false);
+                    _ = await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(2)).ConfigureAwait(false);
                     eligibleForTombstoning = false; // will be expired already
                 }
                 else
                 {
-                    await setAction(db, key, value);
+                    await setAction(db, key, value).ConfigureAwait(false);
                 }
 
                 if (eligibleForTombstoning)
@@ -152,12 +152,12 @@ namespace Garnet.test
 
             foreach (var keyTodel in keysWeDelete)
             {
-                _ = await db.KeyDeleteAsync(keyTodel);
+                _ = await db.KeyDeleteAsync(keyTodel).ConfigureAwait(false);
             }
 
             foreach (var keyToRcu in keysWeRcuOn)
             {
-                await setAction(db, keyToRcu, Guid.NewGuid().ToString());
+                await setAction(db, keyToRcu, Guid.NewGuid().ToString()).ConfigureAwait(false);
             }
         }
     }

@@ -65,6 +65,8 @@ namespace Garnet.server
         {
             long count = 0;
 
+            NormalizeBitCountOffsets(ref startOffset, ref endOffset, offsetType);
+
             // BYTE indexing
             if (offsetType == 0x0)
             {
@@ -80,8 +82,21 @@ namespace Garnet.server
             }
             else // BIT Flag
             {
-                startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen * 8) : startOffset;
-                endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, valLen * 8) : endOffset;
+                var bitLen = (long)valLen * 8;
+                if (bitLen == 0)
+                    return 0;
+
+                startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, bitLen) : startOffset;
+                endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, bitLen) : endOffset;
+
+                if (startOffset >= bitLen)
+                    return 0;
+
+                if (startOffset > endOffset)
+                    return 0;
+
+                endOffset = endOffset >= bitLen ? bitLen - 1 : endOffset;
+
                 count += BitIndexCount(value, startOffset, endOffset);
 
                 // Adjust offsets to skip first and last byte

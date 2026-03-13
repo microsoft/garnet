@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1039,7 +1039,7 @@ namespace Garnet.test
 
                 try
                 {
-                    var result = await client.ExecuteAsync("DEBUG", "LOG", "Loopback test");
+                    var result = await client.ExecuteAsync("DEBUG", "LOG", "Loopback test").ConfigureAwait(false);
                     if (shouldfail)
                         Assert.Fail("Connection protection should have not allowed the command to run");
                     else
@@ -1077,7 +1077,7 @@ namespace Garnet.test
             foreach (var client in clients)
             {
                 client.Connect();
-                var result = await client.ExecuteAsync("PING");
+                var result = await client.ExecuteAsync("PING").ConfigureAwait(false);
                 ClassicAssert.AreEqual("PONG", result);
                 client.Dispose();
             }

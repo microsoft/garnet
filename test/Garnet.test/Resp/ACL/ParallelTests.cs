@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -39,10 +39,10 @@ namespace Garnet.test.Resp.ACL
             try
             {
                 using var c = TestUtils.GetGarnetClient(epoch: sharedEpoch);
-                await c.ConnectAsync();
+                await c.ConnectAsync().ConfigureAwait(false);
 
                 // Add the test user and password
-                var response = await c.ExecuteForStringResultAsync("ACL", ["SETUSER", TestUserA, "on", $">{DummyPassword}"]);
+                var response = await c.ExecuteForStringResultAsync("ACL", ["SETUSER", TestUserA, "on", $">{DummyPassword}"]).ConfigureAwait(false);
                 ClassicAssert.IsTrue(response.StartsWith("OK"));
 
                 // Run multiple sessions that stress AUTH
@@ -50,7 +50,7 @@ namespace Garnet.test.Resp.ACL
                 await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
                 {
                     using var c = TestUtils.GetGarnetClient(epoch: sharedEpoch);
-                    await c.ConnectAsync(token);
+                    await c.ConnectAsync(token).ConfigureAwait(false);
 
                     var firstResponseTasks = new Task<string>[iterationsPerSession];
                     var secondResponseTasks = new Task<string>[iterationsPerSession];
@@ -63,7 +63,7 @@ namespace Garnet.test.Resp.ACL
 
                     try
                     {
-                        await Task.WhenAll(firstResponseTasks.Concat(secondResponseTasks)).WaitAsync(token);
+                        await Task.WhenAll(firstResponseTasks.Concat(secondResponseTasks)).WaitAsync(token).ConfigureAwait(false);
                     }
                     catch { }
                     foreach (var task in firstResponseTasks)
@@ -125,25 +125,25 @@ namespace Garnet.test.Resp.ACL
 
                 // Use client with support for single thread.
                 using var c = TestUtils.GetGarnetClient(epoch: sharedEpoch);
-                await c.ConnectAsync();
-                var response = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" "));
+                await c.ConnectAsync().ConfigureAwait(false);
+                var response = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" ")).ConfigureAwait(false);
                 ClassicAssert.IsTrue(response.StartsWith("OK"));
 
                 var timeout = TimeSpan.FromSeconds(120);
                 await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
                 {
                     using var c = TestUtils.GetGarnetClient(epoch: sharedEpoch);
-                    await c.ConnectAsync(token);
+                    await c.ConnectAsync(token).ConfigureAwait(false);
 
                     for (uint i = 0; i < iterationsPerSession; i++)
                     {
-                        var response1 = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" ")).WaitAsync(token);
+                        var response1 = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" ")).WaitAsync(token).ConfigureAwait(false);
                         ClassicAssert.IsTrue(response1.StartsWith("OK"));
 
-                        var response2 = await c.ExecuteForStringResultAsync("ACL", inactiveUserWithoutGetCommand.Split(" ")).WaitAsync(token);
+                        var response2 = await c.ExecuteForStringResultAsync("ACL", inactiveUserWithoutGetCommand.Split(" ")).WaitAsync(token).ConfigureAwait(false);
                         ClassicAssert.IsTrue(response2.StartsWith("OK"));
 
-                        var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", ["LIST"]).WaitAsync(token);
+                        var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", ["LIST"]).WaitAsync(token).ConfigureAwait(false);
 
                         if (aclListResponse.Contains(inactiveUserWithGet))
                         {
@@ -182,10 +182,10 @@ namespace Garnet.test.Resp.ACL
                 {
                     // Use client with support for single thread.
                     using var c = TestUtils.GetGarnetClient(epoch: sharedEpoch);
-                    await c.ConnectAsync(token);
+                    await c.ConnectAsync(token).ConfigureAwait(false);
                     for (uint i = 0; i < iterationsPerSession; i++)
                     {
-                        var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" ")).WaitAsync(token);
+                        var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" ")).WaitAsync(token).ConfigureAwait(false);
                         ClassicAssert.IsTrue(response.StartsWith("OK"));
                     }
                 }).WaitAsync(timeout).ConfigureAwait(false);

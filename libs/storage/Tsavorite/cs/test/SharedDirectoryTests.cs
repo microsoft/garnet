@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -76,7 +76,7 @@ namespace Tsavorite.test.recovery.sumstore
             clone.Initialize(cloneCheckpointDirectory, sharedLogDirectory, populateLogHandles: true);
 
             if (isAsync)
-                _ = await clone.Store.RecoverAsync(checkpointGuid);
+                _ = await clone.Store.RecoverAsync(checkpointGuid).ConfigureAwait(false);
             else
                 _ = clone.Store.Recover(checkpointGuid);
 

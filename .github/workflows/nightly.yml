@@ -260,15 +260,21 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin allure_data_history
-          git checkout allure_data_history
-          $source = "${{ github.workspace }}/test/Allure/allure-report/history"
-          $target = "${{ github.workspace }}/test/Allure/history"
-          Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
-          Copy-Item -Path $source -Destination $target -Recurse -Force
+
+          # Use an orphan commit (no history) to prevent the allure_data_history
+          # branch from accumulating large history.json blobs across hundreds of
+          # commits, which bloats the repository pack file and slows git clone.
+          git checkout --orphan allure_data_history
+          git rm -rf .
+
+          # The generated allure-report/history is untracked and survives git rm.
+          # Copy (not move) so the subsequent artifact upload and website publish
+          # steps still have the history directory in allure-report/.
+          Copy-Item -Path "${{ github.workspace }}/test/Allure/allure-report/history" -Destination "${{ github.workspace }}/test/Allure/history" -Recurse -Force
+
           git add test/Allure/history
           git commit -m "Update Allure history [CI]"
-          git push origin allure_data_history
+          git push origin allure_data_history --force
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4

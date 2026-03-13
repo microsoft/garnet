@@ -59,12 +59,12 @@ namespace Garnet.test
                 // This should work since the key is tombstoned and we are reusing the tombstone record
                 // try to reuse the tombstoned record since revivification is enabled
                 // 11 byte value and same size key means this should be able to reuse but it crashes because we don't safe copy
-                var setViaRmw = await db.ExecuteAsync("SET", "foo", "baraaaaaaaa", "NX");
+                var setViaRmw = await db.ExecuteAsync("SET", "foo", "baraaaaaaaa", "NX").ConfigureAwait(false);
 
                 ClassicAssert.AreEqual("OK", setViaRmw.ToString());
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs, redis);
+            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs, redis).ConfigureAwait(false);
         }
 
         [Test]
@@ -76,22 +76,22 @@ namespace Garnet.test
                 // This should work since the key is tombstoned and we are reusing the tombstone record
                 // try to reuse the tombstoned record since revivification is enabled
                 // much smaller value will the revivifiable record, will zero out the bytes before shrinking
-                var setViaRmw = await db.ExecuteAsync("SET", "foo", "mars", "NX");
+                var setViaRmw = await db.ExecuteAsync("SET", "foo", "mars", "NX").ConfigureAwait(false);
                 ClassicAssert.AreEqual("OK", setViaRmw.ToString());
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs, redis);
+            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs, redis).ConfigureAwait(false);
 
             // now when the above record is shrunk, I will delete it and reuse it again
             var db = redis.GetDatabase(0);
 
-            await db.KeyDeleteAsync("foo");
+            await db.KeyDeleteAsync("foo").ConfigureAwait(false);
 
             // now originally the key held a 1 byte value and 8 byte metadata, so inchain revivification of the exact same size should work
-            await db.ExecIfGreaterAsync(1, "SET", "foo", "b");
+            await db.ExecIfGreaterAsync(1, "SET", "foo", "b").ConfigureAwait(false);
 
             // check for revivification stats
-            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful In-Chain: 2"), "Expected in-chain revivification to happen the second time, but it did not.");
         }
 
@@ -103,12 +103,12 @@ namespace Garnet.test
             {
 
                 // should be able to reuse the tombstoned record value is 1 byte and etag space is 8 bytes == 9 bytes
-                var res = (RedisResult[])await db.ExecIfGreaterAsync(5, "SET", "foo", "c");
+                var res = (RedisResult[])await db.ExecIfGreaterAsync(5, "SET", "foo", "c").ConfigureAwait(false);
                 ClassicAssert.IsTrue(res[0].IsNull);
                 ClassicAssert.AreEqual(5, (long)res[1]);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs, redis);
+            await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs, redis).ConfigureAwait(false);
         }
 
 
@@ -119,11 +119,11 @@ namespace Garnet.test
             Func<IDatabase, Task> testRmwWorksViaAppend = async (db) =>
             {
                 // new value is below 12 bytes so it should reuse in initial update
-                var res = await db.ExecuteAsync("APPEND", "foo", "baraaaaaaaa");
+                var res = await db.ExecuteAsync("APPEND", "foo", "baraaaaaaaa").ConfigureAwait(false);
                 ClassicAssert.AreEqual(11, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaAppend, defaultInitialArgs, redis);
+            await TestRevivifyAsync(testRmwWorksViaAppend, defaultInitialArgs, redis).ConfigureAwait(false);
         }
 
         [Test]
@@ -133,11 +133,11 @@ namespace Garnet.test
             Func<IDatabase, Task> testRmwWorksViaSetBit = async (db) =>
             {
                 // we need something that allocates 12 bytes internally in SETBIT
-                var res = await db.ExecuteAsync("SETBIT", "foo", 95, 1);
+                var res = await db.ExecuteAsync("SETBIT", "foo", 95, 1).ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSetBit, defaultInitialArgs, redis);
+            await TestRevivifyAsync(testRmwWorksViaSetBit, defaultInitialArgs, redis).ConfigureAwait(false);
         }
 
         [Test]
@@ -147,31 +147,31 @@ namespace Garnet.test
             Func<IDatabase, Task> testRmwWorksViaBitfield = async (db) =>
             {
                 // we need something that allocates 12 bytes internally in BITFIELD
-                var res = await db.ExecuteAsync("BITFIELD", "foo", "INCRBY", "i64", "28", "1");
+                var res = await db.ExecuteAsync("BITFIELD", "foo", "INCRBY", "i64", "28", "1").ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaBitfield, defaultInitialArgs, redis);
+            await TestRevivifyAsync(testRmwWorksViaBitfield, defaultInitialArgs, redis).ConfigureAwait(false);
         }
 
         private async Task TestRevivifyAsync(Func<IDatabase, Task> callbackFunc, string[] initialSettingArgs, IConnectionMultiplexer redis)
         {
             var db = redis.GetDatabase(0);
 
-            await db.ExecuteAsync("SET", "foox", "bolognese");
-            await db.ExecuteAsync(initialSettingArgs[0], initialSettingArgs.Skip(1).ToArray());
+            await db.ExecuteAsync("SET", "foox", "bolognese").ConfigureAwait(false);
+            await db.ExecuteAsync(initialSettingArgs[0], initialSettingArgs.Skip(1).ToArray()).ConfigureAwait(false);
 
             // wait for the key to be expired
-            await Task.Delay(600);
+            await Task.Delay(600).ConfigureAwait(false);
 
             // ---- Trigger active expiration, to tombstone the above key ---
-            var exec = await db.ExecuteAsync("EXPDELSCAN");
+            var exec = await db.ExecuteAsync("EXPDELSCAN").ConfigureAwait(false);
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
-            await callbackFunc(db);
+            await callbackFunc(db).ConfigureAwait(false);
 
             // check if revivification stat shows in-chain revivification happened.
-            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful In-Chain: 1"), "Expected in-chain revivification to happen, but it did not.");
         }
 
@@ -185,26 +185,26 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            await db.ExecuteAsync("SET", "foo", "c", "PX", 500);
-            await db.ExecuteAsync("SET", "michael", "jordan");
+            await db.ExecuteAsync("SET", "foo", "c", "PX", 500).ConfigureAwait(false);
+            await db.ExecuteAsync("SET", "michael", "jordan").ConfigureAwait(false);
             // A big record that is above minRevivifiable address; after active exp tombstones it, revivification should pick it up
-            await db.ExecuteAsync("SET", "arnold", "schwarzenegger", "PX", 500);
+            await db.ExecuteAsync("SET", "arnold", "schwarzenegger", "PX", 500).ConfigureAwait(false);
 
-            await Task.Delay(600); // wait for the keys to expire
+            await Task.Delay(600).ConfigureAwait(false); // wait for the keys to expire
 
             // ---- Trigger active expiration, to tombstone the above key ---
-            var exec = await db.ExecuteAsync("EXPDELSCAN");
+            var exec = await db.ExecuteAsync("EXPDELSCAN").ConfigureAwait(false);
             // when deleting via above, are we potentially resetting the value and it's metadata and stuff?
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
             // Do a new-record operation that will reuse a tombstoned record via FreeRecordPool
-            await db.ExecIfGreaterAsync(23, "SET", "the", "terminator");
+            await db.ExecIfGreaterAsync(23, "SET", "the", "terminator").ConfigureAwait(false);
 
             // confirm we did indeed use a reviv record
-            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecWithEtagAsync("GET", "the");
+            var res = (RedisResult[])await db.ExecWithEtagAsync("GET", "the").ConfigureAwait(false);
 
             ClassicAssert.AreEqual("terminator", res[0].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
             ClassicAssert.AreEqual(23, (long)res[1], "Incorrect Etag.");
@@ -222,30 +222,30 @@ namespace Garnet.test
 
             long startingAddr = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
 
-            await db.StringSetAsync("arnold", "schwarzeneggar");
+            await db.StringSetAsync("arnold", "schwarzeneggar").ConfigureAwait(false);
             long tailAddrAfterInsert = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterInsert > startingAddr, "Expected AOF tail address to move forward on initial SET");
 
             // setup keys for revivifying
-            await db.StringSetAsync("hoo", "kachakahookahooka");
+            await db.StringSetAsync("hoo", "kachakahookahooka").ConfigureAwait(false);
             // both would move the tail address of the AOF forward
             long tailAddrAfterInsert2 = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterInsert2 > tailAddrAfterInsert, "Expected AOF tail address to move forward on initial SET");
-            await db.KeyDeleteAsync("hoo");
+            await db.KeyDeleteAsync("hoo").ConfigureAwait(false);
             long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert2, "Expected AOF tail address to move forward on DELETE");
 
             // inchain revivification of the exact same key should take place
-            await db.ExecIfGreaterAsync(1, "SET", "hoo", "b");
+            await db.ExecIfGreaterAsync(1, "SET", "hoo", "b").ConfigureAwait(false);
             long tailAddrAfterRevivifyRmw = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterRevivifyRmw > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification RMW");
 
             // the unrelated read should not be affected by revivification state
-            string result = await db.StringGetAsync("arnold");
+            string result = await db.StringGetAsync("arnold").ConfigureAwait(false);
             ClassicAssert.AreEqual("schwarzeneggar", result);
 
             // check for revivification stats
-            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful In-Chain: 1"), "Expected in-chain revivification to have happened");
         }
 
@@ -259,28 +259,28 @@ namespace Garnet.test
 
             var db = redis.GetDatabase(0);
 
-            await db.StringSetAsync("fizz", "buzz");
+            await db.StringSetAsync("fizz", "buzz").ConfigureAwait(false);
 
             long startingAddr = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
 
             // setup keys for revivifying
-            await db.StringSetAsync("hoo", "kachakahookahooka");
+            await db.StringSetAsync("hoo", "kachakahookahooka").ConfigureAwait(false);
             // both would move the tail address of the AOF forward
             long tailAddrAfterInsert = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterInsert > startingAddr, "Expected AOF tail address to move forward on initial SET");
 
             // in-chain tombstone
-            await db.KeyDeleteAsync("hoo");
+            await db.KeyDeleteAsync("hoo").ConfigureAwait(false);
             long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert, "Expected AOF tail address to move forward on DELETE");
 
             // do an in-chain revivification
-            await db.StringSetAsync("hoo", "b");
+            await db.StringSetAsync("hoo", "b").ConfigureAwait(false);
             long tailAddrAfterRevivifySet = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterRevivifySet > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification SET");
 
             // make sure revivification stats reflect that things were indeed revivified
-            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful In-Chain: 1"), "Expected in-chain revivification to have happened");
         }
     }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1138,14 +1138,14 @@ namespace Garnet.test.cluster
                     {
                         ClusterTestUtils.RandomBytes(ref r, ref buffer);
                         SET[2] = Encoding.ASCII.GetString(buffer);
-                        var resp = await c.ExecuteAsync(SET);
+                        var resp = await c.ExecuteAsync(SET).ConfigureAwait(false);
                         ClassicAssert.AreEqual("OK", resp);
                         value = SET[2];
                         Interlocked.Increment(ref setsExecuted);
                     }
                     else
                     {
-                        var resp = await c.ExecuteAsync(GET);
+                        var resp = await c.ExecuteAsync(GET).ConfigureAwait(false);
                         ClassicAssert.AreEqual(SET[2], resp);
                     }
                 }
@@ -1215,7 +1215,7 @@ namespace Garnet.test.cluster
 
             // Wait until few sets have executed
             while (setsExecuted < 100)
-                await Task.Delay(100, cancellationToken);
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
 
             // Initiate migration
             var sourceEndPoint = context.clusterTestUtils.GetEndPoint(srcNodeIndex);
@@ -1223,12 +1223,12 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.MigrateSlots(sourceEndPoint, targetEndPoint, migrateSlots, range: true, logger: context.logger);
 
             // Wait until all operations are done
-            _ = await Task.WhenAll(tasks).WaitAsync(cancellationToken);
+            _ = await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
 
             // Validate data on target node
             foreach (var task in tasks)
             {
-                var (key, value, slot) = await task;
+                var (key, value, slot) = await task.ConfigureAwait(false);
                 ClassicAssert.AreEqual(slot, ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key)));
 
                 var retry = true;
@@ -1237,7 +1237,7 @@ namespace Garnet.test.cluster
                     try
                     {
                         var c = context.clusterTestUtils.GetGarnetClientSession(dstNodeIndex, useTLS: UseTLS);
-                        var result = await c.ExecuteAsync(["GET", key]).WaitAsync(cancellationToken);
+                        var result = await c.ExecuteAsync(["GET", key]).WaitAsync(cancellationToken).ConfigureAwait(false);
                         ClassicAssert.AreEqual(value, result);
                         retry = false;
                     }

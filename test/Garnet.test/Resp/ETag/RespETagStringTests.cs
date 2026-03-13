@@ -841,9 +841,10 @@ namespace Garnet.test.Resp.ETag
             db.Connect();
 
             var origValue = "笑い男";
-            await db.ExecuteForStringArrayResultAsync("EXECWITHETAG", ["SET", "mykey", origValue]);
+            await db.ExecuteForStringArrayResultAsync("EXECWITHETAG", ["SET", "mykey", origValue])
+                .ConfigureAwait(false);
 
-            var retValue = await db.StringGetAsync("mykey");
+            var retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -860,11 +861,11 @@ namespace Garnet.test.Resp.ETag
             for (var i = 0; i < length; i++)
                 value[i] = (byte)((byte)'a' + ((byte)i % 26));
 
-            var results = (RedisResult[])await db.ExecWithEtagAsync("SET", "mykey", value);
+            var results = (RedisResult[])await db.ExecWithEtagAsync("SET", "mykey", value).ConfigureAwait(false);
             CheckEtagAndNullValue(results, 1);
 
             // Backwards compatibility of data set with etag and plain GET call
-            var actualValue = (byte[])await db.StringGetAsync("mykey");
+            var actualValue = (byte[])await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(new ReadOnlySpan<byte>(value).SequenceEqual(new ReadOnlySpan<byte>(actualValue)));
         }
@@ -1596,11 +1597,11 @@ namespace Garnet.test.Resp.ETag
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (long)ttl);
 
             db.ExecWithEtag("SET", key, val);
             ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (long)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
@@ -2003,11 +2004,11 @@ namespace Garnet.test.Resp.ETag
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             db.KeyExpire(keyB, TimeSpan.FromSeconds(expire));
 
-            db.StringSet(keyA, keyA, keepTtl: true);
+            db.StringSet(keyA, keyA, null, keepTtl: true);
             var time = db.KeyTimeToLive(keyA);
             ClassicAssert.IsTrue(time.Value.Ticks > 0);
 
-            db.StringSet(keyB, keyB, keepTtl: false);
+            db.StringSet(keyB, keyB, null, keepTtl: false);
             time = db.KeyTimeToLive(keyB);
             ClassicAssert.IsTrue(time == null);
 
@@ -2046,12 +2047,12 @@ namespace Garnet.test.Resp.ETag
             var expireTimeInMilliseconds = 3000;
 
             var pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-2, (int)pttl);
+            ClassicAssert.AreEqual(-2, (long)pttl);
 
             db.ExecWithEtag("SET", key, val);
 
             pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-1, (int)pttl);
+            ClassicAssert.AreEqual(-1, (long)pttl);
 
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
