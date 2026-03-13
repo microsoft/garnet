@@ -317,7 +317,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This SET method is to be used by a command that retrieved an <see cref="IGarnetObject"/> (using GET) then modified it directly.
+        /// This SET method is to be used by a caller that previously retrieved an <see cref="IGarnetObject"/> (using GET) then modified it directly.
         /// This method will then call Upsert in order for the record to update its eTag if needed.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>

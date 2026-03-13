@@ -39,7 +39,7 @@ namespace Garnet.server
         Expired = 1 << 2,
 
         /// <summary>
-        /// Flag indicating that the command does not require a RESP output
+        /// Flag indicating that the command does not expect a RESP-formatted output
         /// </summary>
         SkipRespOutput = 1 << 3,
     }

@@ -325,7 +325,8 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
-            var input = new StringInput(RespCommand.SETRANGE, ref metaCommandInfo, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.SETRANGE, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
@@ -336,15 +337,9 @@ namespace Garnet.server
             etag = stringOutput.ETag;
 
             if (!stringOutput.IsOperationSkipped)
-            {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
             else
-            {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteNull();
 
             return true;
         }
@@ -370,7 +365,6 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
             {
                 sessionMetrics?.incr_total_found();
-
                 ProcessOutput(output.SpanByteAndMemory);
             }
             else
@@ -535,9 +529,9 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    if (metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
+                    if (metaCommandInfo.MetaCommand.IsETagCommand())
                     {
-                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
+                        errorMessage = CmdStrings.RESP_ERR_ETAG_META_CMD_AND_GETVALUE;
                         break;
                     }
 
@@ -616,7 +610,7 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new StringInput(cmd, ref metaCommandInfo, arg1: valMetadata);
+            var input = new StringInput(cmd, ref metaCommandInfo, arg1: valMetadata, flags: RespInputFlags.SkipRespOutput);
             var output = new StringOutput();
 
             storageApi.SET(key, ref input, ref output, val);
@@ -643,6 +637,8 @@ namespace Garnet.server
             if (!getValue && !metaCommandInfo.MetaCommand.IsETagCommand())
             {
                 var output = new StringOutput();
+                input.header.flags |= RespInputFlags.SkipRespOutput;
+
                 var status = storageApi.SET_Conditional(key, ref input, ref output);
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
@@ -676,6 +672,8 @@ namespace Garnet.server
             {
                 if (getValue)
                     input.header.SetSetGetFlag();
+                else
+                    input.header.flags |= RespInputFlags.SkipRespOutput;
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 var output = GetStringOutput();
@@ -727,13 +725,11 @@ namespace Garnet.server
 
             if (stringOutput.IsOperationSkipped)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
             else if (!stringOutput.HasError)
             {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                    SendAndReset();
+                WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
             }
             else
             {
@@ -774,13 +770,11 @@ namespace Garnet.server
 
             if (stringOutput.IsOperationSkipped)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
             else if (!stringOutput.HasError)
             {
-                while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(output.ReadOnlySpan);
             }
             else
             {
@@ -819,13 +813,11 @@ namespace Garnet.server
 
             if (!output.IsOperationSkipped)
             {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
-                    SendAndReset();
+                WriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length));
             }
             else
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
 
             return true;

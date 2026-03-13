@@ -106,20 +106,20 @@ namespace Garnet.server
             var status = storageApi.SET_Conditional(key, ref input, ref output);
             etag = output.ETag;
 
+            if (output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
+            }
+
             if (status is GarnetStatus.NOTFOUND)
             {
-                if (output.IsOperationSkipped)
-                {
-                    WriteNull();
-                    return true;
-                }
-
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSYKEY, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -138,7 +138,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new StringInput(RespCommand.GET, ref metaCommandInfo);
+            var input = new StringInput(RespCommand.GET, ref metaCommandInfo, flags: RespInputFlags.SkipRespOutput);
             var output = StringOutput.FromPinnedSpan(scratchBufferBuilder.ViewRemainingArgSlice());
 
             var status = storageApi.GET(key, ref input, ref output);

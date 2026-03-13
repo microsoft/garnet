@@ -226,7 +226,7 @@ namespace Garnet.server
             updatedEtag = currEtag;
 
             // If there is no meta-command or current record does not have an etag - nothing to check
-            if (MetaCommand == RespMetaCommand.None && currEtag == LogRecord.NoETag)
+            if (!MetaCommand.IsETagCommand() && currEtag == LogRecord.NoETag)
                 return true;
 
             var execCmd = true;

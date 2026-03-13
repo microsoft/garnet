@@ -306,7 +306,7 @@ namespace Garnet.server
             {
                 if (count == int.MinValue)
                     writer.WriteNull();
-                else 
+                else
                     writer.WriteEmptyArray();
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
@@ -314,7 +314,7 @@ namespace Garnet.server
 
             if (list.Count < count)
                 count = list.Count;
-            
+
             // If count != int.MinValue, it means that a count was provided and the caller is expecting an array response.
             if (count != int.MinValue)
             {

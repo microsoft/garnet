@@ -1623,7 +1623,8 @@ namespace Garnet.server
             parseState.SetArguments(0, members);
             var isMilliseconds = 1;
             var isTimestamp = 0;
-            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, arg1: isMilliseconds, arg2: isTimestamp) { SortedSetOp = SortedSetOperation.ZTTL };
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, arg1: isMilliseconds,
+                    arg2: isTimestamp, flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZTTL };
 
             var output = new ObjectOutput();
             var status = ReadObjectStoreOperation(key.ToArray(), ref innerInput, ref objectContext, ref output);
@@ -1663,7 +1664,8 @@ namespace Garnet.server
             metaCommandInfo.Initialize();
             parseState.Initialize(members.Length);
             parseState.SetArguments(0, members);
-            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZPERSIST };
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
+                    flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZPERSIST };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref innerInput, ref objectContext, ref output);
