@@ -289,7 +289,7 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                        fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
+                        fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
 
                     case RespCommand.SETRANGE:
