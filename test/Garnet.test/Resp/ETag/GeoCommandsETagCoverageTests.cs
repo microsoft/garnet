@@ -17,7 +17,7 @@ namespace Garnet.test.Resp.ETag
     {
         const double DoubleTolerance = 1e-6;
 
-        static readonly RedisKey[] GeoKeys = [KeysWithEtag[0], "geoKey2", "geoKey3"];
+        static readonly RedisKey[] GeoKeys = [KeysWithETag[0], "geoKey2", "geoKey3"];
 
         static readonly GeoEntry[][] GeoData =
         [
@@ -165,11 +165,11 @@ namespace Garnet.test.Resp.ETag
 
             var geoAddCmdArgs = new object[] { GeoKeys[0] }.Concat(GeoData[0]
                 .SelectMany(e => new[] { e.Longitude.ToString(), e.Latitude.ToString(), e.Member.ToString() })).ToArray();
-            var results = (string[])db.ExecWithEtag("GEOADD", geoAddCmdArgs);
+            var results = (string[])db.ExecWithETag("GEOADD", geoAddCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(GeoData[0].Length, long.Parse(results[0]!));
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
             var result = db.GeoAdd(GeoKeys[1], GeoData[1]);
             ClassicAssert.AreEqual(GeoData[1].Length, result);

@@ -2326,7 +2326,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleRenameNXWithEtagSetOldAndNewKey()
+        public void SingleRenameNXWithETagSetOldAndNewKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2334,15 +2334,15 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.ExecWithEtag("SET", key, origValue);
-            db.ExecWithEtag("SET", newKey, "foo");
+            db.ExecWithETag("SET", key, origValue);
+            db.ExecWithETag("SET", newKey, "foo");
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsFalse(result);
         }
 
         [Test]
-        public void SingleRenameNXWithEtagSetOldKey()
+        public void SingleRenameNXWithETagSetOldKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2350,7 +2350,7 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.ExecWithEtag("SET", key, origValue);
+            db.ExecWithETag("SET", key, origValue);
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsTrue(result);
@@ -2362,7 +2362,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(oldKeyRes.IsNull);
 
             // Since the original key was set with etag, the new key should have an etag attached to it
-            var etagRes = (RedisResult[])db.ExecWithEtag("GET", newKey);
+            var etagRes = (RedisResult[])db.ExecWithETag("GET", newKey);
             ClassicAssert.AreEqual(origValue, etagRes[0].ToString());
             ClassicAssert.AreEqual(0, (long)etagRes[1]);
         }

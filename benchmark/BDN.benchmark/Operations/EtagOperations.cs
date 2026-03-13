@@ -10,7 +10,7 @@ namespace BDN.benchmark.Operations
     /// Benchmark for RawStringOperations
     /// </summary>
     [MemoryDiagnoser]
-    public class EtagOperations : OperationsBase
+    public class ETagOperations : OperationsBase
     {
         static ReadOnlySpan<byte> SETWITHETAG => "*4\r\n$12\r\nEXECWITHETAG\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\na\r\n"u8;
         Request setwithetag;
@@ -37,7 +37,7 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void SetWithEtag()
+        public void SetWithETag()
         {
             Send(setwithetag);
         }
@@ -49,7 +49,7 @@ namespace BDN.benchmark.Operations
         }
 
         [Benchmark]
-        public void GetWithEtag()
+        public void GetWithETag()
         {
             Send(getwithetag);
         }

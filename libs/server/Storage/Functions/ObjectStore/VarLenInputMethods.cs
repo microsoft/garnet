@@ -38,7 +38,7 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasEtag(srcLogRecord.ETag, ref input.metaCommandInfo),
+                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasETag(srcLogRecord.ETag, ref input.metaCommandInfo),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
         }

@@ -21,7 +21,7 @@ namespace Garnet.test.Resp.ETag
         /// <param name="command">The RESP command to execute.</param>
         /// <param name="args">Arguments for the command.</param>
         /// <returns>A <see cref="RedisResult"/> containing the ETag and command result.</returns>
-        public static RedisResult ExecWithEtag(this IDatabase db, string command, params object[] args)
+        public static RedisResult ExecWithETag(this IDatabase db, string command, params object[] args)
         {
             var fullArgs = new object[] { command }.Concat(args).ToArray();
             return db.Execute("EXECWITHETAG", fullArgs);
@@ -35,7 +35,7 @@ namespace Garnet.test.Resp.ETag
         /// <param name="command">The RESP command to execute.</param>
         /// <param name="args">Arguments for the command.</param>
         /// <returns>A task representing the <see cref="RedisResult"/> containing the ETag and command result.</returns>
-        public static Task<RedisResult> ExecWithEtagAsync(this IDatabase db, string command, params object[] args)
+        public static Task<RedisResult> ExecWithETagAsync(this IDatabase db, string command, params object[] args)
         {
             var fullArgs = new object[] { command }.Concat(args).ToArray();
             return db.ExecuteAsync("EXECWITHETAG", fullArgs);
@@ -132,7 +132,7 @@ namespace Garnet.test.Resp.ETag
         /// <param name="command">The RESP command to execute.</param>
         /// <param name="args">Arguments for the command.</param>
         /// <returns>A task representing the <see cref="RedisResult"/> containing the ETag and command result.</returns>
-        public static Task<RedisResult> ExecWithEtagAsync(this ITransaction tran, string command, params object[] args)
+        public static Task<RedisResult> ExecWithETagAsync(this ITransaction tran, string command, params object[] args)
         {
             var fullArgs = new object[] { command }.Concat(args).ToArray();
             return tran.ExecuteAsync("EXECWITHETAG", fullArgs);

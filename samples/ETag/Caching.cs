@@ -77,8 +77,8 @@ public class Caching
 
             if (int.TryParse(input, out int reviewId) && reviewId >= 0 && reviewId <= 19)
             {
-                var (existingEtag, existingItem) = localApplicationState[reviewId];
-                var (etag, movieReview) = await ETagAbstractions.GetIfNotMatch<MovieReview>(db, reviewId.ToString(), existingEtag, existingItem);
+                var (existingETag, existingItem) = localApplicationState[reviewId];
+                var (etag, movieReview) = await ETagAbstractions.GetIfNotMatch<MovieReview>(db, reviewId.ToString(), existingETag, existingItem);
 
                 if (movieReview != null)
                 {
@@ -131,7 +131,7 @@ public class Caching
             // choose a random number [0 - 19] aka review ID in our database
             // change the review and rating for it
             string serverToMessWith = random.Next(19).ToString();
-            var (etag, movieReview) = await ETagAbstractions.GetWithEtag<MovieReview>(db, serverToMessWith);
+            var (etag, movieReview) = await ETagAbstractions.GetWithETag<MovieReview>(db, serverToMessWith);
             await ETagAbstractions.PerformLockFreeSafeUpdate<MovieReview>(db, serverToMessWith, etag, movieReview!,
             (movieReview) =>
             {

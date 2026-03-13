@@ -729,7 +729,7 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var outputEtag = false;
+            var outputETag = false;
             if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
             {
                 if (!IsMetaCommandInfoValid())
@@ -744,7 +744,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    outputEtag = true;
+                    outputETag = true;
                     etag = -1;
                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                         SendAndReset();
@@ -811,7 +811,7 @@ namespace Garnet.server
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
 
-            if (outputEtag)
+            if (outputETag)
                 while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
                     SendAndReset();
 
@@ -1042,7 +1042,7 @@ namespace Garnet.server
                 // Slow commands
                 RespCommand.LCS => NetworkLCS(ref storageApi),
 
-                // Etag related commands
+                // ETag related commands
                 RespCommand.GETETAG => NetworkGETETAG(ref storageApi),
 
                 _ => Process(command, ref storageApi)

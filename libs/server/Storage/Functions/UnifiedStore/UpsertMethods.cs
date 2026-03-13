@@ -45,16 +45,16 @@ namespace Garnet.server
             if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
-            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithEtag);
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
 
-            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
+            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedEtag);
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
                 Debug.Assert(execOp);
-                if (!dstLogRecord.TrySetETag(updatedEtag))
+                if (!dstLogRecord.TrySetETag(updatedETag))
                     return false;
 
-                output.ETag = updatedEtag;
+                output.ETag = updatedETag;
             }
             else if (!dstLogRecord.RemoveETag())
                 return false;
@@ -182,16 +182,16 @@ namespace Garnet.server
             if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
-            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithEtag);
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
 
-            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
+            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedEtag);
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
                 Debug.Assert(execOp);
-                if (!logRecord.TrySetETag(updatedEtag))
+                if (!logRecord.TrySetETag(updatedETag))
                     return false;
 
-                output.ETag = updatedEtag;
+                output.ETag = updatedETag;
             }
             else if (!logRecord.RemoveETag())
                 return false;

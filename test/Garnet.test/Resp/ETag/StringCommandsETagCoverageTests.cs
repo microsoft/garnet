@@ -14,11 +14,11 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class StringCommandsETagCoverageTests : ETagCoverageTestsBase
     {
-        static readonly RedisKey[] StringKeys = [KeysWithEtag[0], "key2", "key3"];
+        static readonly RedisKey[] StringKeys = [KeysWithETag[0], "key2", "key3"];
 
-        static readonly RedisKey[] HllKeys = [KeysWithEtag[1], "hllKey2"];
+        static readonly RedisKey[] HllKeys = [KeysWithETag[1], "hllKey2"];
 
-        static readonly RedisKey[] BitmapKeys = [KeysWithEtag[2], "bmKey2", "bmKey3"];
+        static readonly RedisKey[] BitmapKeys = [KeysWithETag[2], "bmKey2", "bmKey3"];
 
         static readonly string[] StringData = ["1", "2", "3"];
 
@@ -500,28 +500,28 @@ namespace Garnet.test.Resp.ETag
             if (nxKey) return;
 
             var setCmdArgs = new object[] { StringKeys[0], StringData[0] };
-            var results = (RedisResult[])db.ExecWithEtag("SET", setCmdArgs);
+            var results = (RedisResult[])db.ExecWithETag("SET", setCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull((string)results[0]);
-            ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
+            ClassicAssert.AreEqual(1, (long)results[1]); // ETag 1
 
             var pfAddCmdArgs = new object[] { HllKeys[0], StringData[0] };
-            results = (RedisResult[])db.ExecWithEtag("PFADD", pfAddCmdArgs);
+            results = (RedisResult[])db.ExecWithETag("PFADD", pfAddCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
-            ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
+            ClassicAssert.AreEqual(1, (long)results[1]); // ETag 1
 
             success = db.HyperLogLogAdd(HllKeys[1], StringData[2]);
             ClassicAssert.IsTrue(success);
 
             setCmdArgs = [BitmapKeys[0], BitmapData[0]];
-            results = (RedisResult[])db.ExecWithEtag("SET", setCmdArgs);
+            results = (RedisResult[])db.ExecWithETag("SET", setCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull((string)results[0]);
-            ClassicAssert.AreEqual(1, (long)results[1]); // Etag 1
+            ClassicAssert.AreEqual(1, (long)results[1]); // ETag 1
 
             success = db.StringSet(BitmapKeys[1], BitmapData[1]);
             ClassicAssert.IsTrue(success);

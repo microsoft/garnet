@@ -38,86 +38,86 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public void SortedSetAddWithEtagTest()
+        public void SortedSetAddWithETagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // Add new sorted set with Etag
-            var results = (string[])db.ExecWithEtag("ZADD", "key1", "1", "a", "2", "b");
+            // Add new sorted set with ETag
+            var results = (string[])db.ExecWithETag("ZADD", "key1", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
-            // Add existing field to sorted set with Etag flag
-            results = (string[])db.ExecWithEtag("ZADD", "key1", "1", "a");
+            // Add existing field to sorted set with ETag flag
+            results = (string[])db.ExecWithETag("ZADD", "key1", "1", "a");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // 0 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
-            // Add existing field to sorted set without Etag flag
+            // Add existing field to sorted set without ETag flag
             var result = (string)db.Execute("ZADD", "key1", "2", "b");
             ClassicAssert.AreEqual(0, long.Parse(result!)); // 0 elements added
 
-            // Verify Etag did not advance
+            // Verify ETag did not advance
             result = (string)db.Execute("GETETAG", "key1");
-            ClassicAssert.AreEqual(1, long.Parse(result!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(result!)); // ETag 1
 
-            // Add non-existing field to sorted set with Etag flag
-            results = (string[])db.ExecWithEtag("ZADD", "key1", "3", "c");
+            // Add non-existing field to sorted set with ETag flag
+            results = (string[])db.ExecWithETag("ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // ETag 2
 
-            // Add non-existing field to sorted set without Etag flag
+            // Add non-existing field to sorted set without ETag flag
             result = (string)db.Execute("ZADD", "key1", "4", "d");
             ClassicAssert.AreEqual(1, long.Parse(result!)); // 1 element added
 
-            // Verify Etag advanced
+            // Verify ETag advanced
             result = (string)db.Execute("GETETAG", "key1");
-            ClassicAssert.AreEqual(3, long.Parse(result!)); // Etag 3
+            ClassicAssert.AreEqual(3, long.Parse(result!)); // ETag 3
 
-            // Add new sorted set without Etag
+            // Add new sorted set without ETag
             result = (string)db.Execute("ZADD", "key2", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(result);
             ClassicAssert.AreEqual(2, long.Parse(result!)); // 2 elements added
 
-            // Verify Etag is 0
+            // Verify ETag is 0
             result = (string)db.Execute("GETETAG", "key2");
-            ClassicAssert.AreEqual(0, long.Parse(result!)); // Etag 0
+            ClassicAssert.AreEqual(0, long.Parse(result!)); // ETag 0
 
-            // Add existing field to sorted set with Etag flag
-            results = (string[])db.ExecWithEtag("ZADD", "key2", "1", "a");
+            // Add existing field to sorted set with ETag flag
+            results = (string[])db.ExecWithETag("ZADD", "key2", "1", "a");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // 0 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
-            // Add non-existing field to sorted set with Etag flag
-            results = (string[])db.ExecWithEtag("ZADD", "key2", "3", "c");
+            // Add non-existing field to sorted set with ETag flag
+            results = (string[])db.ExecWithETag("ZADD", "key2", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // ETag 2
         }
 
         [Test]
-        public void SortedSetBlockingPopWithEtagTest()
+        public void SortedSetBlockingPopWithETagTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var key = "key1";
 
-            // Add new sorted set with Etag
-            var results = (string[])db.ExecWithEtag("ZADD", key, "1", "a", "2", "b", "3", "c");
+            // Add new sorted set with ETag
+            var results = (string[])db.ExecWithETag("ZADD", key, "1", "a", "2", "b", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(3, long.Parse(results[0]!)); // 3 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
             // Perform a blocking pop
             var response = lightClientRequest.SendCommand($"BZMPOP 1 1 {key} MIN", 2);
@@ -128,111 +128,111 @@ namespace Garnet.test.Resp.ETag
             var card = db.SortedSetLength(key);
             ClassicAssert.AreEqual(2, card);
 
-            // Verify Etag advanced
+            // Verify ETag advanced
             var result = (string)db.Execute("GETETAG", key);
-            ClassicAssert.AreEqual(2, long.Parse(result!)); // Etag 2
+            ClassicAssert.AreEqual(2, long.Parse(result!)); // ETag 2
         }
 
         [Test]
-        public void SortedSetRMWOpsWithEtagTest()
+        public void SortedSetRMWOpsWithETagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             var key = "key1";
 
-            // Add new sorted set with Etag
-            var results = (string[])db.ExecWithEtag("ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
+            // Add new sorted set with ETag
+            var results = (string[])db.ExecWithETag("ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(4, long.Parse(results[0]!)); // 3 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
             // ZINCRBY
             var score = db.SortedSetIncrement(key, "a", 1);
             ClassicAssert.AreEqual(2, score); // New score 2
 
-            // Verify Etag advanced
+            // Verify ETag advanced
             var result = (string)db.Execute("GETETAG", key);
-            ClassicAssert.AreEqual(2, long.Parse(result!)); // Etag 2
+            ClassicAssert.AreEqual(2, long.Parse(result!)); // ETag 2
 
             // ZMPOP
             var members = db.SortedSetPop(key, 1, Order.Descending);
             ClassicAssert.AreEqual(1, members.Length);
 
-            // Verify Etag advanced
+            // Verify ETag advanced
             result = (string)db.Execute("GETETAG", key);
-            ClassicAssert.AreEqual(3, long.Parse(result!)); // Etag 3
+            ClassicAssert.AreEqual(3, long.Parse(result!)); // ETag 3
 
             // ZREM
             var removed = db.SortedSetRemove(key, "b");
             ClassicAssert.IsTrue(removed);
 
-            // Verify Etag advanced
+            // Verify ETag advanced
             result = (string)db.Execute("GETETAG", key);
-            ClassicAssert.AreEqual(4, long.Parse(result!)); // Etag 4
+            ClassicAssert.AreEqual(4, long.Parse(result!)); // ETag 4
         }
 
         [Test]
-        public void SortedSetAddConditionalEtagTest()
+        public void SortedSetAddConditionalETagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // Add new sorted set with Etag when etag matches 0
+            // Add new sorted set with ETag when etag matches 0
             var results = (string[])db.ExecIfMatch(0, "ZADD", "key1", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
-            // Add new sorted set with Etag when etag matches 1
+            // Add new sorted set with ETag when etag matches 1
             results = (string[])db.ExecIfMatch(1, "ZADD", "key2", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // ETag 2
 
             // Add non-existing field to sorted set when etag < 1
             results = (string[])db.ExecIfGreater(1, "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull(results[0]); // Command not executed
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
             // Add non-existing field to sorted set when etag < 2
             results = (string[])db.ExecIfGreater(2, "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // ETag 2
 
-            // Add new sorted set with Etag when etag matches 2
+            // Add new sorted set with ETag when etag matches 2
             results = (string[])db.ExecIfMatch(2, "ZADD", "key1", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
-            ClassicAssert.AreEqual(3, long.Parse(results[1]!)); // Etag 3
+            ClassicAssert.AreEqual(3, long.Parse(results[1]!)); // ETag 3
         }
 
         [Test]
-        public void SortedSetRemoveConditionalEtagTest()
+        public void SortedSetRemoveConditionalETagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             db.SortedSetAdd("key1", [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
 
-            // Remove item from sorted set without Etag when etag matches 0
+            // Remove item from sorted set without ETag when etag matches 0
             var results = (string[])db.ExecIfMatch(0, "ZREM", "key1", "a");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element removed
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
         }
 
         [Test]
-        public void SortedSetLengthConditionalEtagTest()
+        public void SortedSetLengthConditionalETagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -241,32 +241,32 @@ namespace Garnet.test.Resp.ETag
 
             db.SortedSetAdd(key, [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
 
-            // Get sorted set length with Etag when etag matches 0
+            // Get sorted set length with ETag when etag matches 0
             var results = (string[])db.ExecIfMatch(0, "ZCARD", key);
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Length 2
-            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // Etag 0
+            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // ETag 0
 
-            results = (string[])db.ExecWithEtag("ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
+            results = (string[])db.ExecWithETag("ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
-            // Get sorted set length with Etag when etag matches 1
+            // Get sorted set length with ETag when etag matches 1
             results = (string[])db.ExecIfMatch(1, "ZCARD", key);
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(4, long.Parse(results[0]!)); // Length 4
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
-            // Get sorted set length with Etag when etag does not match
+            // Get sorted set length with ETag when etag does not match
             results = (string[])db.ExecIfMatch(2, "ZCARD", key);
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.IsNull(results[0]); // Command not executed
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
         }
     }
 }

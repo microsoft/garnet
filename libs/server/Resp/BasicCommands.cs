@@ -672,16 +672,16 @@ namespace Garnet.server
             {
                 if (getValue)
                     input.header.SetSetGetFlag();
-                else
+                else if (!metaCommandInfo.MetaCommand.IsETagCommand())
                     input.header.flags |= RespInputFlags.SkipRespOutput;
 
-                // anything with getValue or withEtag always writes to the buffer in the happy path
+                // anything with getValue or withETag always writes to the buffer in the happy path
                 var output = GetStringOutput();
                 var status = storageApi.SET_Conditional(key, ref input, ref output);
 
                 etag = output.ETag;
 
-                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
+                // The data will be on the buffer either when we know the response is ok or when the withETag flag is set.
                 var ok = status != GarnetStatus.NOTFOUND;
 
                 if (!ok)

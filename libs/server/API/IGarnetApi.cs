@@ -1217,7 +1217,7 @@ namespace Garnet.server
         GarnetStatus GET(PinnedSpanByte key, out ObjectOutput value);
 
         /// <summary>
-        ///  Gets the Etag of a specified key.
+        ///  Gets the ETag of a specified key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>

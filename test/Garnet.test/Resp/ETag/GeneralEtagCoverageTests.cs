@@ -28,7 +28,7 @@ namespace Garnet.test.Resp.ETag
             RespCommand.SSUBSCRIBE
         ];
 
-        static readonly RedisKey[] StringKeys = [KeysWithEtag[0], KeysWithEtag[1], KeysWithEtag[2]];
+        static readonly RedisKey[] StringKeys = [KeysWithETag[0], KeysWithETag[1], KeysWithETag[2]];
 
         static readonly string[] StringData = ["1", "2", "3"];
 
@@ -65,7 +65,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task MultiExecTransactionWithEtagAsyncTest()
+        public async Task MultiExecTransactionWithETagAsyncTest()
         {
             await using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -79,7 +79,7 @@ namespace Garnet.test.Resp.ETag
 
             await txn.ExecuteAsync();
 
-            var result = await db.ExecWithEtagAsync(nameof(RespCommand.GET), StringKeys[0]);
+            var result = await db.ExecWithETagAsync(nameof(RespCommand.GET), StringKeys[0]);
             VerifyResultAndETag(result,
                 r => ClassicAssert.AreEqual(StringData[0] + StringData[1] + StringData[2], (string)r), 3);
 
@@ -92,13 +92,13 @@ namespace Garnet.test.Resp.ETag
 
             await txn.ExecuteAsync();
 
-            result = await db.ExecWithEtagAsync(nameof(RespCommand.GET), StringKeys[0]);
+            result = await db.ExecWithETagAsync(nameof(RespCommand.GET), StringKeys[0]);
             VerifyResultAndETag(result,
                 r => ClassicAssert.AreEqual(2, (long)r), 2);
         }
 
         [Test]
-        public async Task CustomCommandWithEtagUnsupportedTestAsync()
+        public async Task CustomCommandWithETagUnsupportedTestAsync()
         {
             server.Register.NewCommand("MY.SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
 
@@ -119,7 +119,7 @@ namespace Garnet.test.Resp.ETag
             var db = redis.GetDatabase(0);
 
             Assert.ThrowsAsync<RedisServerException>(async () =>
-                await db.ExecWithEtagAsync(nameof(RespCommand.SWAPDB), [1, 0]),
+                await db.ExecWithETagAsync(nameof(RespCommand.SWAPDB), [1, 0]),
                 Encoding.ASCII.GetString(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD));
         }
 
@@ -129,7 +129,7 @@ namespace Garnet.test.Resp.ETag
             await using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var result = await db.ExecWithEtagAsync(nameof(RespCommand.SSUBSCRIBE), "hello");
+            var result = await db.ExecWithETagAsync(nameof(RespCommand.SSUBSCRIBE), "hello");
             VerifyErrorResult(result, string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, nameof(RespCommand.SSUBSCRIBE),
                 nameof(RespCommand.EXECWITHETAG).ToUpper()));
         }
@@ -145,10 +145,10 @@ namespace Garnet.test.Resp.ETag
             for (var i = 0; i < 2; i++)
             {
                 var setCmdArgs = new object[] { StringKeys[i], StringData[i] };
-                var results = (string[])db.ExecWithEtag("SET", setCmdArgs);
+                var results = (string[])db.ExecWithETag("SET", setCmdArgs);
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.IsNull(results[0]);
-                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
             }
 
             var expirationSet = db.KeyExpire(StringKeys[0], TimeSpan.FromMinutes(3));

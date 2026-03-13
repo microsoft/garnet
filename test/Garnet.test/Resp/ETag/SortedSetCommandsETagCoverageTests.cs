@@ -17,7 +17,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class SortedSetCommandsETagCoverageTests : ETagCoverageTestsBase
     {
-        static readonly RedisKey[] SortedSetKeys = [KeysWithEtag[0], "ssKey2", "ssKey3"];
+        static readonly RedisKey[] SortedSetKeys = [KeysWithETag[0], "ssKey2", "ssKey3"];
 
         static readonly SortedSetEntry[][] SortedSetData =
         [
@@ -651,10 +651,10 @@ namespace Garnet.test.Resp.ETag
 
             var zaddCmdArgs = new object[] { SortedSetKeys[0] }.Concat(SortedSetData[0]
                 .SelectMany(e => new[] { e.Score.ToString(), e.Element.ToString() })).ToArray();
-            var results = (string[])db.ExecWithEtag("ZADD", zaddCmdArgs);
+            var results = (string[])db.ExecWithETag("ZADD", zaddCmdArgs);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(SortedSetData[0].Length, long.Parse(results[0]!));
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
             var result = (long)db.Execute("ZEXPIRE", SortedSetKeys[0], 3, "MEMBERS", 1, SortedSetData[0][0].Element);
 

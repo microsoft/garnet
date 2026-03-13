@@ -22,9 +22,9 @@ namespace Garnet.server
         /// <summary>
         /// Execute the main command and add the current etag to the output
         /// </summary>
-        ExecWithEtag,
+        ExecWithETag,
 
-        // Beginning of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands before this, update IsEtagCondExecCommand)
+        // Beginning of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands before this, update IsETagCondExecCommand)
 
         /// <summary>
         /// Execute the main command if the current etag matches a specified etag
@@ -39,7 +39,7 @@ namespace Garnet.server
         /// </summary>
         ExecIfGreater,
 
-        // End of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands after this, update IsEtagCondExecCommand)
+        // End of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands after this, update IsETagCondExecCommand)
 
         // End of etag-related meta-commands (if adding new etag meta-commands after this, update IsETagCommand)
     }
@@ -52,14 +52,14 @@ namespace Garnet.server
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if etag meta-command</returns>
         public static bool IsETagCommand(this RespMetaCommand metaCmd)
-            => metaCmd is >= RespMetaCommand.ExecWithEtag and <= RespMetaCommand.ExecIfGreater;
+            => metaCmd is >= RespMetaCommand.ExecWithETag and <= RespMetaCommand.ExecIfGreater;
 
         /// <summary>
         /// Check if meta command is an etag-related conditional execution meta-command
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if etag meta-command</returns>
-        public static bool IsEtagCondExecCommand(this RespMetaCommand metaCmd)
+        public static bool IsETagCondExecCommand(this RespMetaCommand metaCmd)
             => metaCmd is >= RespMetaCommand.ExecIfMatch and <= RespMetaCommand.ExecIfGreater;
 
         /// <summary>
@@ -75,12 +75,12 @@ namespace Garnet.server
         /// Check conditional execution of command based on meta-command
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
-        /// <param name="currEtag">Current etag record</param>
-        /// <param name="compEtag">Etag comparand</param>
+        /// <param name="currETag">Current etag record</param>
+        /// <param name="compETag">ETag comparand</param>
         /// <returns>True if command should execute</returns>
-        public static bool CheckConditionalExecution(this RespMetaCommand metaCmd, long currEtag, long compEtag)
+        public static bool CheckConditionalExecution(this RespMetaCommand metaCmd, long currETag, long compETag)
         {
-            var comparisonResult = compEtag.CompareTo(currEtag);
+            var comparisonResult = compETag.CompareTo(currETag);
             return metaCmd switch
             {
                 RespMetaCommand.ExecIfMatch => comparisonResult == 0,
@@ -216,41 +216,41 @@ namespace Garnet.server
         /// <summary>
         /// Check whether an operation should execute based on the current meta command and the current record's etag.
         /// </summary>
-        /// <param name="currEtag">Current etag</param>
-        /// <param name="updatedEtag">Etag value that should be assigned to the record, should the operation run and succeed</param>
+        /// <param name="currETag">Current etag</param>
+        /// <param name="updatedETag">ETag value that should be assigned to the record, should the operation run and succeed</param>
         /// <param name="initContext">True if method called from initial updater context</param>
         /// <param name="readOnlyContext">True if method called from read-only context</param>
         /// <returns>True if operation should execute</returns>
-        public bool CheckConditionalExecution(long currEtag, out long updatedEtag, bool initContext = false, bool readOnlyContext = false)
+        public bool CheckConditionalExecution(long currETag, out long updatedETag, bool initContext = false, bool readOnlyContext = false)
         {
-            updatedEtag = currEtag;
+            updatedETag = currETag;
 
             // If there is no meta-command or current record does not have an etag - nothing to check
-            if (!MetaCommand.IsETagCommand() && currEtag == LogRecord.NoETag)
+            if (!MetaCommand.IsETagCommand() && currETag == LogRecord.NoETag)
                 return true;
 
             var execCmd = true;
-            long inputEtag = LogRecord.NoETag;
+            long inputETag = LogRecord.NoETag;
 
             // If current meta-command is a conditional-execution command, check the condition against the input etag.
-            if (MetaCommand.IsEtagCondExecCommand())
+            if (MetaCommand.IsETagCondExecCommand())
             {
-                inputEtag = Arg1;
+                inputETag = Arg1;
 
                 // If called from initial updater context, operation should execute regardless
                 if (!initContext)
-                    execCmd = MetaCommand.CheckConditionalExecution(currEtag, inputEtag);
+                    execCmd = MetaCommand.CheckConditionalExecution(currETag, inputETag);
             }
 
             // If operation should execute and not called from read-only context, 
             // update the etag value that should get assigned should the operation succeed.
             if (execCmd && !readOnlyContext)
             {
-                updatedEtag = MetaCommand switch
+                updatedETag = MetaCommand switch
                 {
-                    RespMetaCommand.None or RespMetaCommand.ExecWithEtag or RespMetaCommand.ExecIfNotMatch => currEtag + 1,
-                    RespMetaCommand.ExecIfMatch => inputEtag + 1,
-                    RespMetaCommand.ExecIfGreater => inputEtag,
+                    RespMetaCommand.None or RespMetaCommand.ExecWithETag or RespMetaCommand.ExecIfNotMatch => currETag + 1,
+                    RespMetaCommand.ExecIfMatch => inputETag + 1,
+                    RespMetaCommand.ExecIfGreater => inputETag,
                     _ => throw new ArgumentException($"Unexpected meta command: {MetaCommand}", nameof(MetaCommand)),
                 };
             }

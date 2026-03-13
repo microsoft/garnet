@@ -15,7 +15,7 @@ namespace Garnet.test.Resp.ETag
     {
         protected GarnetServer server;
 
-        protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2", "keyWithEtag3", "keyWithEtag4", "keyWithEtag5", "keyWithEtag6"];
+        protected static readonly string[] KeysWithETag = ["keyWithETag1", "keyWithETag2", "keyWithETag3", "keyWithETag4", "keyWithETag5", "keyWithETag6"];
         protected HashSet<RespCommand> NoKeyCommands = new();
         protected HashSet<RespCommand> OverwriteCommands = new();
         protected HashSet<RespCommand> DeleteCommands = [RespCommand.DEL, RespCommand.GETDEL, RespCommand.UNLINK];
@@ -137,7 +137,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         protected async Task CheckCommandAsync(RespCommand command, object[] commandArgs,
-            Action<RedisResult> verifyResult, int[] checkKeysWithEtag = null, bool nxKey = false,
+            Action<RedisResult> verifyResult, int[] checkKeysWithETag = null, bool nxKey = false,
             bool isReadOnly = false, int? totalKeys = null)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
@@ -147,17 +147,17 @@ namespace Garnet.test.Resp.ETag
 
             if (!nxKey)
             {
-                checkKeysWithEtag ??= [0];
+                checkKeysWithETag ??= [0];
 
                 // Verify all keys set-up with ETags have an ETag of 1
-                foreach (var i in checkKeysWithEtag)
+                foreach (var i in checkKeysWithETag)
                 {
-                    var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
+                    var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithETag[i]);
                     ClassicAssert.AreEqual(1, etag);
                 }
 
                 // Check running the command without a meta-command
-                await CheckCommandWithoutMetaCommand(db, command, commandArgs, verifyResult, checkKeysWithEtag, isReadOnly);
+                await CheckCommandWithoutMetaCommand(db, command, commandArgs, verifyResult, checkKeysWithETag, isReadOnly);
             }
 
             // Check running the command with different meta-commands
@@ -165,7 +165,7 @@ namespace Garnet.test.Resp.ETag
             if (!MetaCommandUnsupportedCommands.Contains(command) || (MultiKeyCommandsSupportingSingleKey.Contains(command) && totalKeys == 1))
             {
                 // Check running the command with EXECWITHETAG meta-command
-                await CheckCommandWithExecWithEtag(db, command, commandArgs, verifyResult, nxKey, isReadOnly);
+                await CheckCommandWithExecWithETag(db, command, commandArgs, verifyResult, nxKey, isReadOnly);
 
                 // Check running the command with EXECIFMATCH meta-command
                 await CheckCommandWithExecIfMatch(db, command, commandArgs, verifyResult, nxKey, isReadOnly);
@@ -183,7 +183,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         private async Task CheckCommandWithoutMetaCommand(IDatabase db, RespCommand command, object[] commandArgs,
-            Action<RedisResult> verifyResult, int[] checkKeysWithEtag, bool isReadOnly)
+            Action<RedisResult> verifyResult, int[] checkKeysWithETag, bool isReadOnly)
         {
             CurrMetaCommand = RespMetaCommand.None;
             CommandExecuted = true;
@@ -193,35 +193,35 @@ namespace Garnet.test.Resp.ETag
             verifyResult(result);
 
             // Verify ETags post-command
-            foreach (var i in checkKeysWithEtag)
+            foreach (var i in checkKeysWithETag)
             {
                 // Get the current etag
-                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
+                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithETag[i]);
 
                 // Verify expected ETag -
                 // 1. If command overwrites / deletes the value - ETag should be 0 
                 // 2. If command only changes the metadata of the record or is a read-only command - ETag should remain 1
                 // 3. Otherwise, ETag should advance to 2
-                var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
-                ClassicAssert.AreEqual(expectedEtag, etag);
+                var expectedETag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
+                ClassicAssert.AreEqual(expectedETag, etag);
             }
         }
 
-        private async Task CheckCommandWithExecWithEtag(IDatabase db, RespCommand command, object[] commandArgs,
+        private async Task CheckCommandWithExecWithETag(IDatabase db, RespCommand command, object[] commandArgs,
             Action<RedisResult> verifyResult, bool nxKey, bool isReadOnly)
         {
-            CurrMetaCommand = RespMetaCommand.ExecWithEtag;
+            CurrMetaCommand = RespMetaCommand.ExecWithETag;
             CommandExecuted = true;
 
             // Reset the data
             DataSetUp(nxKey);
 
             // Add the EXECWITHETAG meta-command
-            var result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
+            var result = await db.ExecWithETagAsync(command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || nxKey || MetadataCommands.Contains(command) ? 1 : 2;
-            VerifyResultAndETag(result, verifyResult, expectedEtag);
+            var expectedETag = DeleteCommands.Contains(command) || isReadOnly || nxKey || MetadataCommands.Contains(command) ? 1 : 2;
+            VerifyResultAndETag(result, verifyResult, expectedETag);
         }
 
         private async Task CheckCommandWithExecIfMatch(IDatabase db, RespCommand command, object[] commandArgs,
@@ -237,8 +237,8 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecIfMatchAsync(nxKey ? 0 : 1, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
-            VerifyResultAndETag(result, verifyResult, expectedEtag);
+            var expectedETag = DeleteCommands.Contains(command) || nxKey || isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
+            VerifyResultAndETag(result, verifyResult, expectedETag);
 
             // Reset the data
             DataSetUp(nxKey);
@@ -276,8 +276,8 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecIfNotMatchAsync(2, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || nxKey || isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
-            VerifyResultAndETag(result, verifyResult, expectedEtag);
+            var expectedETag = DeleteCommands.Contains(command) || nxKey || isReadOnly || MetadataCommands.Contains(command) ? 1 : 2;
+            VerifyResultAndETag(result, verifyResult, expectedETag);
 
             // Reset the data
             DataSetUp(nxKey);
@@ -315,8 +315,8 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecIfGreaterAsync(3, command.ToString(), commandArgs);
 
             // Verify result & expected ETag
-            var expectedEtag = DeleteCommands.Contains(command) || isReadOnly || MetadataCommands.Contains(command) ? 1 : 3;
-            VerifyResultAndETag(result, verifyResult, expectedEtag);
+            var expectedETag = DeleteCommands.Contains(command) || isReadOnly || MetadataCommands.Contains(command) ? 1 : 3;
+            VerifyResultAndETag(result, verifyResult, expectedETag);
 
             // Reset the data
             DataSetUp(nxKey);
@@ -344,7 +344,7 @@ namespace Garnet.test.Resp.ETag
         protected async Task CheckCommandWithUnsupportedMetaCommandAsync(IDatabase db, RespCommand command, object[] commandArgs)
         {
             // Add the EXECWITHETAG meta-command (error expected)
-            var result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
+            var result = await db.ExecWithETagAsync(command.ToString(), commandArgs);
             VerifyErrorResult(result, string.Format(CmdStrings.GenericErrCmdUnsupportedWithMetaCommand, command.ToString(), "EXECWITHETAG"));
 
             // Add the EXECIFMATCH meta-command (error expected)
@@ -373,12 +373,12 @@ namespace Garnet.test.Resp.ETag
         internal void VerifyErrorResult(RedisResult result, string expectedError)
             => VerifyResultAndETag(result, r => ClassicAssert.AreEqual(expectedError, r.ToString()), -1);
 
-        protected async Task CheckBlockingCommandAsync(RespCommand command, object[] commandArgs, Action<byte[]> verifyResult, int[] checkKeysWithEtag = null)
+        protected async Task CheckBlockingCommandAsync(RespCommand command, object[] commandArgs, Action<byte[]> verifyResult, int[] checkKeysWithETag = null)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            checkKeysWithEtag ??= [0];
+            checkKeysWithETag ??= [0];
 
             var blockingTask = Task.Run(() =>
             {
@@ -406,15 +406,15 @@ namespace Garnet.test.Resp.ETag
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
 
-            foreach (var i in checkKeysWithEtag)
+            foreach (var i in checkKeysWithETag)
             {
-                var exists = await db.KeyExistsAsync(KeysWithEtag[i]);
+                var exists = await db.KeyExistsAsync(KeysWithETag[i]);
                 ClassicAssert.IsTrue(exists);
 
-                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
+                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithETag[i]);
 
-                var expectedEtag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : MetadataCommands.Contains(command) ? 1 : 2;
-                ClassicAssert.AreEqual(expectedEtag, etag);
+                var expectedETag = OverwriteCommands.Contains(command) || DeleteCommands.Contains(command) ? 0 : MetadataCommands.Contains(command) ? 1 : 2;
+                ClassicAssert.AreEqual(expectedETag, etag);
             }
         }
     }

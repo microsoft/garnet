@@ -15,7 +15,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class ListCommandsETagCoverageTests : ETagCoverageTestsBase
     {
-        static readonly RedisKey[] ListKeys = [KeysWithEtag[0], KeysWithEtag[1], "lKey3", "lKey4"];
+        static readonly RedisKey[] ListKeys = [KeysWithETag[0], KeysWithETag[1], "lKey3", "lKey4"];
 
         static readonly RedisValue[][] ListData =
         [
@@ -345,11 +345,11 @@ namespace Garnet.test.Resp.ETag
             for (var i = 0; i < 2; i++)
             {
                 var sAddCmdArgs = new object[] { ListKeys[i] }.Concat(ListData[i].Select(d => d.ToString())).ToArray();
-                var results = (string[])db.ExecWithEtag("RPUSH", sAddCmdArgs);
+                var results = (string[])db.ExecWithETag("RPUSH", sAddCmdArgs);
 
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.AreEqual(ListData[i].Length, long.Parse(results[0]!));
-                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
             }
 
             var result = db.ListRightPush(ListKeys[2], ListData[2]);

@@ -16,11 +16,11 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class UnifiedCommandsETagCoverageTest : ETagCoverageTestsBase
     {
-        static readonly RedisKey[] StringKeys = [KeysWithEtag[0], KeysWithEtag[1], KeysWithEtag[2]];
+        static readonly RedisKey[] StringKeys = [KeysWithETag[0], KeysWithETag[1], KeysWithETag[2]];
 
         static readonly string[] StringData = ["1", "2", "3"];
 
-        static readonly RedisKey[] ListKeys = [KeysWithEtag[3], KeysWithEtag[4], KeysWithEtag[5]];
+        static readonly RedisKey[] ListKeys = [KeysWithETag[3], KeysWithETag[4], KeysWithETag[5]];
 
         static readonly RedisValue[][] ListData =
         [
@@ -144,7 +144,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task GetEtagETagTestAsync()
+        public async Task GetETagETagTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
@@ -414,10 +414,10 @@ namespace Garnet.test.Resp.ETag
             for (var i = 0; i < 2; i++)
             {
                 var setCmdArgs = new object[] { StringKeys[i], StringData[i] };
-                var results = (string[])db.ExecWithEtag("SET", setCmdArgs);
+                var results = (string[])db.ExecWithETag("SET", setCmdArgs);
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.IsNull(results[0]);
-                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
             }
 
             var expirationSet = db.KeyExpire(StringKeys[0], TimeSpan.FromMinutes(3));
@@ -426,18 +426,18 @@ namespace Garnet.test.Resp.ETag
             for (var i = 0; i < 2; i++)
             {
                 var sAddCmdArgs = new object[] { ListKeys[i] }.Concat(ListData[i].Select(d => d.ToString())).ToArray();
-                var results = (string[])db.ExecWithEtag("RPUSH", sAddCmdArgs);
+                var results = (string[])db.ExecWithETag("RPUSH", sAddCmdArgs);
 
                 ClassicAssert.AreEqual(2, results!.Length);
                 ClassicAssert.AreEqual(ListData[i].Length, long.Parse(results[0]!));
-                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
             }
 
             expirationSet = db.KeyExpire(ListKeys[1], TimeSpan.FromMinutes(3));
             ClassicAssert.IsTrue(expirationSet);
         }
 
-        private async Task CheckRenameCommandAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int srcKeyWithEtag, int dstKeyWithEtag, bool dstKeyNx)
+        private async Task CheckRenameCommandAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int srcKeyWithETag, int dstKeyWithETag, bool dstKeyNx)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -445,12 +445,12 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey: false);
 
             // Verify all keys set-up with ETags have an ETag of 1
-            var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[srcKeyWithEtag]);
+            var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithETag[srcKeyWithETag]);
             ClassicAssert.AreEqual(1, etag);
 
             if (!dstKeyNx)
             {
-                etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[dstKeyWithEtag]);
+                etag = (long)await db.ExecuteAsync("GETETAG", KeysWithETag[dstKeyWithETag]);
                 ClassicAssert.AreEqual(1, etag);
             }
 
@@ -460,11 +460,11 @@ namespace Garnet.test.Resp.ETag
             verifyResult(result);
 
             // Check source key name does not exist
-            var exists = db.KeyExists(KeysWithEtag[srcKeyWithEtag]);
+            var exists = db.KeyExists(KeysWithETag[srcKeyWithETag]);
             ClassicAssert.IsFalse(exists);
 
             // Verify dest key etag post-command
-            etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[dstKeyWithEtag]);
+            etag = (long)await db.ExecuteAsync("GETETAG", KeysWithETag[dstKeyWithETag]);
 
             // Verify expected ETag - 0 (RENAME without EXECWITHETAG zeroes out the etag)
             ClassicAssert.AreEqual(0, etag);
@@ -473,7 +473,7 @@ namespace Garnet.test.Resp.ETag
             DataSetUp(nxKey: false);
 
             // Add the EXECWITHETAG meta-command
-            result = await db.ExecWithEtagAsync(command.ToString(), commandArgs);
+            result = await db.ExecWithETagAsync(command.ToString(), commandArgs);
 
             // Verify result & expected ETag (RENAME with EXECWITHETAG advances the etag)
             VerifyResultAndETag(result, verifyResult, dstKeyNx ? 1 : 2);

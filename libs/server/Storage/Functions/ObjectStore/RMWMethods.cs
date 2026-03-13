@@ -54,16 +54,16 @@ namespace Garnet.server
 
                 // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
                 var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
-                long updatedEtag = LogRecord.NoETag;
+                long updatedETag = LogRecord.NoETag;
                 if (isETagCmd)
-                    _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedEtag, initContext: true);
+                    _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedETag, initContext: true);
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
 
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // Increment on initial etag is for satisfying the variant that any key with no etag is the same as a zeroed etag
-                if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedEtag))
+                if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedETag))
                 {
                     functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
                     return false;
@@ -146,10 +146,10 @@ namespace Garnet.server
 
             var hadETagPreMutation = logRecord.Info.HasETag;
             var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
-            var updatedEtag = logRecord.ETag;
+            var updatedETag = logRecord.ETag;
 
             if ((isETagCmd || hadETagPreMutation) &&
-                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
+                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
             {
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
@@ -185,8 +185,8 @@ namespace Garnet.server
                 if (shouldUpdateETag)
                 {
                     // Should always succeed since we checked CanAddETagInPlace
-                    logRecord.TrySetETag(updatedEtag);
-                    output.ETag = updatedEtag;
+                    logRecord.TrySetETag(updatedETag);
+                    output.ETag = updatedETag;
                 }
                 else if (hadETagPreMutation)
                 {
@@ -272,11 +272,11 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = srcLogRecord.ETag;
+                var updatedETag = srcLogRecord.ETag;
                 if (isETagCmd || hadETagPreMutation)
                 {
                     // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
-                    var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedEtag);
+                    var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedETag);
                     Debug.Assert(execOp);
                 }
 
@@ -293,8 +293,8 @@ namespace Garnet.server
 
                 if (shouldUpdateETag)
                 {
-                    dstLogRecord.TrySetETag(updatedEtag);
-                    output.ETag = updatedEtag;
+                    dstLogRecord.TrySetETag(updatedETag);
+                    output.ETag = updatedETag;
                 }
                 else if (hadETagPreMutation)
                 {

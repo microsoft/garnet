@@ -204,14 +204,14 @@ namespace Garnet.test
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV").ConfigureAwait(false);
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecWithEtagAsync("GET", "the").ConfigureAwait(false);
+            var res = (RedisResult[])await db.ExecWithETagAsync("GET", "the").ConfigureAwait(false);
 
             ClassicAssert.AreEqual("terminator", res[0].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
-            ClassicAssert.AreEqual(23, (long)res[1], "Incorrect Etag.");
+            ClassicAssert.AreEqual(23, (long)res[1], "Incorrect ETag.");
         }
 
         [Test]
-        public async Task RevivifiedRecordsShouldStillEnqueueToAofViaRmwAndClearEtagState()
+        public async Task RevivifiedRecordsShouldStillEnqueueToAofViaRmwAndClearETagState()
         {
             server.Dispose(false);
             SetupServerWithReviv(inChainOnly: true);

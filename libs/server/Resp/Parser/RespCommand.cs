@@ -2862,7 +2862,7 @@ namespace Garnet.server
 
             var metaCommand = cmd switch
             {
-                RespCommand.EXECWITHETAG => RespMetaCommand.ExecWithEtag,
+                RespCommand.EXECWITHETAG => RespMetaCommand.ExecWithETag,
                 RespCommand.EXECIFMATCH => RespMetaCommand.ExecIfMatch,
                 RespCommand.EXECIFNOTMATCH => RespMetaCommand.ExecIfNotMatch,
                 RespCommand.EXECIFGREATER => RespMetaCommand.ExecIfGreater,

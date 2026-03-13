@@ -245,7 +245,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(cmd.ToString());
 
             if (metaCommandInfo.MetaCommand != RespMetaCommand.None &&
-                metaCommandInfo.MetaCommand != RespMetaCommand.ExecWithEtag)
+                metaCommandInfo.MetaCommand != RespMetaCommand.ExecWithETag)
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_ETAG_META_CMD_RENAME_UNSUPPORTED);
 
             var key = parseState.GetArgSliceByRef(0);

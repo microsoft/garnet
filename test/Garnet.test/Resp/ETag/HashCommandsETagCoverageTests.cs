@@ -16,7 +16,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class HashCommandsETagCoverageTests : ETagCoverageTestsBase
     {
-        static readonly RedisKey[] HashKeys = [KeysWithEtag[0], "hKey2", "hKey3"];
+        static readonly RedisKey[] HashKeys = [KeysWithETag[0], "hKey2", "hKey3"];
 
         static readonly HashEntry[][] HashData =
         [
@@ -382,11 +382,11 @@ namespace Garnet.test.Resp.ETag
 
             var hSetCmdArgs = new object[] { HashKeys[0] }.Concat(HashData[0]
                 .SelectMany(e => new[] { e.Name.ToString(), e.Value.ToString() })).ToArray();
-            var results = (string[])db.ExecWithEtag("HSET", hSetCmdArgs);
+            var results = (string[])db.ExecWithETag("HSET", hSetCmdArgs);
 
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(HashData[0].Length, long.Parse(results[0]!));
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // ETag 1
 
             var result = (long)db.Execute("HEXPIRE", HashKeys[0], 3, "FIELDS", 1, HashData[0][0].Name);
             ClassicAssert.AreEqual(1, result);

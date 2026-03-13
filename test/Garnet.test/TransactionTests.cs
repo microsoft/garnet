@@ -445,7 +445,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task WatchTestWithSetWithEtag()
+        public async Task WatchTestWithSetWithETag()
         {
             var lightClientRequest = TestUtils.CreateRequest();
 

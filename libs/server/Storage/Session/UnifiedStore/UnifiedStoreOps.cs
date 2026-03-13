@@ -296,7 +296,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                long oldKeyEtag = LogRecord.NoETag;
+                long oldKeyETag = LogRecord.NoETag;
                 // Try to get the new key's etag, if exists
                 if (status != GarnetStatus.NOTFOUND)
                 {
@@ -305,7 +305,7 @@ namespace Garnet.server
                         // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                         var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
                         if (logRecord.Info.HasETag)
-                            oldKeyEtag = logRecord.ETag;
+                            oldKeyETag = logRecord.ETag;
                     }
                 }
 
@@ -321,7 +321,7 @@ namespace Garnet.server
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
 
-                    input.arg1 = oldKeyEtag;
+                    input.arg1 = oldKeyETag;
                     status = SET(newKey, ref input, ref output, in logRecord, ref context);
                     if (status == GarnetStatus.OK)
                     {

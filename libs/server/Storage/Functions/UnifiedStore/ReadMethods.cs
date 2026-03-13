@@ -42,7 +42,7 @@ namespace Garnet.server
             {
                 RespCommand.EXISTS => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
-                RespCommand.GETETAG => HandleGetEtag(in srcLogRecord, ref input, ref output),
+                RespCommand.GETETAG => HandleGetETag(in srcLogRecord, ref input, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
                 RespCommand.TTL or
@@ -56,7 +56,7 @@ namespace Garnet.server
             return result;
         }
 
-        private bool HandleGetEtag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedInput input,
+        private bool HandleGetETag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedInput input,
             ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             if (!input.header.CheckSkipRespOutputFlag())

@@ -66,11 +66,11 @@ namespace Garnet.server
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
-            // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
-            var isEtagCommand = input.metaCommandInfo.MetaCommand.IsETagCommand();
-            long updatedEtag = LogRecord.NoETag;
-            if (isEtagCommand)
-                _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedEtag, initContext: true);
+            var isETagCommand = input.metaCommandInfo.MetaCommand.IsETagCommand();
+            long updatedETag = LogRecord.NoETag;
+            if (isETagCommand)
+                // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+                _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedETag, initContext: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -115,6 +115,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
+                    // For SET commands with an eTag meta-command, caller expects a null output
                     if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !input.header.CheckSkipRespOutputFlag())
                     {
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
@@ -136,6 +137,7 @@ namespace Garnet.server
 
                     break;
                 case RespCommand.SETKEEPTTL:
+                    // For SET commands with an eTag meta-command, caller expects a null output
                     if (input.metaCommandInfo.MetaCommand.IsETagCommand() && !input.header.CheckSkipRespOutputFlag())
                     {
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
@@ -313,15 +315,16 @@ namespace Garnet.server
                     break;
             }
 
-            if (updatedEtag != LogRecord.NoETag)
+            // Update the record's eTag, if necessary
+            if (updatedETag != LogRecord.NoETag)
             {
-                if (!logRecord.TrySetETag(updatedEtag))
+                if (!logRecord.TrySetETag(updatedETag))
                 {
                     functionsState.logger?.LogError("Could not set etag in {methodName} for command {cmdName}", nameof(InitialUpdater), cmd);
                     return false;
                 }
 
-                output.ETag = updatedEtag;
+                output.ETag = updatedETag;
             }
 
             // Success if we made it here
@@ -378,21 +381,17 @@ namespace Garnet.server
             }
 
             var hadETagPreMutation = logRecord.Info.HasETag;
-
             var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
-            var updatedEtag = logRecord.ETag;
+            var updatedETag = logRecord.ETag;
 
+            // Handle skipped execution based on eTag meta-command and current eTag value
             if ((isETagCmd || hadETagPreMutation) &&
-                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedEtag))
+                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
             {
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= StringOutputFlags.OperationSkipped;
                 rmwInfo.Action = RMWAction.CancelOperation;
-
-                if (cmd == RespCommand.SET)
-                    CopyRespTo(logRecord.ValueSpan, ref output);
-                else
-                    functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                functionsState.HandleSkippedExecution(in input.header, ref logRecord, ref output.SpanByteAndMemory);
 
                 return IPUResult.NotUpdated;
             }
@@ -410,6 +409,8 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!isETagCmd);
+
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
@@ -427,11 +428,14 @@ namespace Garnet.server
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!isETagCmd);
+
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
                     else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
                     {
+                        // For SET commands with an eTag meta-command, caller expects a null output
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
@@ -455,13 +459,14 @@ namespace Garnet.server
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!isETagCmd, "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!isETagCmd);
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
                     else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
                     {
+                        // For SET commands with an eTag meta-command, caller expects a null output
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
@@ -744,12 +749,12 @@ namespace Garnet.server
                     throw new GarnetException("Unsupported operation on input");
             }
 
-            // increment the Etag transparently if in place update happened
+            // increment the ETag transparently if in place update happened
             if (shouldUpdateETag)
             {
                 // Should always succeed since we checked CanAddETagInPlace
-                logRecord.TrySetETag(updatedEtag);
-                output.ETag = updatedEtag;
+                logRecord.TrySetETag(updatedETag);
+                output.ETag = updatedETag;
             }
             else if (hadETagPreMutation)
             {
@@ -779,6 +784,8 @@ namespace Garnet.server
 
                     if (input.header.CheckSetGetFlag())
                     {
+                        Debug.Assert(!input.metaCommandInfo.MetaCommand.IsETagCommand());
+
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
@@ -845,12 +852,13 @@ namespace Garnet.server
             var hadETagPreMutation = srcLogRecord.Info.HasETag;
             var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var shouldUpdateETag = hadETagPreMutation || isETagCmd;
-            var updatedEtag = srcLogRecord.ETag;
+            var updatedETag = srcLogRecord.ETag;
 
             if (isETagCmd || hadETagPreMutation)
             {
                 // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedEtag);
+                // We call this method to get the updated eTag value.
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedETag);
                 Debug.Assert(execOp);
             }
 
@@ -868,6 +876,7 @@ namespace Garnet.server
                     }
                     else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
                     {
+                        // For SET commands with an eTag meta-command, caller expects a null output
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
@@ -887,13 +896,14 @@ namespace Garnet.server
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!isETagCmd, "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!isETagCmd);
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
                     else if (isETagCmd && !input.header.CheckSkipRespOutputFlag())
                     {
+                        // For SET commands with an eTag meta-command, caller expects a null output
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
@@ -1236,11 +1246,13 @@ namespace Garnet.server
             }
 
 
+            // Update the record's eTag, if necessary
             if (shouldUpdateETag)
             {
-                dstLogRecord.TrySetETag(updatedEtag);
-                output.ETag = updatedEtag;
+                dstLogRecord.TrySetETag(updatedETag);
+                output.ETag = updatedETag;
             }
+            // Set the existing eTag in the new record if previous record had an eTag and we did not update it
             else if (hadETagPreMutation)
             {
                 dstLogRecord.TrySetETag(srcLogRecord.ETag);
