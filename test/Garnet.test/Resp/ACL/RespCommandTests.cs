@@ -6627,7 +6627,7 @@ namespace Garnet.test.Resp.ACL
             static async Task DoZRangeByLexAsync(GarnetClient client)
             {
                 string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "[abc", "[def"])
-                    .ConfigureAwait(false;
+                    .ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, val.Length);
             }
 
