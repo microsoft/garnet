@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -50,8 +51,26 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+
+                var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
+                long updatedETag = LogRecord.NoETag;
+                if (isETagCmd)
+                    // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+                    _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedETag, initContext: true);
+
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
+
+                // Increment on initial etag is for satisfying the variant that any key with no etag is the same as a zeroed etag
+                if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedETag))
+                {
+                    functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
+                    return false;
+                }
+
+                output.ETag = logRecord.ETag;
+
                 return true;
             }
 
@@ -119,14 +138,40 @@ namespace Garnet.server
 
                 // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
-                logRecord.ClearValueIfHeap(obj => { });
+                logRecord.ClearValueIfHeap(_ => { });
                 rmwInfo.Action = RMWAction.ExpireAndResume;
+                logRecord.RemoveETag();
                 return false;
             }
 
+            var hadETagPreMutation = logRecord.Info.HasETag;
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
+            var updatedETag = logRecord.ETag;
+
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+            if ((isETagCmd || hadETagPreMutation) &&
+                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
+            {
+                // Handle skipped execution based on eTag meta-command and current eTag value
+                output.ETag = logRecord.ETag;
+                output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
+                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+            }
+
+            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
+            if (!hadETagPreMutation && isETagCmd &&
+                !logRecord.CanAddETagInPlace(out _, out _, out _))
+                return false;
+
+            var shouldUpdateETag = !hadETagPreMutation && isETagCmd;
+
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
+                ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
+
+                // Do not update the eTag if the operation explicitly marked the record value as unchanged
+                shouldUpdateETag |= hadETagPreMutation && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
+
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -135,13 +180,28 @@ namespace Garnet.server
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(obj => { });
+                    logRecord.ClearValueIfHeap(_ => { });
                     rmwInfo.Action = RMWAction.ExpireAndStop;
+                    logRecord.RemoveETag();
                     return false;
                 }
 
+                // Update the record's eTag, if necessary
+                if (shouldUpdateETag)
+                {
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!logRecord.TrySetETag(updatedETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(logRecord)} in {nameof(InPlaceUpdaterWorker)}");
+
+                    output.ETag = updatedETag;
+                }
+                else if (hadETagPreMutation)
+                {
+                    output.ETag = logRecord.ETag;
+                }
+
                 sizeInfo.AssertOptionals(logRecord.Info);
-                return operateSuccessful;
+                return true;
             }
 
             var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
@@ -151,10 +211,19 @@ namespace Garnet.server
                 return true;
             }
 
-            var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
             try
             {
+                // Disallow custom commands on records with eTags
+                if (hadETagPreMutation)
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                    return true;
+                }
+
+                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+
                 var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
                 if (!result)
                     return false;
@@ -180,6 +249,7 @@ namespace Garnet.server
             // Expired data
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
+                _ = dstLogRecord.RemoveETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
@@ -201,19 +271,53 @@ namespace Garnet.server
             _ = dstLogRecord.TrySetValueObject(value);
 
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-            // TODO: Object store ETags
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
+            var hadETagPreMutation = srcLogRecord.Info.HasETag;
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
+            var shouldUpdateETag = !hadETagPreMutation && isETagCmd;
+
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
+                var updatedETag = srcLogRecord.ETag;
+                if (isETagCmd || hadETagPreMutation)
+                {
+                    // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                    var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedETag);
+                    Debug.Assert(execOp);
+                }
+
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+
+                // Do not update the eTag if the operation explicitly marked the record value as unchanged
+                shouldUpdateETag |= hadETagPreMutation && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
+
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
                 {
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
+                }
+
+                // Update the record's eTag, if necessary
+                if (shouldUpdateETag)
+                {
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!dstLogRecord.TrySetETag(updatedETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(PostCopyUpdater)}");
+
+                    output.ETag = updatedETag;
+                }
+                // Set the existing eTag in the new record if previous record had an eTag and we did not update it
+                else if (hadETagPreMutation)
+                {
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!dstLogRecord.TrySetETag(srcLogRecord.ETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(PostCopyUpdater)}");
+
+                    output.ETag = srcLogRecord.ETag;
                 }
             }
             else
@@ -226,10 +330,19 @@ namespace Garnet.server
                     return true;
                 }
 
-                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
                 try
                 {
+                    // Disallow custom commands on records with eTags
+                    if (hadETagPreMutation)
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
+                        return true;
+                    }
+
+                    var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+
                     var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
                     return result;
                 }
@@ -249,7 +362,6 @@ namespace Garnet.server
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
         }
-
 
         /// <inheritdoc />
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)

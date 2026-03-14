@@ -25,20 +25,44 @@ namespace Garnet.server
                 return false;
             }
 
+            output.ETag = srcLogRecord.ETag;
+
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+            if ((input.metaCommandInfo.MetaCommand.IsETagCommand()) &&
+                !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+            {
+                // Handle skipped execution based on eTag meta-command and current eTag value
+                output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+            }
+
             var cmd = input.header.cmd;
             return cmd switch
             {
                 RespCommand.EXISTS => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
+                RespCommand.GETETAG => HandleGetETag(in srcLogRecord, ref input, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
                 RespCommand.TTL or
                 RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
                 RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
-                RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
+                RespCommand.RENAME or RespCommand.RENAMENX => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
+        }
+
+        private bool HandleGetETag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedInput input,
+            ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
+        {
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteInt64(srcLogRecord.ETag);
+            }
+
+            return true;
         }
 
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,

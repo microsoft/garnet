@@ -83,6 +83,13 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPUBLISH(RespCommand cmd)
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(cmd.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 2)
             {
                 var cmdName = cmd switch
@@ -127,6 +134,13 @@ namespace Garnet.server
 
         private bool NetworkSUBSCRIBE(RespCommand cmd)
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(cmd.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 var cmdName = cmd switch

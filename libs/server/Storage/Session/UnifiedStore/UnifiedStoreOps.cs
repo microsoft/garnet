@@ -65,14 +65,16 @@ namespace Garnet.server
         /// <typeparam name="TSourceLogRecord"></typeparam>
         /// <param name="key">The key to override the one in <paramref name="srcLogRecord"/>, e.g. if from RENAME.</param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="srcLogRecord">The log record</param>
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
-        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
+        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord);
+            UpsertOptions upsertOptions = default;
+            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref input, in srcLogRecord, ref output, ref upsertOptions);
             return GarnetStatus.OK;
         }
 
@@ -94,6 +96,33 @@ namespace Garnet.server
 
             // TODO: The output is unused so optimize ReadMethods to not copy it.
             return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+        }
+
+        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
+            if (status.IsExpired)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            else
+            {
+                if (status.NotFound)
+                    incr_session_notfound();
+
+                return GarnetStatus.NOTFOUND;
+            }
         }
 
         /// <summary>
@@ -213,41 +242,23 @@ namespace Garnet.server
         /// <summary>
         /// RENAME a key in the unified store context
         /// </summary>
-        /// <param name="oldKeySlice">The key to rename</param>
-        /// <param name="newKeySlice">The new key name</param>
-        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
+        /// <param name="key">The key to rename</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool withEtag)
-            => RENAME(oldKeySlice, newKeySlice, false, out _, withEtag);
-
-        /// <summary>
-        /// RENAME a key in the unified store context - if the new key does not exist
-        /// </summary>
-        /// <param name="oldKeySlice">The key to rename</param>
-        /// <param name="newKeySlice">The new key name</param>
-        /// <param name="result">Number of renamed records</param>
-        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
-        /// <returns></returns>
-        public unsafe GarnetStatus RENAMENX(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, out int result, bool withEtag)
-            => RENAME(oldKeySlice, newKeySlice, true, out result, withEtag);
-
-        /// <summary>
-        /// RENAME a key in the unified store context
-        /// </summary>
-        /// <param name="oldKeySlice">The key to rename</param>
-        /// <param name="newKeySlice">The new key name</param>
-        /// <param name="isNX">If true, rename only if the new key does not exist</param>
-        /// <param name="result">Number of renamed records</param>
-        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
-        /// <returns></returns>
-        private unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool isNX, out int result, bool withEtag)
+        public unsafe GarnetStatus RENAME(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
         {
-            result = -1;
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            var newKeySlice = input.parseState.GetArgSliceByRef(0);
+
+            var isNx = input.header.cmd == RespCommand.RENAMENX;
 
             // If same name check return early.
-            if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
+            if (key.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
             {
-                result = 1;
+                if (isNx)
+                    writer.WriteInt32(1);
                 return GarnetStatus.OK;
             }
 
@@ -258,65 +269,64 @@ namespace Garnet.server
             {
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
-                txnManager.SaveKeyEntryToLock(oldKeySlice, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
                 txnManager.SaveKeyEntryToLock(newKeySlice, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
 
             var context = txnManager.UnifiedTransactionalContext;
-            var oldKey = oldKeySlice;
+            var oldKey = key;
             var newKey = newKeySlice;
 
             var returnStatus = GarnetStatus.NOTFOUND;
             var abortTransaction = false;
 
-            var output = new UnifiedOutput();
+            var recordOutput = new UnifiedOutput();
+
             try
             {
                 // Check if new key exists. This extra query isn't ideal, but it should be a rare operation and there's nowhere in Input to 
                 // pass the srcLogRecord or even the ValueObject to RMW. TODO: Optimize this to return only the ETag, or set functionsState.etagState.ETag directly.
                 // Set the input so Read knows to do the special "serialization" into output
-                UnifiedInput input = new(RespCommand.RENAME);
-                var status = GET(newKey, ref input, ref output, ref context);
-                if (isNX && status != GarnetStatus.NOTFOUND)
+                var status = GET(newKey, ref input, ref recordOutput, ref context);
+                if (isNx && status != GarnetStatus.NOTFOUND)
                 {
-                    result = 0;             // This is the "oldkey was found" return
                     abortTransaction = true;
+                    writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
 
+                long oldKeyETag = LogRecord.NoETag;
                 // Try to get the new key's etag, if exists
                 if (status != GarnetStatus.NOTFOUND)
                 {
-                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    fixed (byte* recordPtr = recordOutput.SpanByteAndMemory.ReadOnlySpan)
                     {
                         // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                         var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
                         if (logRecord.Info.HasETag)
-                            functionsState.etagState.ETag = logRecord.ETag;
+                            oldKeyETag = logRecord.ETag;
                     }
                 }
 
-                status = GET(oldKey, ref input, ref output, ref context);
+                status = GET(oldKey, ref input, ref recordOutput, ref context);
                 if (status != GarnetStatus.OK)
                 {
                     abortTransaction = true;
                     return status;
                 }
 
-                fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                fixed (byte* recordPtr = recordOutput.SpanByteAndMemory.ReadOnlySpan)
                 {
                     // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
                     var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
 
-                    // The spec is that Expiration does not change. Set input ETag flag if requested.
-                    if (withEtag)
-                        input.header.SetWithETagFlag();
-
-                    status = SET(newKey, ref input, in logRecord, ref context);
+                    input.arg1 = oldKeyETag;
+                    status = SET(newKey, ref input, ref output, in logRecord, ref context);
                     if (status == GarnetStatus.OK)
                     {
-                        result = 1;
+                        if (isNx)
+                            writer.WriteInt32(1);
 
                         // Delete the old key
                         _ = DELETE(oldKey, ref context);
@@ -333,7 +343,7 @@ namespace Garnet.server
                     else
                         txnManager.Commit(true);
                 }
-                output.Dispose();
+                recordOutput.Dispose();
             }
             return returnStatus;
         }

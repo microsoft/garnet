@@ -24,7 +24,14 @@ namespace Garnet.server
         /// </summary>
         public StringOutputFlags OutputFlags;
 
+        /// <summary>
+        /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
+        /// </summary>
+        public long ETag;
+
         public readonly bool HasError => (OutputFlags & StringOutputFlags.Error) != 0;
+
+        public readonly bool IsOperationSkipped => (OutputFlags & StringOutputFlags.OperationSkipped) != 0;
 
         public StringOutput() => SpanByteAndMemory = new(null);
 
@@ -61,14 +68,15 @@ namespace Garnet.server
     [Flags]
     public enum StringOutputFlags : byte
     {
-        // Non-error flags
+        // Non-error flags (bits 0–3)
         None = 0,
+        OperationSkipped = 1 << 0,
 
-        // Error marker
+        // Error marker (bit 7)
         Error = 1 << 7,
 
-        // Error flags (Error bit always set)
-        InvalidTypeError = Error | (1 << 0),
-        NaNOrInfinityError = Error | (1 << 1),
+        // Error bits (bits 4–6)
+        InvalidTypeError = Error | (1 << 4),
+        NaNOrInfinityError = Error | (1 << 5),
     }
 }

@@ -3,7 +3,6 @@
 
 using System;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -82,12 +81,14 @@ namespace Garnet.server
             while (currTokenIdx < parseState.Count);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: memberStart,
+                arg1: (int)addOption)
+            { SortedSetOp = SortedSetOperation.GEOADD };
 
             var output = GetObjectOutput();
 
             var status = storageApi.GeoAdd(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -161,13 +162,12 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
 
             var output = GetObjectOutput();
 
             var status = storageApi.GeoCommands(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -219,16 +219,19 @@ namespace Garnet.server
             var paramsRequiredInCommand = 0;
 
             int sourceIdx = 0;
+            var isMultiKeyCommand = false;
             switch (command)
             {
                 case RespCommand.GEORADIUS:
                     paramsRequiredInCommand = 5;
+                    isMultiKeyCommand = true;
                     break;
                 case RespCommand.GEORADIUS_RO:
                     paramsRequiredInCommand = 5;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                     paramsRequiredInCommand = 4;
+                    isMultiKeyCommand = true;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     paramsRequiredInCommand = 4;
@@ -238,10 +241,18 @@ namespace Garnet.server
                     break;
                 case RespCommand.GEOSEARCHSTORE:
                     paramsRequiredInCommand = 7;
+                    isMultiKeyCommand = true;
                     sourceIdx = 1;
                     break;
                 default:
                     throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
+            }
+
+            // Multi-key commands currently do not support execution with any meta-commands
+            if (isMultiKeyCommand && metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(command.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
             }
 
             if (parseState.Count < paramsRequiredInCommand)
@@ -253,11 +264,11 @@ namespace Garnet.server
             var sourceKey = parseState.GetArgSliceByRef(sourceIdx);
 
             // Prepare input and call the storage layer
-            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet)
-            {
-                SortedSetOp = SortedSetOperation.GEOSEARCH
-            }, ref parseState, startIdx: sourceIdx + 1, arg1: (int)command);
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
+                startIdx: sourceIdx + 1, arg1: (int)command)
+            { SortedSetOp = SortedSetOperation.GEOSEARCH };
+
+            var output = GetObjectOutput();
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
@@ -268,26 +279,23 @@ namespace Garnet.server
             if (destIdx != -1)
             {
                 var destinationKey = parseState.GetArgSliceByRef(destIdx);
-                status = storageApi.GeoSearchStore(sourceKey, destinationKey,
-                                                   ref searchOpts, ref input, ref output);
+                status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref searchOpts, ref input, ref output);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-
+                    ProcessOutput(output.SpanByteAndMemory);
+                    etag = output.ETag;
                     return true;
                 }
             }
             else
             {
                 status = storageApi.GeoSearchReadOnly(sourceKey, ref searchOpts, ref input, ref output);
+                etag = output.ETag;
 
                 if (status == GarnetStatus.OK)
                 {
-                    ProcessOutput(output);
+                    ProcessOutput(output.SpanByteAndMemory);
                     return true;
                 }
             }

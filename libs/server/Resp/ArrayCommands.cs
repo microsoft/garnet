@@ -20,6 +20,13 @@ namespace Garnet.server
         private bool NetworkMGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.MGET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             // Write array header
             while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
@@ -46,6 +53,13 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.MSET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count == 0 || parseState.Count % 2 != 0)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
@@ -68,12 +82,19 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.MSETNX),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count == 0 || parseState.Count % 2 != 0)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new StringInput(RespCommand.MSETNX, ref parseState);
+            var input = new StringInput(RespCommand.MSETNX, ref metaCommandInfo, ref parseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -82,23 +103,61 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkDEL<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int keysDeleted = 0;
-
-            for (int c = 0; c < parseState.Count; c++)
+            if (parseState.Count == 0)
             {
-                var key = parseState.GetArgSliceByRef(c);
-                var status = storageApi.DELETE(key);
-
-                // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
-                if (status == GarnetStatus.OK)
-                    keysDeleted++;
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
             }
 
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
+            var keyCount = parseState.Count;
+            PinnedSpanByte key;
+            GarnetStatus status;
+
+            // Handle delete if no meta-command is specified.
+            if (metaCommandInfo.MetaCommand == RespMetaCommand.None)
+            {
+                var keysDeleted = 0;
+
+                for (var c = 0; c < parseState.Count; c++)
+                {
+                    key = parseState.GetArgSliceByRef(c);
+                    status = storageApi.DELETE(key);
+
+                    // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
+                    if (status == GarnetStatus.OK)
+                        keysDeleted++;
+                }
+
+                WriteInt32(keysDeleted);
+
+                return true;
+            }
+
+            // Handle delete if meta-command is specified.
+            // Command currently does not support execution with any meta-commands when more than one key is specified
+            if (keyCount > 1)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(cmd.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
+            var input = new UnifiedInput(RespCommand.DEL, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput);
+            var output = new UnifiedOutput();
+
+            key = parseState.GetArgSliceByRef(0);
+            status = storageApi.DEL_Conditional(key, ref input, ref output);
+            etag = output.ETag;
+
+            if (status == GarnetStatus.NOTFOUND || output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
+            }
+
+            WriteInt32(1);
             return true;
         }
 
@@ -332,22 +391,18 @@ namespace Garnet.server
             var keySlice = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.TYPE);
+            var input = new UnifiedInput(RespCommand.TYPE, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
-            {
                 ProcessOutput(output.SpanByteAndMemory);
-            }
             else
-            {
-                while (!RespWriteUtils.TryWriteSimpleString(CmdStrings.none, ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteSimpleString(CmdStrings.none);
 
             return true;
         }
@@ -396,6 +451,13 @@ namespace Garnet.server
         private bool NetworkLCS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.LCS),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.LCS));
 
@@ -455,7 +517,8 @@ namespace Garnet.server
             }
 
             var output = GetStringOutput();
-            var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+            _ = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+            etag = output.ETag;
 
             ProcessOutput(output.SpanByteAndMemory);
 

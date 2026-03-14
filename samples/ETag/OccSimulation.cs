@@ -62,13 +62,13 @@ namespace ETag
             string serializedUserInfo = JsonSerializer.Serialize(userInfo);
 
             // Seed the item in the database
-            long initialEtag = (long)await db.ExecuteAsync("SET", userKey, serializedUserInfo, "WITHETAG");
+            long initialETag = (long)await db.ExecuteAsync("EXECWITHETAG", "SET", userKey, serializedUserInfo);
 
             // Cancellation token is used to exit program on end of interactive repl
             var cts = new CancellationTokenSource();
             // Clone user info so they are task local
-            var client1Task = Task.Run(() => Client1(userKey, initialEtag, (ContosoUserInfo)userInfo.Clone(), cts.Token));
-            var client2Task = Task.Run(() => Client2(userKey, initialEtag, (ContosoUserInfo)userInfo.Clone(), cts.Token));
+            var client1Task = Task.Run(() => Client1(userKey, initialETag, (ContosoUserInfo)userInfo.Clone(), cts.Token));
+            var client2Task = Task.Run(() => Client2(userKey, initialETag, (ContosoUserInfo)userInfo.Clone(), cts.Token));
 
             // Interactive REPL to change any property in the ContosoUserInfo
             while (true)
@@ -134,7 +134,7 @@ namespace ETag
                 }
 
                 // Update the user info in the database, and then for the REPL
-                (initialEtag, userInfo) = await ETagAbstractions.PerformLockFreeSafeUpdate<ContosoUserInfo>(db, userKey, initialEtag, userInfo, userUpdateAction);
+                (initialETag, userInfo) = await ETagAbstractions.PerformLockFreeSafeUpdate<ContosoUserInfo>(db, userKey, initialETag, userInfo, userUpdateAction);
                 Console.WriteLine($"Updated User Info: {JsonSerializer.Serialize(userInfo)}");
             }
 
@@ -150,13 +150,13 @@ namespace ETag
             }
         }
 
-        static async Task Client1(string userKey, long initialEtag, ContosoUserInfo initialUserInfo, CancellationToken token)
+        static async Task Client1(string userKey, long initialETag, ContosoUserInfo initialUserInfo, CancellationToken token)
         {
             Random random = new Random();
             using var redis = await ConnectionMultiplexer.ConnectAsync(GarnetConnectionStr);
             var db = redis.GetDatabase(0);
 
-            long etag = initialEtag;
+            long etag = initialETag;
             ContosoUserInfo userInfo = initialUserInfo;
             while (true)
             {
@@ -169,13 +169,13 @@ namespace ETag
             }
         }
 
-        static async Task Client2(string userKey, long initialEtag, ContosoUserInfo initialUserInfo, CancellationToken token)
+        static async Task Client2(string userKey, long initialETag, ContosoUserInfo initialUserInfo, CancellationToken token)
         {
             Random random = new Random();
             using var redis = await ConnectionMultiplexer.ConnectAsync(GarnetConnectionStr);
             var db = redis.GetDatabase(0);
 
-            long etag = initialEtag;
+            long etag = initialETag;
             ContosoUserInfo userInfo = initialUserInfo;
             while (true)
             {

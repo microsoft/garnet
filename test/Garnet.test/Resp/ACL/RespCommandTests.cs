@@ -93,13 +93,13 @@ namespace Garnet.test.Resp.ACL
             // TODO: See if these commands could be identified programmatically
             IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
+            IEnumerable<string> metaCommands = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.Meta)).Select(static x => x.Key);
 
             // Check tests against RespCommandsInfo
             {
                 // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
                 IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
-                var x = advertisedCommands.Except(withOnlySubCommands).Union(subCommands);
-                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Except(metaCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
                 IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
                 ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommandsInfo not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
@@ -112,7 +112,8 @@ namespace Garnet.test.Resp.ACL
                     allValues
                     .Except([RespCommand.NONE, RespCommand.INVALID, RespCommand.DELIFEXPIM])
                     .Where(cmd => !withOnlySubCommands.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
-                    .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
+                    .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
+                    .Where(cmd => !metaCommands.Contains(cmd.ToString(), StringComparer.OrdinalIgnoreCase));
                 IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
 
                 ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommand not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
@@ -5607,76 +5608,16 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task SetIfMatchACLsAsync()
+        public async Task GetETagACLsAsync()
         {
             await CheckCommandsAsync(
-               "SETIFMATCH",
-               [DoSetIfMatchAsync]
-           ).ConfigureAwait(false);
+                "GETETAG",
+                [DoGetETagAsync]
+            ).ConfigureAwait(false);
 
-            static async Task DoSetIfMatchAsync(GarnetClient client)
+            static async Task DoGetETagAsync(GarnetClient client)
             {
-                var res = await client.ExecuteForStringArrayResultAsync("SETIFMATCH", ["foo", "rizz", "0"]).ConfigureAwait(false);
-                ClassicAssert.IsNotNull(res);
-            }
-        }
-
-        [Test]
-        public async Task SetIfGreaterACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "SETIFGREATER",
-               [DoSetIfGreaterAsync]
-           ).ConfigureAwait(false);
-
-            static async Task DoSetIfGreaterAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]).ConfigureAwait(false);
-                ClassicAssert.IsNotNull(res);
-            }
-        }
-
-        [Test]
-        public async Task DelIfGreaterACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "DELIFGREATER",
-               [DoDelIfGreaterAsync]
-           ).ConfigureAwait(false);
-
-            static async Task DoDelIfGreaterAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringArrayResultAsync("DELIFGREATER", ["foo", "1"]).ConfigureAwait(false);
-                ClassicAssert.IsNotNull(res);
-            }
-        }
-
-        [Test]
-        public async Task GetIfNotMatchACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "GETIFNOTMATCH",
-               [DoGetIfNotMatchAsync]
-           ).ConfigureAwait(false);
-
-            static async Task DoGetIfNotMatchAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringResultAsync("GETIFNOTMATCH", ["foo", "0"]).ConfigureAwait(false);
-                ClassicAssert.IsNull(res);
-            }
-        }
-
-        [Test]
-        public async Task GetWithEtagACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "GETWITHETAG",
-               [DoGetWithEtagAsync]
-           ).ConfigureAwait(false);
-
-            static async Task DoGetWithEtagAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringResultAsync("GETWITHETAG", ["foo"]).ConfigureAwait(false);
+                var res = await client.ExecuteForStringResultAsync("GETETAG", ["foo"]).ConfigureAwait(false);
                 ClassicAssert.IsNull(res);
             }
         }
@@ -6654,7 +6595,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRevRangeByLexAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYLEX", ["key", "10", "20"]).ConfigureAwait(false);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYLEX", ["key", "[abc", "[def"])
+                    .ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, val.Length);
             }
         }
@@ -6684,13 +6626,16 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRangeByLexAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20"]).ConfigureAwait(false);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "[abc", "[def"])
+                    .ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, val.Length);
             }
 
             static async Task DoZRangeByLexLimitAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20", "LIMIT", "2", "3"]).ConfigureAwait(false);
+                string[] val = await client
+                    .ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "[abc", "[def", "LIMIT", "2", "3"])
+                    .ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, val.Length);
             }
         }
@@ -6807,7 +6752,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRemRangeByLexAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYLEX", ["foo", "abc", "def"]).ConfigureAwait(false);
+                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYLEX", ["foo", "[abc", "[def"])
+                    .ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, val);
             }
         }
@@ -6852,7 +6798,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZLexCountAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("ZLEXCOUNT", ["foo", "abc", "def"]).ConfigureAwait(false);
+                long val = await client.ExecuteForLongResultAsync("ZLEXCOUNT", ["foo", "[abc", "[def"])
+                    .ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, val);
             }
         }

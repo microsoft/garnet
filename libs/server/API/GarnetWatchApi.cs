@@ -51,12 +51,28 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedInput input,
+            ref UnifiedOutput output)
+        {
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.GETETAG(key, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
-            garnetApi.WATCH(key1, StoreType.Object);
-            garnetApi.WATCH(key2, StoreType.Object);
+            garnetApi.WATCH(key1, StoreType.Main);
+            garnetApi.WATCH(key2, StoreType.Main);
             return garnetApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
         }
+
+        /// <inheritdoc />
+        public GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.STRLEN(key, ref output, ref input);
+        }
+
         #endregion
 
         #region GETRANGE
@@ -204,7 +220,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts,
-                                      ref ObjectInput input, ref SpanByteAndMemory output)
+                                      ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.GeoSearchReadOnly(key, ref opts, ref input, ref output);
@@ -496,10 +512,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output)
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
+            return garnetApi.HashTimeToLive(key, ref input, ref output);
         }
 
         #endregion

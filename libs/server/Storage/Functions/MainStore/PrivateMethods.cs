@@ -268,16 +268,6 @@ namespace Garnet.server
 
                     throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
-                case RespCommand.TTL:
-                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
-                    return;
-
-                case RespCommand.PTTL:
-                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(pttlValue, ref output.SpanByteAndMemory);
-                    return;
-
                 case RespCommand.GETRANGE:
                     var len = value.Length;
                     var start = input.parseState.GetInt(0);
@@ -286,14 +276,9 @@ namespace Garnet.server
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(value, ref output, start, end);
                     return;
-                case RespCommand.EXPIRETIME:
-                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(expireTime, ref output.SpanByteAndMemory);
-                    return;
 
-                case RespCommand.PEXPIRETIME:
-                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(pexpireTime, ref output.SpanByteAndMemory);
+                case RespCommand.STRLEN:
+                    functionsState.CopyRespNumber(value.Length, ref output.SpanByteAndMemory);
                     return;
 
                 default:
@@ -341,7 +326,7 @@ namespace Garnet.server
         {
             if (start >= 0 && start <= len)//start in [0,len]
             {
-                if (end < 0 && (len + end) > 0)
+                if (end < 0 && (len + end) >= 0)
                     return (start, len + end + 1);
                 else if (end >= start)
                     return (start, end < len ? end + 1 : len);
@@ -641,44 +626,6 @@ namespace Garnet.server
             NumUtils.WriteInt32(value.Length, numDigits, ref outputPtr);
             output.SpanByteAndMemory.SpanByte.Length = numDigits;
             return true;
-        }
-
-        void CopyRespWithEtagData(ReadOnlySpan<byte> value, ref StringOutput dst, bool hasETag, MemoryPool<byte> memoryPool)
-        {
-            int valueLength = value.Length;
-            // always writing an array of size 2 => *2\r\n
-            int desiredLength = 4;
-
-            // get etag to write, default etag 0 for when no etag
-            long etag = hasETag ? functionsState.etagState.ETag : LogRecord.NoETag;
-
-            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-            desiredLength += 1 + NumUtils.CountDigits(etag) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
-
-            WriteValAndEtagToDst(desiredLength, value, etag, ref dst, memoryPool);
-        }
-
-        static void WriteValAndEtagToDst(int desiredLength, ReadOnlySpan<byte> value, long etag, ref StringOutput dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
-        {
-            if (desiredLength <= dst.SpanByteAndMemory.Length)
-            {
-                dst.SpanByteAndMemory.Length = desiredLength;
-                byte* curr = dst.SpanByteAndMemory.SpanByte.ToPointer();
-                byte* end = curr + dst.SpanByteAndMemory.SpanByte.Length;
-                RespWriteUtils.WriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
-                return;
-            }
-
-            dst.SpanByteAndMemory.ConvertToHeap();
-            dst.SpanByteAndMemory.Length = desiredLength;
-            dst.SpanByteAndMemory.Memory = memoryPool.Rent(desiredLength);
-            fixed (byte* ptr = dst.SpanByteAndMemory.MemorySpan)
-            {
-                byte* curr = ptr;
-                byte* end = ptr + desiredLength;
-                RespWriteUtils.WriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
-            }
         }
 
         /// <summary>

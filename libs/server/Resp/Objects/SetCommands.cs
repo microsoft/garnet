@@ -34,11 +34,15 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SADD };
+
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = storageApi.SetAdd(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -47,9 +51,10 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    // Write result to output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
             }
 
@@ -66,9 +71,16 @@ namespace Garnet.server
         private bool SetIntersect<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SINTER),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SINTER");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTER));
             }
 
             // Read all keys
@@ -120,9 +132,16 @@ namespace Garnet.server
         private bool SetIntersectStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SINTERSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SINTERSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTERSTORE));
             }
 
             // Get the key
@@ -159,6 +178,13 @@ namespace Garnet.server
         private bool SetIntersectLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SINTERCARD),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2) // Need at least numkeys + 1 key
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SINTERCARD));
@@ -226,9 +252,16 @@ namespace Garnet.server
         private bool SetUnion<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SUNION),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SUNION");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUNION));
             }
 
             // Read all the keys
@@ -271,9 +304,16 @@ namespace Garnet.server
         private bool SetUnionStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SUNIONSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SUNIONSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUNIONSTORE));
             }
 
             // Get the key
@@ -321,18 +361,23 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SREM };
+
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = storageApi.SetRemove(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Write result to output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -365,18 +410,23 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SCARD };
+
+            // Prepare output
             var output = new ObjectOutput();
 
             var status = storageApi.SetLength(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    if (output.IsOperationSkipped)
+                        WriteNull();
+                    else
+                        WriteInt32(output.Result1);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -409,13 +459,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = SetOperation.SMEMBERS };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetMembers(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -460,13 +510,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetIsMember(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -538,13 +588,13 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
-            var input = new ObjectInput(header, countParameter);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, arg1: countParameter) { SetOp = SetOperation.SPOP };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetPop(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -575,9 +625,16 @@ namespace Garnet.server
         private unsafe bool SetMove<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SMOVE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("SMOVE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SMOVE));
             }
 
             // Get the source key
@@ -651,13 +708,13 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SRANDMEMBER };
-            var input = new ObjectInput(header, countParameter, seed);
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, arg1: countParameter, arg2: seed) { SetOp = SetOperation.SRANDMEMBER };
 
             // Prepare output
             var output = GetObjectOutput();
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -693,9 +750,16 @@ namespace Garnet.server
         private bool SetDiff<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SDIFF),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SDIFF");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SDIFF));
             }
 
             var keys = new PinnedSpanByte[parseState.Count];
@@ -735,9 +799,16 @@ namespace Garnet.server
         private bool SetDiffStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.SDIFFSTORE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SDIFFSTORE");
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SDIFFSTORE));
             }
 
             // Get the key
@@ -749,11 +820,11 @@ namespace Garnet.server
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetDiffStore(key, keys, out var output);
+            var status = storageApi.SetDiffStore(key, keys, out var count);
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(count, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:

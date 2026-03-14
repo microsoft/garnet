@@ -1934,8 +1934,8 @@ namespace Garnet.test.cluster
         public override string[] GetSingleSlotRequest()
         {
             var ssk = GetSingleSlotKeys;
-            // ZREVRANGEBYLEX x 0 -1
-            return [ssk[0], "0", "-1"];
+            // ZREVRANGEBYLEX x [a [c
+            return [ssk[0], "[a", "[c"];
         }
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
@@ -2024,8 +2024,8 @@ namespace Garnet.test.cluster
         public override string[] GetSingleSlotRequest()
         {
             var ssk = GetSingleSlotKeys;
-            // ZLEXCOUNT x 0 100
-            return [ssk[0], "0", "100"];
+            // ZLEXCOUNT x [a [c
+            return [ssk[0], "[a", "[c"];
         }
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();

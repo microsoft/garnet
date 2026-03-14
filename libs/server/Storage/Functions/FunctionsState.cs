@@ -23,7 +23,6 @@ namespace Garnet.server
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public IStoreFunctions storeFunctions;
         public ObjectIdMap transientObjectIdMap;
-        public ETagState etagState;
         public readonly ILogger logger;
         public byte respProtocolVersion;
         public bool StoredProcMode;
@@ -43,7 +42,6 @@ namespace Garnet.server
             this.storeFunctions = storeWrapper.storeFunctions;
             this.transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;
 
-            this.etagState = new ETagState();
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;
         }
@@ -106,6 +104,53 @@ namespace Garnet.server
                 *cc++ = (byte)'\r';
                 *cc = (byte)'\n';
             }
+        }
+
+        /// <summary>
+        /// Handle skipped execution for raw string RMW commands
+        /// </summary>
+        internal bool HandleSkippedExecution(in RespInputHeader inputHeader, ref LogRecord logRecord, ref SpanByteAndMemory output)
+        {
+            // If caller does not expect a RESP-formatted response, nothing to do.
+            if (inputHeader.CheckSkipRespOutputFlag())
+                return true;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+
+            switch (inputHeader.cmd)
+            {
+                case RespCommand.SET:
+                case RespCommand.SETEX:
+                case RespCommand.SETEXNX:
+                case RespCommand.SETEXXX:
+                case RespCommand.SETKEEPTTL:
+                case RespCommand.SETKEEPTTLXX:
+                    // For skipped SET commands, caller expects the current value as output.
+                    writer.WriteBulkString(logRecord.ValueSpan);
+                    break;
+                default:
+                    // Write null to output to indicate a skipped execution.
+                    writer.WriteNull();
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Handle skipped execution for non-raw string RMW commands
+        /// </summary>
+        internal bool HandleSkippedExecution(in RespInputHeader inputHeader, ref SpanByteAndMemory output)
+        {
+            // If caller does not expect a RESP-formatted response, nothing to do.
+            if (inputHeader.CheckSkipRespOutputFlag())
+                return true;
+
+            // Write null to output to indicate a skipped execution.
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            writer.WriteNull();
+
+            return true;
         }
     }
 }

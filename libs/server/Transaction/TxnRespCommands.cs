@@ -202,12 +202,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// WATCH [MS|OS] key [key ...]
         /// Common implementation of various WATCH commands and subcommands.
         /// </summary>
-        /// <param name="type">Store type that's bein gwatch</param>
+        /// <param name="cmd">Current command</param>
+        /// <param name="type">Store type that's being watched</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool CommonWATCH(StoreType type)
+        private bool NetworkWATCH(RespCommand cmd, StoreType type)
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(cmd.ToString(),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var count = parseState.Count;
             // Have to provide at least one key
             if (count == 0)
@@ -235,24 +244,6 @@ namespace Garnet.server
 
             return true;
         }
-
-        /// <summary>
-        /// WATCH MS key [key ..]
-        /// </summary>
-        private bool NetworkWATCH_MS()
-        => CommonWATCH(StoreType.Main);
-
-        /// <summary>
-        /// WATCH OS key [key ..]
-        /// </summary>
-        private bool NetworkWATCH_OS()
-        => CommonWATCH(StoreType.Object);
-
-        /// <summary>
-        /// Watch key [key ...]
-        /// </summary>
-        private bool NetworkWATCH()
-        => CommonWATCH(StoreType.All);
 
         /// <summary>
         /// UNWATCH
