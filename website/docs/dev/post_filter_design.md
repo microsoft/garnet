@@ -4,7 +4,7 @@
 
 The VSIM post-filter evaluates user-supplied filter expressions (e.g. `.year > 1980 and .genre == "action"`) against vector search candidate results. It runs in the hot path of every filtered vector similarity query.
 
-**Key design constraint:** Zero heap allocation in the per-candidate evaluation loop. The entire pipeline runs on ~9 KB of thread stack memory, producing zero GC pressure even at thousands of queries per second.
+**Key design constraint:** Zero heap allocation in the per-candidate evaluation loop. All buffers are rented as a single contiguous array from `ArrayPool<ExprToken>.Shared` (~9 KB), sliced into sub-spans for cache-line-friendly locality. This produces zero GC pressure even at thousands of queries per second.
 
 ---
 
@@ -122,7 +122,11 @@ For each candidate JSON document:
 ```
  VectorManager.Filter (ApplyPostFilter)
     │
-    │ stackalloc ALL buffers (~9 KB on thread stack)
+    │ ArrayPool<ExprToken>.Shared.Rent(560)  ← single contiguous rental
+    │ ArrayPool<(int,int)>.Shared.Rent(32)   ← selectors (different type)
+    │ Slice into sub-spans:
+    │   instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf,
+    │   runtimePoolBuf, extractedFields, stackBuf
     │
     ├──→ ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf,
     │                            tokensBuf, opsStackBuf, ...)
@@ -154,18 +158,15 @@ For each candidate JSON document:
     │         │ uses stack (ExprStack ref struct over Span)
     │         │ OWNS NOTHING
     │         │
-    └──→ return filteredCount
-         (stack frame unwinds — all memory freed instantly)
+    └──→ finally: ArrayPool.Return(pool); ArrayPool.Return(selectorPool);
 ```
 
-### Buffer Layout on the Thread Stack
+### Buffer Layout — Single Contiguous ArrayPool Rental
 
 ```
- Thread stack (~1 MB)
+ ArrayPool<ExprToken>.Shared.Rent(560)
  ┌──────────────────────────────────────────────────────────────┐
- │  ... caller frames ...                                       │
- ├──────────────────────────────────────────────────────────────┤
- │  ApplyPostFilter frame (~9,216 bytes):                       │
+ │  Single contiguous array (560 × 16 B = 8,960 bytes):        │
  │                                                              │
  │  ┌──────────────────────────────────────────────┐            │
  │  │ instrBuf         128 × 16 B = 2,048 B        │ ← compiled│
@@ -175,18 +176,33 @@ For each candidate JSON document:
  │  │ opsStackBuf      128 × 16 B = 2,048 B        │   scratch │
  │  ├──────────────────────────────────────────────┤            │
  │  │ runtimePoolBuf    64 × 16 B = 1,024 B        │ ← runtime │
- │  │ selectorBuf       32 ×  8 B =   256 B        │   data    │
- │  │ extractedFields   32 × 16 B =   512 B        │           │
+ │  │ extractedFields   32 × 16 B =   512 B        │   data    │
  │  │ stackBuf          16 × 16 B =   256 B        │           │
- │  ├──────────────────────────────────────────────┤            │
- │  │ ExprProgram (ref struct, ~48 B)               │ ← views   │
- │  │ ExprStack   (ref struct, ~16 B)               │   into    │
- │  │ local vars, return addr                       │   above   │
  │  └──────────────────────────────────────────────┘            │
- ├──────────────────────────────────────────────────────────────┤
- │  ... ~990 KB free stack space ...                            │
+ │                                                              │
+ │  All slices adjacent in memory → cache-line-friendly.        │
+ │  Single Rent/Return pair → minimal pool overhead.            │
  └──────────────────────────────────────────────────────────────┘
+
+ ArrayPool<(int,int)>.Shared.Rent(32)
+ ┌──────────────────────────────────────────────────────────────┐
+ │  selectorBuf       32 ×  8 B =   256 B                      │
+ │  (separate rental — different element type)                  │
+ └──────────────────────────────────────────────────────────────┘
+
+ On the stack: only ExprProgram + ExprStack ref structs (~64 B)
+ and local variables.
 ```
+
+**Why ArrayPool instead of stackalloc?**
+- **Zero stack pressure** — no risk of stack overflow even with deep call chains
+- **Same cache locality** — the pool returns a contiguous array; all slices are
+  adjacent in memory, so the CPU prefetcher works just as well as with stackalloc
+- **Ref safety** — C# ref safety rules (CS8350/CS8352) prohibit mixing stackalloc'd
+  spans with heap-backed spans when passing them to methods that take `ref struct`
+  parameters. Using ArrayPool for all buffers avoids this entirely.
+- **Near-zero overhead** — `ArrayPool<T>.Shared` keeps small arrays warm; the
+  Rent/Return pair is typically a single interlocked exchange per call
 
 ### ExprToken — The Universal Data Type (16 bytes)
 
