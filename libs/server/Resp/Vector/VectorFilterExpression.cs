@@ -156,9 +156,12 @@ namespace Garnet.server
     /// from <c>default</c> (all-zeros) and set only the relevant fields. This ensures padding bytes
     /// are always zero.</para>
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    [StructLayout(LayoutKind.Explicit, Size = Size)]
     internal struct ExprToken
     {
+        /// <summary>Size of this struct in bytes.</summary>
+        public const int Size = 16;
+
         /// <summary>Discriminator tag.</summary>
         [FieldOffset(0)] public ExprTokenType TokenType;
 

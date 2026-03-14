@@ -4,7 +4,7 @@
 
 The VSIM post-filter evaluates user-supplied filter expressions (e.g. `.year > 1980 and .genre == "action"`) against vector search candidate results. It runs in the hot path of every filtered vector similarity query.
 
-**Key design constraint:** Zero heap allocation in the per-candidate evaluation loop. All buffers are rented as a single contiguous array from `ArrayPool<ExprToken>.Shared` (~9 KB), sliced into sub-spans for cache-line-friendly locality. This produces zero GC pressure even at thousands of queries per second.
+**Key design constraint:** Zero heap allocation in the per-candidate evaluation loop. All buffers are borrowed from the session-local `ScratchBufferBuilder` (~9 KB), a pinned `byte[]` that persists for the session's lifetime. After the first VSIM FILTER query, the buffer is already large enough — subsequent calls have zero allocation cost and zero GC pressure.
 
 ---
 
@@ -58,7 +58,7 @@ Transforms the filter expression UTF-8 bytes into a flat postfix instruction arr
 ```
 
 **Key properties:**
-- Zero heap allocation — compiler uses caller-provided Span buffers for all scratch and output
+- Zero heap allocation — compiler uses caller-provided Span buffers (borrowed from session scratch buffer) for all scratch and output
 - String/selector tokens store `(offset, length)` byte-range references into the original filter span — no copies
 - Numbers parsed via `Utf8Parser.TryParse` directly from UTF-8 bytes
 - Booleans normalized to `double`: `true` → 1.0, `false` → 0.0
@@ -122,8 +122,10 @@ For each candidate JSON document:
 ```
  VectorManager.Filter (ApplyPostFilter)
     │
-    │ ArrayPool<ExprToken>.Shared.Rent(560)  ← single contiguous rental
-    │ ArrayPool<(int,int)>.Shared.Rent(32)   ← selectors (different type)
+    │ scratch = ActiveThreadSession.scratchBufferBuilder
+    │ poolSlice = scratch.CreateArgSlice(560 × 16 bytes)
+    │ selectorSlice = scratch.CreateArgSlice(32 × 8 bytes)
+    │ Cast to Span<ExprToken> and Span<(int,int)> via MemoryMarshal
     │ Slice into sub-spans:
     │   instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf,
     │   runtimePoolBuf, extractedFields, stackBuf
@@ -144,29 +146,22 @@ For each candidate JSON document:
     │         │ RuntimePool  = runtimePoolBuf            ← Span
     │         │ OWNS NOTHING — just bundles Span references
     │         │
-    ├──→ AttributeExtractor.ExtractFields(json, filter, selectors,
-    │                                     extractedFields, ref program)
-    │         │
-    │         │ writes into extractedFields span
-    │         │ writes into program.RuntimePool (for IN arrays)
+    ├──→ AttributeExtractor.ExtractFields(...)
     │         │ OWNS NOTHING
     │         │
-    ├──→ ExprRunner.Run(ref program, json, filter, selectors,
-    │                   extractedFields, ref stack)
-    │         │
-    │         │ reads program.Instructions, TuplePool, RuntimePool
-    │         │ uses stack (ExprStack ref struct over Span)
+    ├──→ ExprRunner.Run(...)
     │         │ OWNS NOTHING
     │         │
-    └──→ finally: ArrayPool.Return(pool); ArrayPool.Return(selectorPool);
+    └──→ finally: scratch.RewindScratchBuffer(ref selectorSlice)
+                  scratch.RewindScratchBuffer(ref poolSlice)  ← LIFO
 ```
 
-### Buffer Layout — Single Contiguous ArrayPool Rental
+### Buffer Layout — Session Scratch Buffer
 
 ```
- ArrayPool<ExprToken>.Shared.Rent(560)
+ ScratchBufferBuilder (session-local pinned byte[])
  ┌──────────────────────────────────────────────────────────────┐
- │  Single contiguous array (560 × 16 B = 8,960 bytes):        │
+ │  poolSlice = CreateArgSlice(560 × 16 = 8,960 bytes):    │
  │                                                              │
  │  ┌──────────────────────────────────────────────┐            │
  │  │ instrBuf         128 × 16 B = 2,048 B        │ ← compiled│
@@ -180,29 +175,31 @@ For each candidate JSON document:
  │  │ stackBuf          16 × 16 B =   256 B        │           │
  │  └──────────────────────────────────────────────┘            │
  │                                                              │
- │  All slices adjacent in memory → cache-line-friendly.        │
- │  Single Rent/Return pair → minimal pool overhead.            │
+ │  selectorSlice = CreateArgSlice(32 × 8 = 256 bytes):        │
+ │  ┌──────────────────────────────────────────────┐            │
+ │  │ selectorBuf       32 ×  8 B =   256 B        │            │
+ │  └──────────────────────────────────────────────┘            │
+ │                                                              │
+ │  On the stack: only ExprProgram + ExprStack ref structs       │
+ │  and local variables (~64 B).                                 │
  └──────────────────────────────────────────────────────────────┘
 
- ArrayPool<(int,int)>.Shared.Rent(32)
- ┌──────────────────────────────────────────────────────────────┐
- │  selectorBuf       32 ×  8 B =   256 B                      │
- │  (separate rental — different element type)                  │
- └──────────────────────────────────────────────────────────────┘
-
- On the stack: only ExprProgram + ExprStack ref structs (~64 B)
- and local variables.
+ Cleanup: RewindScratchBuffer in LIFO order in the finally block.
+ The scratch buffer is never freed — it persists for the session's lifetime.
+ After the first VSIM FILTER query, it's already large enough.
 ```
 
-**Why ArrayPool instead of stackalloc?**
-- **Zero stack pressure** — no risk of stack overflow even with deep call chains
-- **Same cache locality** — the pool returns a contiguous array; all slices are
-  adjacent in memory, so the CPU prefetcher works just as well as with stackalloc
+**Why ScratchBufferBuilder instead of ArrayPool or stackalloc?**
+- **Session-local, already warm** — the pinned `byte[]` is already allocated and in cache
+  from RESP command parsing earlier in the same session
+- **Zero contention** — no shared pool lock (even lock-free CAS has overhead under
+  high thread counts); scratch buffer is strictly thread-local
+- **Zero stack pressure** — no risk of stack overflow from ~9 KB of stackalloc
 - **Ref safety** — C# ref safety rules (CS8350/CS8352) prohibit mixing stackalloc'd
   spans with heap-backed spans when passing them to methods that take `ref struct`
-  parameters. Using ArrayPool for all buffers avoids this entirely.
-- **Near-zero overhead** — `ArrayPool<T>.Shared` keeps small arrays warm; the
-  Rent/Return pair is typically a single interlocked exchange per call
+  parameters. Using the scratch buffer avoids this entirely.
+- **Consistent with Garnet idiom** — other Vector Set operations (FetchAttributes, etc.)
+  already use the same `ScratchBufferBuilder` pattern
 
 ### ExprToken — The Universal Data Type (16 bytes)
 
@@ -422,7 +419,7 @@ Every buffer write is bounds-checked. The system never crashes on pathological i
 
 | Component | Responsibilities | Owns memory? |
 |-----------|-----------------|--------------|
-| `VectorManager.Filter` | rent pooled arrays, slice into sub-spans, orchestrate pipeline, return to pool | **Yes** — single owner via ArrayPool |
+| `VectorManager.Filter` | borrow scratch buffer, slice into sub-spans, orchestrate pipeline, rewind on exit | **Yes** — single owner via ScratchBufferBuilder |
 | `ExprCompiler` | tokenize + shunting-yard → postfix instructions | **No** — writes to caller's spans |
 | `ExprProgram` | bundle Span references into a convenient struct | **No** — ref struct, just a view |
 | `ExprRunner` | walk instructions, evaluate postfix program | **No** — reads program + stack spans |
@@ -488,10 +485,10 @@ in a **single, upfront over-fetch** — there is no retry loop.
                         │
                         ▼
  ┌──────────────────────────────────────────────────────────────────────┐
- │ Step 2: ApplyPostFilter — single pass, zero heap allocation        │
+ │ Step 2: ApplyPostFilter — single pass, zero GC allocation            │
  │                                                                      │
  │   Evaluates ".genre == 'action'" against all 200 candidates.       │
- │   Uses ~9 KB stack memory, zero GC pressure.                       │
+ │   Uses ~9 KB from session scratch buffer (contiguous, cache-warm). │
  │                                                                      │
  │   Result: e.g. 60 out of 200 pass → filterBitmap with 60 bits set  │
  │   Caller picks top COUNT=10 by distance from the passing set.      │
@@ -504,13 +501,13 @@ in a **single, upfront over-fetch** — there is no retry loop.
 
 ### EF/FILTER-EF vs Post-Filter Cost
 
-| Scenario | Candidates evaluated | Stack usage | Heap alloc |
-|----------|---------------------|-------------|------------|
+| Scenario | Candidates evaluated | Pool usage | Heap alloc |
+|----------|---------------------|------------|------------|
 | COUNT=10, EF=50, no FILTER | 0 (no filter) | 0 B | 0 B |
-| COUNT=10, EF=50, FILTER, FILTER-EF=100 | up to 100 | ~9 KB | **0 B** |
-| COUNT=10, EF=100, FILTER, FILTER-EF=200 | up to 200 | ~9 KB | **0 B** |
-| COUNT=10, EF=50, FILTER (default) | up to 2000 (COUNT×200) | ~9 KB | **0 B** |
-| COUNT=100, EF=500, FILTER, FILTER-EF=5000 | up to 5000 | ~9 KB | **0 B** |
+| COUNT=10, EF=50, FILTER, FILTER-EF=100 | up to 100 | ~9 KB (pooled) | **0 B** |
+| COUNT=10, EF=100, FILTER, FILTER-EF=200 | up to 200 | ~9 KB (pooled) | **0 B** |
+| COUNT=10, EF=50, FILTER (default) | up to 2000 (COUNT×200) | ~9 KB (pooled) | **0 B** |
+| COUNT=100, EF=500, FILTER, FILTER-EF=5000 | up to 5000 | ~9 KB (pooled) | **0 B** |
 
-The stack usage is constant (~9 KB) regardless of how many candidates are evaluated — the buffers are allocated once and reused across all candidates in the loop.
+The scratch buffer usage is constant (~9 KB) regardless of how many candidates are evaluated — the buffers are borrowed once and reused across all candidates in the loop. The session's scratch buffer persists for its lifetime, so repeated queries reuse the same physical memory.
 

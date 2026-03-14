@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
@@ -16,13 +16,17 @@ namespace Garnet.server
         //
         // ExprToken is 16 bytes (explicit layout, blittable).
         //
-        // All ExprToken buffers are rented as a single contiguous array from
-        // ArrayPool<ExprToken>.Shared, then sliced into sub-spans. This gives
-        // cache-line-friendly locality (all slices adjacent in memory) with a
-        // single Rent/Return pair and zero stack pressure.
+        // All ExprToken buffers are borrowed from the session-local
+        // ScratchBufferBuilder via CreateArgSlice, then cast to
+        // Span<ExprToken> via MemoryMarshal.Cast. The scratch buffer is a
+        // pinned byte[] that persists for the session's lifetime — after the
+        // first VSIM FILTER query it's already large enough, so subsequent
+        // calls have zero allocation cost.
         //
-        // The selectorBuf ((int,int) tuples) remains on the stack since it is
-        // a different element type and only 256 bytes.
+        // The selectorBuf ((int,int) tuples) is borrowed from the same
+        // scratch buffer as a second ArgSlice.
+        //
+        // Cleanup: RewindScratchBuffer in LIFO order in the finally block.
         //
         // If any limit is exceeded, the filter either fails to compile
         // (returns 0 = no results pass) or the candidate is excluded
@@ -51,9 +55,9 @@ namespace Garnet.server
         //  stackBuf           16×16     256   Evaluation stack depth.
         //                                     Postfix eval rarely exceeds 8.
         //
-        //  Total pool: 560 ExprTokens = 8,960 bytes (single ArrayPool rental)
-        //           + 32 (int,int) selectors = 256 bytes (separate ArrayPool rental).
-        //  Stack: 0 bytes.
+        //  Total: 560 ExprTokens × 16 = 8,960 bytes + 32 selectors × 8 = 256 bytes
+        //         = ~9,216 bytes borrowed from session scratch buffer.
+        //  Stack: 0 bytes.  Heap: 0 bytes (steady state).
 
         /// <summary>Max compiled postfix instructions. Overflow → compile error.</summary>
         private const int MaxInstructions = 128;
@@ -98,14 +102,21 @@ namespace Garnet.server
             if (numResults == 0)
                 return 0;
 
-            // ── Rent a single contiguous ExprToken array from the pool ─────
-            var pool = ArrayPool<ExprToken>.Shared.Rent(TotalPoolTokens);
-            var selectorPool = ArrayPool<(int Start, int Length)>.Shared.Rent(MaxSelectors);
+            // ── Borrow scratch space from the session's ScratchBufferBuilder ──
+            // Single CreateArgSlice for both ExprToken and selector buffers.
+            // RewindScratchBuffer frees it on exit.
+            var bufferSlice = ActiveThreadSession.scratchBufferBuilder.CreateArgSlice(
+                TotalPoolTokens * ExprToken.Size + MaxSelectors * 2 * sizeof(int));
+            var span = MemoryMarshal.Cast<byte, ExprToken>(bufferSlice.Span);
+            var selectorBuf = MemoryMarshal.Cast<byte, (int Start, int Length)>(
+                bufferSlice.Span.Slice(TotalPoolTokens * ExprToken.Size));
+
             try
             {
-                var span = pool.AsSpan(0, TotalPoolTokens);
-                var offset = 0;
+                // Clear the token region (ExprToken.None must be all-zeros)
+                span.Clear();
 
+                var offset = 0;
                 var instrBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
                 var tuplePoolBuf = span.Slice(offset, MaxTuplePool); offset += MaxTuplePool;
                 var tokensBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
@@ -119,7 +130,7 @@ namespace Garnet.server
                 if (instrCount < 0)
                     return 0;
 
-                // ── Build ExprProgram — references slices of the pooled array ──
+                // ── Build ExprProgram — references slices of the scratch buffer ──
                 var program = new ExprProgram
                 {
                     Instructions = instrBuf[..instrCount],
@@ -133,8 +144,7 @@ namespace Garnet.server
                 // Clear the bitmap
                 filterBitmap.Clear();
 
-                // ── Collect unique selectors (rented separately — different element type) ──
-                Span<(int Start, int Length)> selectorBuf = selectorPool.AsSpan(0, MaxSelectors);
+                // ── Collect unique selectors ──────────────────────────────
                 var selectorCount = GetSelectorRanges(program.Instructions, program.Length, filter, selectorBuf);
                 var selectorRanges = selectorBuf[..selectorCount];
 
@@ -167,8 +177,7 @@ namespace Garnet.server
             }
             finally
             {
-                ArrayPool<ExprToken>.Shared.Return(pool);
-                ArrayPool<(int Start, int Length)>.Shared.Return(selectorPool);
+                ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(ref bufferSlice);
             }
         }
 
