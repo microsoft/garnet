@@ -85,7 +85,6 @@ namespace Garnet.server
             _ = logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
-
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -109,6 +108,8 @@ namespace Garnet.server
             _ = logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            Debug.Assert(input.metaCommandInfo.MetaCommand == RespMetaCommand.None);
 
             // Conditional execution is expected to pass here - we shouldn't call upsert with a meta-command
             // Calling this method to get the updated ETag
@@ -140,7 +141,6 @@ namespace Garnet.server
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
