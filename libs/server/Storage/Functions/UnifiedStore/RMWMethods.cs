@@ -93,6 +93,7 @@ namespace Garnet.server
             {
                 case RespCommand.DEL:
                     output.ETag = srcLogRecord.ETag;
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
 
                     // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
                     if ((input.metaCommandInfo.MetaCommand.IsETagCommand() || srcLogRecord.Info.HasETag) &&
@@ -103,8 +104,6 @@ namespace Garnet.server
                         functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
                         rmwInfo.Action = RMWAction.CancelOperation;
                     }
-
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
 
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will short-circuit the InternalRMW code to not run CU, and return SUCCESS.
