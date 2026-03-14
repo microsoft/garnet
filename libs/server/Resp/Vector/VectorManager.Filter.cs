@@ -14,50 +14,46 @@ namespace Garnet.server
     {
         // ── Buffer size constants ────────────────────────────────────────
         //
-        // All buffers are stackalloc'd on the thread stack (~10 KB total).
         // ExprToken is 16 bytes (explicit layout, blittable).
+        //
+        // All ExprToken buffers are rented as a single contiguous array from
+        // ArrayPool<ExprToken>.Shared, then sliced into sub-spans. This gives
+        // cache-line-friendly locality (all slices adjacent in memory) with a
+        // single Rent/Return pair and zero stack pressure.
+        //
+        // The selectorBuf ((int,int) tuples) remains on the stack since it is
+        // a different element type and only 256 bytes.
         //
         // If any limit is exceeded, the filter either fails to compile
         // (returns 0 = no results pass) or the candidate is excluded
         // gracefully.
         //
-        //  Buffer           Size     Stack bytes   Limitation
-        //  ────────────────  ───────  ───────────   ─────────────────────────────────
-        //  instrBuf          128×16   2,048 B       Max compiled postfix instructions.
-        //                                           A filter like ".a > 1 and .b < 2"
-        //                                           compiles to 7 instructions.
-        //                                           128 supports ~18 AND/OR clauses.
+        //  Buffer           Size     Bytes   Limitation
+        //  ────────────────  ───────  ──────  ─────────────────────────────────
+        //  instrBuf          128×16   2,048   Max compiled postfix instructions.
+        //                                     128 supports ~18 AND/OR clauses.
         //
-        //  tuplePoolBuf       64×16   1,024 B       Max compile-time tuple elements
-        //                                           across all IN [...] literals.
-        //                                           e.g. ".x in [1,2,...,64]".
+        //  tuplePoolBuf       64×16   1,024   Max compile-time tuple elements
+        //                                     across all IN [...] literals.
         //
-        //  tokensBuf         128×16   2,048 B       Compiler scratch: Phase 1 tokens.
-        //                                           Reuses MaxInstructions size since
-        //                                           every token → at most 1 instruction.
+        //  tokensBuf         128×16   2,048   Compiler scratch: Phase 1 tokens.
         //
-        //  opsStackBuf       128×16   2,048 B       Compiler scratch: shunting-yard
-        //                                           operator stack. Bounded by token
-        //                                           count (parenthesis nesting depth).
+        //  opsStackBuf       128×16   2,048   Compiler scratch: shunting-yard
+        //                                     operator stack.
         //
-        //  runtimePoolBuf     64×16   1,024 B       Max runtime tuple elements from
-        //                                           JSON array extraction (IN operator
-        //                                           on JSON array fields). Shared
-        //                                           across all candidates, reset each.
+        //  runtimePoolBuf     64×16   1,024   Max runtime tuple elements from
+        //                                     JSON array extraction (IN operator
+        //                                     on JSON array fields).
         //
-        //  selectorBuf        32×8      256 B       Max unique field selectors.
-        //                                           e.g. ".a > 1 and .b < 2" has 2.
-        //                                           32 supports very complex filters.
+        //  extractedFields    32×16     512   Pre-extracted field values per
+        //                                     candidate. Mirrors selectorBuf.
         //
-        //  extractedFields    32×16     512 B       Pre-extracted field values per
-        //                                           candidate. Mirrors selectorBuf.
-        //                                           Falls back to ArrayPool if >32.
+        //  stackBuf           16×16     256   Evaluation stack depth.
+        //                                     Postfix eval rarely exceeds 8.
         //
-        //  stackBuf           16×16     256 B       Evaluation stack depth.
-        //                                           Postfix eval rarely exceeds 8.
-        //                                           16 supports deeply nested exprs.
-        //
-        //  Total: ~9,216 bytes on stack (safe for server threads with 1 MB stacks).
+        //  Total pool: 560 ExprTokens = 8,960 bytes (single ArrayPool rental)
+        //           + 32 (int,int) selectors = 256 bytes (separate ArrayPool rental).
+        //  Stack: 0 bytes.
 
         /// <summary>Max compiled postfix instructions. Overflow → compile error.</summary>
         private const int MaxInstructions = 128;
@@ -71,11 +67,16 @@ namespace Garnet.server
         /// <summary>Max unique field selectors (e.g. .year, .rating). Overflow → extra selectors silently ignored.</summary>
         private const int MaxSelectors = 32;
 
-        /// <summary>Max selectors before falling back to ArrayPool for extractedFields. Keeps stackalloc safe.</summary>
-        private const int MaxStackSelectors = 32;
-
         /// <summary>Evaluation stack depth. Overflow → TryPush returns false → candidate excluded.</summary>
         private const int StackCapacity = 16;
+
+        /// <summary>
+        /// Total ExprToken count for the single pooled array.
+        /// Layout: instrBuf(128) + tuplePoolBuf(64) + tokensBuf(128) + opsStackBuf(128)
+        ///       + runtimePoolBuf(64) + extractedFields(32) + stackBuf(16) = 560
+        /// </summary>
+        private const int TotalPoolTokens = MaxInstructions + MaxTuplePool + MaxInstructions + MaxInstructions
+                                          + MaxRuntimePool + MaxSelectors + StackCapacity;
 
         /// <summary>
         /// Apply post-filtering to vector search results using a compiled filter expression.
@@ -97,52 +98,53 @@ namespace Garnet.server
             if (numResults == 0)
                 return 0;
 
-            // ── Compile: all buffers on the stack ─────────────────────────
-            Span<ExprToken> instrBuf = stackalloc ExprToken[MaxInstructions];
-            Span<ExprToken> tuplePoolBuf = stackalloc ExprToken[MaxTuplePool];
-            Span<ExprToken> tokensBuf = stackalloc ExprToken[MaxInstructions];
-            Span<ExprToken> opsStackBuf = stackalloc ExprToken[MaxInstructions];
-
-            var instrCount = ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
-            if (instrCount < 0)
-                return 0;
-
-            // ── Build ExprProgram ref struct — references the stackalloc'd spans ──
-            Span<ExprToken> runtimePoolBuf = stackalloc ExprToken[MaxRuntimePool];
-            var program = new ExprProgram
-            {
-                Instructions = instrBuf[..instrCount],
-                Length = instrCount,
-                TuplePool = tuplePoolBuf[..tupleCount],
-                TuplePoolLength = tupleCount,
-                RuntimePool = runtimePoolBuf,
-                RuntimePoolLength = 0,
-            };
-
-            // Clear the bitmap
-            filterBitmap.Clear();
-
-            // ── Collect unique selectors into stack span ──────────────────
-            Span<(int Start, int Length)> selectorBuf = stackalloc (int, int)[MaxSelectors];
-            var selectorCount = GetSelectorRanges(program.Instructions, program.Length, filter, selectorBuf);
-            var selectorRanges = selectorBuf[..selectorCount];
-
-            // ── Pre-allocate extraction buffer on the stack ───────────────
-            ExprToken[] rentedBuffer = null;
-            Span<ExprToken> extractedFields = selectorCount <= MaxStackSelectors
-                ? stackalloc ExprToken[selectorCount > 0 ? selectorCount : 1]
-                : (rentedBuffer = ArrayPool<ExprToken>.Shared.Rent(selectorCount));
-
-            var filteredCount = 0;
-
-            // ── Evaluation stack on the stack ─────────────────────────────
-            Span<ExprToken> stackBuf = stackalloc ExprToken[StackCapacity];
-            var stack = new ExprStack(stackBuf);
-
-            var remaining = attributesSpan;
-
+            // ── Rent a single contiguous ExprToken array from the pool ─────
+            var pool = ArrayPool<ExprToken>.Shared.Rent(TotalPoolTokens);
+            var selectorPool = ArrayPool<(int Start, int Length)>.Shared.Rent(MaxSelectors);
             try
             {
+                var span = pool.AsSpan(0, TotalPoolTokens);
+                var offset = 0;
+
+                var instrBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                var tuplePoolBuf = span.Slice(offset, MaxTuplePool); offset += MaxTuplePool;
+                var tokensBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                var opsStackBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                var runtimePoolBuf = span.Slice(offset, MaxRuntimePool); offset += MaxRuntimePool;
+                var extractedFields = span.Slice(offset, MaxSelectors); offset += MaxSelectors;
+                var stackBuf = span.Slice(offset, StackCapacity);
+
+                // ── Compile ────────────────────────────────────────────────
+                var instrCount = ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+                if (instrCount < 0)
+                    return 0;
+
+                // ── Build ExprProgram — references slices of the pooled array ──
+                var program = new ExprProgram
+                {
+                    Instructions = instrBuf[..instrCount],
+                    Length = instrCount,
+                    TuplePool = tuplePoolBuf[..tupleCount],
+                    TuplePoolLength = tupleCount,
+                    RuntimePool = runtimePoolBuf,
+                    RuntimePoolLength = 0,
+                };
+
+                // Clear the bitmap
+                filterBitmap.Clear();
+
+                // ── Collect unique selectors (rented separately — different element type) ──
+                Span<(int Start, int Length)> selectorBuf = selectorPool.AsSpan(0, MaxSelectors);
+                var selectorCount = GetSelectorRanges(program.Instructions, program.Length, filter, selectorBuf);
+                var selectorRanges = selectorBuf[..selectorCount];
+
+                // Slice extractedFields to actual selector count
+                var fields = extractedFields[..Math.Max(selectorCount, 1)];
+
+                var filteredCount = 0;
+                var stack = new ExprStack(stackBuf);
+                var remaining = attributesSpan;
+
                 for (var i = 0; i < numResults; i++)
                 {
                     var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
@@ -150,9 +152,9 @@ namespace Garnet.server
 
                     program.ResetRuntimePool();
 
-                    AttributeExtractor.ExtractFields(attrData, filter, selectorRanges, extractedFields, ref program);
+                    AttributeExtractor.ExtractFields(attrData, filter, selectorRanges, fields, ref program);
 
-                    if (ExprRunner.Run(ref program, attrData, filter, selectorRanges, extractedFields, ref stack))
+                    if (ExprRunner.Run(ref program, attrData, filter, selectorRanges, fields, ref stack))
                     {
                         filterBitmap[i >> 3] |= (byte)(1 << (i & 7));
                         filteredCount++;
@@ -160,14 +162,14 @@ namespace Garnet.server
 
                     remaining = remaining[(sizeof(int) + attrLen)..];
                 }
+
+                return filteredCount;
             }
             finally
             {
-                if (rentedBuffer != null)
-                    ArrayPool<ExprToken>.Shared.Return(rentedBuffer);
+                ArrayPool<ExprToken>.Shared.Return(pool);
+                ArrayPool<(int Start, int Length)>.Shared.Return(selectorPool);
             }
-
-            return filteredCount;
         }
 
         /// <summary>
