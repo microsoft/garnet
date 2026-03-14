@@ -86,14 +86,6 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            // Conditional execution is expected to pass here - we shouldn't call upsert with a meta-command
-            // Calling this method to get the updated ETag
-            var execOp = input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedETag, initContext: true);
-            Debug.Assert(execOp);
-
-            if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedETag))
-                return false;
-
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -123,6 +115,8 @@ namespace Garnet.server
             var execOp = input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedETag, initContext: true);
             Debug.Assert(execOp);
 
+            // Updating the eTag here is necessary for internal transactions that modify an object directly then call upsert
+            // in order to update the eTag for the modified object.
             if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedETag))
                 return false;
 
@@ -146,14 +140,6 @@ namespace Garnet.server
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-
-            // Conditional execution is expected to pass here - we shouldn't call upsert with a meta-command
-            // Calling this method to get the updated ETag
-            var execOp = input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedETag, initContext: true);
-            Debug.Assert(execOp);
-
-            if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedETag))
-                return false;
 
             sizeInfo.AssertOptionals(logRecord.Info);
 

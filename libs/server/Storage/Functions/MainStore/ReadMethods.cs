@@ -28,7 +28,7 @@ namespace Garnet.server
             output.ETag = srcLogRecord.ETag;
 
             // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
-            if ((input.metaCommandInfo.MetaCommand.IsETagCommand() || srcLogRecord.Info.HasETag) &&
+            if ((input.metaCommandInfo.MetaCommand.IsETagCommand()) &&
                 !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
             {
                 // Handle skipped execution based on eTag meta-command and current eTag value

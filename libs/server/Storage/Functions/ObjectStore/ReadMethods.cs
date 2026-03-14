@@ -39,7 +39,7 @@ namespace Garnet.server
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
                     // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
-                    if (input.metaCommandInfo.MetaCommand.IsETagCommand() &&
+                    if ((input.metaCommandInfo.MetaCommand.IsETagCommand()) &&
                         !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
                     {
                         // Handle skipped execution based on eTag meta-command and current eTag value

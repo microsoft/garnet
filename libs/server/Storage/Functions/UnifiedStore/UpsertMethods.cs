@@ -47,6 +47,8 @@ namespace Garnet.server
 
             Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
 
+            // Normally we wouldn't need to update the eTag here, this is for the special case of RENAME when called with EXECWITHETAG,
+            // it attempts to move an existing log record to a new key. In this case, input.arg1 is set to the previous record's eTag.
             if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
                 // No reason for the conditional execution to fail here since the meta-command is non-conditional
@@ -183,6 +185,8 @@ namespace Garnet.server
 
             Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
 
+            // Normally we wouldn't need to update the eTag here, this is for the special case of RENAME when called with EXECWITHETAG,
+            // it attempts to move an existing log record to a new key. In this case, input.arg1 is set to the previous record's eTag.
             if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
                 // No reason for the conditional execution to fail here since the meta-command is non-conditional
