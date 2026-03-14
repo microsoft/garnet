@@ -40,14 +40,16 @@ namespace Garnet.server
                         return true;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        _ = logRecord.TrySetExpiration(newExpiry);
+                        if (!logRecord.TrySetExpiration(newExpiry))
+                            Debug.Fail($"Unable to set expiry for {nameof(logRecord)} in {nameof(EvaluateExpire)}");
                         expirationChanged = true;
                         return true;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                         if (newExpiry > logRecord.Expiration)
                         {
-                            _ = logRecord.TrySetExpiration(newExpiry);
+                            if (!logRecord.TrySetExpiration(newExpiry))
+                                Debug.Fail($"Unable to set expiry for {nameof(logRecord)} in {nameof(EvaluateExpire)}");
                             expirationChanged = true;
                         }
                         return true;
@@ -55,7 +57,8 @@ namespace Garnet.server
                     case ExpireOption.XXLT:
                         if (newExpiry < logRecord.Expiration)
                         {
-                            _ = logRecord.TrySetExpiration(newExpiry);
+                            if (!logRecord.TrySetExpiration(newExpiry))
+                                Debug.Fail($"Unable to set expiry for {nameof(logRecord)} in {nameof(EvaluateExpire)}");
                             expirationChanged = true;
                         }
                         return true;

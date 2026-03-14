@@ -190,7 +190,9 @@ namespace Garnet.server
                 if (shouldUpdateETag)
                 {
                     // Should always succeed since we checked CanAddETagInPlace
-                    logRecord.TrySetETag(updatedETag);
+                    if (!logRecord.TrySetETag(updatedETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(logRecord)} in {nameof(InPlaceUpdaterWorker)}");
+
                     output.ETag = updatedETag;
                 }
                 else if (hadETagPreMutation)
@@ -302,13 +304,19 @@ namespace Garnet.server
                 // Update the record's eTag, if necessary
                 if (shouldUpdateETag)
                 {
-                    dstLogRecord.TrySetETag(updatedETag);
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!dstLogRecord.TrySetETag(updatedETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(PostCopyUpdater)}");
+
                     output.ETag = updatedETag;
                 }
                 // Set the existing eTag in the new record if previous record had an eTag and we did not update it
                 else if (hadETagPreMutation)
                 {
-                    dstLogRecord.TrySetETag(srcLogRecord.ETag);
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!dstLogRecord.TrySetETag(srcLogRecord.ETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(PostCopyUpdater)}");
+
                     output.ETag = srcLogRecord.ETag;
                 }
             }
