@@ -339,7 +339,7 @@ This is intentionally flat and branchless-friendly. No virtual method tables, no
 
 ### ExprProgram — Zero-Allocation View (ref struct)
 
-`ExprProgram` is a `ref struct` that bundles `Span<ExprToken>` references into the caller's stackalloc'd buffers. It owns no memory — it's a view.
+`ExprProgram` is a `ref struct` that bundles `Span<ExprToken>` references into slices of the caller's pooled array. It owns no memory — it's a view.
 
 ```csharp
 internal ref struct ExprProgram
@@ -413,7 +413,7 @@ Every buffer write is bounds-checked. The system never crashes on pathological i
 | `opsStackBuf` | 128 entries | `ProcessOperator` returns false → compile error |
 | `runtimePoolBuf` | 64 elements | `ParseArrayToken` returns Null → array skipped |
 | `selectorBuf` | 32 selectors | Extra selectors silently not collected |
-| `extractedFields` | 32 (stack) / ArrayPool | Falls back to `ArrayPool.Rent` for >32 |
+| `extractedFields` | 32 fields | Sliced to actual selector count (max 32) |
 | `stackBuf` | 16 depth | `TryPush` returns false → candidate excluded |
 
 ---
@@ -422,7 +422,7 @@ Every buffer write is bounds-checked. The system never crashes on pathological i
 
 | Component | Responsibilities | Owns memory? |
 |-----------|-----------------|--------------|
-| `VectorManager.Filter` | stackalloc all buffers, orchestrate pipeline, own all memory | **Yes** — single owner |
+| `VectorManager.Filter` | rent pooled arrays, slice into sub-spans, orchestrate pipeline, return to pool | **Yes** — single owner via ArrayPool |
 | `ExprCompiler` | tokenize + shunting-yard → postfix instructions | **No** — writes to caller's spans |
 | `ExprProgram` | bundle Span references into a convenient struct | **No** — ref struct, just a view |
 | `ExprRunner` | walk instructions, evaluate postfix program | **No** — reads program + stack spans |
