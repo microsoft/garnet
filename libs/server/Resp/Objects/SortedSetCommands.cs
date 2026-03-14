@@ -81,7 +81,8 @@ namespace Garnet.server
             }
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: currIdx,
-                arg1: (int)options) { SortedSetOp = SortedSetOperation.ZADD };
+                arg1: (int)options)
+            { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = GetObjectOutput();
 

@@ -25,11 +25,12 @@ namespace Garnet.server
                 return false;
             }
 
-            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
-            if (isETagCmd || srcLogRecord.Info.HasETag)
-            {
-                output.ETag = srcLogRecord.ETag;
+            output.ETag = srcLogRecord.ETag;
 
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+            if (input.metaCommandInfo.MetaCommand.IsETagCommand() || srcLogRecord.Info.HasETag)
+            {
+                // Handle skipped execution based on eTag meta-command and current eTag value
                 if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
                 {
                     output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
@@ -38,7 +39,7 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
-            var result = cmd switch
+            return cmd switch
             {
                 RespCommand.EXISTS => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
@@ -52,8 +53,6 @@ namespace Garnet.server
                 RespCommand.RENAME or RespCommand.RENAMENX => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
-
-            return result;
         }
 
         private bool HandleGetETag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedInput input,

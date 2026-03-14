@@ -25,16 +25,15 @@ namespace Garnet.server
             if (LogRecordUtils.CheckExpiry(in srcLogRecord))
                 return false;
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            if (metaCmd.IsETagCommand() || srcLogRecord.Info.HasETag)
-            {
-                output.ETag = srcLogRecord.ETag;
+            output.ETag = srcLogRecord.ETag;
 
-                if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
-                {
-                    output.OutputFlags |= StringOutputFlags.OperationSkipped;
-                    return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
-                }
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+            if ((input.metaCommandInfo.MetaCommand.IsETagCommand() || srcLogRecord.Info.HasETag) &&
+                !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
+            {
+                // Handle skipped execution based on eTag meta-command and current eTag value
+                output.OutputFlags |= StringOutputFlags.OperationSkipped;
+                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
             }
 
             var cmd = input.header.cmd;
@@ -46,6 +45,7 @@ namespace Garnet.server
 
                 try
                 {
+                    // Disallow custom commands on records with eTags
                     if (srcLogRecord.Info.HasETag)
                     {
                         writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);

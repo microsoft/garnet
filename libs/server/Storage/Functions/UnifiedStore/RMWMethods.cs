@@ -51,7 +51,7 @@ namespace Garnet.server
                 _ => true
             };
 
-            // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+            // The increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
             if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedETag))
             {
                 functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
@@ -92,19 +92,19 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DEL:
-                    var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
-                    if (isETagCmd || srcLogRecord.Info.HasETag)
-                    {
-                        if (!input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _))
-                        {
-                            output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
-                            functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
-                            rmwInfo.Action = RMWAction.CancelOperation;
-                        }
+                    output.ETag = srcLogRecord.ETag;
 
-                        output.ETag = srcLogRecord.ETag;
+                    // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+                    if ((input.metaCommandInfo.MetaCommand.IsETagCommand() || srcLogRecord.Info.HasETag) &&
+                        !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _))
+                    {
+                        // Handle skipped execution based on eTag meta-command and current eTag value
+                        output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                        functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                        rmwInfo.Action = RMWAction.CancelOperation;
                     }
+
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
 
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will short-circuit the InternalRMW code to not run CU, and return SUCCESS.
@@ -160,11 +160,13 @@ namespace Garnet.server
             if (!result)
                 return false;
 
+            // Update the record's eTag, if necessary
             if (shouldUpdateETag)
             {
                 dstLogRecord.TrySetETag(updatedETag);
                 output.ETag = updatedETag;
             }
+            // Set the existing eTag in the new record if previous record had an eTag and we did not update it
             else if (hadETagPreMutation)
             {
                 dstLogRecord.TrySetETag(srcLogRecord.ETag);
@@ -215,11 +217,13 @@ namespace Garnet.server
                         break;
                 }
 
+                // Update the record's eTag, if necessary
                 if (shouldUpdateETag)
                 {
                     dstLogRecord.TrySetETag(updatedETag);
                     output.ETag = updatedETag;
                 }
+                // Set the existing eTag in the new record if previous record had an eTag and we did not update it
                 else if (hadETagPreMutation)
                 {
                     dstLogRecord.TrySetETag(srcLogRecord.ETag);
@@ -291,9 +295,11 @@ namespace Garnet.server
             var hasExpiration = logRecord.Info.HasExpiration;
             var updatedETag = logRecord.ETag;
 
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
             if ((isETagCmd || hadETagPreMutation) &&
                 !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
             {
+                // Handle skipped execution based on eTag meta-command and current eTag value
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
                 functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
@@ -328,7 +334,7 @@ namespace Garnet.server
                     throw new NotImplementedException();
             }
 
-            // increment the ETag transparently if in place update happened
+            // Update the record's eTag, if necessary
             if (shouldUpdateETag)
             {
                 // Should always succeed since we checked CanAddETagInPlace

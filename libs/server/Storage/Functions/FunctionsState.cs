@@ -106,23 +106,6 @@ namespace Garnet.server
             }
         }
 
-        internal byte GetRespProtocolVersion(in ObjectInput input)
-        {
-            return input.header.type switch
-            {
-                GarnetObjectType.SortedSet =>
-                    input.header.SortedSetOp switch
-                    {
-                        SortedSetOperation.ZINCRBY or
-                            SortedSetOperation.ZPOPMIN or
-                            SortedSetOperation.ZPOPMAX => input.arg2 > 0 ? (byte)input.arg2 : respProtocolVersion,
-                        SortedSetOperation.ZRANGE => ((SortedSetRangeOptions)input.arg2 & SortedSetRangeOptions.Store) != 0 ? (byte)2 : respProtocolVersion,
-                        _ => respProtocolVersion
-                    },
-                _ => respProtocolVersion
-            };
-        }
-
         /// <summary>
         /// Handle skipped execution for raw string RMW commands
         /// </summary>

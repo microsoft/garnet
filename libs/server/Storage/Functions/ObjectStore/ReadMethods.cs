@@ -38,10 +38,11 @@ namespace Garnet.server
 
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    if (input.metaCommandInfo.MetaCommand != RespMetaCommand.None &&
-                        !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _,
-                            readOnlyContext: true))
+                    // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+                    if (input.metaCommandInfo.MetaCommand.IsETagCommand() &&
+                        !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
                     {
+                        // Handle skipped execution based on eTag meta-command and current eTag value
                         output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
                         return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
                     }
@@ -63,6 +64,7 @@ namespace Garnet.server
 
                 try
                 {
+                    // Disallow custom commands on records with eTags
                     if (srcRecordHasETag)
                     {
                         writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);

@@ -115,6 +115,7 @@ namespace Garnet.server
         IPUResult EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, bool hasExpiration, ref UnifiedOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
+
             if (!EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
                 return IPUResult.Failed;
 

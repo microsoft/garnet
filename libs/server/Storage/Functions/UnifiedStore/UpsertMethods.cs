@@ -49,8 +49,10 @@ namespace Garnet.server
 
             if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
-                Debug.Assert(execOp);
+                // No reason for the conditional execution to fail here since the meta-command is non-conditional
+                // We run this method to get the updated eTag value.
+                _ = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
+
                 if (!dstLogRecord.TrySetETag(updatedETag))
                     return false;
 
@@ -78,7 +80,6 @@ namespace Garnet.server
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             IHeapObject srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            var garnetObject = (IGarnetObject)srcValue;
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -150,8 +151,6 @@ namespace Garnet.server
         public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            var garnetObject = (IGarnetObject)newValue;
-
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
@@ -186,8 +185,10 @@ namespace Garnet.server
 
             if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
-                var execOp = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
-                Debug.Assert(execOp);
+                // No reason for the conditional execution to fail here since the meta-command is non-conditional
+                // We run this method to get the updated eTag value.
+                _ = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
+
                 if (!logRecord.TrySetETag(updatedETag))
                     return false;
 

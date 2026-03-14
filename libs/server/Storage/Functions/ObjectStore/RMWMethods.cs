@@ -52,10 +52,10 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
 
-                // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
                 var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
                 long updatedETag = LogRecord.NoETag;
                 if (isETagCmd)
+                    // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
                     _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out updatedETag, initContext: true);
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
@@ -148,9 +148,11 @@ namespace Garnet.server
             var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var updatedETag = logRecord.ETag;
 
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
             if ((isETagCmd || hadETagPreMutation) &&
                 !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
             {
+                // Handle skipped execution based on eTag meta-command and current eTag value
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
                 return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
@@ -166,6 +168,8 @@ namespace Garnet.server
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
+
+                // Do not update the eTag if the operation explicitly marked the record value as unchanged
                 shouldUpdateETag |= hadETagPreMutation && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
@@ -182,6 +186,7 @@ namespace Garnet.server
                     return false;
                 }
 
+                // Update the record's eTag, if necessary
                 if (shouldUpdateETag)
                 {
                     // Should always succeed since we checked CanAddETagInPlace
@@ -208,6 +213,7 @@ namespace Garnet.server
 
             try
             {
+                // Disallow custom commands on records with eTags
                 if (hadETagPreMutation)
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
@@ -281,6 +287,8 @@ namespace Garnet.server
                 }
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+
+                // Do not update the eTag if the operation explicitly marked the record value as unchanged
                 shouldUpdateETag |= hadETagPreMutation && (output.OutputFlags & ObjectOutputFlags.ValueUnchanged) == 0;
 
                 if (output.HasWrongType)
@@ -291,11 +299,13 @@ namespace Garnet.server
                     return false;
                 }
 
+                // Update the record's eTag, if necessary
                 if (shouldUpdateETag)
                 {
                     dstLogRecord.TrySetETag(updatedETag);
                     output.ETag = updatedETag;
                 }
+                // Set the existing eTag in the new record if previous record had an eTag and we did not update it
                 else if (hadETagPreMutation)
                 {
                     dstLogRecord.TrySetETag(srcLogRecord.ETag);
@@ -316,6 +326,7 @@ namespace Garnet.server
 
                 try
                 {
+                    // Disallow custom commands on records with eTags
                     if (hadETagPreMutation)
                     {
                         writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);

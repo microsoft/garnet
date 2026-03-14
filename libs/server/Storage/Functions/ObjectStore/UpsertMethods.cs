@@ -147,7 +147,12 @@ namespace Garnet.server
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            if (logRecord.Info.HasETag && !logRecord.TrySetETag(logRecord.ETag + 1))
+            // Conditional execution is expected to pass here - we shouldn't call upsert with a meta-command
+            // Calling this method to get the updated ETag
+            var execOp = input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedETag, initContext: true);
+            Debug.Assert(execOp);
+
+            if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedETag))
                 return false;
 
             sizeInfo.AssertOptionals(logRecord.Info);

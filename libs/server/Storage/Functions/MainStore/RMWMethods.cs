@@ -384,10 +384,11 @@ namespace Garnet.server
             var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
             var updatedETag = logRecord.ETag;
 
-            // Handle skipped execution based on eTag meta-command and current eTag value
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
             if ((isETagCmd || hadETagPreMutation) &&
                 !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
             {
+                // Handle skipped execution based on eTag meta-command and current eTag value
                 output.ETag = logRecord.ETag;
                 output.OutputFlags |= StringOutputFlags.OperationSkipped;
                 rmwInfo.Action = RMWAction.CancelOperation;
@@ -551,7 +552,7 @@ namespace Garnet.server
                         if (bitFieldArgs.secondaryCommand == RespCommand.GET)
                             shouldUpdateETag = false;
                     }
-                    
+
                     break;
 
                 case RespCommand.PFADD:
@@ -707,6 +708,7 @@ namespace Garnet.server
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
+                        // Disallow custom commands on records with eTags
                         if (shouldUpdateETag)
                         {
                             using var memWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
@@ -749,7 +751,7 @@ namespace Garnet.server
                     throw new GarnetException("Unsupported operation on input");
             }
 
-            // increment the ETag transparently if in place update happened
+            // Update the record's eTag, if necessary 
             if (shouldUpdateETag)
             {
                 // Should always succeed since we checked CanAddETagInPlace
@@ -813,6 +815,7 @@ namespace Garnet.server
 
                         try
                         {
+                            // Disallow custom commands on records with eTags
                             if (srcLogRecord.Info.HasETag)
                             {
                                 writer.WriteError(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC);
@@ -1216,6 +1219,7 @@ namespace Garnet.server
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
+                        // Disallow custom commands on records with eTags
                         if (srcLogRecord.Info.HasETag)
                         {
                             using var memWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
