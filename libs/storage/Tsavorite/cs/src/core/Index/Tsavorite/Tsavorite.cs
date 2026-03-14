@@ -75,11 +75,33 @@ namespace Tsavorite.core
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
+        internal readonly ManualResetEventSlim pauseRevivEvent = new(false);
+
         /// <summary>
         /// Pause Revivification
         /// </summary>
-        public void PauseRevivification()
-            => RevivificationManager.PauseRevivification();
+        /// <param name="timeout"></param>
+        /// /// <param name="token"></param>
+        public void PauseRevivification(TimeSpan timeout, CancellationToken token)
+        {
+            try
+            {
+                epoch.Resume();
+                // Pause Reviv
+                RevivificationManager.PauseRevivification();
+                // Reset event to be used for signaling that everyone has observed the pause signal
+                pauseRevivEvent.Reset();
+                // BumpEpoch with Set signal
+                epoch.BumpCurrentEpoch(() => pauseRevivEvent.Set());
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+
+            // Wait for everyone to observe the reviv suspend signal
+            pauseRevivEvent.Wait(timeout, token);
+        }
 
         /// <summary>
         /// Resume Revivification
@@ -751,6 +773,7 @@ namespace Tsavorite.core
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
+            pauseRevivEvent?.Dispose();
         }
 
         /// <summary>
