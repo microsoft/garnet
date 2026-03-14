@@ -96,6 +96,22 @@ namespace Garnet.server
     /// </summary>
     public struct MetaCommandInfo
     {
+        /// <summary>
+        /// Meta Command
+        /// </summary>
+        public RespMetaCommand MetaCommand;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// For etag-related meta-commands, this holds the etag comparand, if exists
+        /// </summary>
+        public long Arg1 = -1;
+
+        /// <summary>
+        /// Meta command parse state
+        /// </summary>
+        public SessionParseState MetaCommandParseState;
+
         public MetaCommandInfo(RespMetaCommand metaCommand, SessionParseState metaCommandParseState)
             : this(metaCommand, metaCommandParseState, -1)
         {
@@ -114,22 +130,6 @@ namespace Garnet.server
             Arg1 = -1;
             MetaCommandParseState.Initialize(argCount);
         }
-
-        /// <summary>
-        /// Meta Command
-        /// </summary>
-        public RespMetaCommand MetaCommand;
-
-        /// <summary>
-        /// Argument for generic usage by command implementation
-        /// For etag-related meta-commands, this holds the etag comparand, if exists
-        /// </summary>
-        public long Arg1 = -1;
-
-        /// <summary>
-        /// Meta command parse state
-        /// </summary>
-        public SessionParseState MetaCommandParseState;
 
         /// <summary>
         /// Get serialized length of <see cref="MetaCommandInfo"/>
