@@ -1,0 +1,29 @@
+{
+  "id": "cluster/replication",
+  "title": "Replication",
+  "description": "Garnet cluster support asynchronous replication following a simple leader-follower (i.e. primary-replica) model.",
+  "source": "@site/docs/cluster/replication.md",
+  "sourceDirName": "cluster",
+  "slug": "/cluster/replication",
+  "permalink": "/garnet/docs/cluster/replication",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/cluster/replication.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "replication",
+    "sidebar_label": "Replication",
+    "title": "Replication",
+    "slug": "replication"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/cluster/overview"
+  },
+  "next": {
+    "title": "Key Migration",
+    "permalink": "/garnet/docs/cluster/key-migration"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "getting-started/memory",
+  "title": "Managing memory usage of Garnet",
+  "description": "For large-scale production scenarios, Garnet's memory usage needs to be tuned to make optimal use",
+  "source": "@site/docs/getting-started/memory.md",
+  "sourceDirName": "getting-started",
+  "slug": "/getting-started/memory",
+  "permalink": "/garnet/docs/getting-started/memory",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/getting-started/memory.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "memory",
+    "sidebar_label": "Memory",
+    "title": "Managing memory usage of Garnet"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Configuration",
+    "permalink": "/garnet/docs/getting-started/configuration"
+  },
+  "next": {
+    "title": "Security",
+    "permalink": "/garnet/docs/security"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "welcome/compatibility",
+  "title": "API Compatibility",
+  "description": "Garnet is a cache-store with a new thread-scalable system architecture. The network, processing, and storage (memory",
+  "source": "@site/docs/welcome/compatibility.md",
+  "sourceDirName": "welcome",
+  "slug": "/welcome/compatibility",
+  "permalink": "/garnet/docs/welcome/compatibility",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/compatibility.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "compatibility",
+    "sidebar_label": "Compatibility",
+    "title": "API Compatibility"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Releases",
+    "permalink": "/garnet/docs/welcome/releases"
+  },
+  "next": {
+    "title": "Roadmap",
+    "permalink": "/garnet/docs/welcome/roadmap"
+  }
+}
