@@ -591,7 +591,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan());
+                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)
@@ -718,7 +718,7 @@ namespace Garnet.server
                     filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan());
+                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
 
             if (continuation != 0)

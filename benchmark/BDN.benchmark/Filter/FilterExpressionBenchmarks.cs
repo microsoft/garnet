@@ -439,9 +439,14 @@ namespace BDN.benchmark.Filter
         private byte[] _bitmap100;
         private byte[] _bitmap1000;
 
+        // Scratch buffer for ApplyPostFilter
+        private ScratchBufferBuilder _scratchBufferBuilder;
+
         [GlobalSetup]
         public void Setup()
         {
+            _scratchBufferBuilder = new ScratchBufferBuilder();
+
             _numericFilter = ".year > 1950 and .rating >= 4.0"u8.ToArray();
             _stringFilter = ".genre == \"action\""u8.ToArray();
             _arrayFilter = "\"classic\" in .tags"u8.ToArray();
@@ -502,45 +507,45 @@ namespace BDN.benchmark.Filter
         // ── Numeric filter: .year > 1950 and .rating >= 4.0 ────────────
 
         [Benchmark(Description = "Numeric AND · 10 candidates")]
-        public int Numeric_10() => VectorManager.ApplyPostFilter(_numericFilter, 10, _attrs10, _bitmap10);
+        public int Numeric_10() => VectorManager.ApplyPostFilter(_numericFilter, 10, _attrs10, _bitmap10, _scratchBufferBuilder);
 
         [Benchmark(Description = "Numeric AND · 100 candidates")]
-        public int Numeric_100() => VectorManager.ApplyPostFilter(_numericFilter, 100, _attrs100, _bitmap100);
+        public int Numeric_100() => VectorManager.ApplyPostFilter(_numericFilter, 100, _attrs100, _bitmap100, _scratchBufferBuilder);
 
         [Benchmark(Description = "Numeric AND · 1000 candidates")]
-        public int Numeric_1000() => VectorManager.ApplyPostFilter(_numericFilter, 1000, _attrs1000, _bitmap1000);
+        public int Numeric_1000() => VectorManager.ApplyPostFilter(_numericFilter, 1000, _attrs1000, _bitmap1000, _scratchBufferBuilder);
 
         // ── String filter: .genre == "action" ───────────────────────────
 
         [Benchmark(Description = "String EQ · 10 candidates")]
-        public int String_10() => VectorManager.ApplyPostFilter(_stringFilter, 10, _attrs10, _bitmap10);
+        public int String_10() => VectorManager.ApplyPostFilter(_stringFilter, 10, _attrs10, _bitmap10, _scratchBufferBuilder);
 
         [Benchmark(Description = "String EQ · 100 candidates")]
-        public int String_100() => VectorManager.ApplyPostFilter(_stringFilter, 100, _attrs100, _bitmap100);
+        public int String_100() => VectorManager.ApplyPostFilter(_stringFilter, 100, _attrs100, _bitmap100, _scratchBufferBuilder);
 
         [Benchmark(Description = "String EQ · 1000 candidates")]
-        public int String_1000() => VectorManager.ApplyPostFilter(_stringFilter, 1000, _attrs1000, _bitmap1000);
+        public int String_1000() => VectorManager.ApplyPostFilter(_stringFilter, 1000, _attrs1000, _bitmap1000, _scratchBufferBuilder);
 
         // ── Array filter: "classic" in .tags ────────────────────────────
 
         [Benchmark(Description = "Array IN · 10 candidates")]
-        public int Array_10() => VectorManager.ApplyPostFilter(_arrayFilter, 10, _attrs10, _bitmap10);
+        public int Array_10() => VectorManager.ApplyPostFilter(_arrayFilter, 10, _attrs10, _bitmap10, _scratchBufferBuilder);
 
         [Benchmark(Description = "Array IN · 100 candidates")]
-        public int Array_100() => VectorManager.ApplyPostFilter(_arrayFilter, 100, _attrs100, _bitmap100);
+        public int Array_100() => VectorManager.ApplyPostFilter(_arrayFilter, 100, _attrs100, _bitmap100, _scratchBufferBuilder);
 
         [Benchmark(Description = "Array IN · 1000 candidates")]
-        public int Array_1000() => VectorManager.ApplyPostFilter(_arrayFilter, 1000, _attrs1000, _bitmap1000);
+        public int Array_1000() => VectorManager.ApplyPostFilter(_arrayFilter, 1000, _attrs1000, _bitmap1000, _scratchBufferBuilder);
 
         // ── Combined filter: rating*2>8 and (year>=1980 or "classic" in .tags) and genre=="action"
 
         [Benchmark(Description = "Combined · 10 candidates")]
-        public int Combined_10() => VectorManager.ApplyPostFilter(_combinedFilter, 10, _attrs10, _bitmap10);
+        public int Combined_10() => VectorManager.ApplyPostFilter(_combinedFilter, 10, _attrs10, _bitmap10, _scratchBufferBuilder);
 
         [Benchmark(Description = "Combined · 100 candidates")]
-        public int Combined_100() => VectorManager.ApplyPostFilter(_combinedFilter, 100, _attrs100, _bitmap100);
+        public int Combined_100() => VectorManager.ApplyPostFilter(_combinedFilter, 100, _attrs100, _bitmap100, _scratchBufferBuilder);
 
         [Benchmark(Description = "Combined · 1000 candidates")]
-        public int Combined_1000() => VectorManager.ApplyPostFilter(_combinedFilter, 1000, _attrs1000, _bitmap1000);
+        public int Combined_1000() => VectorManager.ApplyPostFilter(_combinedFilter, 1000, _attrs1000, _bitmap1000, _scratchBufferBuilder);
     }
 }

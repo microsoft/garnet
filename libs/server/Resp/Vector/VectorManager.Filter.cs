@@ -97,15 +97,16 @@ namespace Garnet.server
             ReadOnlySpan<byte> filter,
             int numResults,
             ReadOnlySpan<byte> attributesSpan,
-            Span<byte> filterBitmap)
+            Span<byte> filterBitmap,
+            ScratchBufferBuilder scratchBufferBuilder)
         {
             if (numResults == 0)
                 return 0;
 
-            // ── Borrow scratch space from the session's ScratchBufferBuilder ──
+            // ── Borrow scratch space from the caller-provided ScratchBufferBuilder ──
             // Single CreateArgSlice for both ExprToken and selector buffers.
             // RewindScratchBuffer frees it on exit.
-            var bufferSlice = ActiveThreadSession.scratchBufferBuilder.CreateArgSlice(
+            var bufferSlice = scratchBufferBuilder.CreateArgSlice(
                 TotalPoolTokens * ExprToken.Size + MaxSelectors * 2 * sizeof(int));
             var span = MemoryMarshal.Cast<byte, ExprToken>(bufferSlice.Span);
             var selectorBuf = MemoryMarshal.Cast<byte, (int Start, int Length)>(
@@ -177,7 +178,7 @@ namespace Garnet.server
             }
             finally
             {
-                ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(ref bufferSlice);
+                scratchBufferBuilder.RewindScratchBuffer(ref bufferSlice);
             }
         }
 
