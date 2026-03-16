@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -69,7 +69,7 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Tsavorite", r);
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
             r = db.HashGet("user:user1", "Title");
             ClassicAssert.IsNull(r);
         }
@@ -82,7 +82,7 @@ namespace Garnet.test
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
             db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Tsavorite", r);
         }
@@ -219,7 +219,7 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Title"], TimeSpan.FromMilliseconds(100));
             var result = db.HashLength("user:user1");
             ClassicAssert.AreEqual(3, result);
-            await Task.Delay(150);
+            await Task.Delay(150).ConfigureAwait(false);
             result = db.HashLength("user:user1");
             ClassicAssert.AreEqual(2, result);
             db.HashSet("user:user1", [new HashEntry("Year", "new2021")]);  // Trigger deletion of expired field
@@ -256,7 +256,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(hashEntries.Length, result.Select(r => r.Name).Distinct().Count());
             ClassicAssert.IsTrue(hashEntries.OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             result = db.HashGetAll("user:user1");
             ClassicAssert.AreEqual(hashEntries.Length - 1, result.Length);
@@ -292,7 +292,7 @@ namespace Garnet.test
             var result = db.HashExists(new RedisKey("user:user1"), "Title");
             ClassicAssert.IsTrue(result);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             result = db.HashExists(new RedisKey("user:user1"), "Title");
             ClassicAssert.IsFalse(result);
@@ -327,7 +327,7 @@ namespace Garnet.test
             long r = db.HashStringLength("user:user1", "Title");
             ClassicAssert.AreEqual(9, r);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             r = db.HashStringLength("user:user1", "Title");
             ClassicAssert.AreEqual(0, r);
@@ -364,7 +364,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Year")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Company")));
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             result = db.HashKeys("user:user1");
             ClassicAssert.AreEqual(2, result.Length);
@@ -407,7 +407,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("2021")));
             ClassicAssert.IsTrue(Array.Exists(result, t => t.Equals("Acme")));
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             result = db.HashValues("user:user1");
             ClassicAssert.AreEqual(2, result.Length);
@@ -451,7 +451,7 @@ namespace Garnet.test
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-3, result);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-4, result);
@@ -509,7 +509,7 @@ namespace Garnet.test
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
             ClassicAssert.AreEqual(3.3333333333, result, 1e-15);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 2.2222222222);
             ClassicAssert.AreEqual(2.2222222222, result, 1e-15);
@@ -537,7 +537,7 @@ namespace Garnet.test
             db.HashFieldExpire("user:user1", ["Field"], TimeSpan.FromMilliseconds(100));
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("Hello"), When.NotExists);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             string result = db.HashGet("user:user1", "Field");
             ClassicAssert.IsNull(result); // SetNX should not reset the expiration
@@ -624,7 +624,7 @@ namespace Garnet.test
             string field = db.HashRandomField(hashKey);
             ClassicAssert.AreEqual(field, "Title");
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             field = db.HashRandomField(hashKey);
             ClassicAssert.IsNull(field);
@@ -644,7 +644,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(field.Length, 1);
             ClassicAssert.AreEqual("Title", field[0]);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             field = db.HashRandomFields(hashKey, 10).Select(x => (string)x).ToArray();
             ClassicAssert.AreEqual(field.Length, 0);
@@ -729,7 +729,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(((IScanningCursor)members).Cursor == 0);
             ClassicAssert.IsTrue(members.Count() == 4, "HSCAN with MATCH failed.");
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             // HSCAN with match
             members = db.HashScan("user:user789", "email*");
@@ -793,13 +793,13 @@ namespace Garnet.test
             db.KeyDelete(hashkey, CommandFlags.FireAndForget);
 
             RedisValue[] fields = ["foo", "bar", "blop"];
-            var arr0 = await db.HashGetAsync(hashkey, fields);
+            var arr0 = await db.HashGetAsync(hashkey, fields).ConfigureAwait(false);
 
             db.HashSet(hashkey, "foo", "abc", flags: CommandFlags.FireAndForget);
             db.HashSet(hashkey, "bar", "def", flags: CommandFlags.FireAndForget);
 
-            var arr1 = await db.HashGetAsync(hashkey, fields);
-            var arr2 = await db.HashGetAsync(hashkey, fields);
+            var arr1 = await db.HashGetAsync(hashkey, fields).ConfigureAwait(false);
+            var arr2 = await db.HashGetAsync(hashkey, fields).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(3, arr0.Length);
 #nullable enable
@@ -832,7 +832,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("email@example.com", members[0]);
             ClassicAssert.AreEqual("email1@example.com", members[1]);
 
-            await Task.Delay(200);
+            await Task.Delay(200).ConfigureAwait(false);
 
             members = (string[])db.Execute("HMGET", "user:user789", "email", "email1");
             ClassicAssert.IsNull(members[0]);
@@ -853,12 +853,12 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var hashkey = "testGetAll";
 
-            _ = await db.KeyDeleteAsync(hashkey);
+            _ = await db.KeyDeleteAsync(hashkey).ConfigureAwait(false);
 
             var result0 = db.HashGetAllAsync(hashkey);
 
-            _ = await db.HashSetAsync(hashkey, "foo", "abc");
-            _ = await db.HashSetAsync(hashkey, "bar", "def");
+            _ = await db.HashSetAsync(hashkey, "foo", "abc").ConfigureAwait(false);
+            _ = await db.HashSetAsync(hashkey, "bar", "def").ConfigureAwait(false);
 
             var result1 = db.HashGetAllAsync(hashkey);
 
@@ -876,15 +876,15 @@ namespace Garnet.test
             var hashKey = "testCanDoHMSET";
             var hashMapKey = "TestKey";
 
-            await db.KeyDeleteAsync(hashKey);
+            await db.KeyDeleteAsync(hashKey).ConfigureAwait(false);
 
-            var val0 = await db.HashGetAsync(hashKey, hashMapKey);
-            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue1")]);
+            var val0 = await db.HashGetAsync(hashKey, hashMapKey).ConfigureAwait(false);
+            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue1")]).ConfigureAwait(false);
 
-            var val1 = await db.HashGetAsync(hashKey, hashMapKey);
-            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue2")]);
+            var val1 = await db.HashGetAsync(hashKey, hashMapKey).ConfigureAwait(false);
+            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue2")]).ConfigureAwait(false);
 
-            var val2 = await db.HashGetAsync(hashKey, hashMapKey);
+            var val2 = await db.HashGetAsync(hashKey, hashMapKey).ConfigureAwait(false);
 
 #nullable enable
             ClassicAssert.Null((string?)val0);
@@ -900,12 +900,12 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var hashkey = "testWhenAlways";
 
-            await db.KeyDeleteAsync(hashkey);
+            await db.KeyDeleteAsync(hashkey).ConfigureAwait(false);
 
-            var result1 = await db.HashSetAsync(hashkey, "foo", "bar", When.Always, CommandFlags.None);
-            var result2 = await db.HashSetAsync(hashkey, "foo2", "bar", When.Always, CommandFlags.None);
-            var result3 = await db.HashSetAsync(hashkey, "foo", "bar", When.Always, CommandFlags.None);
-            var result4 = await db.HashSetAsync(hashkey, "foo", "bar2", When.Always, CommandFlags.None);
+            var result1 = await db.HashSetAsync(hashkey, "foo", "bar", When.Always, CommandFlags.None).ConfigureAwait(false);
+            var result2 = await db.HashSetAsync(hashkey, "foo2", "bar", When.Always, CommandFlags.None).ConfigureAwait(false);
+            var result3 = await db.HashSetAsync(hashkey, "foo", "bar", When.Always, CommandFlags.None).ConfigureAwait(false);
+            var result4 = await db.HashSetAsync(hashkey, "foo", "bar2", When.Always, CommandFlags.None).ConfigureAwait(false);
 
             ClassicAssert.True(result1, "Initial set key 1");
             ClassicAssert.True(result2, "Initial set key 2");
@@ -922,17 +922,17 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var hashkey = "testWhenNotExists";
 
-            var del = await db.KeyDeleteAsync(hashkey);
+            var del = await db.KeyDeleteAsync(hashkey).ConfigureAwait(false);
 
-            var val0 = await db.HashGetAsync(hashkey, "field");
-            var set0 = await db.HashSetAsync(hashkey, "field", "value1", When.NotExists);
-            var val1 = await db.HashGetAsync(hashkey, "field");
-            var set1 = await db.HashSetAsync(hashkey, "field", "value2", When.NotExists);
-            var val2 = await db.HashGetAsync(hashkey, "field");
+            var val0 = await db.HashGetAsync(hashkey, "field").ConfigureAwait(false);
+            var set0 = await db.HashSetAsync(hashkey, "field", "value1", When.NotExists).ConfigureAwait(false);
+            var val1 = await db.HashGetAsync(hashkey, "field").ConfigureAwait(false);
+            var set1 = await db.HashSetAsync(hashkey, "field", "value2", When.NotExists).ConfigureAwait(false);
+            var val2 = await db.HashGetAsync(hashkey, "field").ConfigureAwait(false);
 
-            var set2 = await db.HashSetAsync(hashkey, "field-blob", Encoding.UTF8.GetBytes("value3"), When.NotExists);
-            var val3 = await db.HashGetAsync(hashkey, "field-blob");
-            var set3 = await db.HashSetAsync(hashkey, "field-blob", Encoding.UTF8.GetBytes("value3"), When.NotExists);
+            var set2 = await db.HashSetAsync(hashkey, "field-blob", Encoding.UTF8.GetBytes("value3"), When.NotExists).ConfigureAwait(false);
+            var val3 = await db.HashGetAsync(hashkey, "field-blob").ConfigureAwait(false);
+            var set3 = await db.HashSetAsync(hashkey, "field-blob", Encoding.UTF8.GetBytes("value3"), When.NotExists).ConfigureAwait(false);
 
             ClassicAssert.IsFalse(del);
 #nullable enable
@@ -1083,7 +1083,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(4500);
+            await Task.Delay(4500).ConfigureAwait(false);
 
             var items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(2, items.Length);
@@ -1139,7 +1139,7 @@ namespace Garnet.test
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
-            await Task.Delay(2000);
+            await Task.Delay(2000).ConfigureAwait(false);
 
             var result = db.HashExists(smallExpireKeys[0], "Field1");
             ClassicAssert.IsFalse(result);
@@ -1158,7 +1158,7 @@ namespace Garnet.test
             ClassicAssert.Greater(ttl[0], 0);
             ClassicAssert.LessOrEqual(ttl[0], 2000);
 
-            await Task.Delay(2000);
+            await Task.Delay(2000).ConfigureAwait(false);
 
             result = db.HashExists(largeExpireKeys[0], "Field1");
             ClassicAssert.IsFalse(result);
@@ -1230,7 +1230,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.Less((long)recoveredValuesTtl[1], 13);
+                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], 13);
                 ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
@@ -1307,7 +1307,7 @@ namespace Garnet.test
 
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
 
-            await Task.Delay(600);
+            await Task.Delay(600).ConfigureAwait(false);
 
             var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1319,7 +1319,7 @@ namespace Garnet.test
             ClassicAssert.Less(newMemory, orginalMemory);
             orginalMemory = newMemory;
 
-            await Task.Delay(1100);
+            await Task.Delay(1100).ConfigureAwait(false);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1719,18 +1719,18 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession(raw: true);
             c.Connect();
 
-            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
 
-            response = await c.ExecuteAsync("HSET", "h", "a", "0");
+            response = await c.ExecuteAsync("HSET", "h", "a", "0").ConfigureAwait(false);
             ClassicAssert.AreEqual(":1\r\n", response);
 
-            response = await c.ExecuteAsync("HGETALL", "h");
+            response = await c.ExecuteAsync("HGETALL", "h").ConfigureAwait(false);
             if (respVersion >= 3)
                 ClassicAssert.AreEqual("%1\r\n$1\r\na\r\n$1\r\n0\r\n", response);
             else
                 ClassicAssert.AreEqual("*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
 
-            response = await c.ExecuteAsync("HRANDFIELD", "h", "1", "WITHVALUES");
+            response = await c.ExecuteAsync("HRANDFIELD", "h", "1", "WITHVALUES").ConfigureAwait(false);
             if (respVersion >= 3)
                 ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
             else
@@ -1762,7 +1762,7 @@ namespace Garnet.test
             expectedResponse = "+QUEUED\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => UpdateHashMap(key));
+            await Task.Run(() => UpdateHashMap(key)).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -52,7 +52,7 @@ namespace Garnet.test.Resp.ACL
             // Ensure that we connect as an unauthenticated session
             try
             {
-                await c.ExecuteAsync("ACL", "LIST");
+                await c.ExecuteAsync("ACL", "LIST").ConfigureAwait(false);
                 Assert.Fail("Unauthenticated user should not be able to execute ACL commands.");
             }
             catch (Exception exception)
@@ -75,11 +75,11 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Authenticate user with password only
-            var response = await c.ExecuteAsync("AUTH", DummyPassword);
+            var response = await c.ExecuteAsync("AUTH", DummyPassword).ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Check user is authenticated as default user
-            response = await c.ExecuteAsync("ACL", "WHOAMI");
+            response = await c.ExecuteAsync("ACL", "WHOAMI").ConfigureAwait(false);
             ClassicAssert.AreEqual("default", response);
         }
 
@@ -97,11 +97,11 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Authenticate user with username AND password
-            var response = await c.ExecuteAsync("AUTH", "default", DummyPassword);
+            var response = await c.ExecuteAsync("AUTH", "default", DummyPassword).ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Check user is authenticated as default user
-            response = await c.ExecuteAsync("ACL", "WHOAMI");
+            response = await c.ExecuteAsync("ACL", "WHOAMI").ConfigureAwait(false);
             ClassicAssert.AreEqual("default", response);
         }
 
@@ -120,13 +120,13 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the testuser and password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user cannot be authenticated
             try
             {
-                response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword);
+                response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false);
                 Assert.Fail("Attempting to authenticate a new user that is not specified as 'on' should result in an error.");
             }
             catch (Exception exception)
@@ -135,24 +135,24 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Explicitly enable the user
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // User should be able to log in now
-            response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword);
+            response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Switch to default user and explicitly disable user
-            response = await c.ExecuteAsync("AUTH", "default");
+            response = await c.ExecuteAsync("AUTH", "default").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "off");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "off").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user cannot be authenticated anymore
             try
             {
-                response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword);
+                response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword).ConfigureAwait(false);
                 Assert.Fail("Attempting to authenticate a new user that is not specified as 'on' should result in an error.");
             }
             catch (Exception exception)
@@ -175,9 +175,9 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the password and verify it is set correctly
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -205,9 +205,9 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the password and verify it is set correctly
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"#{DummyPasswordHash}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"#{DummyPasswordHash}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -235,15 +235,15 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Try to delete the password
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"<{DummyPassword}");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"<{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the password is not set for the testuser
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -267,15 +267,15 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"#{DummyPasswordHash}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"#{DummyPasswordHash}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Try to delete the password
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"!{DummyPasswordHash}");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"!{DummyPasswordHash}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the password is not set for the testuser
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -299,15 +299,15 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Try to add the same password again
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the test user still has only one valid password hash listed
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -332,11 +332,11 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Create the test user with a password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "nopass");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "nopass").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Attempt to authenticate the user with a wrong password
-            response = await c.ExecuteAsync("AUTH", TestUserA, DummyPasswordB);
+            response = await c.ExecuteAsync("AUTH", TestUserA, DummyPasswordB).ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
         }
 
@@ -355,11 +355,11 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add the two passwords
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}", $">{DummyPasswordB}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}", $">{DummyPasswordB}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the test user has two passwords registered
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -369,11 +369,11 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Reset passwords
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "resetpass");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "resetpass").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the test user has no passwords registered
-            users = await c.ExecuteForArrayAsync("ACL", "list");
+            users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -399,11 +399,11 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add test user without the test category
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user IS NOT assigned the category
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -413,11 +413,11 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Add test category to test user
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"+@{TestCategory}");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"+@{TestCategory}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user IS assigned the category
-            users = await c.ExecuteForArrayAsync("ACL", "list");
+            users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -427,11 +427,11 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Remove test category to test user
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"-@{TestCategory}");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"-@{TestCategory}").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user IS NOT assigned the category anymore
-            users = await c.ExecuteForArrayAsync("ACL", "list");
+            users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -455,11 +455,11 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add an enabled test user with a password and a category assigned
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "+@admin");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "+@admin").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Verify the values have been set
-            string[] users = await c.ExecuteForArrayAsync("ACL", "list");
+            string[] users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
@@ -471,11 +471,11 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Resets the user
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "reset");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "reset").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Verify the values have been reset to their original default
-            users = await c.ExecuteForArrayAsync("ACL", "list");
+            users = await c.ExecuteForArrayAsync("ACL", "list").ConfigureAwait(false);
             foreach (string user in users)
             {
                 // Ensure the user user has been fully reset and disabled
@@ -502,7 +502,7 @@ namespace Garnet.test.Resp.ACL
             // Ensure missing tokens will cause an error
             try
             {
-                var response = await c.ExecuteAsync("ACL", "SETUSER");
+                var response = await c.ExecuteAsync("ACL", "SETUSER").ConfigureAwait(false);
                 Assert.Fail("Calling ACL setuser without any arguments should raise an error.");
             }
             catch (Exception exception)
@@ -527,7 +527,7 @@ namespace Garnet.test.Resp.ACL
             // Ensure unknown ACL operations are raised
             try
             {
-                var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "qwerty");
+                var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "qwerty").ConfigureAwait(false);
                 Assert.Fail("Calling ACL with an invalid operation should raise an error.");
             }
             catch (Exception exception)
@@ -550,7 +550,7 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add a user with wildcard key permissions
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "~*");
+            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "~*").ConfigureAwait(false);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
         }
     }

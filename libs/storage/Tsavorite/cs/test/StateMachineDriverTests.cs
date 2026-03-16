@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -78,20 +78,20 @@ namespace Tsavorite.test.recovery
                 }
 
                 // Wait for some operations to complete in v1
-                await Task.Delay(500);
+                await Task.Delay(500).ConfigureAwait(false);
 
                 // Initiate checkpoint concurrent to the operation threads
                 var task = store1.TakeFullCheckpointAsync(checkpointType);
 
                 // Wait for the checkpoint to complete
-                (var checkpointStatus, var checkpointToken) = await task;
+                (var checkpointStatus, var checkpointToken) = await task.ConfigureAwait(false);
 
                 // Wait for some operations to complete in v2
-                await Task.Delay(500);
+                await Task.Delay(500).ConfigureAwait(false);
 
                 // Signal operation threads to stop, and wait for them to finish
                 opsDone = true;
-                await Task.WhenAll(opTasks);
+                await Task.WhenAll(opTasks).ConfigureAwait(false);
 
                 // Verify the final state of the old store
                 using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
@@ -129,7 +129,7 @@ namespace Tsavorite.test.recovery
                 }, StoreFunctions.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-                _ = await store2.RecoverAsync(default, checkpointToken);
+                _ = await store2.RecoverAsync(default, checkpointToken).ConfigureAwait(false);
 
                 // Verify the state of the new store
                 using var s2 = store2.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
@@ -190,18 +190,18 @@ namespace Tsavorite.test.recovery
                 }
 
                 // Wait for some operations to complete in v1
-                await Task.Delay(500);
+                await Task.Delay(500).ConfigureAwait(false);
 
                 // Grow index concurrent to the operation threads
-                var growIndexStatus = await store1.GrowIndexAsync();
+                var growIndexStatus = await store1.GrowIndexAsync().ConfigureAwait(false);
                 ClassicAssert.IsTrue(growIndexStatus);
 
                 // Wait for some operations to complete in v2
-                await Task.Delay(500);
+                await Task.Delay(500).ConfigureAwait(false);
 
                 // Signal operation threads to stop, and wait for them to finish
                 opsDone = true;
-                await Task.WhenAll(opTasks);
+                await Task.WhenAll(opTasks).ConfigureAwait(false);
 
                 // Verify the final state of the store
                 using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SumFunctions>(new SumFunctions(0, false));
@@ -310,14 +310,14 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] TimeFuzzMode timeFuzzMode)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz).ConfigureAwait(false);
 
         [Test]
         //[Repeat(1000)]
         public async ValueTask GrowIndexVersionSwitchRmwTest(
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] TimeFuzzMode timeFuzzMode)
-            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz).ConfigureAwait(false);
     }
 
     [AllureNUnit]
@@ -401,12 +401,12 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] TimeFuzzMode timeFuzzMode)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz).ConfigureAwait(false);
 
         [Test]
         public async ValueTask GrowIndexVersionSwitchTxnTest(
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] TimeFuzzMode timeFuzzMode)
-            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz).ConfigureAwait(false);
     }
 }

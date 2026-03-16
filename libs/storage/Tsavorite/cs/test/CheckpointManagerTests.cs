@@ -104,7 +104,7 @@ namespace Tsavorite.test
                             break;
                     }
 
-                    await store.CompleteCheckpointAsync();
+                    await store.CompleteCheckpointAsync().ConfigureAwait(false);
                 }
 
                 ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),

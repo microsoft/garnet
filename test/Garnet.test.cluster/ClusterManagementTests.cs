@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -355,7 +355,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i);
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(1000).ConfigureAwait(false);
 
             var server = context.clusterTestUtils.GetServer(0);
             var gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
@@ -363,7 +363,7 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.ClusterReset(0, soft: true);
 
-            await Task.Delay(1000);
+            await Task.Delay(1000).ConfigureAwait(false);
 
             gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
             ClassicAssert.AreEqual("0", gossipConnections, "All gossip connections should be closed after a reset.");

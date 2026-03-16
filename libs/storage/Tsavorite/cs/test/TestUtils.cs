@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -270,7 +270,7 @@ namespace Tsavorite.test
                 tasks[0] = Task.Factory.StartNew(() => first(arg));
                 tasks[1] = Task.Factory.StartNew(() => second(arg));
 
-                await Task.WhenAll(tasks);
+                await Task.WhenAll(tasks).ConfigureAwait(false);
 
                 verification(arg);
             }

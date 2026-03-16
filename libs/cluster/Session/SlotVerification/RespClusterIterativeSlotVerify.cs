@@ -71,8 +71,11 @@ namespace Garnet.cluster
         /// <param name="output"></param>
         public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output)
         {
-            var errorMessage = GetSlotVerificationMessage(configSnapshot, cachedVerificationResult);
-            RespWriteUtils.TryWriteError(errorMessage, ref output);
+            if (cachedVerificationResult.state != SlotVerifiedState.OK)
+            {
+                var errorMessage = GetSlotVerificationMessage(configSnapshot, cachedVerificationResult);
+                _ = RespWriteUtils.TryWriteError(errorMessage, ref output);
+            }
         }
     }
 }
