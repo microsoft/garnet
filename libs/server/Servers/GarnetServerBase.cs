@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -167,7 +166,7 @@ namespace Garnet.server
         {
             logger?.LogTrace("Begin disposing active handlers");
 #if DEBUG
-            var sw = Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var diagnosed = false;
 #endif
             while (activeHandlerCount >= 0)
