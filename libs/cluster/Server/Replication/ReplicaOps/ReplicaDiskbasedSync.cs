@@ -157,7 +157,7 @@ namespace Garnet.cluster
                         PrimaryReplId,
                         cEntry.ToByteArray(),
                         beginAddress.Span,
-                        beginAddress.Span).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                        tailAddress.Span).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
