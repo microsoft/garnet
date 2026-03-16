@@ -109,9 +109,9 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            Debug.Assert(input.metaCommandInfo.MetaCommand == RespMetaCommand.None);
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
 
-            // Conditional execution is expected to pass here - we shouldn't call upsert with a meta-command
+            // Conditional execution is expected to pass here - we shouldn't call upsert with conditional a meta-command
             // Calling this method to get the updated ETag
             var execOp = input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out var updatedETag, initContext: true);
             Debug.Assert(execOp);
