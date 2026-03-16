@@ -145,25 +145,27 @@ namespace Garnet.server
             }
 
             var hadETagPreMutation = logRecord.Info.HasETag;
-            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
-            var updatedETag = logRecord.ETag;
+            long updatedETag = LogRecord.NoETag;
+            var shouldUpdateETag = false;
 
-            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
-            if ((isETagCmd || hadETagPreMutation) &&
-                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
+            if (hadETagPreMutation || input.metaCommandInfo.MetaCommand.IsETagCommand())
             {
-                // Handle skipped execution based on eTag meta-command and current eTag value
-                output.ETag = logRecord.ETag;
-                output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
-                return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+                if (!input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
+                {
+                    // Handle skipped execution based on eTag meta-command and current eTag value
+                    output.ETag = logRecord.ETag;
+                    output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
+                    return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                }
+
+                // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
+                if (!hadETagPreMutation &&
+                    !logRecord.CanAddETagInPlace(out _, out _, out _))
+                    return false;
+
+                shouldUpdateETag = !hadETagPreMutation;
             }
-
-            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
-            if (!hadETagPreMutation && isETagCmd &&
-                !logRecord.CanAddETagInPlace(out _, out _, out _))
-                return false;
-
-            var shouldUpdateETag = !hadETagPreMutation && isETagCmd;
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {

@@ -314,16 +314,32 @@ namespace Garnet.server
 
                 srcSetObject.UpdateSize(arrMember, false);
 
-                _ = srcSetObject.Set.Count == 0
-                    ? DELETE_ObjectStore(sourceKey, ref objectTransactionalContext)
-                    : SET(sourceKey, in srcObject, ref objectTransactionalContext);
-
+                // Delete object if no elements remaining
+                if (srcSetObject.Set.Count == 0)
+                {
+                    DELETE_ObjectStore(sourceKey, ref objectTransactionalContext);
+                }
+                // Upsert to ensure record eTags are updated, if necessary
+                else if (srcObject.ETag != LogRecord.NoETag)
+                {
+                    SET(sourceKey, in srcObject, ref objectTransactionalContext);
+                }
+                
                 _ = dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
-                var setStatus = dstGetStatus == GarnetStatus.NOTFOUND ?
-                    SET(destinationKey, dstSetObject, ref objectTransactionalContext) :
-                    SET(destinationKey, in dstObject, ref objectTransactionalContext);
+                var setStatus = GarnetStatus.OK;
+                
+                // Set object if did not exist before
+                if (dstGetStatus == GarnetStatus.NOTFOUND)
+                {
+                    setStatus = SET(destinationKey, dstSetObject, ref objectTransactionalContext);
+                }
+                // Upsert to ensure record eTags are updated, if necessary
+                else if (dstObject.ETag != LogRecord.NoETag)
+                {
+                    setStatus = SET(destinationKey, in dstObject, ref objectTransactionalContext);
+                }
 
                 if (setStatus == GarnetStatus.OK)
                     smoveResult = 1;

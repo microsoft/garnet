@@ -289,9 +289,16 @@ namespace Garnet.server
 
                     if (!sameKey)
                     {
-                        _ = srcListObject.LnkList.Count == 0
-                            ? DELETE_ObjectStore(sourceKey, ref objectContext)
-                            : SET(sourceKey, in sourceList, ref objectContext);
+                        // Delete object if no elements remaining
+                        if (srcListObject.LnkList.Count == 0)
+                        {
+                            DELETE_ObjectStore(sourceKey, ref objectContext);
+                        }
+                        // Upsert to ensure record eTags are updated, if necessary
+                        else if (sourceList.ETag != LogRecord.NoETag)
+                        {
+                            SET(sourceKey, in sourceList, ref objectContext);
+                        }
 
                         // Left push (addfirst) to destination
                         if (destinationDirection == OperationDirection.Left)
@@ -301,9 +308,16 @@ namespace Garnet.server
 
                         dstListObject.UpdateSize(element);
 
-                        _ = newDstList
-                            ? SET(destinationKey, dstListObject, ref objectContext)
-                            : SET(destinationKey, in destinationList, ref objectContext);
+                        // Set object if did not exist before
+                        if (newDstList)
+                        {
+                            SET(destinationKey, dstListObject, ref objectContext);
+                        }
+                        // Upsert to ensure record eTags are updated, if necessary
+                        else if (sourceList.ETag != LogRecord.NoETag)
+                        {
+                            SET(destinationKey, in destinationList, ref objectContext);
+                        }
                     }
                     else
                     {
@@ -314,7 +328,12 @@ namespace Garnet.server
                             _ = srcListObject.LnkList.AddLast(element);
                         IGarnetObject newListValue = srcListObject;
                         ((ListObject)newListValue).UpdateSize(element);
-                        SET(sourceKey, in sourceList, ref objectContext);
+
+                        // Upsert to ensure record eTags are updated, if necessary
+                        if (sourceList.ETag != LogRecord.NoETag)
+                        {
+                            SET(sourceKey, in sourceList, ref objectContext);
+                        }
                     }
                 }
             }

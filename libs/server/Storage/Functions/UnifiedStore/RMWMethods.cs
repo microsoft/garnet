@@ -40,9 +40,6 @@ namespace Garnet.server
             Debug.Assert(logRecord.Info.ValueIsObject || (!logRecord.Info.HasETag && !logRecord.Info.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
 
-            // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
-            _ = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedETag, initContext: true);
-
             var result = input.header.cmd switch
             {
                 RespCommand.DELIFEXPIM or
@@ -52,13 +49,20 @@ namespace Garnet.server
             };
 
             // The increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-            if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedETag))
+            if (sizeInfo.FieldInfo.HasETag)
             {
-                functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
-                return false;
-            }
+                // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedETag, initContext: true);
+                Debug.Assert(execOp);
 
-            output.ETag = updatedETag;
+                if (!logRecord.TrySetETag(updatedETag))
+                {
+                    functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
+                    return false;
+                }
+
+                output.ETag = updatedETag;
+            }
 
             return result;
         }

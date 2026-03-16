@@ -29,8 +29,6 @@ namespace Garnet.server
                 return false;
             }
 
-            output.ETag = srcLogRecord.ETag;
-
             if (input.header.type != 0)
             {
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
@@ -43,13 +41,15 @@ namespace Garnet.server
                         !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _, readOnlyContext: true))
                     {
                         // Handle skipped execution based on eTag meta-command and current eTag value
+                        output.ETag = srcLogRecord.ETag;
                         output.OutputFlags |= ObjectOutputFlags.OperationSkipped;
                         return functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
                     }
 
                     garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
 
-                    output.ETag = srcLogRecord.ETag;
+                    if (srcRecordHasETag || input.metaCommandInfo.MetaCommand.IsETagCommand())
+                        output.ETag = srcLogRecord.ETag;
 
                     return true;
                 }
@@ -82,6 +82,7 @@ namespace Garnet.server
                 }
             }
 
+            output.ETag = srcLogRecord.ETag;
             output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }
