@@ -12,11 +12,11 @@
     <ProjectReference Include="../../storage/Tsavorite/cs/src/core/Tsavorite.core.csproj" />
   </ItemGroup>
 
-  <!-- Local dev: build Rust crate for current platform -->
+  <!-- Local dev: build Rust crate for current platform (requires cargo on PATH) -->
   <Target Name="BuildRustCdylib" BeforeTargets="Build"
           Condition="'$(CI)' != 'true' AND '$(ContinuousIntegrationBuild)' != 'true'">
     <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml"
-          IgnoreExitCode="false" />
+          IgnoreExitCode="true" />
   </Target>
 
   <!-- Include the native library so it propagates to consuming projects via ProjectReference. -->
