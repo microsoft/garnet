@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Buffers;
@@ -34,7 +34,7 @@ namespace Tsavorite.test
             var checkpointManager = new DeviceLogCommitCheckpointManager(
                 TestUtils.AzureStorageNamedDeviceFactoryCreator,
                 new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-            await TsavoriteLogTest1(logChecksum, device, checkpointManager, iteratorType);
+            await TsavoriteLogTest1(logChecksum, device, checkpointManager, iteratorType).ConfigureAwait(false);
             device.Dispose();
             checkpointManager.PurgeAll();
             checkpointManager.Dispose();
@@ -49,7 +49,7 @@ namespace Tsavorite.test
             var checkpointManager = new DeviceLogCommitCheckpointManager(
                 TestUtils.AzureStorageNamedDeviceFactoryCreator,
                 new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-            await TsavoriteLogTest1(logChecksum, device, checkpointManager, iteratorType);
+            await TsavoriteLogTest1(logChecksum, device, checkpointManager, iteratorType).ConfigureAwait(false);
             device.Dispose();
             checkpointManager.PurgeAll();
             checkpointManager.Dispose();
@@ -91,7 +91,7 @@ namespace Tsavorite.test
         private async ValueTask TsavoriteLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, TsavoriteLogTestBase.IteratorType iteratorType)
         {
             var logSettings = new TsavoriteLogSettings { PageSizeBits = 20, SegmentSizeBits = 20, LogDevice = device, LogChecksum = logChecksum, LogCommitManager = logCommitManager, TryRecoverLatest = false };
-            log = TsavoriteLogTestBase.IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            log = TsavoriteLogTestBase.IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -114,7 +114,7 @@ namespace Tsavorite.test
                 switch (iteratorType)
                 {
                     case TsavoriteLogTestBase.IteratorType.AsyncByteVector:
-                        await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable())
+                        await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable().ConfigureAwait(false))
                         {
                             ClassicAssert.IsTrue(result.SequenceEqual(entry));
                             counter.IncrementAndMaybeTruncateUntil(nextAddress);

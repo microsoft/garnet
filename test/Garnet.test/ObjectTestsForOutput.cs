@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.Text;
 using System.Threading.Tasks;
@@ -45,21 +45,21 @@ namespace Garnet.test
             c.Connect();
 
             string key = "mykey";
-            var valueStr = await CreateKeyOfSize(size, key);
+            var valueStr = await CreateKeyOfSize(size, key).ConfigureAwait(false);
 
-            string zaddResult = await c.ExecuteAsync("ZADD", "cities", "100000", "Delhi", "850000", "Mumbai", "700000", "Hyderabad", "800000", "Kolkata");
+            string zaddResult = await c.ExecuteAsync("ZADD", "cities", "100000", "Delhi", "850000", "Mumbai", "700000", "Hyderabad", "800000", "Kolkata").ConfigureAwait(false);
             ClassicAssert.AreEqual("4", zaddResult);
 
             var t1 = c.ExecuteAsyncBatch("GET", key); // feed partial batch without flushing
 
             var batch2 = c.ExecuteForArrayAsync("ZRANGE", "cities", "0", "-1");
 
-            var batch3Result = await c.ExecuteForArrayAsync("ZRANGE", "cities", "0", "-1");
+            var batch3Result = await c.ExecuteForArrayAsync("ZRANGE", "cities", "0", "-1").ConfigureAwait(false);
 
-            var batch1Result = await t1;
+            var batch1Result = await t1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, batch1Result);
 
-            var batch2Result = await batch2;
+            var batch2Result = await batch2.ConfigureAwait(false);
             ClassicAssert.AreEqual(4, batch2Result.Length);
             ClassicAssert.AreEqual("Delhi", batch2Result[0]);
             ClassicAssert.AreEqual("Hyderabad", batch2Result[1]);
@@ -72,7 +72,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("Kolkata", batch3Result[2]);
             ClassicAssert.AreEqual("Mumbai", batch3Result[3]);
 
-            var batch4Result = await c.ExecuteForArrayAsync("ZRANGE", "cities", "0", "-1");
+            var batch4Result = await c.ExecuteForArrayAsync("ZRANGE", "cities", "0", "-1").ConfigureAwait(false);
             ClassicAssert.AreEqual(4, batch4Result.Length);
             ClassicAssert.AreEqual("Delhi", batch4Result[0]);
             ClassicAssert.AreEqual("Hyderabad", batch4Result[1]);
@@ -93,21 +93,21 @@ namespace Garnet.test
             c.Connect();
 
             string key = "mykey";
-            var valueStr = await CreateKeyOfSize(size, key);
+            var valueStr = await CreateKeyOfSize(size, key).ConfigureAwait(false);
 
-            string zaddResult = await c.ExecuteAsync("ZADD", "cities", "100000", "Delhi", "850000", "Mumbai", "700000", "Hyderabad", "800000", "Kolkata");
+            string zaddResult = await c.ExecuteAsync("ZADD", "cities", "100000", "Delhi", "850000", "Mumbai", "700000", "Hyderabad", "800000", "Kolkata").ConfigureAwait(false);
             ClassicAssert.AreEqual("4", zaddResult);
 
             var t1 = c.ExecuteAsyncBatch("GET", key); // feed partial batch without flushing
 
             var batch2 = c.ExecuteForArrayAsync("ZPOPMAX", "cities");
 
-            var batch1Result = await t1;
+            var batch1Result = await t1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, batch1Result);
 
-            var batch3Result = await c.ExecuteForArrayAsync("ZPOPMAX", "cities");
+            var batch3Result = await c.ExecuteForArrayAsync("ZPOPMAX", "cities").ConfigureAwait(false);
 
-            var batch2Result = await batch2;
+            var batch2Result = await batch2.ConfigureAwait(false);
             ClassicAssert.AreEqual(2, batch2Result.Length);
             ClassicAssert.AreEqual("Mumbai", batch2Result[0]);
             ClassicAssert.AreEqual("850000", batch2Result[1]);
@@ -116,7 +116,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("Kolkata", batch3Result[0]);
             ClassicAssert.AreEqual("800000", batch3Result[1]);
 
-            var batch4Result = await c.ExecuteForArrayAsync("ZPOPMAX", "cities");
+            var batch4Result = await c.ExecuteForArrayAsync("ZPOPMAX", "cities").ConfigureAwait(false);
             ClassicAssert.AreEqual(2, batch4Result.Length);
             ClassicAssert.AreEqual("Hyderabad", batch4Result[0]);
             ClassicAssert.AreEqual("700000", batch4Result[1]);
@@ -136,21 +136,21 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
-            var valueStr = await CreateKeyOfSize(size, "mykey");
+            var valueStr = await CreateKeyOfSize(size, "mykey").ConfigureAwait(false);
 
-            string zaddResult = await c.ExecuteAsync("HSET", "myhash", "field1", "field1value", "field2", "field2value", "field3", "field3value", "field4", "field4value");
+            string zaddResult = await c.ExecuteAsync("HSET", "myhash", "field1", "field1value", "field2", "field2value", "field3", "field3value", "field4", "field4value").ConfigureAwait(false);
             ClassicAssert.AreEqual("4", zaddResult);
 
             var t1 = c.ExecuteAsyncBatch("GET", "mykey"); // feed partial batch without flushing
 
             var t2 = c.ExecuteForArrayAsyncBatch("HMGET", "myhash", "field1", "field2");
 
-            var t3Result = await c.ExecuteForArrayAsync("HMGET", "myhash", "field1", "field2");
+            var t3Result = await c.ExecuteForArrayAsync("HMGET", "myhash", "field1", "field2").ConfigureAwait(false);
 
-            var t1Result = await t1;
+            var t1Result = await t1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, t1Result);
 
-            var t2Result = await t2;
+            var t2Result = await t2.ConfigureAwait(false);
             ClassicAssert.AreEqual(2, t2Result.Length);
             ClassicAssert.AreEqual("field1value", t2Result[0]);
             ClassicAssert.AreEqual("field2value", t2Result[1]);
@@ -159,7 +159,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("field1value", t3Result[0]);
             ClassicAssert.AreEqual("field2value", t3Result[1]);
 
-            var t4Result = await c.ExecuteForArrayAsync("HMGET", "myhash", "field1", "field2");
+            var t4Result = await c.ExecuteForArrayAsync("HMGET", "myhash", "field1", "field2").ConfigureAwait(false);
             ClassicAssert.AreEqual(2, t4Result.Length);
             ClassicAssert.AreEqual("field1value", t4Result[0]);
             ClassicAssert.AreEqual("field2value", t4Result[1]);
@@ -177,21 +177,21 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
-            var valueStr = await CreateKeyOfSize(size, "mykey");
+            var valueStr = await CreateKeyOfSize(size, "mykey").ConfigureAwait(false);
 
-            string zaddResult = await c.ExecuteAsync("HSET", "myhash", "field1", "field1value", "field2", "field2value", "field3", "field3value", "field4", "field4value");
+            string zaddResult = await c.ExecuteAsync("HSET", "myhash", "field1", "field1value", "field2", "field2value", "field3", "field3value", "field4", "field4value").ConfigureAwait(false);
             ClassicAssert.AreEqual("4", zaddResult);
 
             var t1 = c.ExecuteAsyncBatch("GET", "mykey"); // feed partial batch without flushing
 
             var t2 = c.ExecuteForArrayAsyncBatch("HKEYS", "myhash");
 
-            var t3Result = await c.ExecuteForArrayAsync("HKEYS", "myhash");
+            var t3Result = await c.ExecuteForArrayAsync("HKEYS", "myhash").ConfigureAwait(false);
 
-            var t1Result = await t1;
+            var t1Result = await t1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, t1Result);
 
-            var t2Result = await t2;
+            var t2Result = await t2.ConfigureAwait(false);
             ClassicAssert.AreEqual(4, t2Result.Length);
             ClassicAssert.AreEqual("field1", t2Result[0]);
             ClassicAssert.AreEqual("field2", t2Result[1]);
@@ -205,7 +205,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("field4", t3Result[3]);
 
 
-            var t4Result = await c.ExecuteForArrayAsync("HKEYS", "myhash");
+            var t4Result = await c.ExecuteForArrayAsync("HKEYS", "myhash").ConfigureAwait(false);
             ClassicAssert.AreEqual(4, t4Result.Length);
             ClassicAssert.AreEqual("field1", t4Result[0]);
             ClassicAssert.AreEqual("field2", t4Result[1]);
@@ -236,21 +236,21 @@ namespace Garnet.test
 
             var valueStr = Encoding.ASCII.GetString(value);
 
-            string setResult = await c.ExecuteAsync("SET", "mykey", valueStr);
+            string setResult = await c.ExecuteAsync("SET", "mykey", valueStr).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", setResult);
 
-            string zaddResult = await c.ExecuteAsync("LPUSH", "cities", "Delhi", "Mumbai", "Hyderabad", "Kolkata");
+            string zaddResult = await c.ExecuteAsync("LPUSH", "cities", "Delhi", "Mumbai", "Hyderabad", "Kolkata").ConfigureAwait(false);
             ClassicAssert.AreEqual("4", zaddResult);
 
             var t1 = c.ExecuteAsyncBatch("GET", "mykey"); // feed partial batch without flushing
 
-            var t2 = await c.ExecuteAsync("LPOP", "cities");
+            var t2 = await c.ExecuteAsync("LPOP", "cities").ConfigureAwait(false);
 
-            var getResult = await t1;
+            var getResult = await t1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, getResult);
             ClassicAssert.AreEqual("Kolkata", t2);
 
-            var t3 = await c.ExecuteAsync("LPOP", "cities");
+            var t3 = await c.ExecuteAsync("LPOP", "cities").ConfigureAwait(false);
             ClassicAssert.AreEqual("Hyderabad", t3);
         }
 
@@ -266,22 +266,22 @@ namespace Garnet.test
             c.Connect();
 
             string key = "mykey";
-            var valueStr = await CreateKeyOfSize(size, key);
+            var valueStr = await CreateKeyOfSize(size, key).ConfigureAwait(false);
 
             var expectedResponse = "5";
-            var actualValue = await c.ExecuteAsync("RPUSH", "mylist", "heads", "obverse", "tails", "reverse", "edge");
+            var actualValue = await c.ExecuteAsync("RPUSH", "mylist", "heads", "obverse", "tails", "reverse", "edge").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var batch1 = c.ExecuteAsyncBatch("GET", key);
 
             var batch2 = c.ExecuteForArrayAsync("LRANGE", "mylist", "0", "-1");
 
-            var batch3Result = await c.ExecuteForArrayAsync("LRANGE", "mylist", "0", "-1");
+            var batch3Result = await c.ExecuteForArrayAsync("LRANGE", "mylist", "0", "-1").ConfigureAwait(false);
 
-            var batch1Result = await batch1;
+            var batch1Result = await batch1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, batch1Result);
 
-            var batch2Result = await batch2;
+            var batch2Result = await batch2.ConfigureAwait(false);
             ClassicAssert.AreEqual(5, batch2Result.Length);
             ClassicAssert.AreEqual("heads", batch2Result[0]);
             ClassicAssert.AreEqual("obverse", batch2Result[1]);
@@ -296,7 +296,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("reverse", batch3Result[3]);
             ClassicAssert.AreEqual("edge", batch3Result[4]);
 
-            var batch4Result = await c.ExecuteForArrayAsync("LRANGE", "mylist", "0", "-1");
+            var batch4Result = await c.ExecuteForArrayAsync("LRANGE", "mylist", "0", "-1").ConfigureAwait(false);
             ClassicAssert.AreEqual(5, batch4Result.Length);
             ClassicAssert.AreEqual("heads", batch4Result[0]);
             ClassicAssert.AreEqual("obverse", batch4Result[1]);
@@ -320,22 +320,22 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
             string key = "mykey";
-            var valueStr = await CreateKeyOfSize(size, key);
+            var valueStr = await CreateKeyOfSize(size, key).ConfigureAwait(false);
 
             var expectedResponse = "5";
-            var actualValue = await c.ExecuteAsync("SADD", "myset", "heads", "obverse", "tails", "reverse", "edge");
+            var actualValue = await c.ExecuteAsync("SADD", "myset", "heads", "obverse", "tails", "reverse", "edge").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var batch1 = c.ExecuteAsyncBatch("GET", key);
 
             var batch2 = c.ExecuteForArrayAsyncBatch("SMEMBERS", "myset");
 
-            var batch3Result = await c.ExecuteForArrayAsync("SMEMBERS", "myset");
+            var batch3Result = await c.ExecuteForArrayAsync("SMEMBERS", "myset").ConfigureAwait(false);
 
-            var batch1Result = await batch1;
+            var batch1Result = await batch1.ConfigureAwait(false);
             ClassicAssert.AreEqual(valueStr, batch1Result);
 
-            var batch2Result = await batch2;
+            var batch2Result = await batch2.ConfigureAwait(false);
             ClassicAssert.AreEqual(5, batch2Result.Length);
             ClassicAssert.AreEqual("heads", batch2Result[0]);
             ClassicAssert.AreEqual("obverse", batch2Result[1]);
@@ -350,7 +350,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("reverse", batch3Result[3]);
             ClassicAssert.AreEqual("edge", batch3Result[4]);
 
-            var batch4Result = await c.ExecuteForArrayAsync("SMEMBERS", "myset");
+            var batch4Result = await c.ExecuteForArrayAsync("SMEMBERS", "myset").ConfigureAwait(false);
             ClassicAssert.AreEqual(5, batch4Result.Length);
             ClassicAssert.AreEqual("heads", batch4Result[0]);
             ClassicAssert.AreEqual("obverse", batch4Result[1]);
@@ -373,13 +373,13 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
             string key = "mykey";
-            var valueStr = await CreateKeyOfSize(size, key);
+            var valueStr = await CreateKeyOfSize(size, key).ConfigureAwait(false);
 
             var t1 = c.ExecuteAsyncBatch("GET", "mykey"); // feed partial batch without flushing
             var t2 = c.ExecuteAsync("GET", "mykey");
 
-            var v1 = await t1;
-            var v2 = await t2;
+            var v1 = await t1.ConfigureAwait(false);
+            var v2 = await t2.ConfigureAwait(false);
 
             ClassicAssert.AreEqual(valueStr, v1);
             ClassicAssert.AreEqual(valueStr, v2);
@@ -399,7 +399,7 @@ namespace Garnet.test
 
             var valueStr = Encoding.ASCII.GetString(value);
 
-            string setResult = await c.ExecuteAsync("SET", name, valueStr);
+            string setResult = await c.ExecuteAsync("SET", name, valueStr).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", setResult);
 
             return valueStr;

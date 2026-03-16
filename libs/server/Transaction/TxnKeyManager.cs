@@ -43,9 +43,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        public unsafe void VerifyKeyOwnership(PinnedSpanByte key, LockType type)
+        public void VerifyKeyOwnership(PinnedSpanByte key, LockType type)
         {
-            if (!clusterEnabled) return;
+            if (!clusterEnabled || IsReplaying) return;
 
             var readOnly = type == LockType.Shared;
             if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking > 0))

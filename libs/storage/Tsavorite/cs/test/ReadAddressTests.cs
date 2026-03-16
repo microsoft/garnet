@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -198,7 +198,7 @@ namespace Tsavorite.test.readaddress
                 if (flush)
                 {
                     if (!store.UseReadCache)
-                        _ = await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
+                        _ = await store.TakeFullCheckpointAsync(CheckpointType.FoldOver).ConfigureAwait(false);
                     store.Log.FlushAndEvict(wait: true);
                 }
             }
@@ -217,7 +217,7 @@ namespace Tsavorite.test.readaddress
 
                     if (lap != prevLap)
                     {
-                        await Flush();
+                        await Flush().ConfigureAwait(false);
                         prevLap = lap;
                     }
 
@@ -229,7 +229,7 @@ namespace Tsavorite.test.readaddress
                         : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref value));
 
                     if (status.IsPending)
-                        await bContext.CompletePendingAsync();
+                        await bContext.CompletePendingAsync().ConfigureAwait(false);
 
                     insertAddresses[ii] = functions.lastWriteAddress;
                     //ClassicAssert.IsTrue(session.ctx.HasNoPendingRequests);
@@ -239,7 +239,7 @@ namespace Tsavorite.test.readaddress
                         _ = bContext.Delete(key);
                 }
 
-                await Flush();
+                await Flush().ConfigureAwait(false);
             }
 
             internal bool ProcessChainRecord(int lap, ref Output actualOutput)
@@ -448,7 +448,7 @@ namespace Tsavorite.test.readaddress
             var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
-            await testStore.Populate(updateOp == UpdateOp.RMW);
+            await testStore.Populate(updateOp == UpdateOp.RMW).ConfigureAwait(false);
             using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
@@ -491,7 +491,7 @@ namespace Tsavorite.test.readaddress
             var useReadCache = urc == ReadCacheMode.UseRC;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
-            await testStore.Populate(updateOp == UpdateOp.RMW);
+            await testStore.Populate(updateOp == UpdateOp.RMW).ConfigureAwait(false);
             using var session = testStore.store.NewSession<KeyStruct, ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
@@ -521,7 +521,7 @@ namespace Tsavorite.test.readaddress
                     TestStore.ProcessNoKeyRecord(status, output.recordInfo, ref output, keyOrdinal);
                 }
 
-                await testStore.Flush().AsTask();
+                await testStore.Flush().AsTask().ConfigureAwait(false);
             }
         }
 

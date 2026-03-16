@@ -356,7 +356,7 @@ namespace Garnet.server
                     // Reconstructing CustomProcedureInput
                     _ = aofReplayContext[sublogIdx].customProcInput.DeserializeFrom(curr);
 
-                    // Run the stored procedure with the reconstructed input                    
+                    // Run the stored procedure with the reconstructed input
                     var output = aofReplayContext[sublogIdx].output;
                     _ = aofProcessor.respServerSessions[sublogIdx].RunCustomTxnProcAtReplica(id, ref aofReplayContext[sublogIdx].customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
                 }

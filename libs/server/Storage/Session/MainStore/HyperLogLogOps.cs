@@ -121,8 +121,8 @@ namespace Garnet.server
                     sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
-                var dstMergeBuffer = StringOutput.FromPinnedPointer(srcReadBuffer, hllBufferSize);
-                StringOutput srcMergeBuffer = StringOutput.FromPinnedPointer(dstReadBuffer, hllBufferSize);
+                var srcMergeBuffer = StringOutput.FromPinnedPointer(srcReadBuffer, hllBufferSize);
+                var dstMergeBuffer = StringOutput.FromPinnedPointer(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -228,6 +228,7 @@ namespace Garnet.server
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
+
                     // Invalid Type
                     if (*(long*)readBuffer == -1)
                     {
