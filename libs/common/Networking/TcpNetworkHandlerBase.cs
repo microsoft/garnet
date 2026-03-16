@@ -170,6 +170,11 @@ namespace Garnet.common
                 // Dispose of the socket to free up unmanaged resources
                 socket.Dispose();
             }
+
+            // Ensure the handler is fully cleaned up: cancel CTS, remove from activeHandlers,
+            // and return pool buffers. DisposeImpl is guarded by disposeCount so it is safe to
+            // call even when the SAEA callback path has already invoked it.
+            DisposeImpl();
         }
 
         /// <summary>
@@ -252,7 +257,7 @@ namespace Garnet.common
 
         unsafe void AllocateNetworkReceiveBuffer()
         {
-            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize);
+            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize, PoolEntryBufferType.NetworkReceiveBuffer);
             networkReceiveBuffer = networkReceiveBufferEntry.entry;
             networkReceiveBufferPtr = networkReceiveBufferEntry.entryPtr;
         }

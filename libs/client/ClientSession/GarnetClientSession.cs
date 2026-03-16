@@ -127,7 +127,7 @@ namespace Garnet.client
 
             this.usingManagedNetworkPool = networkPool != null;
             this.networkBufferSettings = networkBufferSettings;
-            this.networkPool = networkPool ?? networkBufferSettings.CreateBufferPool();
+            this.networkPool = networkPool ?? networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ClientSession);
             this.bufferSizeDigits = NumUtils.CountDigits(this.networkBufferSettings.sendBufferSize);
 
             this.logger = logger;

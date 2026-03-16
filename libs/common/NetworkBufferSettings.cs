@@ -73,9 +73,10 @@ namespace Garnet.common
         /// Allocate network buffer pool
         /// </summary>
         /// <param name="maxEntriesPerLevel"></param>
+        /// <param name="ownerType"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, ILogger logger = null)
+        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
@@ -83,7 +84,7 @@ namespace Garnet.common
             var levels = LimitedFixedBufferPool.GetLevel(minSize, maxSize) + 1;
             Debug.Assert(levels >= 0);
             levels = Math.Max(4, levels);
-            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
+            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger, ownerType: ownerType);
         }
 
         public void Log(ILogger logger, string category)

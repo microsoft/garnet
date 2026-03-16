@@ -252,6 +252,10 @@ namespace Garnet.common
             // Wait for ongoing sends to complete
             while (throttleCount >= 0 && Interlocked.CompareExchange(ref throttleCount, int.MinValue, 0) != 0) Thread.Yield();
 
+            // Dispose the current response object if one is held
+            responseObject?.Dispose();
+            responseObject = null;
+
             // Empty and dispose the stack
             saeaStack.Dispose();
 

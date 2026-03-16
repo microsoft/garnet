@@ -3,6 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -165,8 +166,9 @@ namespace Garnet.server
         internal void DisposeActiveHandlers()
         {
             logger?.LogTrace("Begin disposing active handlers");
-#if HANGDETECT
-            int count = 0;
+#if DEBUG
+            var sw = Stopwatch.StartNew();
+            var diagnosed = false;
 #endif
             while (activeHandlerCount >= 0)
             {
@@ -177,11 +179,16 @@ namespace Garnet.server
                         var _handler = kvp.Key;
                         _handler?.Dispose();
                     }
-                    Thread.Yield();
-#if HANGDETECT
-                    if (++count % 10000 == 0)
-                        logger?.LogTrace("Dispose iteration {count}, {activeHandlerCount}", count, activeHandlerCount);
+#if DEBUG
+                    if (!diagnosed && sw.ElapsedMilliseconds > 5_000)
+                    {
+                        diagnosed = true;
+                        logger?.LogError("DisposeActiveHandlers blocked with activeHandlerCount={activeHandlerCount}. Active handlers:", activeHandlerCount);
+                        foreach (var kvp in activeHandlers)
+                            logger?.LogError("  Stuck handler: {handlerType}", kvp.Key?.GetType().FullName);
+                    }
 #endif
+                    Thread.Yield();
                 }
                 if (Interlocked.CompareExchange(ref activeHandlerCount, int.MinValue, 0) == 0)
                     break;
