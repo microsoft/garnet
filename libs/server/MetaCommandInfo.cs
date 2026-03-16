@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -51,6 +52,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if etag meta-command</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsETagCommand(this RespMetaCommand metaCmd)
             => metaCmd is >= RespMetaCommand.ExecWithETag and <= RespMetaCommand.ExecIfGreater;
 
@@ -59,6 +61,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if etag meta-command</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsETagCondExecCommand(this RespMetaCommand metaCmd)
             => metaCmd is >= RespMetaCommand.ExecIfMatch and <= RespMetaCommand.ExecIfGreater;
 

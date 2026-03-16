@@ -308,7 +308,6 @@ namespace Garnet.server
             ref var result = ref output.AsRef<int>();
             result = 0;
 
-            // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", nameof(EvaluateExpireCopyUpdate));

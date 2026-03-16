@@ -30,7 +30,6 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
             sizeInfo.AssertOptionals(dstLogRecord.Info);

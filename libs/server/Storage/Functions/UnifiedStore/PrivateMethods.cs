@@ -96,7 +96,6 @@ namespace Garnet.server
         {
             var hasExpiration = logRecord.Info.HasExpiration;
 
-            // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", nameof(EvaluateExpireCopyUpdate));
