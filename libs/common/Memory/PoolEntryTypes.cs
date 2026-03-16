@@ -6,7 +6,7 @@ namespace Garnet.common
     /// <summary>
     /// Identifies the buffer role when a <see cref="PoolEntry"/> is acquired from <see cref="LimitedFixedBufferPool"/>.
     /// </summary>
-    public enum PoolEntryBufferType : int
+    public enum PoolEntryBufferType : byte
     {
         /// <summary>Default/unknown buffer type.</summary>
         Unknown = 0,
@@ -37,7 +37,7 @@ namespace Garnet.common
     /// Identifies the owner of a <see cref="LimitedFixedBufferPool"/> instance.
     /// Set at pool construction time to indicate which subsystem created the pool.
     /// </summary>
-    public enum PoolOwnerType : int
+    public enum PoolOwnerType : byte
     {
         /// <summary>Default/unknown owner.</summary>
         Unknown = 0,
