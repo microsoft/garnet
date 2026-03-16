@@ -23,11 +23,16 @@ fn bench<F: FnMut()>(label: &str, mut f: F) {
 }
 
 fn run_benchmarks(label: &str, tree: &BfTree) {
-    let key = b"bench:key:00001";
+    let key = b"bench:key:00000";
     let value = [42u8; 128];
 
-    // Pre-insert
-    tree.insert(key, &value);
+    // Insert 64 consecutive keys so total data exceeds the base page size
+    // (~4 KB default). This ensures reads are served from the circular
+    // buffer cache and disk-backed reads don't hit a cold-page corner case.
+    for i in 0..64 {
+        let k = format!("bench:key:{i:05}");
+        tree.insert(k.as_bytes(), &value);
+    }
 
     // Verify read returns correct data
     let mut buf = [0u8; 256];

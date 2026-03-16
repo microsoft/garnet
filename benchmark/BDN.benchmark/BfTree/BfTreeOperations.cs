@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Garnet.server.BfTreeInterop;
@@ -20,13 +20,10 @@ namespace BDN.benchmark.BfTree
         private BfTreeService _tree;
         private string _treePath;
 
-        // Pinned arrays — GCHandle keeps them fixed so PinnedSpanByte is safe
+        // Pinned arrays allocated via GC.AllocateArray(pinned: true)
         private byte[] _key;
         private byte[] _value;
         private byte[] _readBuffer;
-        private GCHandle _keyHandle;
-        private GCHandle _valueHandle;
-        private GCHandle _readBufferHandle;
 
         // Pre-built PinnedSpanByte for zero-overhead benchmarks
         private PinnedSpanByte _pinnedKey;
@@ -58,25 +55,31 @@ namespace BDN.benchmark.BfTree
                     cbMinRecordSize: 4);
             }
 
-            _key = Encoding.UTF8.GetBytes("bench:key:00001");
-            _value = new byte[ValueSize];
+            // Allocate pinned arrays — no GCHandle needed
+            _key = GC.AllocateArray<byte>("bench:key:00000"u8.Length, pinned: true);
+            "bench:key:00000"u8.CopyTo(_key);
+            _value = GC.AllocateArray<byte>(ValueSize, pinned: true);
             new Random(42).NextBytes(_value);
-            _readBuffer = new byte[ValueSize + 64];
-
-            // Pin arrays for PinnedSpanByte benchmarks
-            _keyHandle = GCHandle.Alloc(_key, GCHandleType.Pinned);
-            _valueHandle = GCHandle.Alloc(_value, GCHandleType.Pinned);
-            _readBufferHandle = GCHandle.Alloc(_readBuffer, GCHandleType.Pinned);
+            _readBuffer = GC.AllocateArray<byte>(ValueSize + 64, pinned: true);
 
             _pinnedKey = PinnedSpanByte.FromPinnedPointer(
-                (byte*)_keyHandle.AddrOfPinnedObject(), _key.Length);
+                (byte*)Unsafe.AsPointer(ref _key[0]), _key.Length);
             _pinnedValue = PinnedSpanByte.FromPinnedPointer(
-                (byte*)_valueHandle.AddrOfPinnedObject(), _value.Length);
-            _pinnedReadBufPtr = (byte*)_readBufferHandle.AddrOfPinnedObject();
+                (byte*)Unsafe.AsPointer(ref _value[0]), _value.Length);
+            _pinnedReadBufPtr = (byte*)Unsafe.AsPointer(ref _readBuffer[0]);
             _pinnedReadBufLen = _readBuffer.Length;
 
-            // Pre-insert so Read benchmarks hit
-            _tree.Insert(_key, _value);
+            // Insert 64 consecutive keys so the total data exceeds the base page
+            // size (~4 KB default). This ensures reads are served from the circular
+            // buffer cache and disk-backed reads don't hit a cold-page corner case.
+            for (int i = 0; i < 64; i++)
+            {
+                Encoding.UTF8.GetBytes($"bench:key:{i:D5}", _key);
+                _tree.Insert(_key, _value);
+            }
+
+            // Restore the benchmark key (bench:key:00000)
+            "bench:key:00000"u8.CopyTo(_key);
 
             // Validate the read actually returns the correct data
             var result = _tree.Read(_key, _readBuffer, out int bytesRead);
@@ -91,9 +94,6 @@ namespace BDN.benchmark.BfTree
         [GlobalCleanup]
         public void GlobalCleanup()
         {
-            _keyHandle.Free();
-            _valueHandle.Free();
-            _readBufferHandle.Free();
             _tree?.Dispose();
             if (_treePath != null && File.Exists(_treePath))
                 File.Delete(_treePath);
