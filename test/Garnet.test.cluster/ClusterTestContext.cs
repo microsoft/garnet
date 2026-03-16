@@ -501,6 +501,20 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void SimplePrimaryReplicaSetup()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            // Setup cluster
+            var resp = clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], true, logger);
+            ClassicAssert.AreEqual("OK", resp);
+            clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger);
+            clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger);
+            clusterTestUtils.Meet(primaryIndex, replicaIndex, logger);
+            clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex);
+            clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex);
+        }
+
         public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool performRMW = false)
         {
             //Populate Primary
@@ -711,9 +725,6 @@ namespace Garnet.test.cluster
         public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
         {
             var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
-            // Issue meet to replicas
-            for (var i = primary_count; i < primary_count + replica_count; i++)
-                clusterTestUtils.Meet(i, 0);
 
             // Wait until primary node is known so as not to fail replicate
             for (var i = primary_count; i < primary_count + replica_count; i++)
@@ -721,10 +732,7 @@ namespace Garnet.test.cluster
 
             // Issue cluster replicate and bump epoch manually to capture config.
             for (var i = primary_count; i < primary_count + replica_count; i++)
-            {
                 _ = clusterTestUtils.ClusterReplicate(i, primaryId, async: true, logger: logger);
-                clusterTestUtils.BumpEpoch(i, logger: logger);
-            }
 
             if (!checkpointTask.Wait(TimeSpan.FromSeconds(100))) Assert.Fail("Checkpoint task timeout");
 
