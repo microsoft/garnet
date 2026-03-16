@@ -340,7 +340,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;
+        public readonly long Expiration
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : NoExpiration;
+            }
+        }
 
         /// <inheritdoc/>
         public readonly bool IsMemoryLogRecord => true;
