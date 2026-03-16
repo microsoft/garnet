@@ -607,17 +607,19 @@ namespace Garnet.test.cluster
             for (var i = 0; i < keysList.Count; i++)
             {
                 var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out var _slot, out var endPoint, out var responseState);
-                while (responseState != ResponseState.OK)
+                while (responseState != ResponseState.OK || value == null)
                 {
                     _ = Thread.Yield();
                     value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out _slot, out endPoint, out responseState);
                 }
 
                 ClassicAssert.AreEqual(targetPort, endPoint.Port, $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {targetPort}, actual: {endPoint.Port}");
-                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
+                ClassicAssert.IsNotNull(value, $"src:[{sourcePort}] => tgt:[{targetPort}] == respFrom: {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
+                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"src:[{sourcePort}] => tgt:[{targetPort}] == respFrom: {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
             }
             context.logger.LogDebug("5. Checking keys done");
 
+            context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
             context.logger.LogDebug("6. Checking configuration update starting");
             // Check if configuration has updated by
             var otherPorts = context.clusterTestUtils.GetEndPoints().Select(x => ((IPEndPoint)x).Port).Where(x => x != sourcePort || x != targetPort);
@@ -879,9 +881,9 @@ namespace Garnet.test.cluster
 
             context.logger.LogDebug("6. Checking migrated keys done");
 
-            (resp, members) = DoZRANGE(targetNodeIndex, key, out _Address, out _Port, out _Slot);
-            ClassicAssert.AreEqual(memberPair.Select(x => Encoding.ASCII.GetString(x.Item2)).ToList(), members);
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
+            (resp, members) = DoZRANGE(targetNodeIndex, key, out _Address, out _Port, out _Slot);
+            ClassicAssert.AreEqual(memberPair.Select(x => Encoding.ASCII.GetString(x.Item2)).ToList(), members, $"MESSAGE: {resp} {count}");
             context.logger.LogDebug("7. ClusterSimpleMigrateSlotsWithObjectsTest done");
         }
 
