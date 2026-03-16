@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+#if DEBUG
 using System.Collections.Concurrent;
+#endif
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
