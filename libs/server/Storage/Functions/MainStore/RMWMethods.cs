@@ -44,6 +44,8 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
                     return true;
+                case RespCommand.RICREATE:
+                    return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -308,6 +310,24 @@ namespace Garnet.server
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     if (!TryCopyUpdateNumber(incrByFloat, logRecord.ValueSpan, ref output))
                         return false;
+                    break;
+                case RespCommand.RICREATE:
+                    {
+                        // The stub bytes are passed as parseState arg 0
+                        var stubSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        if (!logRecord.TrySetContentLengths(RangeIndexManager.IndexSizeBytes, in sizeInfo))
+                        {
+                            functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "RICREATE");
+                            return false;
+                        }
+
+                        // Copy stub bytes into the record value
+                        stubSpan.CopyTo(logRecord.ValueSpan);
+
+                        // Set RecordType to identify this as a RangeIndex stub
+                        var dataHeader = logRecord.RecordDataHeader;
+                        dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                    }
                     break;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -834,6 +854,10 @@ namespace Garnet.server
                         }
                     }
                     throw new GarnetException("Unsupported operation on input");
+                case RespCommand.RICREATE:
+                    // Index already exists at this key — reject with error
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return IPUResult.NotUpdated;
             }
 
             // increment the Etag transparently if in place update happened
@@ -947,6 +971,9 @@ namespace Garnet.server
                         return false;
                     }
                     return true;
+                case RespCommand.RICREATE:
+                    // Index already exists — never copy-update, reject in caller
+                    return false;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -1431,6 +1458,12 @@ namespace Garnet.server
                         }
                     }
                     throw new GarnetException("Unsupported operation on input");
+                case RespCommand.RICREATE:
+                    // Copy the stub bytes to the new record
+                    srcLogRecord.ValueSpan.CopyTo(dstLogRecord.ValueSpan);
+                    var dstDataHeader = dstLogRecord.RecordDataHeader;
+                    dstDataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                    break;
             }
 
 

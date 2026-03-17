@@ -998,6 +998,9 @@ namespace Garnet.server
                 RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
                 RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
 
+                // RangeIndex commands
+                RespCommand.RICREATE => NetworkRICREATE(ref storageApi),
+
                 _ => Process(command, ref storageApi)
             };
 

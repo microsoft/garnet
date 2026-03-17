@@ -28,6 +28,23 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
+            // Free BfTree if this is a RangeIndex record
+            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+            {
+                RangeIndexManager.ReadIndex(logRecord.ValueSpan,
+                    out var treeHandle, out _, out _, out _, out _, out _, out _, out _, out var pid);
+                if (treeHandle != 0 && pid == functionsState.rangeIndexManager.ProcessInstanceId)
+                {
+                    var gcHandle = System.Runtime.InteropServices.GCHandle.FromIntPtr(treeHandle);
+                    if (gcHandle.IsAllocated)
+                    {
+                        var bfTree = (Garnet.server.BfTreeInterop.BfTreeService)gcHandle.Target;
+                        bfTree.Dispose();
+                        gcHandle.Free();
+                    }
+                }
+            }
+
             logRecord.ClearOptionals();
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

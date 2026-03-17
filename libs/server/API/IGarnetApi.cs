@@ -1184,6 +1184,28 @@ namespace Garnet.server
         GarnetStatus HyperLogLogMerge(ref StringInput input, out bool error);
 
         #endregion
+
+        #region RangeIndex
+
+        /// <summary>
+        /// RI.CREATE – create a new RangeIndex backed by a BfTree.
+        /// </summary>
+        /// <param name="key">Key under which the index is stored.</param>
+        /// <param name="storageBackend">Storage backend type (Disk or Memory).</param>
+        /// <param name="filePath">File path for disk-backed trees (null for memory).</param>
+        /// <param name="cacheSize">BfTree circular buffer size in bytes.</param>
+        /// <param name="minRecordSize">BfTree minimum record size.</param>
+        /// <param name="maxRecordSize">BfTree maximum record size.</param>
+        /// <param name="maxKeyLen">BfTree maximum key length.</param>
+        /// <param name="leafPageSize">BfTree leaf page size.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <param name="errorMsg">Error message if the operation failed.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexCreate(PinnedSpanByte key, byte storageBackend, string filePath,
+            ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
+
+        #endregion
     }
 
     /// <summary>

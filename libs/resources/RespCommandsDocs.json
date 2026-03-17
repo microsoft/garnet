@@ -6376,6 +6376,84 @@
     ]
   },
   {
+    "Command": "RICREATE",
+    "Name": "RI.CREATE",
+    "Summary": "Creates a new RangeIndex backed by a BfTree. Returns an error if the key already exists.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "BACKEND",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DISK",
+            "DisplayText": "path",
+            "Type": "String",
+            "Token": "DISK"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMORY",
+            "DisplayText": "memory",
+            "Type": "PureToken",
+            "Token": "MEMORY"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CACHESIZE",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "CACHESIZE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MINRECORD",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MINRECORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAXRECORD",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MAXRECORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAXKEYLEN",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MAXKEYLEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PAGESIZE",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "PAGESIZE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "ROLE",
     "Name": "ROLE",
     "Summary": "Returns the replication role.",

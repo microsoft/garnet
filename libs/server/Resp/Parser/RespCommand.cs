@@ -169,6 +169,7 @@ namespace Garnet.server
         PFMERGE,
         PSETEX,
         RENAME,
+        RICREATE,
         RESTORE,
         RENAMENX,
         RPOP,
@@ -554,6 +555,15 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
             => cmd <= LastReadCommand;
+
+        /// <summary>
+        /// Returns true if this command can legally operate on a RangeIndex key.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsLegalOnRangeIndex(this RespCommand cmd)
+            => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE
+               or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX
+               or RespCommand.RICREATE;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -2597,6 +2607,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
             {
                 return RespCommand.DELIFGREATER;
+            }
+            else if (command.SequenceEqual("RI.CREATE"u8))
+            {
+                return RespCommand.RICREATE;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.

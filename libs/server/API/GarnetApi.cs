@@ -369,5 +369,13 @@ namespace Garnet.server
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
         #endregion
+
+        #region RangeIndex
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexCreate(PinnedSpanByte key, byte storageBackend, string filePath,
+            ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
+            => storageSession.RangeIndexCreate(key, storageBackend, filePath, cacheSize, minRecordSize, maxRecordSize, maxKeyLen, leafPageSize, out result, out errorMsg);
+        #endregion
     }
 }

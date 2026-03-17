@@ -254,6 +254,7 @@ namespace CommandInfoUpdater
             new("RESTORE", RespCommand.RESTORE, StoreType.All),
             new("RENAMENX", RespCommand.RENAMENX, StoreType.All),
             new("REPLICAOF", RespCommand.REPLICAOF),
+            new("RI.CREATE", RespCommand.RICREATE, StoreType.Main),
             new("ROLE", RespCommand.ROLE),
             new("RPOP", RespCommand.RPOP, StoreType.Object),
             new("RPOPLPUSH", RespCommand.RPOPLPUSH, StoreType.Object),
