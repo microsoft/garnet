@@ -2041,7 +2041,7 @@ namespace Garnet.server
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
         /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
         /// </summary>
-        GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice value, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result);
+        GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice value, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap);
 
         /// <summary>
         /// Perform a similarity search given an element already in the vector set and these parameters.
@@ -2049,7 +2049,7 @@ namespace Garnet.server
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
         /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
         /// </summary>
-        GarnetStatus VectorSetElementSimilarity(ArgSlice key, ArgSlice element, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result);
+        GarnetStatus VectorSetElementSimilarity(ArgSlice key, ArgSlice element, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap);
 
         /// <summary>
         /// Fetch the embedding of a given element in a Vector set.
