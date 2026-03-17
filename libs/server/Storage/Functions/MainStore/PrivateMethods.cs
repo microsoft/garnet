@@ -101,6 +101,9 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GET:
+                case RespCommand.RIGET:
+                case RespCommand.RISET:
+                case RespCommand.RIDEL:
                     // Get value without RESP header; exclude expiration
                     if (value.Length <= output.SpanByteAndMemory.Length)
                     {

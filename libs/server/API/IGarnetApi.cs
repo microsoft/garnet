@@ -1205,6 +1205,39 @@ namespace Garnet.server
             ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
             out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
 
+        /// <summary>
+        /// RI.SET – insert or update a field in a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="field">Entry key within the BfTree.</param>
+        /// <param name="value">Entry value.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <param name="errorMsg">Error message if the operation failed.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// RI.GET – read a field from a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="field">Entry key within the BfTree.</param>
+        /// <param name="value">The value bytes if found, null otherwise.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
+            out byte[] value, out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.DEL – delete a field from a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="field">Entry key within the BfTree.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
+            out RangeIndexResult result);
+
         #endregion
     }
 

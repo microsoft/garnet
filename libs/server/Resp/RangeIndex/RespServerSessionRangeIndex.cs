@@ -150,5 +150,102 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Handles the RI.SET command.
+        /// Syntax: RI.SET key field value
+        /// </summary>
+        private bool NetworkRISET<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 3)
+                return AbortWithWrongNumberOfArguments("RI.SET");
+
+            var key = parseState.GetArgSliceByRef(0);
+            var field = parseState.GetArgSliceByRef(1);
+            var value = parseState.GetArgSliceByRef(2);
+
+            storageApi.RangeIndexSet(key, field, value, out var result, out var errorMsg);
+
+            if (result == RangeIndexResult.OK)
+            {
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                if (errorMsg.Length > 0)
+                    while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
+                        SendAndReset();
+                else
+                    while (!RespWriteUtils.TryWriteError("ERR range index operation failed"u8, ref dcurr, dend))
+                        SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Handles the RI.GET command.
+        /// Syntax: RI.GET key field
+        /// </summary>
+        private bool NetworkRIGET<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments("RI.GET");
+
+            var key = parseState.GetArgSliceByRef(0);
+            var field = parseState.GetArgSliceByRef(1);
+
+            storageApi.RangeIndexGet(key, field, out var valueBytes, out var result);
+
+            if (result == RangeIndexResult.OK && valueBytes != null)
+            {
+                while (!RespWriteUtils.TryWriteBulkString(valueBytes, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if (result == RangeIndexResult.NotFound)
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteError("ERR range index not found"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Handles the RI.DEL command.
+        /// Syntax: RI.DEL key field
+        /// </summary>
+        private bool NetworkRIDEL<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments("RI.DEL");
+
+            var key = parseState.GetArgSliceByRef(0);
+            var field = parseState.GetArgSliceByRef(1);
+
+            storageApi.RangeIndexDel(key, field, out var result);
+
+            if (result == RangeIndexResult.OK)
+            {
+                while (!RespWriteUtils.TryWriteInt32(1, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteError("ERR range index not found"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
     }
 }

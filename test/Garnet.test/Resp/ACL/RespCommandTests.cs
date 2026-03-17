@@ -5371,6 +5371,69 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task RIDelACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["ridel-acl-idx", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+
+            int count = 0;
+
+            await CheckCommandsAsync(
+                "RI.DEL",
+                [DoRIDelAsync]
+            ).ConfigureAwait(false);
+
+            async Task DoRIDelAsync(GarnetClient client)
+            {
+                // Insert a field as default user, then delete it as the test user
+                await setupClient.ExecuteForStringResultAsync("RI.SET", ["ridel-acl-idx", $"field-{count}", "val"]).ConfigureAwait(false);
+                var val = await client.ExecuteForStringResultAsync("RI.DEL", ["ridel-acl-idx", $"field-{count}"]).ConfigureAwait(false);
+                count++;
+                ClassicAssert.AreEqual("1", val);
+            }
+        }
+
+        [Test]
+        public async Task RIGetACLsAsync()
+        {
+            // Pre-create the index and insert a field using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riget-acl-idx", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["riget-acl-idx", "field1", "value1"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.GET",
+                [DoRIGetAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIGetAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("RI.GET", ["riget-acl-idx", "field1"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("value1", val);
+            }
+        }
+
+        [Test]
+        public async Task RISetACLsAsync()
+        {
+            // Pre-create the index using default user
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riset-acl-idx", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.SET",
+                [DoRISetAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRISetAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("RI.SET", ["riset-acl-idx", "field1", "value1"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
         public async Task ReplicaOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests

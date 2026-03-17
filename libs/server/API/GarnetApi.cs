@@ -376,6 +376,21 @@ namespace Garnet.server
             ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
             out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
             => storageSession.RangeIndexCreate(key, storageBackend, filePath, cacheSize, minRecordSize, maxRecordSize, maxKeyLen, leafPageSize, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
+            => storageSession.RangeIndexSet(key, field, value, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
+            out byte[] value, out RangeIndexResult result)
+            => storageSession.RangeIndexGet(key, field, out value, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
+            out RangeIndexResult result)
+            => storageSession.RangeIndexDel(key, field, out result);
         #endregion
     }
 }

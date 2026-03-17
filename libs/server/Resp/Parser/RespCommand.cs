@@ -108,6 +108,9 @@ namespace Garnet.server
         ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
         ZUNION,
 
+        // Read-only RangeIndex commands
+        RIGET,
+
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
@@ -170,6 +173,8 @@ namespace Garnet.server
         PSETEX,
         RENAME,
         RICREATE,
+        RIDEL,
+        RISET,
         RESTORE,
         RENAMENX,
         RPOP,
@@ -563,7 +568,7 @@ namespace Garnet.server
         public static bool IsLegalOnRangeIndex(this RespCommand cmd)
             => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE
                or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX
-               or RespCommand.RICREATE;
+               or RespCommand.RICREATE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -2611,6 +2616,18 @@ namespace Garnet.server
             else if (command.SequenceEqual("RI.CREATE"u8))
             {
                 return RespCommand.RICREATE;
+            }
+            else if (command.SequenceEqual("RI.SET"u8))
+            {
+                return RespCommand.RISET;
+            }
+            else if (command.SequenceEqual("RI.GET"u8))
+            {
+                return RespCommand.RIGET;
+            }
+            else if (command.SequenceEqual("RI.DEL"u8))
+            {
+                return RespCommand.RIDEL;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.

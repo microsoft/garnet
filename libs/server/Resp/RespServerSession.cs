@@ -1000,6 +1000,9 @@ namespace Garnet.server
 
                 // RangeIndex commands
                 RespCommand.RICREATE => NetworkRICREATE(ref storageApi),
+                RespCommand.RISET => NetworkRISET(ref storageApi),
+                RespCommand.RIGET => NetworkRIGET(ref storageApi),
+                RespCommand.RIDEL => NetworkRIDEL(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

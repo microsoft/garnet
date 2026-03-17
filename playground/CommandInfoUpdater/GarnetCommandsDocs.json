@@ -2066,5 +2066,77 @@
         "ArgumentFlags": "Optional"
       }
     ]
+  },
+  {
+    "Command": "RIDEL",
+    "Name": "RI.DEL",
+    "Summary": "Deletes an entry from a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "RIGET",
+    "Name": "RI.GET",
+    "Summary": "Gets the value of an entry in a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "RISET",
+    "Name": "RI.SET",
+    "Summary": "Inserts or updates an entry in a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
   }
 ]
