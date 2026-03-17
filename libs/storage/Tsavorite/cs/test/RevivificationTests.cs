@@ -1140,9 +1140,6 @@ namespace Tsavorite.test.Revivification
         public void SpanByteUpdateRevivifyTest([Values] DeleteDest deleteDest, [Values] UpdateKey updateKey,
                                           [Values] CollisionRange collisionRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             bool stayInChain = deleteDest == DeleteDest.InChain || collisionRange != CollisionRange.None;   // Collisions make the ii inelidable
 
             byte delAboveRO = (byte)(NumRecords - (stayInChain
@@ -1444,9 +1441,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(3000)]
         public void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] WaitMode waitMode, [Values] DeleteDest deleteDest)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             Populate();
 
             // Note: this test assumes no collisions (every delete goes to the FreeList)
@@ -2040,8 +2034,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(100)]
         public void ArtificialFreeBinThreadStressTest(int numIterations, int numAddThreads, int numTakeThreads)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
             const int numRecordsPerThread = 1000;
 
             // Set up the fake sizeInfo and logRecord; they only have to return lengths.
@@ -2367,9 +2359,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(3000)]
         public void LiveThreadContentionOnOneRecordTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             const int numIterations = 2000;
             const int numDeleteThreads = 5, numUpdateThreads = 5;
             const int keyRange = numDeleteThreads;
@@ -2449,9 +2438,6 @@ namespace Tsavorite.test.Revivification
         public void LiveFreeListThreadStressTest([Values] CollisionRange collisionRange,
                                              [Values] ThreadingPattern threadingPattern, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             int numIterations = 100;
             const int numDeleteThreads = 5, numUpdateThreads = 5;
 
@@ -2526,9 +2512,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(30)]
         public void LiveInChainThreadStressTest([Values(CollisionRange.Ten)] CollisionRange collisionRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             // Turn off freelist.
             _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 

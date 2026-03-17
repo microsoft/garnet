@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -790,8 +789,6 @@ namespace Tsavorite.test.ReadCacheTests
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
 
             PopulateAndEvict();
 
@@ -1044,8 +1041,6 @@ namespace Tsavorite.test.ReadCacheTests
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
             PopulateAndEvict();
 

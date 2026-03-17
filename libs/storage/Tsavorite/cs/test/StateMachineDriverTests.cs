@@ -50,9 +50,6 @@ namespace Tsavorite.test.recovery
 
         public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, long indexSize, bool useTimingFuzzing)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                System.Diagnostics.Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             // Create the original store
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {

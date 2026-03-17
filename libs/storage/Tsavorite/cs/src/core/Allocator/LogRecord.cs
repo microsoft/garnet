@@ -540,7 +540,7 @@ namespace Tsavorite.core
             var (_ /*keyLength*/, oldInlineValueSize) = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen);
             var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
 
-            // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immuatable.
+            // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // optionalStartAddress will change if inline value size changes.
             valueAddress = physicalAddress + recordLength - oldFillerLen - oldOptionalSize - oldInlineValueSize;
             var optionalStartAddress = valueAddress + oldInlineValueSize;

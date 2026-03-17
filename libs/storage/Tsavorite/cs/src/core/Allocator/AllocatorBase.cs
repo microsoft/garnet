@@ -1290,7 +1290,7 @@ namespace Tsavorite.core
 
                 // If HeadAddress hasn't moved, currentReadOnlyAddress is either HeadAddress or at a page boundary, unless we have the case where
                 // we've gone beyond size budget on a single page; in that case we must remain at headAddress.
-                if ((headAddress == PageHeader.Size) || GetPage(tailAddress) == headPage)
+                if ((GetOffsetOnPage(headAddress) <= PageHeader.Size) || GetPage(tailAddress) == headPage)
                     readOnlyAddress = headAddress;
                 else
                 {

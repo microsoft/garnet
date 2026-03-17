@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -172,8 +171,6 @@ namespace Tsavorite.test.InsertAtTailStressTests
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
             // Initial population so we know we can read the keys.
             PopulateAndSetReadOnlyToTail();
