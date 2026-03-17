@@ -21,9 +21,9 @@ Adding a single new command touches **at minimum** these areas:
 | 2 | Command parsing | `libs/server/Resp/Parser/RespCommand.cs` | ✅ Always |
 | 3 | Command dispatch | `libs/server/Resp/RespServerSession.cs` | ✅ Always |
 | 4 | RESP handler | `libs/server/Resp/<Category>/*.cs` | ✅ Always |
-| 5 | API interface | `libs/server/API/IGarnetApi.cs` | ✅ Always |
-| 6 | API delegation | `libs/server/API/GarnetApi.cs` | ✅ Always |
-| 7 | Storage session | `libs/server/Storage/Session/` | ✅ Always |
+| 5 | API interface | `libs/server/API/IGarnetApi.cs` | If key-value command |
+| 6 | API delegation | `libs/server/API/GarnetApi.cs` | If key-value command |
+| 7 | Storage session | `libs/server/Storage/Session/` | If key-value command |
 | 8 | RMW/Read callbacks | `libs/server/Storage/Functions/MainStore/` | If using RMW/Read |
 | 9 | VarLen methods | `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` | If using RMW |
 | 10 | Command info JSON | `libs/resources/RespCommandsInfo.json` | ✅ Always (generated) |
@@ -34,6 +34,7 @@ Adding a single new command touches **at minimum** these areas:
 | 15 | ACL test | `test/Garnet.test/Resp/ACL/RespCommandTests.cs` | ✅ Always |
 | 16 | Integration tests | `test/Garnet.test/Resp*.cs` | ✅ Always |
 | 17 | Website documentation | `website/docs/commands/` | ✅ Always |
+| 18 | Configuration settings | `Options.cs`, `GarnetServerOptions.cs`, `defaults.conf` | If command is optional/gated |
 
 ---
 
@@ -181,6 +182,10 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
 
 ---
 
+## Steps 5–7: Storage Layer (skip for admin/non-key commands)
+
+> **Note:** Steps 5, 6, and 7 apply only to commands that read or write key-value data through the store (e.g., `SET`, `GET`, `DELIFGREATER`). Admin commands like `DEBUG`, `PING`, `CONFIG`, etc. handle their logic entirely in the RESP handler (Step 4) and do **not** need API interface methods, storage session ops, or RMW callbacks. Skip to Step 8 for those.
+
 ## Step 5: Add API Interface Method
 
 **File:** `libs/server/API/IGarnetApi.cs`
@@ -278,13 +283,20 @@ Add entry in alphabetical order:
 new("MY.CMD", RespCommand.MYCMD, StoreType.Main),
 ```
 
+For admin/non-key commands (e.g., `DEBUG`, `PING`), omit `StoreType` or use `StoreType.None`:
+```csharp
+new("DEBUG", RespCommand.DEBUG),
+```
+
 `StoreType` values: `Main` (string store), `Object` (object store), `All` (both), `None` (no keys).
 
 ### 8b. Add to GarnetCommandsInfo.json (Garnet-only commands)
 
 **File:** `playground/CommandInfoUpdater/GarnetCommandsInfo.json`
 
-Only needed for commands that don't exist in standard Redis. Add a JSON entry:
+Only needed for commands that don't exist in standard Redis (e.g., `DELIFGREATER`, `SETIFMATCH`). Standard Redis commands (e.g., `DEBUG`, `GETDEL`) get their metadata from a running Redis server automatically via the CommandInfoUpdater tool — skip this step and Step 8c for those.
+
+Add a JSON entry:
 
 ```json
 {
@@ -476,6 +488,75 @@ Description of what the command does.
 ```
 
 Also mark the command as supported in `website/docs/commands/api-compatibility.md` if it corresponds to a standard Redis command.
+
+---
+
+## Step 11b: Add Configuration Settings (if needed)
+
+If the command is optional, gated behind a feature flag, or needs a server-side configuration parameter (e.g., `DEBUG` requires `--enable-debug-command`), you must wire up a configuration option across four files:
+
+### 1. Add property to `Options` class
+
+**File:** `libs/host/Configuration/Options.cs`
+
+Add a property with the `[Option]` attribute (from CommandLineParser):
+
+```csharp
+[OptionValidation]
+[Option("enable-my-feature", Required = false, HelpText = "Enable MY.CMD for 'no', 'local' or 'all' connections")]
+public ConnectionProtectionOption EnableMyFeature { get; set; }
+```
+
+The `[Option]` attribute defines the CLI flag name (kebab-case). Use `Required = false` for optional settings. Common types: `bool`, `int`, `string`, `ConnectionProtectionOption` (for no/local/yes connection gating), or custom enums.
+
+### 2. Map to `GarnetServerOptions`
+
+**File:** `libs/server/Servers/GarnetServerOptions.cs`
+
+Add a matching field:
+
+```csharp
+/// <summary>
+/// Enables MY.CMD
+/// </summary>
+public ConnectionProtectionOption EnableMyFeature;
+```
+
+Then in `Options.GetServerOptions()` (in `Options.cs`), map the property:
+
+```csharp
+EnableMyFeature = EnableMyFeature,
+```
+
+### 3. Add default value
+
+**File:** `libs/host/defaults.conf`
+
+Add the default in the appropriate section:
+
+```json
+/* Enable MY.CMD for clients - no/local/yes */
+"EnableMyFeature": "no",
+```
+
+### 4. Check the setting in your RESP handler
+
+Access the setting via `storeWrapper.serverOptions`:
+
+```csharp
+if (storeWrapper.serverOptions.EnableMyFeature == ConnectionProtectionOption.No)
+{
+    while (!RespWriteUtils.TryWriteError("ERR command not enabled"u8, ref dcurr, dend))
+        SendAndReset();
+    return true;
+}
+```
+
+### 5. Add config tests
+
+**File:** `test/Garnet.test/GarnetServerConfigTests.cs`
+
+Test that the setting is parsed correctly from CLI args and config files.
 
 ---
 
