@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1138,14 +1138,14 @@ namespace Garnet.test.cluster
                     {
                         ClusterTestUtils.RandomBytes(ref r, ref buffer);
                         SET[2] = Encoding.ASCII.GetString(buffer);
-                        var resp = await c.ExecuteAsync(SET);
+                        var resp = await c.ExecuteAsync(SET).ConfigureAwait(false);
                         ClassicAssert.AreEqual("OK", resp);
                         value = SET[2];
                         Interlocked.Increment(ref setsExecuted);
                     }
                     else
                     {
-                        var resp = await c.ExecuteAsync(GET);
+                        var resp = await c.ExecuteAsync(GET).ConfigureAwait(false);
                         ClassicAssert.AreEqual(SET[2], resp);
                     }
                 }
@@ -1215,7 +1215,7 @@ namespace Garnet.test.cluster
 
             // Wait until few sets have executed
             while (setsExecuted < 100)
-                await Task.Delay(100, cancellationToken);
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
 
             // Initiate migration
             var sourceEndPoint = context.clusterTestUtils.GetEndPoint(srcNodeIndex);
@@ -1223,12 +1223,12 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.MigrateSlots(sourceEndPoint, targetEndPoint, migrateSlots, range: true, logger: context.logger);
 
             // Wait until all operations are done
-            _ = await Task.WhenAll(tasks).WaitAsync(cancellationToken);
+            _ = await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
 
             // Validate data on target node
             foreach (var task in tasks)
             {
-                var (key, value, slot) = await task;
+                var (key, value, slot) = await task.ConfigureAwait(false);
                 ClassicAssert.AreEqual(slot, ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key)));
 
                 var retry = true;
@@ -1237,7 +1237,7 @@ namespace Garnet.test.cluster
                     try
                     {
                         var c = context.clusterTestUtils.GetGarnetClientSession(dstNodeIndex, useTLS: UseTLS);
-                        var result = await c.ExecuteAsync(["GET", key]).WaitAsync(cancellationToken);
+                        var result = await c.ExecuteAsync(["GET", key]).WaitAsync(cancellationToken).ConfigureAwait(false);
                         ClassicAssert.AreEqual(value, result);
                         retry = false;
                     }
@@ -2108,5 +2108,130 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(value2, (string)resp);
         }
 #endif
+
+        [Test, Order(24)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSlotsWithHostname()
+        {
+            var Shards = defaultShards;
+            // Create standard instances (not using useClusterAnnounceHostname since that causes test infrastructure issues)
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keyCount = 50;
+            var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
+            var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
+            var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot);
+            ClassicAssert.AreEqual(expectedKeyCount, keyCount);
+
+            var msp = context.clusterTestUtils.GetSlotPortMapFromNode(0, context.logger);
+            for (var i = 1; i < Shards; i++)
+                msp = ClusterTestUtils.MergeSlotPortMap(msp, context.clusterTestUtils.GetSlotPortMapFromNode(i, context.logger));
+
+            var sourcePort = msp[(ushort)slot];
+            var targetPort = msp[(ushort)context.r.Next(0, 16384)];
+            while (sourcePort == targetPort)
+                targetPort = msp[(ushort)context.r.Next(0, 16384)];
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPointFromPort(sourcePort);
+            var targetEndPoint = context.clusterTestUtils.GetEndPointFromPort(targetPort);
+
+            // Get server and execute migrate command with hostname instead of IP
+            // Since the nodes are configured with 127.0.0.1, using "localhost" should resolve to 127.0.0.1
+            var server = context.clusterTestUtils.GetMultiplexer().GetServer(sourceEndPoint);
+            ICollection<object> args =
+            [
+                "localhost", // Use hostname instead of IP address
+                targetPort,
+                "",
+                0,
+                -1,
+                "SLOTSRANGE",
+                slot,
+                slot
+            ];
+
+            try
+            {
+                var resp = server.Execute("migrate", args);
+                ClassicAssert.AreEqual("OK", (string)resp);
+            }
+            catch (Exception ex)
+            {
+                context.logger.LogError(ex, "Migration with hostname failed");
+                Assert.Fail($"Migration with hostname should succeed: {ex.Message}");
+            }
+
+            // Wait for keys to become available for reading
+            var keysList = data.Keys.ToList();
+            for (var i = 0; i < keysList.Count; i++)
+            {
+                var value = context.clusterTestUtils.GetKey(targetEndPoint, keysList[i], out var _slot, out var endPoint, out var responseState);
+                while (responseState != ResponseState.OK)
+                {
+                    _ = Thread.Yield();
+                    value = context.clusterTestUtils.GetKey(targetEndPoint, keysList[i], out _slot, out endPoint, out responseState);
+                }
+
+                ClassicAssert.AreEqual(targetPort, endPoint.Port, $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {targetPort}, actual: {endPoint.Port}");
+                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
+            }
+        }
+
+        [Test, Order(25)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateWithInvalidHostname()
+        {
+            var Shards = defaultShards;
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+            var keyCount = 10;
+            var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out _);
+
+            var msp = context.clusterTestUtils.GetSlotPortMapFromNode(0, context.logger);
+            for (var i = 1; i < Shards; i++)
+                msp = ClusterTestUtils.MergeSlotPortMap(msp, context.clusterTestUtils.GetSlotPortMapFromNode(i, context.logger));
+
+            var sourcePort = msp[(ushort)slot];
+            var targetPort = msp[(ushort)context.r.Next(0, 16384)];
+            while (sourcePort == targetPort)
+                targetPort = msp[(ushort)context.r.Next(0, 16384)];
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPointFromPort(sourcePort);
+
+            // Get server and execute migrate command with an invalid hostname that should not resolve
+            var server = context.clusterTestUtils.GetMultiplexer().GetServer(sourceEndPoint);
+
+            // Use a hostname that is guaranteed to fail DNS lookup - using the .invalid TLD
+            // which is reserved by RFC 6761 specifically for this purpose
+            var invalidHostname = "this-hostname-will-never-resolve.invalid";
+            ICollection<object> args =
+            [
+                invalidHostname,
+                targetPort,
+                "",
+                0,
+                -1,
+                "SLOTSRANGE",
+                slot,
+                slot
+            ];
+
+            try
+            {
+                var resp = server.Execute("migrate", args);
+                Assert.Fail($"Migration with invalid hostname '{invalidHostname}' should fail");
+            }
+            catch (RedisServerException ex)
+            {
+                // Should get either hostname resolution failed or unknown endpoint error
+                ClassicAssert.IsTrue(ex.Message.Contains("ERR hostname resolution failed") || ex.Message.Contains("ERR Unknown endpoint"),
+                    $"Expected hostname resolution error or unknown endpoint error, got: {ex.Message}");
+            }
+        }
     }
 }

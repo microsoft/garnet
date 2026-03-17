@@ -510,7 +510,8 @@ namespace Garnet.server
             ref SpanByteAndMemory outputIds,
             out VectorIdFormat outputIdFormat,
             ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes
+            ref SpanByteAndMemory outputAttributes,
+            ref SpanByteAndMemory filterBitmap
         )
         {
             AssertHaveStorageSession();
@@ -524,54 +525,38 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            var requestedCount = count;
-            var hasFilter = !filter.IsEmpty;
-
-            // Static over-fetch path
-            if (hasFilter)
-            {
-                count = Math.Min(count * FilterOverFetchMultiplier, searchExplorationFactor);
-            }
-
-            // No point in asking for more data than the effort we'll put in
-            if (count > searchExplorationFactor)
-            {
-                count = searchExplorationFactor;
-            }
-
-            // Make sure enough space in distances for requested count
-            if (count > outputDistances.Length)
+            // When a filter is present, over-retrieve candidates from DiskANN so that
+            // post-filtering has enough results to fill the requested count.
+            //
+            // FILTER-EF controls both the graph exploration breadth and the output
+            // buffer size when a filter is active, allowing it to be tuned independently
+            // from EF (which is used for unfiltered searches).
+            var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
+            var effectiveEF = !filter.IsEmpty
+                ? Math.Max(searchExplorationFactor, maxFilteringEffort)
+                : searchExplorationFactor;
             {
                 if (!outputDistances.IsSpanByte)
                 {
                     outputDistances.Memory.Dispose();
                 }
 
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
             }
 
             // Indicate requested # of matches
-            outputDistances.Length = count * sizeof(float);
+            outputDistances.Length = retrieveCount * sizeof(float);
 
             // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-            if (count * MinimumSpacePerId > outputIds.Length)
-            {
-                if (!outputIds.IsSpanByte)
-                {
-                    outputIds.Memory.Dispose();
-                }
-
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
-            }
-
-            var found =
-                Service.SearchVector(
+            //
+            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+            if (retrieveCount * MinimumSpacePerId > outputIds.Length)
                     context,
                     indexPtr,
                     valueType,
                     values,
                     delta,
-                    searchExplorationFactor,
+                    effectiveEF,
                     filter,
                     maxFilteringEffort,
                     outputIds,
@@ -586,96 +571,28 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            if (includeAttributes)
+            if (includeAttributes || !filter.IsEmpty)
             {
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
             }
 
             // Apply post-filtering if filter is specified
-            if (hasFilter)
+            if (!filter.IsEmpty)
             {
-                if (includeAttributes)
+                // Ensure bitmap is large enough for the over-retrieved result set
+                var requiredBitmapBytes = (found + 7) >> 3;
+                if (requiredBitmapBytes > filterBitmap.Length)
                 {
-                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
-                }
-                else
-                {
-                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
-                    try
+                    if (!filterBitmap.IsSpanByte)
                     {
-                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
-                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
+                        filterBitmap.Memory.Dispose();
                     }
-                    finally
-                    {
-                        tempAttributes.Memory?.Dispose();
-                    }
+
+                    filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                // If static over-fetch didn't yield enough results, retry with larger multiplier
-                if (found < requestedCount)
-                {
-                    var retryCount = Math.Min(requestedCount * FilterOverFetchRetryMultiplier, searchExplorationFactor);
-                    if (retryCount > count)
-                    {
-                        count = retryCount;
-
-                        // Resize buffers for larger retry
-                        if (count * sizeof(float) > outputDistances.Length)
-                        {
-                            if (!outputDistances.IsSpanByte) outputDistances.Memory.Dispose();
-                            outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
-                        }
-                        outputDistances.Length = count * sizeof(float);
-
-                        if (count * MinimumSpacePerId > outputIds.Length)
-                        {
-                            if (!outputIds.IsSpanByte) outputIds.Memory.Dispose();
-                            outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
-                        }
-
-                        found = Service.SearchVector(context, indexPtr, valueType, values,
-                            delta, searchExplorationFactor, filter, maxFilteringEffort,
-                            outputIds, outputDistances, out continuation);
-
-                        if (found > 0)
-                        {
-                            if (includeAttributes)
-                            {
-                                FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
-                                found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
-                            }
-                            else
-                            {
-                                var tempAttrs = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
-                                try
-                                {
-                                    FetchVectorElementAttributes(context, found, outputIds, ref tempAttrs);
-                                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttrs);
-                                }
-                                finally
-                                {
-                                    tempAttrs.Memory?.Dispose();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Trim to originally requested count after post-filtering
-                if (found > requestedCount)
-                {
-                    found = requestedCount;
-                }
+                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
-
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
-            }
-
-            outputDistances.Length = sizeof(float) * found;
 
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
@@ -703,51 +620,51 @@ namespace Garnet.server
             ref SpanByteAndMemory outputIds,
             out VectorIdFormat outputIdFormat,
             ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes
+            ref SpanByteAndMemory outputAttributes,
+            ref SpanByteAndMemory filterBitmap
         )
         {
             AssertHaveStorageSession();
 
             ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
-            var requestedCount = count;
-            var hasFilter = !filter.IsEmpty;
-
-            // Static over-fetch path
-            if (hasFilter)
-            {
-                count = Math.Min(count * FilterOverFetchMultiplier, searchExplorationFactor);
-            }
+            // When a filter is present, over-retrieve candidates from DiskANN
+            var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
+            var effectiveEF = !filter.IsEmpty
+                ? Math.Max(searchExplorationFactor, maxFilteringEffort)
+                : searchExplorationFactor;
 
             // No point in asking for more data than the effort we'll put in
-            if (count > searchExplorationFactor)
+            if (retrieveCount > effectiveEF)
             {
-                count = searchExplorationFactor;
+                retrieveCount = effectiveEF;
             }
 
             // Make sure enough space in distances for requested count
-            if (count * sizeof(float) > outputDistances.Length)
+            if (retrieveCount * sizeof(float) > outputDistances.Length)
             {
                 if (!outputDistances.IsSpanByte)
                 {
                     outputDistances.Memory.Dispose();
                 }
 
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
             }
 
             // Indicate requested # of matches
-            outputDistances.Length = count * sizeof(float);
+            outputDistances.Length = retrieveCount * sizeof(float);
 
             // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-            if (count * MinimumSpacePerId > outputIds.Length)
+            //
+            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+            if (retrieveCount * MinimumSpacePerId > outputIds.Length)
             {
                 if (!outputIds.IsSpanByte)
                 {
                     outputIds.Memory.Dispose();
                 }
 
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
             }
 
             var found =
@@ -756,7 +673,7 @@ namespace Garnet.server
                     indexPtr,
                     element,
                     delta,
-                    searchExplorationFactor,
+                    effectiveEF,
                     filter,
                     maxFilteringEffort,
                     outputIds,
@@ -771,87 +688,28 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            if (includeAttributes)
+            if (includeAttributes || !filter.IsEmpty)
             {
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
             }
 
             // Apply post-filtering if filter is specified
-            if (hasFilter)
+            if (!filter.IsEmpty)
             {
-                if (includeAttributes)
+                // Ensure bitmap is large enough for the over-retrieved result set
+                var requiredBitmapBytes = (found + 7) >> 3;
+                if (requiredBitmapBytes > filterBitmap.Length)
                 {
-                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
-                }
-                else
-                {
-                    var tempAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
-                    try
+                    if (!filterBitmap.IsSpanByte)
                     {
-                        FetchVectorElementAttributes(context, found, outputIds, ref tempAttributes);
-                        found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttributes);
+                        filterBitmap.Memory.Dispose();
                     }
-                    finally
-                    {
-                        tempAttributes.Memory?.Dispose();
-                    }
+
+                    filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
                 }
 
-                // If static over-fetch didn't yield enough results, retry with larger multiplier
-                if (found < requestedCount)
-                {
-                    var retryCount = Math.Min(requestedCount * FilterOverFetchRetryMultiplier, searchExplorationFactor);
-                    if (retryCount > count)
-                    {
-                        count = retryCount;
-
-                        // Resize buffers for larger retry
-                        if (count * sizeof(float) > outputDistances.Length)
-                        {
-                            if (!outputDistances.IsSpanByte) outputDistances.Memory.Dispose();
-                            outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
-                        }
-                        outputDistances.Length = count * sizeof(float);
-
-                        if (count * MinimumSpacePerId > outputIds.Length)
-                        {
-                            if (!outputIds.IsSpanByte) outputIds.Memory.Dispose();
-                            outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
-                        }
-
-                        found = Service.SearchElement(context, indexPtr, element,
-                            delta, searchExplorationFactor, filter, maxFilteringEffort,
-                            outputIds, outputDistances, out continuation);
-
-                        if (found > 0)
-                        {
-                            if (includeAttributes)
-                            {
-                                FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
-                                found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes);
-                            }
-                            else
-                            {
-                                var tempAttrs = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(found * 64), found * 64);
-                                try
-                                {
-                                    FetchVectorElementAttributes(context, found, outputIds, ref tempAttrs);
-                                    found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref tempAttrs);
-                                }
-                                finally
-                                {
-                                    tempAttrs.Memory?.Dispose();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Trim to originally requested count after post-filtering
-                if (found > requestedCount)
-                {
-                    found = requestedCount;
-                }
+                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+            }
             }
 
             if (continuation != 0)
@@ -991,7 +849,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)
@@ -1033,12 +891,25 @@ namespace Garnet.server
                     return false;
                 }
 
-                var from = asBytes.AsReadOnlySpan();
                 var into = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
 
-                for (var i = 0; i < asBytes.Length; i++)
+                var from = asBytes.AsReadOnlySpan();
+                if (quantType == VectorQuantType.NoQuant)
                 {
-                    into[i] = from[i];
+                    var fromFloat = MemoryMarshal.Cast<byte, float>(from);
+                    fromFloat.CopyTo(into);
+                }
+                else if (quantType == VectorQuantType.XPreQ8)
+                {
+                    for (var i = 0; i < asBytes.Length; i++)
+                    {
+                        into[i] = from[i];
+                    }
+                }
+                else
+                {
+                    // TODO: Handle Q8 and BIN as they are implemented
+                    throw new NotImplementedException($"Unexpected quantization: {quantType}");
                 }
 
                 // Vector might have been deleted, so check that after getting data

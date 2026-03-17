@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -58,9 +58,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "abcdefg";
-            await db.StringSetAsync("mykey", origValue);
+            await db.StringSetAsync("mykey", origValue).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -72,9 +72,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "笑い男";
-            await db.StringSetAsync("mykey", origValue);
+            await db.StringSetAsync("mykey", origValue).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
