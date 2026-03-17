@@ -2613,19 +2613,19 @@ namespace Garnet.server
             {
                 return RespCommand.DELIFGREATER;
             }
-            else if (command.SequenceEqual("RI.CREATE"u8))
+            else if (command.SequenceEqual(CmdStrings.RICREATE))
             {
                 return RespCommand.RICREATE;
             }
-            else if (command.SequenceEqual("RI.SET"u8))
+            else if (command.SequenceEqual(CmdStrings.RISET))
             {
                 return RespCommand.RISET;
             }
-            else if (command.SequenceEqual("RI.GET"u8))
+            else if (command.SequenceEqual(CmdStrings.RIGET))
             {
                 return RespCommand.RIGET;
             }
-            else if (command.SequenceEqual("RI.DEL"u8))
+            else if (command.SequenceEqual(CmdStrings.RIDEL))
             {
                 return RespCommand.RIDEL;
             }

@@ -62,6 +62,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
         public static ReadOnlySpan<byte> REPLICAOF => "REPLICAOF"u8;
+        public static ReadOnlySpan<byte> RICREATE => "RI.CREATE"u8;
+        public static ReadOnlySpan<byte> RISET => "RI.SET"u8;
+        public static ReadOnlySpan<byte> RIGET => "RI.GET"u8;
+        public static ReadOnlySpan<byte> RIDEL => "RI.DEL"u8;
         public static ReadOnlySpan<byte> SLAVEOF => "SLAVEOF"u8;
         public static ReadOnlySpan<byte> SECONDARYOF => "SECONDARYOF"u8;
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
