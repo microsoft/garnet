@@ -33,6 +33,7 @@ Adding a single new command touches **at minimum** these areas:
 | 14 | Garnet command docs | `playground/CommandInfoUpdater/GarnetCommandsDocs.json` | If Garnet-only command |
 | 15 | ACL test | `test/Garnet.test/Resp/ACL/RespCommandTests.cs` | ✅ Always |
 | 16 | Integration tests | `test/Garnet.test/Resp*.cs` | ✅ Always |
+| 17 | Website documentation | `website/docs/commands/` | ✅ Always |
 
 ---
 
@@ -82,9 +83,24 @@ For commands with short, fixed-length names (≤8 chars, no dots). Uses `ulong` 
 ### Slow path: `SlowParseCommand()`
 For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit the fast-path pattern.
 
+**⚠️ Convention:** Define the command name string in **`libs/server/Resp/CmdStrings.cs`** and reference it from the parser, rather than using inline `"..."u8` literals. This keeps command name strings centralized and reusable (e.g., for error messages).
+
+```csharp
+// In CmdStrings.cs:
+public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
+```
+
+**Pattern for slow-path commands:**
+```csharp
+else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
+{
+    return RespCommand.DELIFGREATER;
+}
+```
+
 **Pattern for dot-prefixed commands (e.g., `RI.CREATE`):**
 ```csharp
-else if (command.SequenceEqual("RI.CREATE"u8))
+else if (command.SequenceEqual(CmdStrings.RICREATE))
 {
     return RespCommand.RICREATE;
 }
@@ -437,7 +453,33 @@ public class RespMyFeatureTests : AllureTestBase
 
 ---
 
-## Step 11: Verify Everything
+## Step 11: Update Website Documentation
+
+**File:** `website/docs/commands/` — choose the appropriate markdown file based on the command category (e.g., `garnet-specific.md` for Garnet-only commands, `api-compatibility.md` to mark a standard Redis command as supported).
+
+Add a section documenting the command syntax, description, and response format:
+
+```markdown
+### **MY.CMD**
+
+#### **Syntax**
+
+```bash
+MY.CMD key value
+```
+
+Description of what the command does.
+
+#### **Response**
+
+- **Type reply**: Description of the response.
+```
+
+Also mark the command as supported in `website/docs/commands/api-compatibility.md` if it corresponds to a standard Redis command.
+
+---
+
+## Step 12: Verify Everything
 
 ### Build
 ```bash
