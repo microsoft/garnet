@@ -729,48 +729,28 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
-                return ProcessBasicCommandsWithMetaCommand(cmd, ref storageApi);
-
-            DispatchCommand(cmd, ref storageApi);
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private bool ProcessBasicCommandsWithMetaCommand<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            if (!IsMetaCommandInfoValid())
-                return false;
-
             var outputETag = false;
-            if (metaCommandInfo.MetaCommand.IsETagCommand())
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
             {
-                if (!cmd.IsDataCommand())
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
-                        SendAndReset();
+                if (!IsMetaCommandInfoValid())
                     return false;
-                }
 
-                outputETag = true;
-                etag = -1;
-                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                    SendAndReset();
+                if (metaCommandInfo.MetaCommand.IsETagCommand())
+                {
+                    if (!cmd.IsDataCommand())
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
+                            SendAndReset();
+                        return false;
+                    }
+
+                    outputETag = true;
+                    etag = -1;
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
 
-            DispatchCommand(cmd, ref storageApi);
-
-            if (outputETag)
-                while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
-                    SendAndReset();
-
-            return true;
-        }
-
-        private void DispatchCommand<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
             /*
              * WARNING: Do not add any command here classified as @slow!
              * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
@@ -830,6 +810,12 @@ namespace Garnet.server
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
+
+            if (outputETag)
+                while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
+                    SendAndReset();
+
+            return true;
         }
 
         private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
