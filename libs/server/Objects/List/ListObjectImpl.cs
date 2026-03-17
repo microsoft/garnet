@@ -260,10 +260,8 @@ namespace Garnet.server
             }
         }
 
-        private void ListPush(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void ListPush(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool addFirst)
         {
-            var addFirst = input.header.ListOp is ListOperation.LPUSH or ListOperation.LPUSHX;
-
             output.Result1 = 0;
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -287,20 +285,11 @@ namespace Garnet.server
             output.Result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void ListPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool removeFirst)
         {
-            var removeFirst = input.header.ListOp == ListOperation.LPOP;
-
             var count = input.arg1;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            if (count == 0)
-            {
-                writer.WriteNull();
-                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
-                return;
-            }
 
             if (list.Count == 0)
             {
@@ -308,6 +297,13 @@ namespace Garnet.server
                     writer.WriteNull();
                 else
                     writer.WriteEmptyArray();
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                return;
+            }
+
+            if (count == 0)
+            {
+                writer.WriteNull();
                 output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
                 return;
             }

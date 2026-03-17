@@ -145,13 +145,17 @@ namespace Garnet.server
             {
                 case ListOperation.LPUSH:
                 case ListOperation.LPUSHX:
+                    ListPush(ref input, ref output, respProtocolVersion, addFirst: true);
+                    break;
                 case ListOperation.RPUSH:
                 case ListOperation.RPUSHX:
-                    ListPush(ref input, ref output, respProtocolVersion);
+                    ListPush(ref input, ref output, respProtocolVersion, addFirst: false);
                     break;
                 case ListOperation.LPOP:
+                    ListPop(ref input, ref output, respProtocolVersion, removeFirst: true);
+                    break;
                 case ListOperation.RPOP:
-                    ListPop(ref input, ref output, respProtocolVersion);
+                    ListPop(ref input, ref output, respProtocolVersion, removeFirst: false);
                     break;
                 case ListOperation.LLEN:
                     ListLength(ref input, ref output, respProtocolVersion);

@@ -333,14 +333,14 @@ namespace Garnet.server
 
                 if (count >= 2 && ((!options.ByScore && !options.ByLex) || options.ByScore))
                 {
-                    // Read min & max
-                    var parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(0, out var minValue, out var minExclusive);
-                    Debug.Assert(parseSuccessful);
-                    parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(1, out var maxValue, out var maxExclusive);
-                    Debug.Assert(parseSuccessful);
-
                     if (options.ByScore)
                     {
+                        // Read min & max
+                        var parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(0, out var minValue, out var minExclusive);
+                        Debug.Assert(parseSuccessful);
+                        parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(1, out var maxValue, out var maxExclusive);
+                        Debug.Assert(parseSuccessful);
+
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
                         WriteSortedSetResult(options.WithScores, scoredElements.Count, scoredElements, ref writer);
@@ -348,14 +348,16 @@ namespace Garnet.server
                     else
                     {
                         // byIndex
+                        var minIndex = input.parseState.GetInt(0);
+                        var maxIndex = input.parseState.GetInt(1);
+
                         var setCount = Count();
-                        int minIndex = (int)minValue, maxIndex = (int)maxValue;
                         if (options.ValidLimit)
                         {
                             writer.WriteError(CmdStrings.RESP_ERR_LIMIT_NOT_SUPPORTED);
                             return;
                         }
-                        else if (minValue > setCount - 1)
+                        else if (minIndex > setCount - 1)
                         {
                             // return empty list
                             writer.WriteEmptyArray();
@@ -424,8 +426,8 @@ namespace Garnet.server
             DeleteExpiredItems();
 
             // ZREMRANGEBYRANK key start stop
-            var start = input.parseState.GetInt(0);
-            var stop = input.parseState.GetInt(1);
+            var start = input.arg1;
+            var stop = input.arg2;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
