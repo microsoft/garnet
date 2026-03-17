@@ -38,8 +38,7 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput)
-            { ListOp = lop };
+                flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
 
             // Prepare output
             var output = new ObjectOutput();
@@ -447,8 +446,7 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState,
-                flags: RespInputFlags.SkipRespOutput)
-            { ListOp = ListOperation.LLEN };
+                flags: RespInputFlags.SkipRespOutput) { ListOp = ListOperation.LLEN };
             var output = new ObjectOutput();
 
             var status = storageApi.ListLength(key, ref input, ref output);
@@ -502,8 +500,7 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, arg1: start,
-                arg2: stop, flags: RespInputFlags.SkipRespOutput)
-            { ListOp = ListOperation.LTRIM };
+                arg2: stop, flags: RespInputFlags.SkipRespOutput) { ListOp = ListOperation.LTRIM };
 
             // Prepare output
             var output = new ObjectOutput();
@@ -646,8 +643,7 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput)
-            { ListOp = ListOperation.LINSERT };
+                flags: RespInputFlags.SkipRespOutput) { ListOp = ListOperation.LINSERT };
             var output = new ObjectOutput();
 
             var statusOp = storageApi.ListInsert(key, ref input, ref output);
@@ -700,8 +696,7 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, startIdx: 2,
-                arg1: nCount, flags: RespInputFlags.SkipRespOutput)
-            { ListOp = ListOperation.LREM };
+                arg1: nCount, flags: RespInputFlags.SkipRespOutput) { ListOp = ListOperation.LREM };
             var output = new ObjectOutput();
 
             var statusOp = storageApi.ListRemove(key, ref input, ref output);
