@@ -799,7 +799,6 @@ namespace Garnet.test
         }
 
         [Test]
-        [Test]
         public void VSIMWithAdvancedFilteringELEWithAttribs()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

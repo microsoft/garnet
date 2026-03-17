@@ -2,8 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -73,6 +76,24 @@ namespace Garnet.server
 
         /// <summary>Evaluation stack depth. Overflow → TryPush returns false → candidate excluded.</summary>
         private const int StackCapacity = 16;
+
+        /// <summary>
+        /// When a post-filter is active, request this many times more candidates from DiskANN
+        /// to compensate for candidates that will be discarded by the filter.
+        /// A single search with this multiplier is tried first; if not enough results pass,
+        /// a second search with the retry multiplier is attempted.
+        /// </summary>
+        private const int FilterOverFetchMultiplier = 5;
+
+        /// <summary>
+        /// When the initial over-fetch doesn't yield enough results, retry with this larger multiplier.
+        /// </summary>
+        private const int FilterOverFetchRetryMultiplier = 10;
+
+        /// <summary>
+        /// Maximum number of pages to fetch during paged search to prevent unbounded iteration.
+        /// </summary>
+        private const int MaxPagedSearchPages = 20;
 
         /// <summary>
         /// Total ExprToken count for the single pooled array.
@@ -214,6 +235,301 @@ namespace Garnet.server
                     output[count++] = (start, len);
             }
             return count;
+        }
+
+        /// <summary>
+        /// Perform a filtered similarity search using DiskANN's paged search API.
+        /// Fetches pages of results on-demand until enough pass the filter or max pages reached.
+        /// Uses the same bitmap-based filtering as the main ApplyPostFilter — no in-place compaction.
+        /// </summary>
+        private VectorManagerResult PagedFilterSearch(
+            ulong context,
+            nint indexPtr,
+            VectorQuantType quantType,
+            int requestedCount,
+            int searchExplorationFactor,
+            ReadOnlySpan<byte> filter,
+            bool includeAttributes,
+            ref SpanByteAndMemory outputIds,
+            out VectorIdFormat outputIdFormat,
+            ref SpanByteAndMemory outputDistances,
+            ref SpanByteAndMemory outputAttributes,
+            bool isVector,
+            VectorValueType valueType,
+            ReadOnlySpan<byte> values,
+            ReadOnlySpan<byte> element,
+            int initialPassingCount = 0)
+        {
+            var pagedSearchL = searchExplorationFactor;
+            var pageSize = pagedSearchL;
+
+            // Allocate page buffers for each page of results from DiskANN
+            var pageIdsSize = pageSize * MinimumSpacePerId;
+            var pageDistsSize = pageSize * sizeof(float);
+            var pageIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageIdsSize), pageIdsSize);
+            var pageDists = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageDistsSize), pageDistsSize);
+
+            // Reusable attribute buffer for pages
+            var pageAttrsSize = pageSize * 64;
+            var pageAttrs = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageAttrsSize), pageAttrsSize);
+
+            // Bitmap for filtering — one bit per page result
+            var pageBitmapSize = (pageSize + 7) >> 3;
+            var pageBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageBitmapSize), pageBitmapSize);
+
+            // Accumulation buffers for passing results
+            var accumIdsSize = requestedCount * MinimumSpacePerId;
+            var accumDistsSize = requestedCount * sizeof(float);
+            var accumAttrsSize = requestedCount * 64;
+
+            // Ensure output buffers are large enough for the final results
+            if (accumIdsSize > outputIds.Length)
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    outputIds.Memory.Dispose();
+                }
+
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(accumIdsSize), accumIdsSize);
+            }
+
+            if (accumDistsSize > outputDistances.Length)
+            {
+                if (!outputDistances.IsSpanByte)
+                {
+                    outputDistances.Memory.Dispose();
+                }
+
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(accumDistsSize), accumDistsSize);
+            }
+
+            if (includeAttributes && accumAttrsSize > outputAttributes.Length)
+            {
+                if (!outputAttributes.IsSpanByte)
+                {
+                    outputAttributes.Memory.Dispose();
+                }
+
+                outputAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(accumAttrsSize), accumAttrsSize);
+            }
+
+            nint searchState = 0;
+            try
+            {
+                searchState = isVector
+                    ? Service.StartPagedSearchVector(context, indexPtr, valueType, values, pagedSearchL)
+                    : Service.StartPagedSearchElement(context, indexPtr, element, pagedSearchL);
+
+                if (searchState == 0)
+                {
+                    logger?.LogWarning("Failed to start paged search");
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    return VectorManagerResult.BadParams;
+                }
+
+                var totalPassing = initialPassingCount;
+                var accumIdPos = 0;
+                var accumAttrPos = 0;
+
+                // If we already have results from the static over-fetch, compute where we are in the output buffers
+                if (initialPassingCount > 0)
+                {
+                    var idsSpan = outputIds.AsReadOnlySpan();
+                    for (var i = 0; i < initialPassingCount; i++)
+                    {
+                        var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[accumIdPos..]);
+                        accumIdPos += sizeof(int) + idLen;
+                    }
+
+                    if (includeAttributes)
+                    {
+                        var attrsSpan = outputAttributes.AsReadOnlySpan();
+                        for (var i = 0; i < initialPassingCount; i++)
+                        {
+                            var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attrsSpan[accumAttrPos..]);
+                            accumAttrPos += sizeof(int) + attrLen;
+                        }
+                    }
+                }
+
+                for (var page = 0; page < MaxPagedSearchPages; page++)
+                {
+                    // Reset page buffer lengths for this page
+                    pageIds.Length = pageIdsSize;
+                    pageDists.Length = pageDistsSize;
+
+                    var pageFound = Service.NextPagedSearchResults(
+                        context, indexPtr, searchState, pageSize, pageIds, pageDists);
+
+                    if (pageFound <= 0)
+                    {
+                        break;
+                    }
+
+                    // Reset reusable attribute buffer for this page
+                    if (pageAttrs.Memory != null)
+                    {
+                        pageAttrs.Length = pageAttrs.Memory.Memory.Length;
+                    }
+                    else
+                    {
+                        pageAttrs.Length = pageAttrsSize;
+                    }
+
+                    FetchVectorElementAttributes(context, pageFound, pageIds, ref pageAttrs);
+
+                    // Ensure bitmap is large enough
+                    var requiredBitmapBytes = (pageFound + 7) >> 3;
+                    if (requiredBitmapBytes > pageBitmap.Length)
+                    {
+                        if (!pageBitmap.IsSpanByte)
+                        {
+                            pageBitmap.Memory.Dispose();
+                        }
+
+                        pageBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
+                    }
+
+                    // Apply bitmap-based filter — no memory compaction
+                    var pagePassCount = ApplyPostFilter(
+                        filter, pageFound,
+                        pageAttrs.AsReadOnlySpan(), pageBitmap.AsSpan(),
+                        ActiveThreadSession.scratchBufferBuilder);
+
+                    if (pagePassCount > 0)
+                    {
+                        var toTake = Math.Min(pagePassCount, requestedCount - totalPassing);
+
+                        // Walk page results using the bitmap, copy only passing entries
+                        AppendPassingResults(
+                            pageFound, toTake,
+                            pageBitmap.AsReadOnlySpan(),
+                            pageIds, pageDists, pageAttrs,
+                            ref outputIds, ref outputDistances, ref outputAttributes,
+                            includeAttributes,
+                            ref accumIdPos, totalPassing, ref accumAttrPos);
+
+                        totalPassing += toTake;
+                    }
+
+                    if (totalPassing >= requestedCount)
+                    {
+                        break;
+                    }
+                }
+
+                outputIds.Length = accumIdPos;
+                outputDistances.Length = totalPassing * sizeof(float);
+                if (includeAttributes)
+                {
+                    outputAttributes.Length = accumAttrPos;
+                }
+
+                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+
+                if (quantType == VectorQuantType.XPreQ8)
+                {
+                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                }
+
+                return VectorManagerResult.OK;
+            }
+            finally
+            {
+                if (searchState != 0)
+                {
+                    Service.DropPagedSearchState(searchState);
+                }
+
+                pageIds.Memory?.Dispose();
+                pageDists.Memory?.Dispose();
+                pageAttrs.Memory?.Dispose();
+                pageBitmap.Memory?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Walk page results using the filter bitmap and append passing entries
+        /// into the accumulation output buffers.
+        /// </summary>
+        private static void AppendPassingResults(
+            int pageFound,
+            int toTake,
+            ReadOnlySpan<byte> filterBitmap,
+            SpanByteAndMemory pageIds,
+            SpanByteAndMemory pageDists,
+            SpanByteAndMemory pageAttrs,
+            ref SpanByteAndMemory outputIds,
+            ref SpanByteAndMemory outputDistances,
+            ref SpanByteAndMemory outputAttributes,
+            bool includeAttributes,
+            ref int accumIdPos,
+            int accumDistPos,
+            ref int accumAttrPos)
+        {
+            var srcIdSpan = pageIds.AsReadOnlySpan();
+            var srcDistSpan = MemoryMarshal.Cast<byte, float>(pageDists.AsReadOnlySpan());
+            var srcAttrSpan = pageAttrs.AsReadOnlySpan();
+
+            var srcIdPos = 0;
+            var srcAttrPos = 0;
+            var taken = 0;
+
+            for (var i = 0; i < pageFound && taken < toTake; i++)
+            {
+                // Read source ID length
+                var idLen = BinaryPrimitives.ReadInt32LittleEndian(srcIdSpan[srcIdPos..]);
+                var idTotalLen = sizeof(int) + idLen;
+
+                // Read source attribute length
+                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(srcAttrSpan[srcAttrPos..]);
+                var attrTotalLen = sizeof(int) + attrLen;
+
+                // Check bitmap — skip if this result didn't pass the filter
+                if ((filterBitmap[i >> 3] & (1 << (i & 7))) == 0)
+                {
+                    srcIdPos += idTotalLen;
+                    srcAttrPos += attrTotalLen;
+                    continue;
+                }
+
+                // Ensure output IDs buffer has space
+                if (accumIdPos + idTotalLen > outputIds.Length)
+                {
+                    var newSize = Math.Max(outputIds.Length * 2, accumIdPos + idTotalLen);
+                    var newBuf = MemoryPool<byte>.Shared.Rent(newSize);
+                    outputIds.AsReadOnlySpan()[..accumIdPos].CopyTo(newBuf.Memory.Span);
+                    outputIds.Memory?.Dispose();
+                    outputIds = new SpanByteAndMemory(newBuf, newSize);
+                }
+
+                srcIdSpan.Slice(srcIdPos, idTotalLen).CopyTo(outputIds.AsSpan()[accumIdPos..]);
+                accumIdPos += idTotalLen;
+
+                // Copy distance
+                var destDistSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+                destDistSpan[accumDistPos + taken] = srcDistSpan[i];
+
+                // Copy attributes if needed
+                if (includeAttributes)
+                {
+                    if (accumAttrPos + attrTotalLen > outputAttributes.Length)
+                    {
+                        var newSize = Math.Max(outputAttributes.Length * 2, accumAttrPos + attrTotalLen);
+                        var newBuf = MemoryPool<byte>.Shared.Rent(newSize);
+                        outputAttributes.AsReadOnlySpan()[..accumAttrPos].CopyTo(newBuf.Memory.Span);
+                        outputAttributes.Memory?.Dispose();
+                        outputAttributes = new SpanByteAndMemory(newBuf, newSize);
+                    }
+
+                    srcAttrSpan.Slice(srcAttrPos, attrTotalLen).CopyTo(outputAttributes.AsSpan()[accumAttrPos..]);
+                    accumAttrPos += attrTotalLen;
+                }
+
+                srcIdPos += idTotalLen;
+                srcAttrPos += attrTotalLen;
+                taken++;
+            }
         }
     }
 }

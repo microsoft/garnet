@@ -7,12 +7,10 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
-using Garnet.server.Vector.Filter;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -51,24 +49,6 @@ namespace Garnet.server
         /// Minimum size of an id is assumed to be at least 8 bytes + a length prefix.
         /// </summary>
         private const int MinimumSpacePerId = sizeof(int) + 8;
-
-        /// <summary>
-        /// When a post-filter is active, request this many times more candidates from DiskANN
-        /// to compensate for candidates that will be discarded by the filter.
-        /// A single search with this multiplier is tried first; if not enough results pass,
-        /// a second search with the retry multiplier is attempted.
-        /// </summary>
-        private const int FilterOverFetchMultiplier = 5;
-
-        /// <summary>
-        /// When the initial over-fetch doesn't yield enough results, retry with this larger multiplier.
-        /// </summary>
-        private const int FilterOverFetchRetryMultiplier = 10;
-
-        /// <summary>
-        /// Maximum number of pages to fetch during paged search to prevent unbounded iteration.
-        /// </summary>
-        private const int MaxPagedSearchPages = 20;
 
         /// <summary>
         /// The process wide instances of DiskANN.
@@ -535,6 +515,15 @@ namespace Garnet.server
             var effectiveEF = !filter.IsEmpty
                 ? Math.Max(searchExplorationFactor, maxFilteringEffort)
                 : searchExplorationFactor;
+
+            // No point in asking for more data than the effort we'll put in
+            if (retrieveCount > effectiveEF)
+            {
+                retrieveCount = effectiveEF;
+            }
+
+            // Make sure enough space in distances for requested count
+            if (retrieveCount > outputDistances.Length)
             {
                 if (!outputDistances.IsSpanByte)
                 {
@@ -551,6 +540,17 @@ namespace Garnet.server
             //
             // If we're still wrong, we'll end up using continuation callbacks which have more overhead
             if (retrieveCount * MinimumSpacePerId > outputIds.Length)
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    outputIds.Memory.Dispose();
+                }
+
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
+            }
+
+            var found =
+                Service.SearchVector(
                     context,
                     indexPtr,
                     valueType,
@@ -594,11 +594,21 @@ namespace Garnet.server
                 ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
 
+            if (continuation != 0)
+            {
+                // TODO: paged results!
+                throw new NotImplementedException();
+            }
+
+            outputDistances.Length = sizeof(float) * found;
+
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
             if (quantType == VectorQuantType.XPreQ8)
             {
+                // But in this special case, we force them to be 4-byte ids
+                //outputIdFormat = VectorIdFormat.FixedI32;
                 outputIdFormat = VectorIdFormat.I32LengthPrefixed;
             }
 
@@ -710,7 +720,6 @@ namespace Garnet.server
 
                 ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
             }
-            }
 
             if (continuation != 0)
             {
@@ -725,6 +734,8 @@ namespace Garnet.server
 
             if (quantType == VectorQuantType.XPreQ8)
             {
+                // But in this special case, we force them to be 4-byte ids
+                //outputIdFormat = VectorIdFormat.FixedI32;
                 outputIdFormat = VectorIdFormat.I32LengthPrefixed;
             }
 
@@ -938,505 +949,6 @@ namespace Garnet.server
             {
                 throw new NotImplementedException($"{valueType}");
             }
-        }
-
-        /// <summary>
-        /// Perform a filtered similarity search using DiskANN's paged search API.
-        /// Fetches pages of results on-demand until enough pass the filter or max pages reached.
-        /// </summary>
-        private VectorManagerResult PagedFilterSearch(
-            ulong context,
-            nint indexPtr,
-            VectorQuantType quantType,
-            int requestedCount,
-            int searchExplorationFactor,
-            ReadOnlySpan<byte> filter,
-            bool includeAttributes,
-            ref SpanByteAndMemory outputIds,
-            out VectorIdFormat outputIdFormat,
-            ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes,
-            bool isVector,
-            VectorValueType valueType,
-            ReadOnlySpan<byte> values,
-            ReadOnlySpan<byte> element,
-            int initialPassingCount = 0)
-        {
-            // Parse the filter expression once outside the page loop
-            Expr filterExpr;
-            try
-            {
-                var filterStr = Encoding.UTF8.GetString(filter);
-                var tokens = VectorFilterTokenizer.Tokenize(filterStr);
-                filterExpr = VectorFilterParser.ParseExpression(tokens, 0, out var endIndex);
-
-                if (endIndex != tokens.Count)
-                {
-                    throw new ArgumentException("Invalid filter expression: unexpected tokens after end of expression.", nameof(filter));
-                }
-            }
-            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is InvalidOperationException)
-            {
-                throw new ArgumentException("Invalid filter expression.", nameof(filter), ex);
-            }
-
-            // Page size: use the full exploration factor for the fallback path.
-            // Since this only runs when the static over-fetch didn't yield enough results,
-            // we want maximum quality per page to minimize the number of pages needed.
-            var pagedSearchL = searchExplorationFactor;
-            var pageSize = pagedSearchL;
-
-            // Allocate page buffers for each page of results from DiskANN
-            var pageIdsSize = pageSize * MinimumSpacePerId;
-            var pageDistsSize = pageSize * sizeof(float);
-            var pageIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageIdsSize), pageIdsSize);
-            var pageDists = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageDistsSize), pageDistsSize);
-
-            // Reusable attribute buffer for pages (sized for pageSize, will grow if needed)
-            var pageAttrsSize = pageSize * 64;
-            var pageAttrs = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(pageAttrsSize), pageAttrsSize);
-
-            // Accumulation buffers for passing results
-            var accumIdsSize = requestedCount * MinimumSpacePerId;
-            var accumDistsSize = requestedCount * sizeof(float);
-            var accumAttrsSize = requestedCount * 64;
-
-            // Ensure output buffers are large enough for the final results
-            if (accumIdsSize > outputIds.Length)
-            {
-                if (!outputIds.IsSpanByte)
-                {
-                    outputIds.Memory.Dispose();
-                }
-
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(accumIdsSize), accumIdsSize);
-            }
-
-            if (accumDistsSize > outputDistances.Length)
-            {
-                if (!outputDistances.IsSpanByte)
-                {
-                    outputDistances.Memory.Dispose();
-                }
-
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(accumDistsSize), accumDistsSize);
-            }
-
-            if (includeAttributes && accumAttrsSize > outputAttributes.Length)
-            {
-                if (!outputAttributes.IsSpanByte)
-                {
-                    outputAttributes.Memory.Dispose();
-                }
-
-                outputAttributes = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(accumAttrsSize), accumAttrsSize);
-            }
-
-            nint searchState = 0;
-            try
-            {
-                // Start the paged search with the reduced L value
-                searchState = isVector
-                    ? Service.StartPagedSearchVector(context, indexPtr, valueType, values, pagedSearchL)
-                    : Service.StartPagedSearchElement(context, indexPtr, element, pagedSearchL);
-
-                if (searchState == 0)
-                {
-                    logger?.LogWarning("Failed to start paged search");
-                    outputIdFormat = VectorIdFormat.Invalid;
-                    return VectorManagerResult.BadParams;
-                }
-
-                var totalPassing = initialPassingCount;
-                var accumIdPos = 0;
-                var accumAttrPos = 0;
-
-                // If we already have results from the static over-fetch, compute where we are in the output buffers
-                if (initialPassingCount > 0)
-                {
-                    var idsSpan = outputIds.AsReadOnlySpan();
-                    for (var i = 0; i < initialPassingCount; i++)
-                    {
-                        var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[accumIdPos..]);
-                        accumIdPos += sizeof(int) + idLen;
-                    }
-
-                    if (includeAttributes)
-                    {
-                        var attrsSpan = outputAttributes.AsReadOnlySpan();
-                        for (var i = 0; i < initialPassingCount; i++)
-                        {
-                            var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attrsSpan[accumAttrPos..]);
-                            accumAttrPos += sizeof(int) + attrLen;
-                        }
-                    }
-                }
-
-                for (var page = 0; page < MaxPagedSearchPages; page++)
-                {
-                    // Reset page buffer lengths for this page
-                    pageIds.Length = pageIdsSize;
-                    pageDists.Length = pageDistsSize;
-
-                    var pageFound = Service.NextPagedSearchResults(
-                        context, indexPtr, searchState, pageSize, pageIds, pageDists);
-
-                    if (pageFound <= 0)
-                    {
-                        break;
-                    }
-
-                    // Reset reusable attribute buffer for this page
-                    if (pageAttrs.Memory != null)
-                    {
-                        pageAttrs.Length = pageAttrs.Memory.Memory.Length;
-                    }
-                    else
-                    {
-                        pageAttrs.Length = pageAttrsSize;
-                    }
-
-                    FetchVectorElementAttributes(context, pageFound, pageIds, ref pageAttrs);
-
-                    // Apply pre-parsed filter to this page
-                    var filteredCount = ApplyPostFilter(filterExpr, pageFound, ref pageIds, ref pageDists, ref pageAttrs);
-
-                    if (filteredCount > 0)
-                    {
-                        // How many to take from this page (don't exceed requested count)
-                        var toTake = Math.Min(filteredCount, requestedCount - totalPassing);
-
-                        // Copy passing results into accumulation (output) buffers
-                        AppendToAccumulator(
-                            toTake, filteredCount,
-                            pageIds, pageDists, pageAttrs,
-                            ref outputIds, ref outputDistances, ref outputAttributes,
-                            includeAttributes,
-                            ref accumIdPos, totalPassing, ref accumAttrPos);
-
-                        totalPassing += toTake;
-                    }
-
-                    if (totalPassing >= requestedCount)
-                    {
-                        break;
-                    }
-                }
-
-                outputIds.Length = accumIdPos;
-                outputDistances.Length = totalPassing * sizeof(float);
-                if (includeAttributes)
-                {
-                    outputAttributes.Length = accumAttrPos;
-                }
-
-                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-
-                if (quantType == VectorQuantType.XPreQ8)
-                {
-                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-                }
-
-                return VectorManagerResult.OK;
-            }
-            finally
-            {
-                if (searchState != 0)
-                {
-                    Service.DropPagedSearchState(searchState);
-                }
-
-                pageIds.Memory?.Dispose();
-                pageDists.Memory?.Dispose();
-                pageAttrs.Memory?.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// Append filtered results from a page into the accumulation output buffers.
-        /// </summary>
-        private static void AppendToAccumulator(
-            int toTake,
-            int filteredCount,
-            SpanByteAndMemory pageIds,
-            SpanByteAndMemory pageDists,
-            SpanByteAndMemory pageAttrs,
-            ref SpanByteAndMemory outputIds,
-            ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes,
-            bool includeAttributes,
-            ref int accumIdPos,
-            int accumDistPos,
-            ref int accumAttrPos)
-        {
-            var srcIdSpan = pageIds.AsReadOnlySpan();
-            var srcDistSpan = MemoryMarshal.Cast<byte, float>(pageDists.AsReadOnlySpan());
-            var srcAttrSpan = pageAttrs.AsReadOnlySpan();
-
-            var srcIdPos = 0;
-            var srcAttrPos = 0;
-
-            for (var i = 0; i < toTake && i < filteredCount; i++)
-            {
-                // Read source ID
-                var idLen = BinaryPrimitives.ReadInt32LittleEndian(srcIdSpan[srcIdPos..]);
-                var idTotalLen = sizeof(int) + idLen;
-
-                // Ensure output IDs buffer has space
-                if (accumIdPos + idTotalLen > outputIds.Length)
-                {
-                    var newSize = Math.Max(outputIds.Length * 2, accumIdPos + idTotalLen);
-                    var newBuf = MemoryPool<byte>.Shared.Rent(newSize);
-                    outputIds.AsReadOnlySpan()[..accumIdPos].CopyTo(newBuf.Memory.Span);
-                    outputIds.Memory?.Dispose();
-                    outputIds = new SpanByteAndMemory(newBuf, newSize);
-                }
-
-                srcIdSpan.Slice(srcIdPos, idTotalLen).CopyTo(outputIds.AsSpan()[accumIdPos..]);
-                accumIdPos += idTotalLen;
-
-                // Copy distance
-                var destDistSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
-                destDistSpan[accumDistPos + i] = srcDistSpan[i];
-
-                // Copy attributes if needed
-                if (includeAttributes)
-                {
-                    var attrLen = BinaryPrimitives.ReadInt32LittleEndian(srcAttrSpan[srcAttrPos..]);
-                    var attrTotalLen = sizeof(int) + attrLen;
-
-                    if (accumAttrPos + attrTotalLen > outputAttributes.Length)
-                    {
-                        var newSize = Math.Max(outputAttributes.Length * 2, accumAttrPos + attrTotalLen);
-                        var newBuf = MemoryPool<byte>.Shared.Rent(newSize);
-                        outputAttributes.AsReadOnlySpan()[..accumAttrPos].CopyTo(newBuf.Memory.Span);
-                        outputAttributes.Memory?.Dispose();
-                        outputAttributes = new SpanByteAndMemory(newBuf, newSize);
-                    }
-
-                    srcAttrSpan.Slice(srcAttrPos, attrTotalLen).CopyTo(outputAttributes.AsSpan()[accumAttrPos..]);
-                    accumAttrPos += attrTotalLen;
-                    srcAttrPos += attrTotalLen;
-                }
-
-                srcIdPos += idTotalLen;
-            }
-        }
-
-        /// <summary>
-        /// Apply post-filtering to vector search results based on JSON path filter expression.
-        /// </summary>
-        private int ApplyPostFilter(
-            ReadOnlySpan<byte> filter,
-            int numResults,
-            ref SpanByteAndMemory outputIds,
-            ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes)
-        {
-            if (numResults == 0)
-            {
-                return numResults;
-            }
-
-            var filterStr = Encoding.UTF8.GetString(filter);
-
-            try
-            {
-                // Parse the filter expression once, then evaluate per result
-                var tokens = VectorFilterTokenizer.Tokenize(filterStr);
-                var filterExpr = VectorFilterParser.ParseExpression(tokens, 0, out var endIndex);
-
-                // Ensure the entire token stream was consumed by the parser
-                if (endIndex != tokens.Count)
-                {
-                    throw new ArgumentException("Invalid filter expression: unexpected tokens after end of expression.", nameof(filter));
-                }
-
-                return ApplyPostFilter(filterExpr, numResults, ref outputIds, ref outputDistances, ref outputAttributes);
-            }
-            catch (Exception ex) when (ex is ArgumentException || ex is FormatException || ex is InvalidOperationException)
-            {
-                throw new ArgumentException("Invalid filter expression.", nameof(filter), ex);
-            }
-        }
-
-        /// <summary>
-        /// Apply post-filtering using a pre-parsed filter expression.
-        /// </summary>
-        private int ApplyPostFilter(
-            Expr filterExpr,
-            int numResults,
-            ref SpanByteAndMemory outputIds,
-            ref SpanByteAndMemory outputDistances,
-            ref SpanByteAndMemory outputAttributes)
-        {
-            if (numResults == 0)
-            {
-                return numResults;
-            }
-
-            var filteredCount = 0;
-
-            var idsSpan = outputIds.AsSpan();
-            var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
-            var attributesSpan = outputAttributes.AsSpan();
-
-            var idReadPos = 0;
-            var attrReadPos = 0;
-            var idWritePos = 0;
-            var distWritePos = 0;
-            var attrWritePos = 0;
-
-            for (var i = 0; i < numResults; i++)
-            {
-                // Read ID
-                var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
-                var idTotalLen = sizeof(int) + idLen;
-
-                // Read attribute
-                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
-                var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
-
-                // Evaluate filter
-                if (EvaluateFilter(filterExpr, attrData))
-                {
-                    // Copy ID if not already in place
-                    if (idReadPos != idWritePos)
-                    {
-                        idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
-                    }
-
-                    // Copy distance if not already in place
-                    if (i != distWritePos)
-                    {
-                        distancesSpan[distWritePos] = distancesSpan[i];
-                    }
-
-                    // Copy attribute if not already in place
-                    if (attrReadPos != attrWritePos)
-                    {
-                        attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
-                    }
-
-                    idWritePos += idTotalLen;
-                    distWritePos++;
-                    attrWritePos += sizeof(int) + attrLen;
-                    filteredCount++;
-                }
-
-                idReadPos += idTotalLen;
-                attrReadPos += sizeof(int) + attrLen;
-            }
-
-            // Update lengths
-            outputIds.Length = idWritePos;
-            outputDistances.Length = distWritePos * sizeof(float);
-            outputAttributes.Length = attrWritePos;
-
-            return filteredCount;
-        }
-
-        /// <summary>
-        /// Evaluate a pre-parsed filter expression against attribute data.
-        /// Uses a fast path for simple binary comparisons (e.g., .year > 2000, .genre == "action")
-        /// that avoids JsonDocument allocation by scanning with Utf8JsonReader directly.
-        /// </summary>
-        private static bool EvaluateFilter(Expr filterExpr, ReadOnlySpan<byte> attributeJson)
-        {
-            try
-            {
-                // Fast path for simple binary comparisons: MemberExpr op LiteralExpr
-                if (filterExpr is BinaryExpr binary
-                    && binary.Left is MemberExpr member
-                    && binary.Right is LiteralExpr literal)
-                {
-                    return EvaluateSimpleComparison(attributeJson, member.Property, binary.Operator, literal.Value);
-                }
-
-                var reader = new Utf8JsonReader(attributeJson);
-                using var jsonDoc = JsonDocument.ParseValue(ref reader);
-                var root = jsonDoc.RootElement;
-                var result = VectorFilterEvaluator.EvaluateExpression(filterExpr, root);
-
-                return VectorFilterEvaluator.IsTruthy(result);
-            }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
-            {
-                // If filter evaluation fails (malformed JSON or invalid expression), exclude the result
-                Trace.TraceWarning("Vector filter evaluation failed: {0}", ex);
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Fast evaluation of simple binary comparisons (MemberExpr op LiteralExpr)
-        /// using Utf8JsonReader directly, avoiding JsonDocument allocation.
-        /// </summary>
-        private static bool EvaluateSimpleComparison(ReadOnlySpan<byte> json, string propertyName, string op, object literalValue)
-        {
-            var reader = new Utf8JsonReader(json);
-
-            // Advance past the start object token
-            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
-                return false;
-
-            // Scan for the target property
-            while (reader.Read())
-            {
-                if (reader.TokenType == JsonTokenType.EndObject)
-                    return false; // Property not found
-
-                if (reader.TokenType != JsonTokenType.PropertyName)
-                    continue;
-
-                if (!reader.ValueTextEquals(propertyName))
-                {
-                    // Skip the value of this property
-                    reader.Skip();
-                    continue;
-                }
-
-                // Found the target property, read its value
-                if (!reader.Read())
-                    return false;
-
-                if (literalValue is double literalDouble)
-                {
-                    // Numeric comparison
-                    if (reader.TokenType != JsonTokenType.Number || !reader.TryGetDouble(out var propValue))
-                        return false;
-
-                    return op switch
-                    {
-                        ">" => propValue > literalDouble,
-                        "<" => propValue < literalDouble,
-                        ">=" => propValue >= literalDouble,
-                        "<=" => propValue <= literalDouble,
-                        "==" => Math.Abs(propValue - literalDouble) < 0.0001,
-                        "!=" => Math.Abs(propValue - literalDouble) >= 0.0001,
-                        _ => false
-                    };
-                }
-
-                if (literalValue is string literalString)
-                {
-                    // String comparison
-                    if (reader.TokenType != JsonTokenType.String)
-                        return false;
-
-                    var propValue = reader.GetString();
-                    return op switch
-                    {
-                        "==" => propValue == literalString,
-                        "!=" => propValue != literalString,
-                        _ => false
-                    };
-                }
-
-                return false;
-            }
-
-            return false;
         }
 
         [Conditional("DEBUG")]

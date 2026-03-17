@@ -104,14 +104,14 @@ Located in `libs/server/Resp/Vector/`. Uses DiskANN for approximate nearest neig
 - `QueryEngine/` - Cost-based query planner with selectivity estimation
 - `DiskANNService.cs` - P/Invoke bridge to Rust FFI (`diskann-garnet/` submodule)
 
-DiskANN submodules: `DiskANN/` (C++ core), `CDB-DiskANN/` (Cosmos DB variant), `diskann-garnet/` (Rust FFI wrapper). Build the Rust FFI with `cargo build --release` from `diskann-garnet/`.
+DiskANN submodules: `DiskANN/` (rust core), `CDB-DiskANN/` (Cosmos DB variant), `diskann-garnet` are (Rust FFI wrapper). Build the Rust FFI with `cargo build --release` from `diskann-garnet in DiskANN'.
 
 ### Local DiskANN Development
 
 By default, `diskann-garnet` pulls its DiskANN dependencies from crates.io and the built native library comes from a NuGet package. For local development against source:
 
 **1. Use local DiskANN Rust source** (skip crates.io publish):
-Add `[patch.crates-io]` to `diskann-garnet/Cargo.toml`:
+Add `[patch.crates-io]` to `diskann/Cargo.toml`:
 ```toml
 [patch.crates-io]
 diskann = { path = "../DiskANN/diskann" }
