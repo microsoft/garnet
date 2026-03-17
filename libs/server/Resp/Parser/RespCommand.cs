@@ -2786,48 +2786,12 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
+            // Handle meta commands (e.g., EXECWITHETAG, EXECIFMATCH) on a separate cold path
+            // to keep the inlined hot path small for instruction cache efficiency
             if (cmd.IsMetaCommand())
             {
-                // Get the meta command and its argument count
-                var (metaCmd, metaCmdArgCount) = GetMetaCommandAndArgumentCount(cmd);
-                count -= metaCmdArgCount;
-
-                metaCommandInfo.MetaCommand = metaCmd;
-
-                // Set up meta command parse state
-                metaCommandInfo.MetaCommandParseState.Initialize(metaCmdArgCount);
-                var currPtr = recvBufferPtr + readHead;
-
-                if (metaCmdArgCount > 0)
-                {
-                    for (var i = 0; i < metaCmdArgCount; i++)
-                    {
-                        if (!metaCommandInfo.MetaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
-                            return RespCommand.INVALID;
-                    }
-
-                    // Move read head to the start of the main command
-                    readHead = (int)(currPtr - recvBufferPtr);
-                }
-
-                // Attempt parsing nested main command
-                cmd = FastParseCommand(ref count);
-                if (cmd == RespCommand.SET)
-                    cmd = RespCommand.SETEXNX;
-
-                // If we have not found a command, continue parsing on slow path
-                if (cmd == RespCommand.NONE)
-                {
-                    count++;
-                    cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
-                    if (!success) return cmd;
-                    if (cmd == RespCommand.SET)
-                        cmd = RespCommand.SETEXNX;
-                }
-            }
-            else
-            {
-                metaCommandInfo.MetaCommand = RespMetaCommand.None;
+                cmd = ParseMetaCommand(cmd, writeErrorOnFailure, ref count, ref success);
+                if (!success) return cmd;
             }
 
             // Set up parse state
@@ -2849,6 +2813,56 @@ namespace Garnet.server
 
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
+
+            return cmd;
+        }
+
+        /// <summary>
+        /// Handles parsing of meta commands (e.g., EXECWITHETAG, EXECIFMATCH).
+        /// Kept as a separate non-inlined method to avoid bloating the hot ParseCommand path.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand ParseMetaCommand(RespCommand cmd, bool writeErrorOnFailure, ref int count, ref bool success)
+        {
+            // Get the meta command and its argument count
+            var (metaCmd, metaCmdArgCount) = GetMetaCommandAndArgumentCount(cmd);
+            count -= metaCmdArgCount;
+
+            metaCommandInfo.MetaCommand = metaCmd;
+
+            // Set up meta command parse state
+            metaCommandInfo.MetaCommandParseState.Initialize(metaCmdArgCount);
+            var currPtr = recvBufferPtr + readHead;
+
+            if (metaCmdArgCount > 0)
+            {
+                for (var i = 0; i < metaCmdArgCount; i++)
+                {
+                    if (!metaCommandInfo.MetaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
+                    {
+                        success = false;
+                        return RespCommand.INVALID;
+                    }
+                }
+
+                // Move read head to the start of the main command
+                readHead = (int)(currPtr - recvBufferPtr);
+            }
+
+            // Attempt parsing nested main command
+            cmd = FastParseCommand(ref count);
+            if (cmd == RespCommand.SET)
+                cmd = RespCommand.SETEXNX;
+
+            // If we have not found a command, continue parsing on slow path
+            if (cmd == RespCommand.NONE)
+            {
+                count++;
+                cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
+                if (!success) return cmd;
+                if (cmd == RespCommand.SET)
+                    cmd = RespCommand.SETEXNX;
+            }
 
             return cmd;
         }
