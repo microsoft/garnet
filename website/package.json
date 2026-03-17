@@ -37,7 +37,7 @@
     "lodash-es": "4.17.23",
     "minimatch": "3.1.5",
     "serialize-javascript": "7.0.4",
-    "dompurify": "3.3.1"
+    "dompurify": "3.3.3"
   },
   "browserslist": {
     "production": [
