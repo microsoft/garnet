@@ -99,33 +99,47 @@ public static class BenchmarkRunner
         Console.WriteLine("╚══════════════════════════════════════════════════════════════════════════════════╝");
 
         var phases = results.Select(r => r.PhaseName).Distinct().Order().ToList();
+        var recallHeader = $"Recall@{opts.TopK}";
+
+        static string R(string s, int w) => s.PadLeft(w);
+        static string Lat(double us) => $"{us:F0}µs";
+        static string Recall(double? r) => r.HasValue ? $"{r.Value:P2}" : "—";
+
+        // Side-by-side comparison: one row per phase, Garnet vs Redis columns
+        Console.WriteLine();
+        Console.WriteLine(
+            $"  {"Phase",-20}  │  {R("Garnet mean", 12)}  {R("p50", 10)}  {R("p95", 10)}  {R(recallHeader, 10)}" +
+            $"  │  {R("Redis mean", 12)}  {R("p50", 10)}  {R("p95", 10)}  {R(recallHeader, 10)}" +
+            $"  │  {R("Speedup", 8)}");
+        Console.WriteLine(
+            $"  {new string('─', 20)}──┼──{new string('─', 12)}──{new string('─', 10)}──{new string('─', 10)}──{new string('─', 10)}" +
+            $"──┼──{new string('─', 12)}──{new string('─', 10)}──{new string('─', 10)}──{new string('─', 10)}" +
+            $"──┼──{new string('─', 8)}");
 
         foreach (var phase in phases)
         {
-            Console.WriteLine();
-            Console.WriteLine($"  Phase: {phase}");
-            Console.WriteLine(new string('─', 84));
-            Console.WriteLine($"  {"Target",-10}  {"Latency (µs)",-55}  {"Recall@" + opts.TopK,-12}");
-            Console.WriteLine(new string('─', 84));
-
             var phaseResults = results.Where(r => r.PhaseName == phase).ToList();
-            foreach (var r in phaseResults)
-            {
-                var recallStr = r.RecallAtK.HasValue ? $"{r.RecallAtK.Value:P2}" : "(ground-truth)";
-                Console.WriteLine($"  {r.Target,-10}  {r.Latency}  {recallStr,-12}");
-            }
-
-            // If we have both Garnet and Redis results, print a latency speedup line
             var g = phaseResults.FirstOrDefault(r => r.Target == "Garnet");
             var red = phaseResults.FirstOrDefault(r => r.Target == "Redis");
-            if (g != null && red != null && red.Latency.MeanUs > 0)
-            {
-                var note = red.RecallAtK.HasValue
-                    ? "(both approximate)"
-                    : "(not an apples-to-apples comparison)";
-                double speedup = red.Latency.MeanUs / g.Latency.MeanUs;
-                Console.WriteLine($"  → Garnet mean latency is {speedup:F2}x vs Redis {note}");
-            }
+
+            var gMean  = g != null ? Lat(g.Latency.MeanUs) : "—";
+            var gP50   = g != null ? Lat(g.Latency.P50Us) : "—";
+            var gP95   = g != null ? Lat(g.Latency.P95Us) : "—";
+            var gRec   = g != null ? Recall(g.RecallAtK) : "—";
+
+            var rMean  = red != null ? Lat(red.Latency.MeanUs) : "—";
+            var rP50   = red != null ? Lat(red.Latency.P50Us) : "—";
+            var rP95   = red != null ? Lat(red.Latency.P95Us) : "—";
+            var rRec   = red != null ? Recall(red.RecallAtK) : "—";
+
+            var speedup = (g != null && red != null && g.Latency.MeanUs > 0)
+                ? $"{red.Latency.MeanUs / g.Latency.MeanUs:F2}x"
+                : "—";
+
+            Console.WriteLine(
+                $"  {phase,-20}  │  {R(gMean, 12)}  {R(gP50, 10)}  {R(gP95, 10)}  {R(gRec, 10)}" +
+                $"  │  {R(rMean, 12)}  {R(rP50, 10)}  {R(rP95, 10)}  {R(rRec, 10)}" +
+                $"  │  {R(speedup, 8)}");
         }
 
         Console.WriteLine();

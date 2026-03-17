@@ -252,6 +252,83 @@ Key flags: `--skip-load` reuse existing data, `--seed` for reproducibility, `--w
 **Recall definition:** `|target_topK ∩ exactTopK| / K` averaged across all queries.
 In brute-force mode, Redis IS the ground-truth so only Garnet shows recall. In HNSW/VSIM modes, both show recall.
 
+### YFCC Workload (`--data-dir`)
+
+The YFCC workload benchmarks Garnet and Redis 8 on filtered vector search using real-world data from the YFCC10M dataset. It is activated by passing `--data-dir <path>` (which auto-sets `--workload yfcc`).
+
+**Dataset:** YFCC10M — 1M (or 10M) Flickr image embeddings, uint8, 192 dimensions. Each vector has JSON attributes: `year`, `month`, `camera`, `country` (country may be absent).
+
+**Data files required** (in the `--data-dir` directory):
+
+| File | Description |
+|------|-------------|
+| `base.1M.u8bin` | Base vectors: `[u32 count][u32 dims]` header + `count×dims` raw bytes |
+| `base.1M.label.jsonl` | One JSON per line: `{"doc_id": N, "year": "2010", "month": "May", "camera": "Panasonic", "country": "US"}` |
+| `single_high_query_10k.u8bin` | Query vectors for unfiltered + single-high phase |
+| `single_high_query_10k.label.jsonl` | Query filters: `{"query_id": N, "filter": {"year": {"$eq": "2009"}}}` |
+| `single_medium_query_10k.u8bin` | Query vectors for single-medium phase |
+| `single_medium_query_10k.label.jsonl` | Filters (single equality, medium-frequency values) |
+| `single_low_query_10k.u8bin` | Query vectors for single-low phase |
+| `single_low_query_10k.label.jsonl` | Filters (single equality, rare values) |
+| `multiple_medium_query_10k.u8bin` | Query vectors for multi-medium phase |
+| `multiple_medium_query_10k.label.jsonl` | Filters (AND of two predicates, medium selectivity) |
+| `query.10k.u8bin` | Query vectors for multi-low phase |
+| `multiple_low_query_10k.label.jsonl` | Filters (AND of two predicates, rare values) |
+| `yfcc-config.json` | Phase configuration (maps phase names to file paths) |
+
+**yfcc-config.json** maps phase names to their data files. It is searched in: `--yfcc-config` path, then `--data-dir`, then executable directory, then CWD. A copy is also kept in `playground/VectorSearchBench/yfcc-config.json`.
+
+**Vector format differences:** Garnet uses `XB8` (raw uint8 binary) for both `VADD` and `VSIM`. Redis 8 only supports `FP32`/`VALUES`, so the benchmark converts uint8→float32 for the Redis path.
+
+**Ingestion commands:**
+```
+# Garnet — native uint8
+VADD bench:vset XB8 <192_raw_bytes> <id> SETATTR <json>
+
+# Redis 8 — uint8 converted to float32
+VADD bench:vset:redis FP32 <768_fp32_bytes> <id> SETATTR <json>
+```
+
+**Query command (both servers):**
+```
+VSIM <key> XB8|FP32 <vec_bytes> COUNT <k> WITHSCORES EF <ef> FILTER "<expr>"
+```
+Filter expressions use dot-syntax: `.year == "2009"`, `.camera == "NIKON" && .year == "2006"`. The same syntax works on both Garnet and Redis 8.
+
+**Ground truth:** Client-side brute-force cosine similarity with filter applied in-memory. Both Garnet and Redis recall are measured against this same ground truth. `VSIM TRUTH` is not used because it does not support `FILTER`.
+
+**Query phases and measured selectivity** (at 100K base vectors, 200 queries each):
+
+| Phase | Filter example | Avg selectivity | Avg matching records |
+|-------|----------------|-----------------|----------------------|
+| unfiltered | (none) | 100% | 100,000 |
+| single-high | `.year == "2012"` | 15.45% | 15,448 |
+| single-medium | `.country == "ES"` | 1.28% | 1,281 |
+| single-low | `.camera == "EPSON"` | 0.02% | 16 |
+| multi-medium | `.camera == "NIKON" && .year == "2006"` | 1.48% | 1,483 |
+| multi-low | `.country == "CA" && .year == "2005"` | 0.02% | 24 |
+
+Selectivity = fraction of base records passing the filter, averaged across the 200 query filters in each phase.
+
+**Running the YFCC benchmark:**
+```bash
+# Terminal 1: Garnet
+dotnet run --project main/GarnetServer -- --port 6380 --enable-vector-set-preview
+
+# Terminal 2: Redis 8
+docker run -d --name redis8 -p 6379:6379 redis:8.0.0
+
+# Terminal 3: benchmark
+dotnet run --project playground/VectorSearchBench -- \
+  --data-dir "<path-to-yfcc-data>" \
+  --garnet-port 6380 --redis-port 6379 \
+  --yfcc-count 100000 --num-queries 200 --top-k 10 --ef 200
+```
+
+Key YFCC flags: `--yfcc-count 100000` limits to first 100K vectors (0 = all), `--ef 200` sets search exploration factor, `--skip-load` reuses already-loaded data, `--yfcc-config <path>` explicit config file path.
+
+**Benchmark report:** See `playground/VectorSearchBench/YFCC-Benchmark-Report.md` for detailed results including latency, recall, and analysis of Garnet's post-filter recall degradation on narrow filters.
+
 ### How Element IDs Flow Through the Vector Search Stack
 
 Garnet vector set element IDs are **variable-length byte strings** (arbitrary user-provided names like `"item:42"` or `"my-vector"`). They are NOT fixed-size. Here's how they flow:
