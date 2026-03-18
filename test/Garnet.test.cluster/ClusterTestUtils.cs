@@ -9,14 +9,12 @@ using System.Linq;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
-using Garnet.server;
 using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -602,15 +600,14 @@ namespace Garnet.test.cluster
             this.certificates = certificates;
         }
 
-        public int HashSlot(RedisKey key)
-        => redis.HashSlot(key);
+        public int HashSlot(RedisKey key) => redis.HashSlot(key);
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
         public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
         {
             if (cancellationToken.IsCancellationRequested)
-                ClassicAssert.Fail(msg ?? "Cancellation Requested");
+                Assert.Fail(msg ?? "Cancellation Requested");
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 
@@ -1511,11 +1508,12 @@ namespace Garnet.test.cluster
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = ushort.Parse(range[0]);
-                    ushort slotEnd;
+                    if (!ushort.TryParse(range[0], out var slotStart))
+                        Assert.Fail($"GetOwnedSlotsFromNode: {range[0]}");
                     if (range.Length > 1)
                     {
-                        slotEnd = ushort.Parse(range[1]);
+                        if (!ushort.TryParse(range[1], out var slotEnd))
+                            Assert.Fail($"GetOwnedSlotsFromNode: {range[1]}");
                         slots.AddRange(Enumerable.Range(slotStart, slotEnd - slotStart + 1));
                     }
                     else
@@ -1834,7 +1832,7 @@ namespace Garnet.test.cluster
             {
                 target.Address.ToString(),
                 target.Port,
-                $"",
+                "",
                 0,
                 -1,
                 "KEYS"
@@ -1878,16 +1876,7 @@ namespace Garnet.test.cluster
 
         public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger, CancellationToken cancellationToken = default)
         {
-            CancellationToken backoffToken;
-            if (cancellationToken.CanBeCanceled)
-            {
-                backoffToken = cancellationToken;
-            }
-            else
-            {
-                backoffToken = context.cts.Token;
-            }
-
+            var backoffToken = cancellationToken.CanBeCanceled ? cancellationToken : context.cts.Token;
             while (MigrateTasks(endPoint, logger) > 0) { BackOff(cancellationToken: backoffToken); }
         }
 
@@ -2928,17 +2917,17 @@ namespace Garnet.test.cluster
             return items;
         }
 
-        public int GetStoreCurrentVersion(int nodeIndex, bool isMainStore, ILogger logger = null)
+        public int GetStoreCurrentVersion(int nodeIndex, bool isMainStore = true, ILogger logger = null)
         {
             var result = GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), [StoreInfoItem.CurrentVersion], isMainStore, logger);
             ClassicAssert.AreEqual(1, result.Count);
             return int.Parse(result[0].Item2);
         }
 
-        public List<(StoreInfoItem, string)> GetStoreInfo(int nodeIndex, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+        public List<(StoreInfoItem, string)> GetStoreInfo(int nodeIndex, HashSet<StoreInfoItem> infoItems, bool isMainStore = true, ILogger logger = null)
             => GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), infoItems, isMainStore, logger);
 
-        private List<(StoreInfoItem, string)> GetStoreInfo(IPEndPoint endPoint, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+        private List<(StoreInfoItem, string)> GetStoreInfo(IPEndPoint endPoint, HashSet<StoreInfoItem> infoItems, bool isMainStore = true, ILogger logger = null)
         {
             var fields = new List<(StoreInfoItem, string)>();
             try
@@ -3003,29 +2992,11 @@ namespace Garnet.test.cluster
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
-                {
-                    var storeWrapper = GetStoreWrapper(this.context.nodes[secondaryIndex]);
-                    var dbManager = GetDatabaseManager(storeWrapper);
-
-                    dbManager.DefaultDatabase.VectorManager.WaitForVectorOperationsToComplete();
-
                     break;
-                }
 
-                var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger);
-                var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, isMainStore: true, logger);
-
-                CancellationToken backoffToken;
-                if (cancellation.CanBeCanceled)
-                {
-                    backoffToken = cancellation;
-                }
-                else
-                {
-                    backoffToken = context.cts.Token;
-                }
-
-                BackOff(cancellationToken: backoffToken, msg: $"[{endpoints[primaryIndex]}]: {primaryMainStoreVersion},{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]: {replicaMainStoreVersion},{secondaryReplicationOffset1}");
+                var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: logger);
+                var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, logger: logger);
+                BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]: {primaryMainStoreVersion},{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]: {replicaMainStoreVersion},{secondaryReplicationOffset1}");
             }
             logger?.LogInformation("[{primaryEndpoint}]{primaryReplicationOffset} ?? [{endpoints[secondaryEndpoint}]{secondaryReplicationOffset1}", endpoints[primaryIndex], primaryReplicationOffset, endpoints[secondaryIndex], secondaryReplicationOffset1);
         }
@@ -3288,11 +3259,5 @@ namespace Garnet.test.cluster
                 return -1;
             }
         }
-
-        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
-        private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
-
-        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "databaseManager")]
-        private static extern ref IDatabaseManager GetDatabaseManager(StoreWrapper server);
     }
 }

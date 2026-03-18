@@ -607,17 +607,19 @@ namespace Garnet.test.cluster
             for (var i = 0; i < keysList.Count; i++)
             {
                 var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out var _slot, out var endPoint, out var responseState);
-                while (responseState != ResponseState.OK)
+                while (responseState != ResponseState.OK || value == null)
                 {
                     _ = Thread.Yield();
                     value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out _slot, out endPoint, out responseState);
                 }
 
                 ClassicAssert.AreEqual(targetPort, endPoint.Port, $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {targetPort}, actual: {endPoint.Port}");
-                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
+                ClassicAssert.IsNotNull(value, $"src:[{sourcePort}] => tgt:[{targetPort}] == respFrom: {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
+                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"src:[{sourcePort}] => tgt:[{targetPort}] == respFrom: {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
             }
             context.logger.LogDebug("5. Checking keys done");
 
+            context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
             context.logger.LogDebug("6. Checking configuration update starting");
             // Check if configuration has updated by
             var otherPorts = context.clusterTestUtils.GetEndPoints().Select(x => ((IPEndPoint)x).Port).Where(x => x != sourcePort || x != targetPort);
@@ -879,9 +881,9 @@ namespace Garnet.test.cluster
 
             context.logger.LogDebug("6. Checking migrated keys done");
 
-            (resp, members) = DoZRANGE(targetNodeIndex, key, out _Address, out _Port, out _Slot);
-            ClassicAssert.AreEqual(memberPair.Select(x => Encoding.ASCII.GetString(x.Item2)).ToList(), members);
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
+            (resp, members) = DoZRANGE(targetNodeIndex, key, out _Address, out _Port, out _Slot);
+            ClassicAssert.AreEqual(memberPair.Select(x => Encoding.ASCII.GetString(x.Item2)).ToList(), members, $"MESSAGE: {resp} {count}");
             context.logger.LogDebug("7. ClusterSimpleMigrateSlotsWithObjectsTest done");
         }
 
@@ -1917,6 +1919,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(sourceNodeIndex, sourceNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -1927,27 +1930,38 @@ namespace Garnet.test.cluster
             var keys = context.GenerateKeysWithPrefix(keyPrefix, keyCount, suffixLength: 12);
             var values = context.GenerateKeysWithPrefix(valuePrefix, keyCount, suffixLength: 8);
             var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(keyPrefix));
+            void AssertSlotState(string[] slotState, string expectedDirection, string expectedNodeId, string stateName)
+            {
+                ClassicAssert.AreEqual(3, slotState.Length, $"{stateName} slot state should have 3 elements: [{string.Join(' ', slotState)}]");
+                ClassicAssert.AreEqual(slot.ToString(), slotState[0], $"{stateName} slot mismatch: [{string.Join(' ', slotState)}]");
+                ClassicAssert.AreEqual(expectedDirection, slotState[1], $"{stateName} direction mismatch: [{string.Join(' ', slotState)}]");
+                ClassicAssert.AreEqual(expectedNodeId, slotState[2], $"{stateName} nodeId mismatch: [{string.Join(' ', slotState)}]");
+            }
 
             for (var i = 0; i < keyCount; i++)
             {
                 var _slot = HashSlotUtils.HashSlot(keys[i]);
                 ClassicAssert.AreEqual(slot, _slot);
-                var resp = context.clusterTestUtils.SetKey(0, keys[i], values[i], out _, out _);
+                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, keys[i], values[i], out _, out _);
                 ClassicAssert.AreEqual(ResponseState.OK, resp);
             }
 
             var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger);
             ClassicAssert.AreEqual(respImport, "OK");
             context.logger.LogDebug("3. Set slot {_slot} to IMPORTING state on node {port}", slot, context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port);
+            var migrateInfo = context.clusterTestUtils.SlotState(targetNodeIndex, slot, logger: context.logger);
+            AssertSlotState(migrateInfo, "<", sourceNodeId, "IMPORTING");
 
             var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger);
             ClassicAssert.AreEqual(respMigrate, "OK");
             context.logger.LogDebug("4. Set slot {_slot} to MIGRATING state on node {port}", slot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
+            migrateInfo = context.clusterTestUtils.SlotState(sourceNodeIndex, slot, logger: context.logger);
+            AssertSlotState(migrateInfo, ">", targetNodeId, "MIGRATING");
 
             // Ensure we can read
             for (var i = 0; i < keyCount; i++)
             {
-                var val = context.clusterTestUtils.GetKey(0, keys[i], out _, out _, out var resp);
+                var val = context.clusterTestUtils.GetKey(sourceNodeIndex, keys[i], out _, out _, out var resp);
                 ClassicAssert.AreEqual(ResponseState.OK, resp);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(values[i]), val);
             }
@@ -1956,19 +1970,24 @@ namespace Garnet.test.cluster
             values = context.GenerateKeysWithPrefix(valuePrefix, keyCount, suffixLength: 16);
             for (var i = 0; i < keyCount; i++)
             {
-                var resp = context.clusterTestUtils.SetKey(0, keys[i], values[i], out _, out _);
+                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, keys[i], values[i], out _, out _);
                 ClassicAssert.AreEqual(ResponseState.OK, resp);
             }
 
-            var newKeys = context.GenerateKeysWithPrefix(keyPrefix, keyCount, suffixLength: 12);
+            var newKeys = context.GenerateKeysWithPrefix(keyPrefix, keyCount, suffixLength: 32);
+            using var gcs = context.clusterTestUtils.CreateGarnetClientSession(sourceNodeIndex, useTLS: UseTLS);
+            gcs.Connect();
             // Ensure we are redirected for non-existent keys
+            var expectedException = $"ASK {slot} 127.0.0.1:{context.clusterTestUtils.GetPortFromNodeIndex(targetNodeIndex)}";
             for (var i = 0; i < keyCount; i++)
             {
-                _ = context.clusterTestUtils.GetKey(0, newKeys[i], out _, out _, out var resp);
-                ClassicAssert.AreEqual(ResponseState.ASK, resp);
+                var key = Encoding.ASCII.GetString(newKeys[i]);
+                var value = Encoding.ASCII.GetString(values[i]);
+                var ex = Assert.Throws<Exception>(() => gcs.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+                ClassicAssert.AreEqual(expectedException, ex.Message);
 
-                resp = context.clusterTestUtils.SetKey(0, newKeys[i], values[i], out _, out _);
-                ClassicAssert.AreEqual(ResponseState.ASK, resp);
+                ex = Assert.Throws<Exception>(() => gcs.ExecuteAsync("SET", key, value).GetAwaiter().GetResult());
+                ClassicAssert.AreEqual(expectedException, ex.Message);
             }
         }
 
@@ -2231,6 +2250,84 @@ namespace Garnet.test.cluster
                 // Should get either hostname resolution failed or unknown endpoint error
                 ClassicAssert.IsTrue(ex.Message.Contains("ERR hostname resolution failed") || ex.Message.Contains("ERR Unknown endpoint"),
                     $"Expected hostname resolution error or unknown endpoint error, got: {ex.Message}");
+            }
+        }
+
+        [Test, Order(26)]
+        [Category("CLUSTER")]
+        [CancelAfter(30_000)]
+        public async Task ClusterMigrateSlotWithTombstones(CancellationToken cancellationToken)
+        {
+            var shards = defaultShards;
+            context.CreateInstances(shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keyCount = 100;
+            var keys = context.GenerateKeysWithPrefix("abc", keyCount, suffixLength: 16).ToArray();
+            var slot = ClusterTestUtils.HashSlot(keys[0]);
+            foreach (var key in keys)
+                ClassicAssert.AreEqual(slot, ClusterTestUtils.HashSlot(key));
+
+            var sourceNodeIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
+            var targetNodeIndex = (sourceNodeIndex + 1) % shards;
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
+            var targetEndPoint = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+
+            foreach (var key in keys)
+            {
+                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, key, key, out var _, out var _, logger: context.logger);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
+            }
+
+            var deletedCount = keys.Length / 2;
+            var db = context.clusterTestUtils.GetMultiplexer().GetDatabase(0);
+            var deletedKeys = keys.AsSpan().Slice(0, deletedCount).ToArray();
+            var liveKeys = keys.AsSpan().Slice(deletedCount).ToArray();
+
+            foreach (var key in deletedKeys)
+                _ = db.KeyDelete(key);
+
+            foreach (var key in deletedKeys)
+                ClassicAssert.IsTrue(db.StringGet(key).IsNull, "Deleted key should be absent before migration");
+
+            ClassicAssert.Greater(deletedKeys.Length, 0, "Expected at least one deleted key to create tombstones");
+            ClassicAssert.Greater(liveKeys.Length, 0, "Expected at least one live key to remain for migration");
+
+            context.clusterTestUtils.MigrateSlots(sourceEndPoint, targetEndPoint, [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
+
+            foreach (var probeLiveKey in liveKeys)
+            {
+                var value = context.clusterTestUtils.GetKey(targetEndPoint, probeLiveKey, out var migratedSlot, out var migratedEndPoint, out var responseState);
+                while (responseState != ResponseState.OK || value == null)
+                {
+                    await Task.Delay(100, cancellationToken);
+                    value = context.clusterTestUtils.GetKey(targetEndPoint, probeLiveKey, out migratedSlot, out migratedEndPoint, out responseState);
+                }
+
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(slot, migratedSlot);
+                ClassicAssert.AreEqual(targetEndPoint.Port, migratedEndPoint.Port);
+                ClassicAssert.IsNotNull(value, "Existing key should be migrated with a non-null value");
+            }
+
+            var deletedSampleCount = Math.Min(32, deletedKeys.Length);
+            for (var i = 0; i < deletedSampleCount; i++)
+            {
+                var key = deletedKeys[i];
+                var value = context.clusterTestUtils.GetKey(targetEndPoint, key, out var migratedSlot, out var migratedEndPoint, out var responseState);
+                while (responseState != ResponseState.OK)
+                {
+                    await Task.Delay(100, cancellationToken);
+                    value = context.clusterTestUtils.GetKey(targetEndPoint, key, out migratedSlot, out migratedEndPoint, out responseState);
+                }
+
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(slot, migratedSlot);
+                ClassicAssert.AreEqual(targetEndPoint.Port, migratedEndPoint.Port);
+                ClassicAssert.IsNull(value, "Deleted key should not be transmitted during migration");
             }
         }
     }
