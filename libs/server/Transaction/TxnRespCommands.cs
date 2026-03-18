@@ -37,30 +37,31 @@ namespace Garnet.server
 
         private bool NetworkEXEC()
         {
-            // pass over the EXEC in buffer during execution
+            // Pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
             {
                 txnManager.Commit();
                 return true;
-
             }
+            
             // Abort and reset the transaction 
-            else if (txnManager.state == TxnState.Aborted)
+            if (txnManager.state == TxnState.Aborted)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_EXEC_ABORT, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Reset(false);
                 return true;
             }
-            // start running transaction and setting readHead to first operation
-            else if (txnManager.state == TxnState.Started)
+
+            // Start running transaction and setting readHead to first operation
+            if (txnManager.state == TxnState.Started)
             {
                 var _origReadHead = endReadHead;
                 endReadHead = txnManager.txnStartHead;
 
-                txnManager.GetKeysForValidation(out var csvi);
-                csvi.sessionAsking = SessionAsking;
-                if (clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(ref txnManager.clusterKeyParseState, ref csvi, ref dcurr, ref dend))
+                txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
+
+                if (clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(ref txnManager.clusterKeyParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend))
                 {
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
@@ -84,11 +85,11 @@ namespace Garnet.server
 
                 return true;
             }
+
             // EXEC without MULTI command
             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_EXEC_WO_MULTI, ref dcurr, dend))
                 SendAndReset();
             return true;
-
         }
 
         /// <summary>

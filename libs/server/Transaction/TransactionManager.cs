@@ -68,7 +68,6 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
-        readonly ScratchBufferAllocator txnKeyScratchBuffer;
         internal SessionParseState clusterKeyParseState;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
@@ -137,10 +136,9 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, scratchBufferAllocator);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
-            this.txnKeyScratchBuffer = new ScratchBufferAllocator();
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
@@ -190,11 +188,14 @@ namespace Garnet.server
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
 
-            // Reset cluster key parse state
+            // Reset cluster key parse state & rewind key slices in scratch buffer
             if (clusterEnabled)
             {
+                var idx = clusterKeyParseState.Count - 1;
+                while (idx >= 0 && scratchBufferAllocator.RewindScratchBuffer(ref clusterKeyParseState.GetArgSliceByRef(idx)))
+                    idx--;
+
                 clusterKeyParseState.Count = 0;
-                txnKeyScratchBuffer.Reset();
             }
         }
 
@@ -266,7 +267,6 @@ namespace Garnet.server
                 scratchBufferAllocator.Reset();
             }
 
-
             return true;
         }
 
@@ -337,13 +337,13 @@ namespace Garnet.server
 
         internal string GetLockset() => keyEntries.GetLockset();
 
-        internal void GetKeysForValidation(out ClusterSlotVerificationInput csvi)
+        internal void GetSlotVerificationInput(byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
         {
             watchContainer.SaveKeysToKeyList(this);
-            csvi = new ClusterSlotVerificationInput
+            clusterSlotVerificationInput = new ClusterSlotVerificationInput
             {
                 readOnly = keyEntries.IsReadOnly,
-                sessionAsking = 0,
+                sessionAsking = sessionAsking,
                 firstKey = 0,
                 lastKey = clusterKeyParseState.Count,
                 step = 1,

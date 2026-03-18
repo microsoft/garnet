@@ -22,16 +22,16 @@ namespace Garnet.server
         readonly WatchVersionMap versionMap;
 
         readonly int initialSliceBufferSize;
-        readonly ScratchBufferAllocator watchKeyScratchBuffer;
+        readonly ScratchBufferAllocator scratchBufferAllocator;
         int sliceBufferSize;
         int sliceCount;
 
-        public WatchedKeysContainer(int size, WatchVersionMap versionMap)
+        public WatchedKeysContainer(int size, WatchVersionMap versionMap, ScratchBufferAllocator scratchBufferAllocator)
         {
             this.versionMap = versionMap;
             sliceCount = 0;
             initialSliceBufferSize = size;
-            watchKeyScratchBuffer = new ScratchBufferAllocator();
+            this.scratchBufferAllocator = scratchBufferAllocator;
         }
 
         /// <summary>
@@ -40,7 +40,9 @@ namespace Garnet.server
         public void Reset()
         {
             sliceCount = 0;
-            watchKeyScratchBuffer.Reset();
+            var idx = keySlices.Length - 1;
+            while (idx >= 0 && scratchBufferAllocator.RewindScratchBuffer(ref keySlices[idx].slice))
+                idx--;
         }
 
         public bool RemoveWatch(PinnedSpanByte key)
@@ -68,11 +70,11 @@ namespace Garnet.server
             }
 
             // Copy key bytes into scratch buffer (independent of receive buffer lifetime)
-            var slice = watchKeyScratchBuffer.CreateArgSlice(key.ReadOnlySpan);
+            var keySlice = scratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
 
-            keySlices[sliceCount].slice = slice;
+            keySlices[sliceCount].slice = keySlice;
             keySlices[sliceCount].isWatched = true;
-            keySlices[sliceCount].hash = Utility.HashBytes(slice.ReadOnlySpan);
+            keySlices[sliceCount].hash = Utility.HashBytes(keySlice.ReadOnlySpan);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
             sliceCount++;

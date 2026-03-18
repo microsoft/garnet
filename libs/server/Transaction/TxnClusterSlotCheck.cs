@@ -31,11 +31,11 @@ namespace Garnet.server
                     clusterKeyParseState.SetArgument(i, oldParams[i]);
             }
 
-            // Copy key bytes into dedicated txn scratch buffer (independent of per-message scratch buffer lifecycle)
-            var stableKey = txnKeyScratchBuffer.CreateArgSlice(argSlice.ReadOnlySpan);
+            // Copy key bytes into scratch buffer (independent of receive buffer lifetime)
+            var keySlice = scratchBufferAllocator.CreateArgSlice(argSlice.ReadOnlySpan);
 
             clusterKeyParseState.Count = count + 1;
-            clusterKeyParseState.SetArgument(count, stableKey);
+            clusterKeyParseState.SetArgument(count, keySlice);
         }
     }
 }
