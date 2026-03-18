@@ -35,7 +35,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SADD };
 
             // Prepare output
             var output = new ObjectOutput();
@@ -361,7 +362,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SREM };
 
             // Prepare output
             var output = new ObjectOutput();
@@ -409,7 +411,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState,
-                flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SCARD };
+                flags: RespInputFlags.SkipRespOutput)
+            { SetOp = SetOperation.SCARD };
 
             // Prepare output
             var output = new ObjectOutput();

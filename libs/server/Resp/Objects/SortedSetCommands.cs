@@ -81,7 +81,8 @@ namespace Garnet.server
             }
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: currIdx,
-                arg1: (int)options) { SortedSetOp = SortedSetOperation.ZADD };
+                arg1: (int)options)
+            { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = GetObjectOutput();
 
@@ -121,7 +122,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREM };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZREM };
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetRemove(key, ref input, ref output);
@@ -165,7 +167,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZCARD };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZCARD };
             var output = new ObjectOutput();
 
             var status = storageApi.SortedSetLength(key, ref input, ref output);
@@ -218,7 +221,8 @@ namespace Garnet.server
                 return AbortWithErrorMessage(error);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
-                arg1: respProtocolVersion, arg2: (int)rangeOpts) { SortedSetOp = SortedSetOperation.ZRANGE };
+                arg1: respProtocolVersion, arg2: (int)rangeOpts)
+            { SortedSetOp = SortedSetOperation.ZRANGE };
             var output = GetObjectOutput();
 
             var status = storageApi.SortedSetRange(key, ref input, ref output);
@@ -267,7 +271,8 @@ namespace Garnet.server
                 return AbortWithErrorMessage(error);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 2,
-                arg1: respProtocolVersion, arg2: (int)options) { SortedSetOp = SortedSetOperation.ZRANGE };
+                arg1: respProtocolVersion, arg2: (int)options)
+            { SortedSetOp = SortedSetOperation.ZRANGE };
 
             var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
 
@@ -307,7 +312,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
-                arg1: respProtocolVersion) { SortedSetOp = SortedSetOperation.ZSCORE };
+                arg1: respProtocolVersion)
+            { SortedSetOp = SortedSetOperation.ZSCORE };
 
             // Prepare output
             var output = GetObjectOutput();
@@ -599,7 +605,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZCOUNT };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = SortedSetOperation.ZCOUNT };
 
             // Prepare output
             var output = new ObjectOutput();
@@ -665,7 +672,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
-                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = op };
+                flags: RespInputFlags.SkipRespOutput)
+            { SortedSetOp = op };
             var output = new ObjectOutput();
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
@@ -1922,7 +1930,8 @@ namespace Garnet.server
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: currIdx,
-                    arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail) { SortedSetOp = SortedSetOperation.ZEXPIRE };
+                    arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail)
+            { SortedSetOp = SortedSetOperation.ZEXPIRE };
 
             var output = GetObjectOutput();
 
@@ -2013,7 +2022,8 @@ namespace Garnet.server
             var membersParseState = parseState.Slice(3, numMembers);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref membersParseState,
-                arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0) { SortedSetOp = SortedSetOperation.ZTTL };
+                arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0)
+            { SortedSetOp = SortedSetOperation.ZTTL };
 
             var output = GetObjectOutput();
 

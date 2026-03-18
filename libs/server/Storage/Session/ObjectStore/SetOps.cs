@@ -324,12 +324,12 @@ namespace Garnet.server
                 {
                     SET(sourceKey, in srcObject, ref objectTransactionalContext);
                 }
-                
+
                 _ = dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
                 var setStatus = GarnetStatus.OK;
-                
+
                 // Set object if did not exist before
                 if (dstGetStatus == GarnetStatus.NOTFOUND)
                 {
