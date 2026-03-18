@@ -48,8 +48,8 @@ Adding a single new command touches **at minimum** these areas:
 The `RespCommand` enum is divided into sections with **ordering that matters**:
 
 ```
-Read commands:     BITCOUNT ... ZSCORE    (before APPEND)
-Write commands:    APPEND ... BITOP_DIFF  (after APPEND)
+Read commands:     BITCOUNT ... ZUNION     (before APPEND)
+Write commands:    APPEND ... BITOP_DIFF   (after APPEND)
 Script commands:   EVAL, EVALSHA
 Non-key commands:  PING, SUBSCRIBE, etc.
 Admin commands:    AUTH, CONFIG, etc.
@@ -67,11 +67,13 @@ Admin commands:    AUTH, CONFIG, etc.
 
 **Boundary markers to watch (search for these comments):**
 ```csharp
-ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
+ZUNION,  // Note: Last read command is determined by APPEND - 1
 APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
 BITOP_DIFF, // Note: Update LastWriteCommand if adding new write commands after this
 EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 ```
+
+**⚠️ Caveat:** The boundary comments in the source may not be on the actual last/first entry (e.g., `ZSCORE` has the comment but `ZUNION` follows it). The real boundary is determined by code: `LastReadCommand = RespCommand.APPEND - 1`. Always check the actual enum ordering, not just the comments.
 
 ---
 
@@ -269,7 +271,9 @@ private unsafe bool SortedSetBlockingPop(RespCommand command)
 
 ## Steps 5–7: Storage Layer (skip for admin/non-key commands)
 
-> **Note:** Steps 5, 6, and 7 apply only to commands that read or write key-value data through the store (e.g., `SET`, `GET`, `DELIFGREATER`). Admin commands like `DEBUG`, `PING`, `CONFIG`, etc. handle their logic entirely in the RESP handler (Step 4) and do **not** need API interface methods, storage session ops, or RMW callbacks. Skip to Step 8 for those.
+> **Note:** Steps 5, 6, and 7 apply only to commands that read or write key-value data through the store (e.g., `SET`, `GET`, `DELIFGREATER`). Admin commands like `DEBUG`, `PING`, `CONFIG`, etc. handle their logic entirely in the RESP handler (Step 4) and do **not** need API interface methods, storage session ops, or RMW callbacks. Skip to Step 8 for those. Blocking commands (e.g., `BZMPOP`) also skip Steps 5-7 — see the blocking command pattern in Step 4.
+>
+> **Note on context types:** The unified single-store has three context types: **string context** (for raw string commands like GET/SET), **object context** (for collection commands like ZADD/LPUSH), and **unified context** (for type-agnostic commands like EXISTS/DELETE/TTL/EXPIRE). Most new commands use either the string or object context — the unified context is only for commands that must work across both value types.
 
 ## Step 5: Add API Interface Method
 
@@ -492,7 +496,7 @@ Do NOT invent new group names — the JSON deserializer will fail.
 4. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both.
 5. Kill the local server afterward.
 
-**⚠️ Caveat:** The tool uses `Console.ReadKey()` which does NOT work with piped input. You must run it interactively (not via `echo "Y" | dotnet run ...`).
+**⚠️ Caveat:** The tool uses `Console.ReadKey()` which does NOT work with piped input. You must run it interactively (not via `echo "Y" | dotnet run ...`). For AI agents, use an async shell session and send `Y` keystrokes via interactive input (e.g., `write_bash`).
 
 **⚠️ Caveat:** The tool requires a running RESP server to query standard Redis command metadata. For Garnet-only commands, the tool reads from `GarnetCommandsInfo.json` and `GarnetCommandsDocs.json` instead.
 
