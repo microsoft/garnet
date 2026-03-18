@@ -8,11 +8,6 @@ namespace Garnet.server
 {
     sealed unsafe partial class TransactionManager
     {
-        // Keys involved in the current transaction
-        PinnedSpanByte[] keys;
-        int keyCount;
-
-        internal byte* saveKeyRecvBufferPtr;
         readonly bool clusterEnabled;
 
         /// <summary>
@@ -23,30 +18,25 @@ namespace Garnet.server
         {
             // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
-            // Grow the buffer if needed
-            if (keyCount >= keys.Length)
+
+            ref var clusterKeyParseState = ref respSession.clusterKeyParseState;
+            var count = clusterKeyParseState.Count;
+
+            // Grow the buffer with doubling if we've run out of capacity
+            if (count >= clusterKeyParseState.Capacity)
             {
-                var oldKeys = keys;
-                keys = new PinnedSpanByte[keys.Length * 2];
-                Array.Copy(oldKeys, keys, oldKeys.Length);
+                var newCapacity = Math.Max(count * 2, initialKeyBufferSize);
+                var oldParams = clusterKeyParseState.Parameters;
+                clusterKeyParseState.Initialize(newCapacity);
+                for (var i = 0; i < count; i++)
+                    clusterKeyParseState.SetArgument(i, oldParams[i]);
             }
 
-            keys[keyCount++] = argSlice;
-        }
+            // Copy key bytes into dedicated txn scratch buffer (independent of per-message scratch buffer lifecycle)
+            var stableKey = txnKeyScratchBuffer.CreateArgSlice(argSlice.ReadOnlySpan);
 
-        /// <summary>
-        /// Update argslice ptr if input buffer has been resized
-        /// </summary>
-        /// <param name="recvBufferPtr"></param>
-        public unsafe void UpdateRecvBufferPtr(byte* recvBufferPtr)
-        {
-            // Execute method only if clusterEnabled
-            if (!clusterEnabled) return;
-            if (recvBufferPtr != saveKeyRecvBufferPtr)
-            {
-                for (int i = 0; i < keyCount; i++)
-                    keys[i].ptr = recvBufferPtr + (keys[i].ptr - saveKeyRecvBufferPtr);
-            }
+            clusterKeyParseState.Count = count + 1;
+            clusterKeyParseState.SetArgument(count, stableKey);
         }
     }
 }

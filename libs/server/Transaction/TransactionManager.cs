@@ -68,6 +68,7 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
+        readonly ScratchBufferAllocator txnKeyScratchBuffer;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -138,6 +139,7 @@ namespace Garnet.server
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
+            this.txnKeyScratchBuffer = new ScratchBufferAllocator();
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
@@ -148,8 +150,6 @@ namespace Garnet.server
             garnetTxFinalizeApi = garnetApi;
 
             this.clusterEnabled = clusterEnabled;
-            if (clusterEnabled)
-                keys = new PinnedSpanByte[initialKeyBufferSize];
 
             Reset(false);
         }
@@ -184,9 +184,12 @@ namespace Garnet.server
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
 
-            // Reset cluster variables used for slot verification
-            this.saveKeyRecvBufferPtr = null;
-            this.keyCount = 0;
+            // Reset cluster key parse state
+            if (clusterEnabled)
+            {
+                respSession.clusterKeyParseState.Count = 0;
+                txnKeyScratchBuffer.Reset();
+            }
         }
 
         internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isReplaying = false)
@@ -328,13 +331,18 @@ namespace Garnet.server
 
         internal string GetLockset() => keyEntries.GetLockset();
 
-        internal void GetKeysForValidation(byte* recvBufferPtr, out PinnedSpanByte[] keys, out int keyCount, out bool readOnly)
+        internal void GetKeysForValidation(out ClusterSlotVerificationInput csvi)
         {
-            UpdateRecvBufferPtr(recvBufferPtr);
             watchContainer.SaveKeysToKeyList(this);
-            keys = this.keys;
-            keyCount = this.keyCount;
-            readOnly = keyEntries.IsReadOnly;
+            csvi = new ClusterSlotVerificationInput
+            {
+                readOnly = keyEntries.IsReadOnly,
+                sessionAsking = 0,
+                firstKey = 0,
+                lastKey = respSession.clusterKeyParseState.Count,
+                step = 1,
+                keyNumOffset = -1,
+            };
         }
 
         void BeginTransaction()

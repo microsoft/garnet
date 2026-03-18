@@ -42,6 +42,11 @@ namespace Garnet.server
         PinnedSpanByte[] rootBuffer;
 
         /// <summary>
+        /// Get the allocated capacity of the argument buffer
+        /// </summary>
+        public readonly int Capacity => rootBuffer?.Length ?? 0;
+
+        /// <summary>
         /// Get a Span of the parsed parameters in the form an PinnedSpanByte
         /// </summary>
         public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);

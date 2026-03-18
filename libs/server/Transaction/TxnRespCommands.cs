@@ -29,8 +29,6 @@ namespace Garnet.server
             txnManager.txnStartHead = readHead;
             txnManager.state = TxnState.Started;
             txnManager.operationCntTxn = 0;
-            //Keep track of ptr for key verification when cluster mode is enabled
-            txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -60,8 +58,9 @@ namespace Garnet.server
                 var _origReadHead = endReadHead;
                 endReadHead = txnManager.txnStartHead;
 
-                txnManager.GetKeysForValidation(recvBufferPtr, out var keys, out int keyCount, out bool readOnly);
-                if (NetworkKeyArraySlotVerify(keys, readOnly, keyCount))
+                txnManager.GetKeysForValidation(out var csvi);
+                csvi.sessionAsking = SessionAsking;
+                if (clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(ref clusterKeyParseState, ref csvi, ref dcurr, ref dend))
                 {
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
