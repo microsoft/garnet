@@ -256,6 +256,7 @@ namespace Garnet.cluster
             const int maxOdcAttempts = 2;
             while (true)
             {
+                cts.Token.ThrowIfCancellationRequested();
                 logger?.LogInformation("AcquireCheckpointEntry iteration {iteration}", iteration);
                 iteration++;
 

@@ -121,7 +121,7 @@ namespace Garnet.common
 
             if (IsEnabled(exceptionType))
             {
-                // Reset and wait to signaled to go forward
+                // Reset and wait to be signaled to go forward
                 DisableException(exceptionType);
                 while (!IsEnabled(exceptionType))
                 {
@@ -132,7 +132,7 @@ namespace Garnet.common
                             break;
                         task = update.Task;
                     }
-                    await task;
+                    await task.ConfigureAwait(false);
                 }
             }
         }
@@ -153,7 +153,7 @@ namespace Garnet.common
                         break;
                     task = update.Task;
                 }
-                await task;
+                await task.ConfigureAwait(false);
             }
         }
     }
