@@ -220,7 +220,7 @@ namespace Garnet.common
                     {
                         var entryBufferType = (PoolEntryBufferType)(kvp.Key.source & 0xFF);
                         var entryOwnerType = (PoolOwnerType)((kvp.Key.source >> 8) & 0xFF);
-                        logger?.LogError("  Unreturned buffer: ownerType={ownerType}, bufferType={bufferType}, size={size}",
+                        logger?.LogCritical("  Unreturned buffer: ownerType={ownerType}, bufferType={bufferType}, size={size}",
                             entryOwnerType, entryBufferType, kvp.Key.entry.Length);
                     }
                 }
