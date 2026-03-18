@@ -34,11 +34,9 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
-            // TODO: actually pass distance metric
-
             unsafe
             {
-                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, (int)distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
             }
         }
 
@@ -308,6 +306,7 @@ namespace Garnet.server
             uint dimensions,
             uint reduceDims,
             VectorQuantType quantType,
+            int metricType,
             uint buildExplorationFactor,
             uint numLinks,
             nint readCallback,
