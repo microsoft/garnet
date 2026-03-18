@@ -33,7 +33,20 @@ namespace Garnet.server
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (!logRecord.Info.ValueIsObject)
+            {
+                // Free BfTree if this is a RangeIndex record.
+                if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+                {
+                    RangeIndexManager.ReadIndex(logRecord.ValueSpan,
+                        out var treePtr, out _, out _, out _, out _, out _, out _, out _, out var pid);
+                    if (treePtr != 0 && pid == functionsState.rangeIndexManager.ProcessInstanceId)
+                    {
+                        functionsState.rangeIndexManager.UnregisterIndex(treePtr);
+                    }
+                }
+
                 logRecord.ClearOptionals();
+            }
 
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

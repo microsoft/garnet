@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
 
@@ -42,6 +43,7 @@ namespace Garnet.server
         public RangeIndexManager(ILogger logger = null)
         {
             this.logger = logger;
+            rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
         }
 
         /// <summary>
@@ -75,7 +77,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Unregister and dispose a BfTreeService on DEL. Cold path only.
+        /// Unregister and dispose a BfTreeService.
+        /// Called while the caller already holds an exclusive lock.
         /// Returns true if the index was found and disposed.
         /// </summary>
         internal bool UnregisterIndex(nint treePtr)

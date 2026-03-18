@@ -15,39 +15,8 @@ namespace Garnet.server
     sealed unsafe partial class StorageSession
     {
         /// <summary>
-        /// Read the RangeIndex stub from the store and return the native tree pointer.
-        /// Returns 0 if the key doesn't exist or isn't a RangeIndex.
-        /// </summary>
-        private nint GetNativeTreePtrForKey(PinnedSpanByte key)
-        {
-            parseState.InitializeWithArgument(key);
-            var input = new StringInput(RespCommand.RIGET, ref parseState);
-            Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
-            var output = StringOutput.FromPinnedSpan(stubSpan);
-
-            var readStatus = stringBasicContext.Read((FixedSpanByteKey)key, ref input, ref output);
-
-            if (readStatus.IsPending)
-                CompletePendingForSession(ref readStatus, ref output, ref stringBasicContext);
-
-            if (!readStatus.Found)
-                return 0;
-
-            var outputSpan = output.SpanByteAndMemory.IsSpanByte
-                ? output.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                : output.SpanByteAndMemory.MemorySpan;
-
-            if (outputSpan.Length < RangeIndexManager.IndexSizeBytes)
-                return 0;
-
-            RangeIndexManager.ReadIndex(outputSpan,
-                out var treePtr, out _, out _, out _, out _, out _, out _, out _, out _);
-
-            return treePtr;
-        }
-
-        /// <summary>
         /// Create a new RangeIndex. Creates the BfTree and persists the stub via RMW.
+        /// No lock needed — RMW is atomic.
         /// </summary>
         public GarnetStatus RangeIndexCreate(
             PinnedSpanByte key,
@@ -104,6 +73,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.RICREATE, ref parseState);
             var output = new StringOutput();
 
+            // RMW is atomic — no external lock needed
             var status = stringBasicContext.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
@@ -134,72 +104,152 @@ namespace Garnet.server
 
         /// <summary>
         /// RI.SET — insert or update a field in a range index.
-        /// Hot path: reads native pointer from stub, calls BfTreeService directly.
+        /// Hot path: acquires shared lock, reads stub, calls BfTreeService while lock is held.
         /// </summary>
         public GarnetStatus RangeIndexSet(
             PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
             out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
         {
             errorMsg = default;
-            var treePtr = GetNativeTreePtrForKey(key);
-            if (treePtr == 0)
+
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.RISET, ref parseState);
+            Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
+
+            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
             {
-                result = RangeIndexResult.Error;
-                errorMsg = "ERR no such range index"u8;
+                if (status != GarnetStatus.OK)
+                {
+                    result = RangeIndexResult.Error;
+                    errorMsg = "ERR no such range index"u8;
+                    return GarnetStatus.OK;
+                }
+
+                var treePtr = ExtractTreePtr(stubSpan);
+                if (treePtr == 0)
+                {
+                    result = RangeIndexResult.Error;
+                    errorMsg = "ERR no such range index"u8;
+                    return GarnetStatus.OK;
+                }
+
+                var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
+                if (insertResult == BfTreeInsertResult.InvalidKV)
+                {
+                    result = RangeIndexResult.Error;
+                    errorMsg = "ERR invalid key or value size"u8;
+                    return GarnetStatus.OK;
+                }
+
+                result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
-
-            var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
-            if (insertResult == BfTreeInsertResult.InvalidKV)
-            {
-                result = RangeIndexResult.Error;
-                errorMsg = "ERR invalid key or value size"u8;
-                return GarnetStatus.OK;
-            }
-
-            result = RangeIndexResult.OK;
-            return GarnetStatus.OK;
         }
 
         /// <summary>
         /// RI.GET — read a field from a range index.
-        /// Hot path: reads native pointer from stub, calls BfTreeService directly.
+        /// Hot path: acquires shared lock, reads stub, calls BfTreeService while lock is held.
         /// </summary>
         public GarnetStatus RangeIndexGet(
             PinnedSpanByte key, PinnedSpanByte field,
             out byte[] value, out RangeIndexResult result)
         {
             value = null;
-            var treePtr = GetNativeTreePtrForKey(key);
-            if (treePtr == 0)
+
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.RIGET, ref parseState);
+            Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
+
+            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
             {
-                result = RangeIndexResult.Error;
+                if (status != GarnetStatus.OK)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                var treePtr = ExtractTreePtr(stubSpan);
+                if (treePtr == 0)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                var readResult = BfTreeService.ReadByPtr(treePtr, field, out value);
+                result = readResult == BfTreeReadResult.Found ? RangeIndexResult.OK : RangeIndexResult.NotFound;
                 return GarnetStatus.OK;
             }
-
-            var readResult = BfTreeService.ReadByPtr(treePtr, field, out value);
-            result = readResult == BfTreeReadResult.Found ? RangeIndexResult.OK : RangeIndexResult.NotFound;
-            return GarnetStatus.OK;
         }
 
         /// <summary>
         /// RI.DEL — delete a field from a range index.
-        /// Hot path: reads native pointer from stub, calls BfTreeService directly.
+        /// Hot path: acquires shared lock, reads stub, calls BfTreeService while lock is held.
         /// </summary>
         public GarnetStatus RangeIndexDel(
             PinnedSpanByte key, PinnedSpanByte field,
             out RangeIndexResult result)
         {
-            var treePtr = GetNativeTreePtrForKey(key);
-            if (treePtr == 0)
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.RIDEL, ref parseState);
+            Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
+
+            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
             {
-                result = RangeIndexResult.Error;
+                if (status != GarnetStatus.OK)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                var treePtr = ExtractTreePtr(stubSpan);
+                if (treePtr == 0)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                BfTreeService.DeleteByPtr(treePtr, field);
+                result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
+        }
 
-            BfTreeService.DeleteByPtr(treePtr, field);
-            result = RangeIndexResult.OK;
-            return GarnetStatus.OK;
+        /// <summary>
+        /// Extract the native tree pointer from a stub span.
+        /// </summary>
+        private static nint ExtractTreePtr(Span<byte> stubSpan)
+        {
+            if (stubSpan.Length < RangeIndexManager.IndexSizeBytes)
+                return 0;
+
+            RangeIndexManager.ReadIndex(stubSpan,
+                out var treePtr, out _, out _, out _, out _, out _, out _, out _, out _);
+
+            return treePtr;
+        }
+
+        /// <summary>
+        /// Delete a RangeIndex key. Acquires exclusive lock, then calls Tsavorite delete.
+        /// The exclusive lock ensures no concurrent RI.SET/GET/DEL operations are in-flight
+        /// when InPlaceDeleter frees the BfTree.
+        /// Follows VectorManager's TryDeleteVectorSet pattern.
+        /// </summary>
+        public GarnetStatus TryDeleteRangeIndex(PinnedSpanByte key)
+        {
+            var rangeIndexManager = functionsState.rangeIndexManager;
+            var keyHash = stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
+
+            using (rangeIndexManager.AcquireExclusiveForDelete(keyHash))
+            {
+                // Delete the store record while holding exclusive lock.
+                // InPlaceDeleter will free the BfTree (caller already holds exclusive).
+                var deleteStatus = stringBasicContext.Delete((FixedSpanByteKey)key);
+
+                if (deleteStatus.IsCompletedSuccessfully)
+                    return GarnetStatus.OK;
+
+                return GarnetStatus.NOTFOUND;
+            }
         }
     }
 }

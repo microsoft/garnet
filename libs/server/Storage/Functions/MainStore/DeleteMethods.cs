@@ -28,7 +28,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            // Free BfTree if this is a RangeIndex record
+            // Free BfTree if this is a RangeIndex record.
+            // The caller (TryDeleteRangeIndex) already holds the exclusive lock.
             if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
                 RangeIndexManager.ReadIndex(logRecord.ValueSpan,
