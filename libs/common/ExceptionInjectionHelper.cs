@@ -13,6 +13,9 @@ namespace Garnet.common
     /// </summary>
     public static class ExceptionInjectionHelper
     {
+        static object @lock = new();
+        static TaskCompletionSource<bool> update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         /// <summary>
         /// Array of exception injection types
         /// </summary>
@@ -98,10 +101,19 @@ namespace Garnet.common
 
             if (IsEnabled(exceptionType))
             {
-                // Reset and wait to signaled to go forward
+                // Reset and wait to be signaled to go forward
                 DisableException(exceptionType);
                 while (!IsEnabled(exceptionType))
-                    await Task.Yield();
+                {
+                    Task task;
+                    lock (@lock)
+                    {
+                        if (IsEnabled(exceptionType))
+                            break;
+                        task = update.Task;
+                    }
+                    await task.ConfigureAwait(false);
+                }
             }
         }
 
@@ -112,8 +124,17 @@ namespace Garnet.common
         /// <returns></returns>
         public static async Task WaitOnClearAsync(ExceptionInjectionType exceptionType)
         {
-            while (ExceptionInjectionTypes[(int)exceptionType])
-                await Task.Yield();
+            while (IsEnabled(exceptionType))
+            {
+                Task task;
+                lock (@lock)
+                {
+                    if (!IsEnabled(exceptionType))
+                        break;
+                    task = update.Task;
+                }
+                await task.ConfigureAwait(false);
+            }
         }
     }
 }
