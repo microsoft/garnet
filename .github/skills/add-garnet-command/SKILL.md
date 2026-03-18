@@ -21,20 +21,23 @@ Adding a single new command touches **at minimum** these areas:
 | 2 | Command parsing | `libs/server/Resp/Parser/RespCommand.cs` | ✅ Always |
 | 3 | Command dispatch | `libs/server/Resp/RespServerSession.cs` | ✅ Always |
 | 4 | RESP handler | `libs/server/Resp/<Category>/*.cs` | ✅ Always |
-| 5 | API interface | `libs/server/API/IGarnetApi.cs` | If key-value command |
-| 6 | API delegation | `libs/server/API/GarnetApi.cs` | If key-value command |
-| 7 | Storage session | `libs/server/Storage/Session/` | If key-value command |
-| 8 | RMW/Read callbacks | `libs/server/Storage/Functions/MainStore/` | If using RMW/Read |
-| 9 | VarLen methods | `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` | If using RMW |
-| 10 | Command info JSON | `libs/resources/RespCommandsInfo.json` | ✅ Always (generated) |
-| 11 | Command docs JSON | `libs/resources/RespCommandsDocs.json` | ✅ Always (generated) |
-| 12 | Supported commands | `playground/CommandInfoUpdater/SupportedCommand.cs` | ✅ Always |
-| 13 | Garnet command info | `playground/CommandInfoUpdater/GarnetCommandsInfo.json` | If Garnet-only command |
-| 14 | Garnet command docs | `playground/CommandInfoUpdater/GarnetCommandsDocs.json` | If Garnet-only command |
-| 15 | ACL test | `test/Garnet.test/Resp/ACL/RespCommandTests.cs` | ✅ Always |
-| 16 | Integration tests | `test/Garnet.test/Resp*.cs` | ✅ Always |
-| 17 | Website documentation | `website/docs/commands/` | ✅ Always |
-| 18 | Configuration settings | `Options.cs`, `GarnetServerOptions.cs`, `defaults.conf` | If command is optional/gated |
+| 5 | API interface | `libs/server/API/IGarnetApi.cs` | If key-value command (not blocking/admin) |
+| 6 | API delegation | `libs/server/API/GarnetApi.cs` | If key-value command (not blocking/admin) |
+| 7 | Storage session | `libs/server/Storage/Session/` | If key-value command (not blocking/admin) |
+| 8 | RMW/Read callbacks | `libs/server/Storage/Functions/MainStore/` | If string command using RMW/Read |
+| 9 | VarLen methods | `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` | If string command using RMW |
+| 10 | Object operation enum | `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` | If new object sub-operation |
+| 11 | Object implementation | `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs` | If new object sub-operation |
+| 12 | ItemBroker | `libs/server/Objects/ItemBroker/CollectionItemBroker.cs` | If blocking command |
+| 13 | Command info JSON | `libs/resources/RespCommandsInfo.json` | ✅ Always (generated) |
+| 14 | Command docs JSON | `libs/resources/RespCommandsDocs.json` | ✅ Always (generated) |
+| 15 | Supported commands | `playground/CommandInfoUpdater/SupportedCommand.cs` | ✅ Always |
+| 16 | Garnet command info | `playground/CommandInfoUpdater/GarnetCommandsInfo.json` | If Garnet-only command |
+| 17 | Garnet command docs | `playground/CommandInfoUpdater/GarnetCommandsDocs.json` | If Garnet-only command |
+| 18 | ACL test | `test/Garnet.test/Resp/ACL/RespCommandTests.cs` | ✅ Always |
+| 19 | Integration tests | `test/Garnet.test/Resp*.cs` | ✅ Always |
+| 20 | Website documentation | `website/docs/commands/` | ✅ Always |
+| 21 | Configuration settings | `Options.cs`, `GarnetServerOptions.cs`, `defaults.conf` | If command is optional/gated |
 
 ---
 
@@ -180,6 +183,88 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
 - Always call `SendAndReset()` in the while-not-written loop
 - Return `true` (command handled) or `false` (need more data)
 
+### Object command RESP handler pattern
+
+Object commands (Hash, List, Set, SortedSet) follow a different pattern. The RESP handler builds an `ObjectInput` with the appropriate operation enum and delegates to the storage API:
+
+**File:** `libs/server/Resp/Objects/[ObjectName]Commands.cs` (e.g., `SortedSetCommands.cs`)
+
+```csharp
+private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
+    where TGarnetApi : IGarnetApi
+{
+    if (parseState.Count < 3)
+        return AbortWithWrongNumberOfArguments("ZADD");
+
+    var key = parseState.GetArgSliceByRef(0);
+
+    var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
+    var input = new ObjectInput(header, ref parseState, startIdx: 1);
+    var output = GetObjectOutput();
+
+    var status = storageApi.SortedSetAdd(key, ref input, ref output);
+
+    switch (status)
+    {
+        case GarnetStatus.WRONGTYPE:
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                SendAndReset();
+            break;
+        default:
+            ProcessOutput(output.SpanByteAndMemory);
+            break;
+    }
+
+    return true;
+}
+```
+
+**Key differences from string commands:**
+- Uses `ObjectInput` (not `StringInput`) with a `RespInputHeader(GarnetObjectType.XXX)` and an operation enum (e.g., `SortedSetOperation.ZADD`)
+- Must handle `GarnetStatus.WRONGTYPE` — object commands can fail if the key holds a different object type
+- The actual data operation logic lives in `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`, dispatched via the operation enum
+
+For new object sub-operations, also add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` and handle it in the `Operate` method's switch statement.
+
+### Blocking command RESP handler pattern
+
+Blocking commands (`BLPOP`, `BRPOP`, `BLMOVE`, `BLMPOP`, `BZPOPMIN`, `BZPOPMAX`, `BZMPOP`) follow a distinct pattern. They do **not** use `ref storageApi` and instead interact with the `CollectionItemBroker` (`libs/server/Objects/ItemBroker/CollectionItemBroker.cs`), which manages blocking/waiting behavior:
+
+```csharp
+private unsafe bool SortedSetBlockingPop(RespCommand command)
+{
+    if (parseState.Count < 2)
+        return AbortWithWrongNumberOfArguments(command.ToString());
+
+    if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
+        return AbortWithErrorMessage(error);
+
+    var keysBytes = new byte[parseState.Count - 1][];
+    for (var i = 0; i < keysBytes.Length; i++)
+        keysBytes[i] = parseState.GetArgSliceByRef(i).ToArray();
+
+    var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+
+    if (!result.Found)
+    {
+        WriteNull();
+    }
+    else
+    {
+        // Write RESP response with result.Key, result.Item, result.Score, etc.
+    }
+
+    return true;
+}
+```
+
+**Key differences from regular commands:**
+- The dispatch in `RespServerSession.cs` does NOT pass `ref storageApi`: `RespCommand.BZMPOP => SortedSetBlockingMPop(),`
+- The handler calls `storeWrapper.itemBroker.GetCollectionItemAsync()` which blocks (with timeout) until data is available
+- No `IGarnetApi` method, no storage session method, and no RMW callbacks are needed for the blocking command itself (Steps 5-7 are skipped)
+- The `CollectionItemBroker` is notified when data is added to a collection (e.g., `ZADD` calls `itemBroker.HandleCollectionUpdate(key)`), which wakes up blocked clients
+- When adding a new blocking command, you must also update the `TryGetResult` method in `CollectionItemBroker.cs` to map your `RespCommand` to the correct `GarnetObjectType` and implement the retrieval logic
+
 ---
 
 ## Steps 5–7: Storage Layer (skip for admin/non-key commands)
@@ -213,6 +298,8 @@ public GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out My
 
 **File:** New or existing file in `libs/server/Storage/Session/MainStore/` (for string-context ops) or `libs/server/Storage/Session/ObjectStore/` (for object-context ops)
 
+### String command pattern
+
 This layer wraps Tsavorite API calls:
 
 ```csharp
@@ -232,6 +319,38 @@ public GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out My
     return GarnetStatus.OK;
 }
 ```
+
+### Object command pattern
+
+**File:** `libs/server/Storage/Session/ObjectStore/[ObjectName]Ops.cs` (e.g., `SortedSetOps.cs`)
+
+Object commands use `ObjectInput`/`ObjectOutput` and call `RMWObjectStoreOperation` or `ReadObjectStoreOperation`:
+
+```csharp
+public unsafe GarnetStatus SortedSetAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
+    where TObjectContext : ITsavoriteContext<...>
+{
+    var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
+    itemBroker.HandleCollectionUpdate(key);  // Notify blocked clients if applicable
+    return status;
+}
+```
+
+**⚠️ Caveat — `HandleCollectionUpdate`:** If your object command modifies a collection (adds/removes elements), call `itemBroker.HandleCollectionUpdate(key)` after the store operation. This wakes up any clients blocked on that key (e.g., via `BZPOPMIN`). The actual data logic is implemented in the object class, not in the storage session.
+
+### Object implementation
+
+**File:** `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`
+
+For object commands, the core logic lives in the object implementation. The `Operate` method in `[ObjectName]Object.cs` dispatches to implementation methods based on the operation enum:
+
+```csharp
+case SortedSetOperation.ZADD:
+    SortedSetAdd(ref input, ref output.SpanByteAndMemory);
+    break;
+```
+
+The implementation methods in `[ObjectName]ObjectImpl.cs` directly manipulate the object's internal data structures (e.g., `sortedSet`, `sortedSetDict` for SortedSet).
 
 ---
 
