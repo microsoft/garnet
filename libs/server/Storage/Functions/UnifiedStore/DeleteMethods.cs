@@ -35,13 +35,16 @@ namespace Garnet.server
             if (!logRecord.Info.ValueIsObject)
             {
                 // Free BfTree if this is a RangeIndex record.
+                // TODO: This only disposes trees in the mutable region.
+                // We need to also dispose any unevicted trees in read-only region of memory
                 if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     RangeIndexManager.ReadIndex(logRecord.ValueSpan,
                         out var treePtr, out _, out _, out _, out _, out _, out _, out _, out var pid);
                     if (treePtr != 0 && pid == functionsState.rangeIndexManager.ProcessInstanceId)
                     {
-                        functionsState.rangeIndexManager.UnregisterIndex(treePtr);
+                        using (functionsState.rangeIndexManager.AcquireExclusiveForDelete(deleteInfo.KeyHash))
+                            functionsState.rangeIndexManager.UnregisterIndex(treePtr);
                     }
                 }
 
@@ -73,6 +76,7 @@ namespace Garnet.server
 #endif
             where TEpochAccessor : IEpochAccessor
         {
+
             if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
                 WriteLogDelete(key.KeyBytes, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
         }

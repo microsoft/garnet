@@ -227,29 +227,5 @@ namespace Garnet.server
 
             return treePtr;
         }
-
-        /// <summary>
-        /// Delete a RangeIndex key. Acquires exclusive lock, then calls Tsavorite delete.
-        /// The exclusive lock ensures no concurrent RI.SET/GET/DEL operations are in-flight
-        /// when InPlaceDeleter frees the BfTree.
-        /// Follows VectorManager's TryDeleteVectorSet pattern.
-        /// </summary>
-        public GarnetStatus TryDeleteRangeIndex(PinnedSpanByte key)
-        {
-            var rangeIndexManager = functionsState.rangeIndexManager;
-            var keyHash = stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
-
-            using (rangeIndexManager.AcquireExclusiveForDelete(keyHash))
-            {
-                // Delete the store record while holding exclusive lock.
-                // InPlaceDeleter will free the BfTree (caller already holds exclusive).
-                var deleteStatus = stringBasicContext.Delete((FixedSpanByteKey)key);
-
-                if (deleteStatus.IsCompletedSuccessfully)
-                    return GarnetStatus.OK;
-
-                return GarnetStatus.NOTFOUND;
-            }
-        }
     }
 }
