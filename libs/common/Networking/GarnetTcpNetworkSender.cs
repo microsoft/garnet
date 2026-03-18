@@ -37,9 +37,9 @@ namespace Garnet.common
         protected readonly SemaphoreSlim throttle = new(0);
 
         /// <summary>
-        /// Count of sends for throttling
+        /// Monitors active send operations and provides efficient disposal waiting.
         /// </summary>
-        protected int throttleCount;
+        protected readonly WorkerMonitor sendMonitor = new();
 
         /// <summary>
         /// Max concurrent sends (per session) for throttling
@@ -140,7 +140,7 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
-        public override unsafe void ExitAndReturnResponseObject()
+        public override void ExitAndReturnResponseObject()
         {
             if (responseObject != null)
             {
@@ -149,7 +149,6 @@ namespace Garnet.common
             }
             spinLock.Exit();
         }
-
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -220,7 +219,7 @@ namespace Garnet.common
             catch
             {
                 ReturnBuffer(_r);
-                if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                if (sendMonitor.Exit() >= ThrottleMax)
                     throttle.Release();
                 // Rethrow exception as session is not usable
                 throw;
@@ -250,7 +249,7 @@ namespace Garnet.common
                 socket.Dispose();
 
             // Wait for ongoing sends to complete
-            while (throttleCount >= 0 && Interlocked.CompareExchange(ref throttleCount, int.MinValue, 0) != 0) Thread.Yield();
+            sendMonitor.Dispose();
 
             // Empty and dispose the stack
             saeaStack.Dispose();
@@ -264,20 +263,17 @@ namespace Garnet.common
         public override void Throttle()
         {
             // Short circuit for common case of no network overload
-            if (throttleCount < ThrottleMax) return;
+            if (sendMonitor.CurrentCount < ThrottleMax) return;
 
-            // We are throttling, so wait for throttle to be released by some ongoing sender
-            var cnt = Interlocked.Increment(ref throttleCount);
-            if (cnt < 0)
-            {
-                Interlocked.Decrement(ref cnt);
+            // If the monitor is closed, bail out.
+            if (!sendMonitor.TryEnter(out var cnt))
                 return;
-            }
+
             if (cnt > ThrottleMax)
                 throttle.Wait();
 
             // Release throttle, since we used up one slot
-            if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+            if (sendMonitor.Exit() >= ThrottleMax)
                 throttle.Release();
         }
 
@@ -307,13 +303,11 @@ namespace Garnet.common
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe void Send(Socket socket, GarnetSaeaBuffer sendObject, int offset, int size)
+        private void Send(Socket socket, GarnetSaeaBuffer sendObject, int offset, int size)
         {
-            var cnt = Interlocked.Increment(ref throttleCount);
-            if (cnt < 0)
+            if (!sendMonitor.TryEnter(out var cnt))
             {
-                sendObject.socketEventAsyncArgs.UserToken = sendObject;
-                SeaaBuffer_Completed(null, sendObject.socketEventAsyncArgs);
+                ReturnBuffer(sendObject);
                 return;
             }
             if (cnt > ThrottleMax)
@@ -333,7 +327,7 @@ namespace Garnet.common
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
             ReturnBuffer((GarnetSaeaBuffer)e.UserToken);
-            if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+            if (sendMonitor.Exit() >= ThrottleMax)
                 throttle.Release();
         }
     }

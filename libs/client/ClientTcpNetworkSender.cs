@@ -4,7 +4,6 @@
 using System;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using Garnet.common;
 
 namespace Garnet.client
@@ -40,12 +39,8 @@ namespace Garnet.client
         /// <inheritdoc />
         public override void SendResponse(byte[] buffer, int offset, int count, object context)
         {
-            var cnt = Interlocked.Increment(ref throttleCount);
-            if (cnt < 0)
-            {
-                Interlocked.Decrement(ref throttleCount);
-                throw new Exception("Throttle count is negative");
-            }
+            ObjectDisposedException.ThrowIf(!sendMonitor.TryEnter(out var cnt), nameof(ClientTcpNetworkSender));
+
             if (cnt > ThrottleMax)
                 throttle.Wait();
 
@@ -60,7 +55,7 @@ namespace Garnet.client
             catch
             {
                 reusableSaea.Return(s);
-                if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+                if (sendMonitor.Exit() >= ThrottleMax)
                     throttle.Release();
                 // Rethrow exception as session is not usable
                 throw;
@@ -88,7 +83,7 @@ namespace Garnet.client
         {
             callback(e.UserToken);
             reusableSaea.Return(e);
-            if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
+            if (sendMonitor.Exit() >= ThrottleMax)
                 throttle.Release();
         }
     }
