@@ -170,7 +170,7 @@ namespace Garnet.test
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, (int)VectorDistanceMetricType.Cosine, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -365,7 +365,7 @@ namespace Garnet.test
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
             var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, (int)VectorDistanceMetricType.Cosine, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -410,7 +410,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, (int)VectorDistanceMetricType.Cosine, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr);
             }
 
             // Search value
