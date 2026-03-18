@@ -32,7 +32,8 @@ namespace Garnet.cluster
                 migrateOperation.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                if (ClusterSession.Expired(in srcLogRecord))
+                // NOTE: Because the scan executes includingTombstones, tombstone records may not have valid expiration metadata; skip expiration validation here and defer it until the actual send occurs (MigrateSessionCommonUtils.cs:WriteOrSendMainStoreKeyValuePair).
+                if (!srcLogRecord.Info.Tombstone && ClusterSession.Expired(in srcLogRecord))
                     return true;
 
                 var key = srcLogRecord.Key;
