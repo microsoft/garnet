@@ -69,6 +69,7 @@ namespace Garnet.server
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
         readonly ScratchBufferAllocator txnKeyScratchBuffer;
+        internal SessionParseState clusterKeyParseState;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -150,6 +151,11 @@ namespace Garnet.server
             garnetTxFinalizeApi = garnetApi;
 
             this.clusterEnabled = clusterEnabled;
+            if (clusterEnabled)
+            {
+                clusterKeyParseState.Initialize(initialKeyBufferSize);
+                clusterKeyParseState.Count = 0;
+            }
 
             Reset(false);
         }
@@ -187,7 +193,7 @@ namespace Garnet.server
             // Reset cluster key parse state
             if (clusterEnabled)
             {
-                respSession.clusterKeyParseState.Count = 0;
+                clusterKeyParseState.Count = 0;
                 txnKeyScratchBuffer.Reset();
             }
         }
@@ -339,7 +345,7 @@ namespace Garnet.server
                 readOnly = keyEntries.IsReadOnly,
                 sessionAsking = 0,
                 firstKey = 0,
-                lastKey = respSession.clusterKeyParseState.Count,
+                lastKey = clusterKeyParseState.Count,
                 step = 1,
                 keyNumOffset = -1,
             };

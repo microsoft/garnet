@@ -19,7 +19,6 @@ namespace Garnet.server
             // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
 
-            ref var clusterKeyParseState = ref respSession.clusterKeyParseState;
             var count = clusterKeyParseState.Count;
 
             // Grow the buffer with doubling if we've run out of capacity

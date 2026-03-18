@@ -60,7 +60,7 @@ namespace Garnet.server
 
                 txnManager.GetKeysForValidation(out var csvi);
                 csvi.sessionAsking = SessionAsking;
-                if (clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(ref clusterKeyParseState, ref csvi, ref dcurr, ref dend))
+                if (clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(ref txnManager.clusterKeyParseState, ref csvi, ref dcurr, ref dend))
                 {
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);

@@ -55,7 +55,6 @@ namespace Garnet.server
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
-        internal SessionParseState clusterKeyParseState;
 
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
@@ -275,11 +274,6 @@ namespace Garnet.server
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
             parseState.Initialize();
-            if (clusterSession != null)
-            {
-                clusterKeyParseState.Initialize(1 << 10);
-                clusterKeyParseState.Count = 0;
-            }
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
