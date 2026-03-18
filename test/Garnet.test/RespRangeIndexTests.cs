@@ -62,17 +62,29 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // Create a range index
-            var result = db.Execute("RI.CREATE", "myindex", "MEMORY", "CACHESIZE", "65536");
+            // Create a range index and insert data
+            var result = db.Execute("RI.CREATE", "myindex", "MEMORY", "CACHESIZE", "65536", "MINRECORD", "8");
+            ClassicAssert.AreEqual("OK", (string)result);
+            result = db.Execute("RI.SET", "myindex", "field1", "value1");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            // Delete it with DEL
+            // Delete the index with DEL
             var deleted = db.KeyDelete("myindex");
             ClassicAssert.IsTrue(deleted);
 
             // Delete again - should return false (not found)
             deleted = db.KeyDelete("myindex");
             ClassicAssert.IsFalse(deleted);
+
+            // RI.SET should fail — index no longer exists after DEL
+            var ex = Assert.Throws<RedisServerException>(() =>
+                db.Execute("RI.SET", "myindex", "field1", "value1"));
+            ClassicAssert.IsNotNull(ex);
+
+            // RI.GET should also fail
+            ex = Assert.Throws<RedisServerException>(() =>
+                db.Execute("RI.GET", "myindex", "field1"));
+            ClassicAssert.IsNotNull(ex);
         }
 
         [Test]
