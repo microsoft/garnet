@@ -43,7 +43,7 @@ namespace Garnet.server
                 txnManager.Commit();
                 return true;
             }
-            
+
             // Abort and reset the transaction 
             if (txnManager.state == TxnState.Aborted)
             {
