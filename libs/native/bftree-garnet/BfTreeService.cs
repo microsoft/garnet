@@ -101,9 +101,9 @@ namespace Garnet.server.BfTreeInterop
         private readonly StorageBackendType _storageBackend;
 
         /// <summary>
-        /// Gets the native tree pointer (for advanced/test use).
+        /// Gets the native tree pointer for storage in stubs and direct P/Invoke.
         /// </summary>
-        internal nint TreePtr => _tree;
+        public nint NativePtr => _tree;
 
         /// <summary>
         /// Creates a new BfTree with the given configuration.
@@ -194,6 +194,53 @@ namespace Garnet.server.BfTreeInterop
         public int Noop(PinnedSpanByte key)
         {
             return NativeBfTreeMethods.bftree_noop(_tree, key.ToPointer(), key.Length);
+        }
+
+        // ---------------------------------------------------------------
+        // Static pointer-based operations (for hot paths using native ptr from stub)
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Insert via native pointer. For hot-path use when the caller has the native ptr from the stub.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static BfTreeInsertResult InsertByPtr(nint treePtr, PinnedSpanByte key, PinnedSpanByte value)
+        {
+            return (BfTreeInsertResult)NativeBfTreeMethods.bftree_insert(
+                treePtr, key.ToPointer(), key.Length, value.ToPointer(), value.Length);
+        }
+
+        /// <summary>
+        /// Read via native pointer. Convenience overload that allocates output.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static BfTreeReadResult ReadByPtr(nint treePtr, PinnedSpanByte key, out byte[] value)
+        {
+            value = [];
+            Span<byte> buffer = stackalloc byte[4096];
+            int bytesWritten;
+            fixed (byte* bp = buffer)
+            {
+                int valueLen = 0;
+                var rc = NativeBfTreeMethods.bftree_read(
+                    treePtr, key.ToPointer(), key.Length, bp, buffer.Length, &valueLen);
+                bytesWritten = valueLen;
+                if (rc == (int)BfTreeReadResult.Found && bytesWritten > 0)
+                {
+                    value = buffer[..bytesWritten].ToArray();
+                    return BfTreeReadResult.Found;
+                }
+                return (BfTreeReadResult)rc;
+            }
+        }
+
+        /// <summary>
+        /// Delete via native pointer.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void DeleteByPtr(nint treePtr, PinnedSpanByte key)
+        {
+            NativeBfTreeMethods.bftree_delete(treePtr, key.ToPointer(), key.Length);
         }
 
         // ---------------------------------------------------------------

@@ -32,16 +32,10 @@ namespace Garnet.server
             if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
                 RangeIndexManager.ReadIndex(logRecord.ValueSpan,
-                    out var treeHandle, out _, out _, out _, out _, out _, out _, out _, out var pid);
-                if (treeHandle != 0 && pid == functionsState.rangeIndexManager.ProcessInstanceId)
+                    out var treePtr, out _, out _, out _, out _, out _, out _, out _, out var pid);
+                if (treePtr != 0 && pid == functionsState.rangeIndexManager.ProcessInstanceId)
                 {
-                    var gcHandle = System.Runtime.InteropServices.GCHandle.FromIntPtr(treeHandle);
-                    if (gcHandle.IsAllocated)
-                    {
-                        var bfTree = (Garnet.server.BfTreeInterop.BfTreeService)gcHandle.Target;
-                        bfTree.Dispose();
-                        gcHandle.Free();
-                    }
+                    functionsState.rangeIndexManager.UnregisterIndex(treePtr);
                 }
             }
 

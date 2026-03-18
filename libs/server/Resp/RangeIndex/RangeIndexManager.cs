@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +27,12 @@ namespace Garnet.server
 
         /// <summary>Gets the process instance ID for this manager.</summary>
         internal Guid ProcessInstanceId => processInstanceId;
+
+        /// <summary>
+        /// Tracks live BfTreeService instances keyed by their native tree pointer.
+        /// Only touched on CREATE (add) and DEL/Dispose (remove) — never on hot-path data ops.
+        /// </summary>
+        private readonly ConcurrentDictionary<nint, BfTreeService> liveIndexes = new();
 
         private readonly ILogger logger;
 
@@ -60,18 +67,42 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Drops (frees) a BfTree instance.
+        /// Register a BfTreeService after successful index creation. Cold path only.
         /// </summary>
-        internal static void DropBfTree(BfTreeService tree)
+        internal void RegisterIndex(BfTreeService bfTree)
         {
-            tree?.Dispose();
+            liveIndexes[bfTree.NativePtr] = bfTree;
+        }
+
+        /// <summary>
+        /// Unregister and dispose a BfTreeService on DEL. Cold path only.
+        /// Returns true if the index was found and disposed.
+        /// </summary>
+        internal bool UnregisterIndex(nint treePtr)
+        {
+            if (liveIndexes.TryRemove(treePtr, out var bfTree))
+            {
+                bfTree.Dispose();
+                return true;
+            }
+            return false;
         }
 
         /// <inheritdoc/>
         public void Dispose()
         {
-            // Nothing to dispose at manager level; individual BfTree instances are
-            // dropped via DisposeRecord callbacks when their store records are deleted.
+            foreach (var kvp in liveIndexes)
+            {
+                try
+                {
+                    kvp.Value.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to dispose BfTree with native pointer {Ptr}", kvp.Key);
+                }
+            }
+            liveIndexes.Clear();
         }
     }
 }
