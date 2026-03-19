@@ -68,7 +68,7 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
-        internal readonly ScratchBufferAllocator txnScratchBuffer;
+        internal readonly ScratchBufferAllocator txnScratchBufferAllocator;
         internal SessionParseState clusterKeyParseState;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
@@ -137,8 +137,8 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            txnScratchBuffer = new ScratchBufferAllocator();
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBuffer);
+            txnScratchBufferAllocator = new ScratchBufferAllocator();
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
@@ -195,7 +195,7 @@ namespace Garnet.server
             {
                 clusterKeyParseState.Count = 0;
                 saveKeyRecvBufferPtr = null;
-                txnScratchBuffer.Reset();
+                txnScratchBufferAllocator.Reset();
             }
         }
 
