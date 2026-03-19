@@ -8,12 +8,26 @@ namespace Garnet.server
     sealed unsafe partial class TransactionManager
     {
         readonly bool clusterEnabled;
+        internal byte* saveKeyRecvBufferPtr;
+
+        /// <summary>
+        /// Copy all existing keys into <see cref="txnScratchBuffer"/> so they are independent of the old receive buffer.
+        /// Called when the receive buffer has been reallocated since keys were last stored.
+        /// </summary>
+        public void CopyExistingKeysToScratchBuffer()
+        {
+            for (var i = 0; i < clusterKeyParseState.Count; i++)
+            {
+                ref var key = ref clusterKeyParseState.GetArgSliceByRef(i);
+                key = txnScratchBuffer.CreateArgSlice(key.ReadOnlySpan);
+            }
+        }
 
         /// <summary>
         /// Keep track of actual key accessed by command
         /// </summary>
-        /// <param name="argSlice"></param>
-        public void SaveKeyArgSlice(PinnedSpanByte argSlice)
+        /// <param name="keySlice"></param>
+        public void SaveKeyArgSlice(PinnedSpanByte keySlice)
         {
             // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
@@ -27,9 +41,6 @@ namespace Garnet.server
                 clusterKeyParseState.Initialize(count * 2);
                 clusterKeyParseState.SetArguments(0, oldParams);
             }
-
-            // Copy key bytes into dedicated txn scratch buffer (independent of receive buffer lifetime)
-            var keySlice = txnScratchBuffer.CreateArgSlice(argSlice.ReadOnlySpan);
 
             clusterKeyParseState.Count = count + 1;
             clusterKeyParseState.SetArgument(count, keySlice);

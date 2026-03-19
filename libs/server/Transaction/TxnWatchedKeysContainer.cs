@@ -45,7 +45,7 @@ namespace Garnet.server
 
         public bool RemoveWatch(PinnedSpanByte key)
         {
-            for (int i = 0; i < sliceCount; i++)
+            for (var i = 0; i < sliceCount; i++)
             {
                 if (key.ReadOnlySpan.SequenceEqual(keySlices[i].slice.ReadOnlySpan))
                 {
@@ -62,9 +62,9 @@ namespace Garnet.server
             {
                 // Double the struct buffer
                 sliceBufferSize = sliceBufferSize == 0 ? initialSliceBufferSize : sliceBufferSize * 2;
-                var _oldBuffer = keySlices;
+                var oldBuffer = keySlices;
                 keySlices = GC.AllocateUninitializedArray<WatchedKeySlice>(sliceBufferSize, true);
-                if (_oldBuffer != null) Array.Copy(_oldBuffer, keySlices, _oldBuffer.Length);
+                if (oldBuffer != null) Array.Copy(oldBuffer, keySlices, oldBuffer.Length);
             }
 
             // Copy key bytes into scratch buffer (independent of receive buffer lifetime)
@@ -84,9 +84,9 @@ namespace Garnet.server
         /// <returns></returns>
         public bool ValidateWatchVersion()
         {
-            for (int i = 0; i < sliceCount; i++)
+            for (var i = 0; i < sliceCount; i++)
             {
-                WatchedKeySlice key = keySlices[i];
+                var key = keySlices[i];
                 if (!key.isWatched) continue;
                 if (versionMap.ReadVersion(key.hash) != key.version)
                     return false;
@@ -96,9 +96,9 @@ namespace Garnet.server
 
         public bool SaveKeysToLock(TransactionManager txnManager)
         {
-            for (int i = 0; i < sliceCount; i++)
+            for (var i = 0; i < sliceCount; i++)
             {
-                WatchedKeySlice watchedKeySlice = keySlices[i];
+                var watchedKeySlice = keySlices[i];
                 if (!watchedKeySlice.isWatched) continue;
 
                 var slice = keySlices[i].slice;
@@ -109,7 +109,7 @@ namespace Garnet.server
 
         public bool SaveKeysToKeyList(TransactionManager txnManager)
         {
-            for (int i = 0; i < sliceCount; i++)
+            for (var i = 0; i < sliceCount; i++)
             {
                 txnManager.SaveKeyArgSlice(keySlices[i].slice);
             }

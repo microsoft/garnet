@@ -29,6 +29,8 @@ namespace Garnet.server
             txnManager.txnStartHead = readHead;
             txnManager.state = TxnState.Started;
             txnManager.operationCntTxn = 0;
+            // Track receive buffer ptr for key pointer adjustment at EXEC time
+            txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -56,18 +58,21 @@ namespace Garnet.server
             // Start running transaction and setting readHead to first operation
             if (txnManager.state == TxnState.Started)
             {
-                var _origReadHead = endReadHead;
+                var origReadHead = endReadHead;
                 endReadHead = txnManager.txnStartHead;
 
-                txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
-
-                if (clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(ref txnManager.clusterKeyParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend))
+                if (clusterSession != null)
                 {
-                    logger?.LogWarning("Failed CheckClusterTxnKeys");
-                    txnManager.Reset(false);
-                    txnManager.watchContainer.Reset();
-                    endReadHead = _origReadHead;
-                    return true;
+                    txnManager.GetSlotVerificationInput(recvBufferPtr, SessionAsking, out var clusterSlotVerificationInput);
+
+                    if (clusterSession.NetworkMultiKeySlotVerify(ref txnManager.clusterKeyParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend))
+                    {
+                        logger?.LogWarning("Failed CheckClusterTxnKeys");
+                        txnManager.Reset(false);
+                        txnManager.watchContainer.Reset();
+                        endReadHead = origReadHead;
+                        return true;
+                    }
                 }
 
                 var startTxn = txnManager.Run();
@@ -79,7 +84,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    endReadHead = _origReadHead;
+                    endReadHead = origReadHead;
                     WriteNullArray();
                 }
 
@@ -175,6 +180,12 @@ namespace Garnet.server
 
                 txnManager.Abort();
                 return true;
+            }
+
+            if (clusterSession != null && recvBufferPtr != txnManager.saveKeyRecvBufferPtr)
+            {
+                txnManager.CopyExistingKeysToScratchBuffer();
+                txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
             }
 
             txnManager.LockKeys(commandInfo);
