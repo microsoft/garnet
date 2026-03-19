@@ -22,10 +22,11 @@ Adding a single new command touches **at minimum** these areas:
 | 3 | Command dispatch | `libs/server/Resp/RespServerSession.cs` | ✅ Always |
 | 4 | RESP handler | `libs/server/Resp/<Category>/*.cs` | ✅ Always |
 | 5 | API interface | `libs/server/API/IGarnetApi.cs` | If key-value command (not blocking/admin) |
-| 6 | API delegation | `libs/server/API/GarnetApi.cs` | If key-value command (not blocking/admin) |
-| 7 | Storage session | `libs/server/Storage/Session/` | If key-value command (not blocking/admin) |
-| 8 | RMW/Read callbacks | `libs/server/Storage/Functions/MainStore/` | If string command using RMW/Read |
-| 9 | VarLen methods | `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` | If string command using RMW |
+| 6 | API delegation | `libs/server/API/GarnetApi*.cs` | If key-value command (not blocking/admin) |
+| 7 | Storage session | `libs/server/Storage/Session/[Main\|Object\|Unified]Store/*Ops.cs` | If key-value command (not blocking/admin) |
+| 8 | RMW/Read callbacks | `libs/server/Storage/Functions/[Main\|Unified]Store/[RMW\|Read]Methods.cs` | If string/unified command using RMW/Read |
+| 8b | Read response | `libs/server/Storage/Functions/MainStore/PrivateMethods.cs` | If string command using Read (add to `CopyRespToWithInput`) |
+| 9 | VarLen methods | `libs/server/Storage/Functions/[Main\|Unified]Store/VarLenInputMethods.cs` | If string/unified command using RMW |
 | 10 | Object operation enum | `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` | If new object sub-operation |
 | 11 | Object implementation | `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs` | If new object sub-operation |
 | 12 | ItemBroker | `libs/server/Objects/ItemBroker/CollectionItemBroker.cs` | If blocking command |
@@ -84,7 +85,11 @@ EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 Two parsing paths exist:
 
 ### Fast path: `FastParseCommand()` / `FastParseArrayCommand()`
-For commands with short, fixed-length names (≤8 chars, no dots). Uses `ulong` pointer comparisons on `(count << 4) | length` patterns. Only add here if the command name is a simple word.
+Two fast-path methods exist with different constraints:
+- **`FastParseCommand()`**: For commands with a fixed number of arguments and command names up to **9 characters**. Uses `ulong` pointer comparisons on `(count << 4) | length` patterns.
+- **`FastParseArrayCommand()`**: For commands with a variable number of arguments and command names up to **16 characters**. Uses similar `ulong` comparison patterns but accommodates longer names.
+
+Only add here if the command name is a simple word (no dots or special characters).
 
 ### Slow path: `SlowParseCommand()`
 For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit the fast-path pattern.
@@ -156,23 +161,23 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
     if (parseState.Count != N)
         return AbortWithWrongNumberOfArguments(nameof(RespCommand.MYCMD));
 
-    // 2. Parse arguments
+    // 2. Validate other inputs (short-circuit before going to storage)
     var key = parseState.GetArgSliceByRef(0);
-    var value = parseState.GetArgSliceByRef(1);
+    // e.g., parse and validate optional flags, numeric arguments, etc.
 
-    // 3. Call storage API
-    var status = storageApi.MyOperation(key, value, out var result);
+    // 3. Build input/output and call storage API
+    var input = new StringInput(RespCommand.MYCMD, ref parseState, startIdx: 1);
+    var output = new StringOutput();
+    var status = storageApi.MyOperation(key, ref input, ref output);
 
     // 4. Write RESP response
     if (status == GarnetStatus.OK)
     {
-        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-            SendAndReset();
+        ProcessOutput(output);
     }
     else
     {
-        while (!RespWriteUtils.WriteError("ERR message"u8, ref dcurr, dend))
-            SendAndReset();
+        this.WriteError(CmdStrings.RESP_ERR_MY_MESSAGE);
     }
 
     return true;
@@ -181,13 +186,15 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
 
 **Key patterns:**
 - Arguments: `parseState.GetArgSliceByRef(i)` returns `ref PinnedSpanByte`
-- Response: Use `RespWriteUtils.WriteDirect`, `WriteError`, `TryWriteInt32`, `WriteBulkString`, etc.
-- Always call `SendAndReset()` in the while-not-written loop
-- Return `true` (command handled) or `false` (need more data)
+- Input/Output: Instantiate `StringInput`/`StringOutput` (for string commands), `ObjectInput`/`ObjectOutput` (for object commands), or `UnifiedInput`/`UnifiedOutput` (for unified commands) before calling the storage API
+- Response (happy path): Use `ProcessOutput(output)` in the common case — this handles writing the RESP response from the output struct
+- Response (errors/special cases): Use `RespServerSession` extension methods (e.g., `this.WriteError(...)`, `this.WriteDirect(...)`, `this.WriteInt64(...)`, etc.) — these handle `SendAndReset()` internally
+- Error strings: Store as `u8` literals in `CmdStrings` (e.g., `CmdStrings.RESP_ERR_MY_MESSAGE`) rather than inline
+- Always return `true` — there are no partial executions
 
 ### Object command RESP handler pattern
 
-Object commands (Hash, List, Set, SortedSet) follow a different pattern. The RESP handler builds an `ObjectInput` with the appropriate operation enum and delegates to the storage API:
+Object commands (Hash, List, Set, SortedSet) follow a similar pattern to string commands. The main difference is that the RESP handler uses `ObjectInput`/`ObjectOutput` with the appropriate operation enum and must handle `WRONGTYPE` errors:
 
 **File:** `libs/server/Resp/Objects/[ObjectName]Commands.cs` (e.g., `SortedSetCommands.cs`)
 
@@ -222,11 +229,37 @@ private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
 ```
 
 **Key differences from string commands:**
-- Uses `ObjectInput` (not `StringInput`) with a `RespInputHeader(GarnetObjectType.XXX)` and an operation enum (e.g., `SortedSetOperation.ZADD`)
+- Uses `ObjectInput` with a `RespInputHeader(GarnetObjectType.XXX)` and an operation enum (e.g., `SortedSetOperation.ZADD`)
 - Must handle `GarnetStatus.WRONGTYPE` — object commands can fail if the key holds a different object type
 - The actual data operation logic lives in `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`, dispatched via the operation enum
 
-For new object sub-operations, also add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` and handle it in the `Operate` method's switch statement.
+**For new object sub-operations:**
+Add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` and handle it in the `Operate` method's switch statement.
+
+### Unified command RESP handler pattern
+
+Unified commands (EXISTS, DELETE, TYPE, TTL, EXPIRE, RENAME, etc.) are type-agnostic — they work on both raw string and object values. The pattern is similar to string commands but uses `UnifiedInput`/`UnifiedOutput`:
+
+```csharp
+private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
+    where TGarnetApi : IGarnetApi
+{
+    if (parseState.Count != N)
+        return AbortWithWrongNumberOfArguments(nameof(RespCommand.MYCMD));
+
+    var key = parseState.GetArgSliceByRef(0);
+
+    var input = new UnifiedInput(RespCommand.MYCMD);
+    var output = new UnifiedOutput();
+
+    var status = storageApi.MyOperation(key, ref input, ref output);
+    ProcessOutput(output);
+
+    return true;
+}
+```
+
+The storage session layer uses the unified context (`unifiedBasicContext`), and the callbacks go in `libs/server/Storage/Functions/UnifiedStore/`.
 
 ### Blocking command RESP handler pattern
 
@@ -282,44 +315,48 @@ private unsafe bool SortedSetBlockingPop(RespCommand command)
 Add method signature to `IGarnetApi` (read-write) or `IGarnetReadApi` (read-only):
 
 ```csharp
-GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out MyResult result);
+// String command:
+GarnetStatus MyOperation(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+// Object command:
+GarnetStatus MyOperation(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+// Unified command:
+GarnetStatus MyOperation(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 ```
 
-**File:** `libs/server/API/GarnetApi.cs`
+**File:** `libs/server/API/GarnetApi*.cs`
 
-Add delegation in the `GarnetApi` partial struct:
+Add delegation in the `GarnetApi` partial struct. The implementation goes in the appropriate partial file based on the context type:
+- `GarnetApi.cs` — string commands
+- `GarnetApiObjectCommands.cs` — object commands
+- `GarnetApiUnifiedCommands.cs` — unified commands
 
 ```csharp
-public GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out MyResult result)
-    => storageSession.MyOperation(key, value, out result);
+public GarnetStatus MyOperation(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+    => storageSession.MyOperation(key, ref input, ref output);
 ```
 
-**⚠️ Caveat:** `GarnetApi` is a generic partial struct: `GarnetApi<TStringContext, TObjectContext, TUnifiedContext>`. Method implementations go in the appropriate partial file (`GarnetApi.cs` for string ops, `GarnetApiObjectCommands.cs` for object ops, etc.).
+**⚠️ Caveat:** `GarnetApi` is a generic partial struct: `GarnetApi<TStringContext, TObjectContext, TUnifiedContext>`. Always add your method to the correct partial file for the context type you're using.
 
 ---
 
 ## Step 6: Implement Storage Session Layer
 
-**File:** New or existing file in `libs/server/Storage/Session/MainStore/` (for string-context ops) or `libs/server/Storage/Session/ObjectStore/` (for object-context ops)
+**File:** New or existing file in `libs/server/Storage/Session/MainStore/` (for string-context ops), `libs/server/Storage/Session/ObjectStore/` (for object-context ops), or `libs/server/Storage/Session/UnifiedStore/` (for unified-context ops)
 
 ### String command pattern
 
 This layer wraps Tsavorite API calls:
 
 ```csharp
-public GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out MyResult result)
+public GarnetStatus MyOperation(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
 {
-    // Build input
-    var input = new StringInput(RespCommand.MYCMD, ref parseState);
-    var output = new StringOutput();
-
     // Call Tsavorite
     var status = stringBasicContext.RMW((FixedSpanByteKey)key, ref input, ref output);
     if (status.IsPending)
         CompletePendingForSession(ref status, ref output, ref stringBasicContext);
 
-    // Interpret result
-    result = status.Found ? MyResult.OK : MyResult.NotFound;
     return GarnetStatus.OK;
 }
 ```
@@ -360,7 +397,7 @@ The implementation methods in `[ObjectName]ObjectImpl.cs` directly manipulate th
 
 ## Step 7: Add RMW/Read Callbacks (if applicable)
 
-**File:** `libs/server/Storage/Functions/MainStore/RMWMethods.cs`
+**File:** `libs/server/Storage/Functions/MainStore/RMWMethods.cs` (string commands) or `libs/server/Storage/Functions/UnifiedStore/RMWMethods.cs` (unified commands)
 
 If your command uses `RMW`, you must handle these callbacks:
 
@@ -374,7 +411,9 @@ If your command uses `RMW`, you must handle these callbacks:
 
 Add a `case RespCommand.MYCMD:` to each relevant switch statement.
 
-**File:** `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs`
+**For Read commands (MainStore):** If your command uses `Read` (not RMW), the read response logic lives in `libs/server/Storage/Functions/MainStore/PrivateMethods.cs` — add a case to the `CopyRespToWithInput` method.
+
+**File:** `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` (string commands) or `libs/server/Storage/Functions/UnifiedStore/VarLenInputMethods.cs` (unified commands)
 
 If your command writes a value, you must specify the value length:
 
@@ -401,10 +440,12 @@ This works because `RecordDataHeader.RecordType` has a setter that writes throug
 
 **File:** `playground/CommandInfoUpdater/SupportedCommand.cs`
 
-Add entry in alphabetical order:
+Add entry following the existing ordering/grouping in the file:
 ```csharp
 new("MY.CMD", RespCommand.MYCMD, StoreType.Main),
 ```
+
+> **Note:** The file is not strictly alphabetical — entries are grouped by category (e.g., script commands at the end). Follow the existing grouping conventions rather than inserting strictly alphabetically.
 
 For admin/non-key commands (e.g., `DEBUG`, `PING`), omit `StoreType` or use `StoreType.None`:
 ```csharp
