@@ -855,8 +855,6 @@ namespace Garnet.server
 
         private void SortedSetTimeToLive(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            DeleteExpiredItems();
-
             var isMilliseconds = input.arg1 == 1;
             var isTimestamp = input.arg2 == 1;
             var numFields = input.parseState.Count;
@@ -867,7 +865,14 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
-                var result = GetExpiration(item.ToArray());
+                var member = item.ToArray();
+                var result = GetExpiration(member);
+
+                // If the member has an expiration that is in the past, treat it as not found (-2)
+                if (result > 0 && IsExpired(member))
+                {
+                    result = -2;
+                }
 
                 if (result >= 0)
                 {
