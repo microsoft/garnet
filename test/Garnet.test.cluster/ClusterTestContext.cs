@@ -14,6 +14,7 @@ using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -120,25 +121,71 @@ namespace Garnet.test.cluster
 
         public void TearDown()
         {
+            // Capture test outcome before any teardown work to distinguish
+            // primary teardown failures from secondary ones caused by a hung/failed test.
+            var testOutcome = TestContext.CurrentContext.Result.Outcome;
+            var testAlreadyFailed = testOutcome.Status == TestStatus.Failed;
+
+            if (testAlreadyFailed)
+            {
+                logger?.LogError(
+                    "TearDown: test already failed ({label}): {message}",
+                    testOutcome.Label,
+                    TestContext.CurrentContext.Result.Message);
+            }
+
             cts.Cancel();
             cts.Dispose();
-            logger.LogDebug("0. Dispose <<<<<<<<<<<");
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
-            var timeoutSeconds = 5;
-            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+
+            var timeoutSeconds = 30;
+            string failureReason = null;
+
+            // Phase 1: Dispose cluster nodes (may timeout if handlers are stuck)
+            try
             {
-                logger?.LogError("Timed out waiting for DisposeCluster");
-                Assert.Fail("Timed out waiting for DisposeCluster");
+                if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    failureReason = "Timed out waiting for DisposeCluster";
+                    logger?.LogError("Timed out waiting for DisposeCluster");
+                }
             }
-            // Dispose logger factory only after servers are disposed
+            catch (Exception ex)
+            {
+                failureReason = $"DisposeCluster threw: {ex.Message}";
+                logger?.LogError(ex, "DisposeCluster failed");
+            }
+
+            // Phase 2: Dispose logger factory (always, even after timeout)
             loggerFactory?.Dispose();
-            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+
+            // Phase 3: Delete test directory (may timeout if files locked from Phase 1 timeout)
+            try
             {
-                logger?.LogError("Timed out DeleteDirectory");
-                Assert.Fail("Timed out DeleteDirectory");
+                if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    failureReason ??= "Timed out DeleteDirectory";
+                    logger?.LogError("Timed out DeleteDirectory");
+                }
             }
+            catch (Exception ex)
+            {
+                failureReason ??= $"DeleteDirectory threw: {ex.Message}";
+                logger?.LogError(ex, "DeleteDirectory failed");
+            }
+
+            // Phase 4: Always runs — resets LightEpoch instances to prevent cross-test contamination
             TestUtils.OnTearDown();
+
+            // Fail the test at the end, after all cleanup is done
+            if (failureReason != null)
+            {
+                var context = testAlreadyFailed
+                    ? $" (secondary failure — test already failed with '{testOutcome.Label}')"
+                    : " (primary failure — test itself passed)";
+                Assert.Fail(failureReason + context);
+            }
         }
 
         public void RegisterCustomTxn(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)

@@ -98,8 +98,11 @@ namespace Garnet.server
         /// </summary>
         public override void Dispose()
         {
-            base.Dispose();
+            // Close listening socket first to prevent adding new handlers.
             listenSocket.Dispose();
+            // Dispose active handlers.
+            base.Dispose();
+            // Dispose acceptEventArg after handlers have been disposed.
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
             networkPool?.Dispose();
