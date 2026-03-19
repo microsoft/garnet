@@ -137,7 +137,7 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            this.txnScratchBuffer = new ScratchBufferAllocator();
+            txnScratchBuffer = new ScratchBufferAllocator();
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBuffer);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;

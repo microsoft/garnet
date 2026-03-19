@@ -12,7 +12,7 @@ namespace Garnet.server
     internal sealed unsafe class WatchedKeysContainer
     {
         /// <summary>
-        /// Array to keep metadata of watched keys
+        /// Array to keep watched keys data
         /// </summary>
         WatchedKeySlice[] keySlices;
 

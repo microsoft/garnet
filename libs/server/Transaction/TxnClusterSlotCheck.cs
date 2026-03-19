@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -21,21 +20,19 @@ namespace Garnet.server
 
             var count = clusterKeyParseState.Count;
 
-            // Grow the buffer with doubling if we've run out of capacity
+            // Double the parse state buffer capacity if needed, and copy existing parameters to the extended buffer
             if (count >= clusterKeyParseState.Capacity)
             {
-                var newCapacity = Math.Max(count * 2, initialKeyBufferSize);
                 var oldParams = clusterKeyParseState.Parameters;
-                clusterKeyParseState.Initialize(newCapacity);
-                for (var i = 0; i < count; i++)
-                    clusterKeyParseState.SetArgument(i, oldParams[i]);
+                clusterKeyParseState.Initialize(count * 2);
+                clusterKeyParseState.SetArguments(0, oldParams);
             }
 
             // Copy key bytes into dedicated txn scratch buffer (independent of receive buffer lifetime)
             var keySlice = txnScratchBuffer.CreateArgSlice(argSlice.ReadOnlySpan);
 
-            clusterKeyParseState.Count = count + 1;
             clusterKeyParseState.SetArgument(count, keySlice);
+            clusterKeyParseState.Count++;
         }
     }
 }
