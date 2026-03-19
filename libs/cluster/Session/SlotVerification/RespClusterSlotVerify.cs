@@ -7,7 +7,6 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -85,32 +84,6 @@ namespace Garnet.cluster
             var errorMessage = GetSlotVerificationMessage(config, vres);
             while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                 SendAndReset(ref dcurr, ref dend);
-        }
-
-        /// <summary>
-        /// Check if read/write is permitted on an array of keys and generate appropriate resp response.
-        /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="sessionAsking"></param>
-        /// <param name="dcurr"></param>
-        /// <param name="dend"></param>
-        /// <param name="count"></param>
-        /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
-        {
-            // If cluster is not enabled or a transaction is running skip slot check
-            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running)
-                return false;
-
-            var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, count);
-
-            if (vres.state == SlotVerifiedState.OK)
-                return false;
-            else
-                WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
-            return true;
         }
 
         /// <summary>

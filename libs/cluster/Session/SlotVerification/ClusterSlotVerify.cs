@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
@@ -116,29 +115,6 @@ namespace Garnet.cluster
                 }
                 return Exists(key);
             }
-        }
-
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, int count)
-        {
-            var _end = count < 0 ? keys.Length : count;
-            var slot = HashSlotUtils.HashSlot(keys[0]);
-            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, slot);
-
-            for (var i = 1; i < _end; i++)
-            {
-                var _slot = HashSlotUtils.HashSlot(keys[i]);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, _slot);
-
-                // Check if slot changes between keys
-                if (_slot != slot)
-                    return new(SlotVerifiedState.CROSSSLOT, slot);
-
-                // Check if state of key changes
-                if (_verifyResult.state != verifyResult.state)
-                    return new(SlotVerifiedState.TRYAGAIN, slot);
-            }
-
-            return verifyResult;
         }
 
         ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)

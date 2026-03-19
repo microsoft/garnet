@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Garnet.server.ACL;
 using Tsavorite.core;
@@ -85,11 +84,6 @@ namespace Garnet.server
         /// </summary>
         /// <param name="output"></param>
         public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output);
-
-        /// <summary>
-        /// Key array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
 
         /// <summary>
         /// Array slot verify (write result to network)

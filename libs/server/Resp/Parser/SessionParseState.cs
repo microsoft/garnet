@@ -27,6 +27,16 @@ namespace Garnet.server
         public int Count;
 
         /// <summary>
+        /// Get the allocated capacity of the argument buffer
+        /// </summary>
+        public int Capacity { get; }
+
+        /// <summary>
+        /// Get a Span of the parsed parameters in the form an PinnedSpanByte
+        /// </summary>
+        public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
+
+        /// <summary>
         /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
         /// </summary>
         PinnedSpanByte* bufferPtr;
@@ -41,22 +51,13 @@ namespace Garnet.server
         /// </summary>
         PinnedSpanByte[] rootBuffer;
 
-        /// <summary>
-        /// Get the allocated capacity of the argument buffer
-        /// </summary>
-        public readonly int Capacity => rootBuffer?.Length ?? 0;
-
-        /// <summary>
-        /// Get a Span of the parsed parameters in the form an PinnedSpanByte
-        /// </summary>
-        public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
-
         private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, ref PinnedSpanByte* bufferPtr, int count) : this()
         {
             this.rootBuffer = rootBuffer;
             this.rootCount = rootCount;
             this.bufferPtr = bufferPtr;
             this.Count = count;
+            this.Capacity = rootBuffer.Length;
         }
 
         /// <summary>

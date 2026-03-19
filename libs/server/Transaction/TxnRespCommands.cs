@@ -52,6 +52,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_EXEC_ABORT, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Reset(false);
+                txnManager.watchContainer.Reset();
                 return true;
             }
 
@@ -209,6 +210,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             txnManager.Reset(false);
+            txnManager.watchContainer.Reset();
             return true;
         }
 
