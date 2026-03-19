@@ -11,19 +11,6 @@ namespace Garnet.server
         internal byte* saveKeyRecvBufferPtr;
 
         /// <summary>
-        /// Copy all existing keys into <see cref="txnScratchBuffer"/> so they are independent of the old receive buffer.
-        /// Called when the receive buffer has been reallocated since keys were last stored.
-        /// </summary>
-        public void CopyExistingKeysToScratchBuffer()
-        {
-            for (var i = 0; i < clusterKeyParseState.Count; i++)
-            {
-                ref var key = ref clusterKeyParseState.GetArgSliceByRef(i);
-                key = txnScratchBuffer.CreateArgSlice(key.ReadOnlySpan);
-            }
-        }
-
-        /// <summary>
         /// Keep track of actual key accessed by command
         /// </summary>
         /// <param name="keySlice"></param>
@@ -44,6 +31,19 @@ namespace Garnet.server
 
             clusterKeyParseState.Count = count + 1;
             clusterKeyParseState.SetArgument(count, keySlice);
+        }
+
+        /// <summary>
+        /// Copy all existing keys into <see cref="txnScratchBuffer"/> so they are independent of the old receive buffer.
+        /// Called when the receive buffer has been reallocated since keys were last stored.
+        /// </summary>
+        public void CopyExistingKeysToScratchBuffer()
+        {
+            for (var i = 0; i < clusterKeyParseState.Count; i++)
+            {
+                ref var key = ref clusterKeyParseState.GetArgSliceByRef(i);
+                key = txnScratchBuffer.CreateArgSlice(key.ReadOnlySpan);
+            }
         }
     }
 }
