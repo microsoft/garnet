@@ -20,18 +20,18 @@ namespace Garnet.server
             // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
 
-            var count = clusterKeyParseState.Count;
+            var count = txnKeysParseState.Count;
 
             // Double the parse state buffer capacity if needed, and copy existing parameters to the extended buffer
-            if (count >= clusterKeyParseState.Capacity)
+            if (count >= txnKeysParseState.Capacity)
             {
-                var oldParams = clusterKeyParseState.Parameters;
-                clusterKeyParseState.Initialize(count * 2);
-                clusterKeyParseState.SetArguments(0, oldParams);
+                var oldParams = txnKeysParseState.Parameters;
+                txnKeysParseState.Initialize(count * 2);
+                txnKeysParseState.SetArguments(0, oldParams);
             }
 
-            clusterKeyParseState.Count = count + 1;
-            clusterKeyParseState.SetArgument(count, keySlice);
+            txnKeysParseState.Count = count + 1;
+            txnKeysParseState.SetArgument(count, keySlice);
         }
 
         /// <summary>
@@ -42,9 +42,9 @@ namespace Garnet.server
         {
             Debug.Assert(clusterEnabled);
 
-            for (var i = 0; i < clusterKeyParseState.Count; i++)
+            for (var i = 0; i < txnKeysParseState.Count; i++)
             {
-                ref var key = ref clusterKeyParseState.GetArgSliceByRef(i);
+                ref var key = ref txnKeysParseState.GetArgSliceByRef(i);
                 key = txnScratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
             }
         }
