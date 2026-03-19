@@ -167,7 +167,7 @@ namespace Garnet.server
                     var activeDbIdsMapSnapshot = activeDbIds.Map;
                     Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
 
-                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token);
+                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -238,7 +238,7 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var result = await TakeCheckpointAsync(db, logger: Logger);
+                var result = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
 
                 var storeTailAddress = result;
                 UpdateLastSaveData(dbId, storeTailAddress);
@@ -292,7 +292,7 @@ namespace Garnet.server
 
                 if (dbIdsIdx == 0) return;
 
-                await TakeDatabasesCheckpointAsync(dbIdsIdx, logger: logger, token: token);
+                await TakeDatabasesCheckpointAsync(dbIdsIdx, logger: logger, token: token).ConfigureAwait(false);
             }
             finally
             {
@@ -330,7 +330,7 @@ namespace Garnet.server
                 var exThrown = false;
                 try
                 {
-                    await Task.WhenAll(aofTasks);
+                    await Task.WhenAll(aofTasks).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {
@@ -364,7 +364,7 @@ namespace Garnet.server
             var databasesMapSnapshot = databases.Map;
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
 
-            await databasesMapSnapshot[dbId].AppendOnlyFile.Log.CommitAsync(token: token);
+            await databasesMapSnapshot[dbId].AppendOnlyFile.Log.CommitAsync(token: token).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>
@@ -391,7 +391,7 @@ namespace Garnet.server
                     aofTasks[i] = db.AppendOnlyFile.Log.WaitForCommitAsync(token: token).AsTask();
                 }
 
-                await Task.WhenAll(aofTasks);
+                await Task.WhenAll(aofTasks).ConfigureAwait(false);
             }
             finally
             {
@@ -1013,7 +1013,7 @@ namespace Garnet.server
                         }, TaskContinuationOptions.ExecuteSynchronously);
                 }
 
-                await Task.WhenAll(checkpointTasks);
+                await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

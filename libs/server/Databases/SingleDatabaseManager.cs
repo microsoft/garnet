@@ -163,7 +163,7 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger);
+                var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger).ConfigureAwait(false);
 
                 var storeTailAddress = result;
 
@@ -200,7 +200,7 @@ namespace Garnet.server
                 logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
                     aofSize, aofSizeLimit);
 
-                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
+                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
 
@@ -217,7 +217,7 @@ namespace Garnet.server
         {
             try
             {
-                await AppendOnlyFile.Log.CommitAsync(token: token);
+                await AppendOnlyFile.Log.CommitAsync(token: token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -233,13 +233,13 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            await CommitToAofAsync(token, logger);
+            await CommitToAofAsync(token, logger).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>
         public override async Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
-            await AppendOnlyFile.Log.WaitForCommitAsync(token: token);
+            await AppendOnlyFile.Log.WaitForCommitAsync(token: token).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>

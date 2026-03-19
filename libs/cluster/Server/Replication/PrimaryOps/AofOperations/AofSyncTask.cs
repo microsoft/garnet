@@ -185,7 +185,7 @@ namespace Garnet.cluster
                     while (true)
                     {
                         if (cts.Token.IsCancellationRequested) break;
-                        await iter.BulkConsumeAllAsync(this, aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token);
+                        await iter.BulkConsumeAllAsync(this, aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)

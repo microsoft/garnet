@@ -154,7 +154,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
         {
-            await BasicContext.CompletePendingAsync(waitForCommit, token);
+            await BasicContext.CompletePendingAsync(waitForCommit, token).ConfigureAwait(false);
             Session.functions.AfterConsistentReadKeyCallback();
         }
 
@@ -163,7 +163,7 @@ namespace Tsavorite.core
         {
             var status = BasicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
             Session.functions.AfterConsistentReadKeyCallback();
-            return await status;
+            return await status.ConfigureAwait(false);
         }
 
         /// <inheritdoc/>

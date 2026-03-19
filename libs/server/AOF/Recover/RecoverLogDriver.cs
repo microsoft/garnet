@@ -131,7 +131,7 @@ namespace Garnet.server
         }
 
         private void CreateAndRunIntraPageParallelReplayTasks()
-            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(async () => await ContinuousBackgroundReplay(i, physicalSublog)))];
+            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(async () => await ContinuousBackgroundReplay(i, physicalSublog).ConfigureAwait(false)))];
 
         internal async Task ContinuousBackgroundReplay(int replayTaskIdx, TsavoriteLog replaySublog)
         {
@@ -140,7 +140,7 @@ namespace Garnet.server
             {
                 try
                 {
-                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token);
+                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
                 catch (TaskCanceledException) when (cts.IsCancellationRequested)
                 { }
@@ -237,7 +237,7 @@ namespace Garnet.server
                             this,
                             serverOptions.ReplicaSyncDelayMs,
                             maxChunkSize: 1 << 20,
-                            cts.Token);
+                            cts.Token).ConfigureAwait(false);
 
                         // Replay completed
                         if (replayIterator.NextAddress == untilAddress)

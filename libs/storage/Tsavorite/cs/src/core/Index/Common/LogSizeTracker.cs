@@ -257,7 +257,7 @@ namespace Tsavorite.core
                     // these calls to WaitAsync will be lost. ResizeIfNeeded retries as long as we are over budget, 
                     // but there is still a chance we'll miss a growth+signal between that check and the next WaitAsync.
                     // The timeout mitigates this but it would be better to find an awaitable ManualResetEvent.
-                    await resizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken);
+                    await resizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken).ConfigureAwait(false);
                     if (runState == (int)RunState.Running)
                         ResizeIfNeeded(cancellationToken);
                     if (runState != (int)RunState.Running)

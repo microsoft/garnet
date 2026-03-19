@@ -123,7 +123,7 @@ namespace Garnet.cluster
                     storeWrapper.Reset();
 
                     // Suspend background tasks that may interfere with AOF
-                    await storeWrapper.SuspendPrimaryOnlyTasks();
+                    await storeWrapper.SuspendPrimaryOnlyTasks().ConfigureAwait(false);
 
                     // Stop advance time task when reconfiguring node to be replica
                     if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)

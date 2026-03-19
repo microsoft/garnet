@@ -138,7 +138,7 @@ namespace Garnet.cluster
             {
                 if (clusterProvider.serverOptions.AofPhysicalSublogCount == 1)
                 {
-                    await aofSyncTasks[0].RunAofSyncTask(this);
+                    await aofSyncTasks[0].RunAofSyncTask(this).ConfigureAwait(false);
                 }
                 else
                 {
@@ -151,7 +151,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < aofSyncTasks.Length; i++)
                         tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
 
-                    _ = await Task.WhenAny([.. tasks]);
+                    _ = await Task.WhenAny([.. tasks]).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -200,7 +200,7 @@ namespace Garnet.cluster
 
                 while (!cts.IsCancellationRequested)
                 {
-                    await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, cts.Token);
+                    await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, cts.Token).ConfigureAwait(false);
                     var currentTailAddress = appendOnlyFile.Log.TailAddress;
                     var newWrites = previousTailAddress.AnyLesser(currentTailAddress);
 

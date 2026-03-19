@@ -200,7 +200,7 @@ namespace Garnet.server
                     tryIncremental = false;
 
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger);
+                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger).ConfigureAwait(false);
 
                 return full ? lastSaveStoreTailAddress : null;
             }
@@ -360,7 +360,7 @@ namespace Garnet.server
             {
                 var store = DefaultDatabase.Store;
                 if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                        () => store.IndexSize, async () => await store.GrowIndexAsync()))
+                        () => store.IndexSize, async () => await store.GrowIndexAsync().ConfigureAwait(false)))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -571,7 +571,7 @@ namespace Garnet.server
                     : Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
             }
 
-            checkpointResult.success = await db.StateMachineDriver.RunAsync(sm);
+            checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);
 
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)

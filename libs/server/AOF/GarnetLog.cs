@@ -455,7 +455,7 @@ namespace Garnet.server
             if (singleLog != null)
             {
                 // Optimization for single log case
-                await singleLog.log.CommitAsync(cookie: cookie, token);
+                await singleLog.log.CommitAsync(cookie: cookie, token).ConfigureAwait(false);
             }
             else
             {
@@ -465,7 +465,7 @@ namespace Garnet.server
                 for (var i = 0; i < shardedLog.Length; i++)
                     tasks[i] = shardedLog.sublog[i].CommitAsync(token: token, cookie: _cookie).AsTask();
 
-                await Task.WhenAll(tasks);
+                await Task.WhenAll(tasks).ConfigureAwait(false);
             }
         }
 
@@ -481,7 +481,7 @@ namespace Garnet.server
             if (singleLog != null)
             {
                 // Optimization for single log case
-                await singleLog.log.WaitForCommitAsync(untilAddress, commitNum, token);
+                await singleLog.log.WaitForCommitAsync(untilAddress, commitNum, token).ConfigureAwait(false);
             }
             else
             {
@@ -490,7 +490,7 @@ namespace Garnet.server
                 for (var i = 0; i < shardedLog.Length; i++)
                     tasks[i] = shardedLog.sublog[i].WaitForCommitAsync(untilAddress, commitNum, token).AsTask();
 
-                await Task.WhenAll(tasks);
+                await Task.WhenAll(tasks).ConfigureAwait(false);
             }
         }
 

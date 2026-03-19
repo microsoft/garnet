@@ -151,7 +151,7 @@ namespace Garnet.cluster
         {
             try
             {
-                if (flushTask != null) _ = await flushTask;
+                if (flushTask != null) _ = await flushTask.ConfigureAwait(false);
                 flushTask = null;
             }
             catch (Exception ex)
@@ -169,7 +169,7 @@ namespace Garnet.cluster
         {
             try
             {
-                await signalCompletion.WaitAsync(token);
+                await signalCompletion.WaitAsync(token).ConfigureAwait(false);
                 Debug.Assert(ssInfo.syncStatus is SyncStatus.SUCCESS or SyncStatus.FAILED);
             }
             catch (Exception ex)
@@ -226,7 +226,7 @@ namespace Garnet.cluster
                     currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
                     checkpointEntry: null);
 
-                var result = await aofSyncDriver.ExecuteAttachSync(recoverSyncMetadata);
+                var result = await aofSyncDriver.ExecuteAttachSync(recoverSyncMetadata).ConfigureAwait(false);
                 var syncFromAddress = AofAddress.FromString(result);
 
                 logger?.LogSyncMetadata(LogLevel.Trace, "BeginAofSync", replicaSyncMetadata, recoverSyncMetadata);

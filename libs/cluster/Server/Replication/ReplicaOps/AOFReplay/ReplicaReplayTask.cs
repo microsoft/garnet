@@ -41,7 +41,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token);
+                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {

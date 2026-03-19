@@ -61,7 +61,7 @@ namespace Garnet.cluster
                 replayBatchContext = new ReplayBatchContext(replayTaskCount);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
-                    _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay());
+                    _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay().ConfigureAwait(false));
             }
         }
 
@@ -205,7 +205,7 @@ namespace Garnet.cluster
                             this,
                             serverOptions.ReplicaSyncDelayMs,
                             maxChunkSize: 1 << 20,
-                            cts.Token);
+                            cts.Token).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)

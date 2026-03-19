@@ -761,7 +761,7 @@ namespace Tsavorite.core
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
                     if (hlogBase.IsAllocated(pageIndex))
                     {
-                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken);
+                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken).ConfigureAwait(false);
                         hlogBase.EvictPageForRecovery(page);
                         lastFreedPage = page;
                     }
@@ -898,7 +898,7 @@ namespace Tsavorite.core
                         // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
                         // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
                         // Decrease trimPageReadCount as we process each page so we don't over-prune.
-                        freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, trimPageReadCount--, cancellationToken);
+                        freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, trimPageReadCount--, cancellationToken).ConfigureAwait(false);
                         if (freedPage != NoPageFreed)
                             lastFreedPage = freedPage;
                     }
