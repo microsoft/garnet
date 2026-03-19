@@ -31,8 +31,8 @@ namespace Garnet.server
             // Copy key bytes into dedicated txn scratch buffer (independent of receive buffer lifetime)
             var keySlice = txnScratchBuffer.CreateArgSlice(argSlice.ReadOnlySpan);
 
+            clusterKeyParseState.Count = count + 1;
             clusterKeyParseState.SetArgument(count, keySlice);
-            clusterKeyParseState.Count++;
         }
     }
 }
