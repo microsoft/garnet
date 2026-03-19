@@ -49,6 +49,15 @@ namespace Garnet.common
         Replication = 2,
 
         /// <summary>Client-side network pool (GarnetClientSession, self-managed).</summary>
-        ClientSession = 3,
+        GarnetClientSession = 3,
+
+        /// <summary>Migration network pool (MigrationManager).</summary>
+        Migration = 4,
+
+        /// <summary>Client-side network pool (LightClient, self-managed).</summary>
+        LightClient = 5,
+
+        /// <summary>Client-side network pool (GarnetClient, self-managed).</summary>
+        GarnetClient = 6,
     }
 }
