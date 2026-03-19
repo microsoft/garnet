@@ -40,9 +40,7 @@ namespace Garnet.server
         public void Reset()
         {
             sliceCount = 0;
-            var idx = keySlices.Length - 1;
-            while (idx >= 0 && scratchBufferAllocator.RewindScratchBuffer(ref keySlices[idx].slice))
-                idx--;
+            scratchBufferAllocator.Reset();
         }
 
         public bool RemoveWatch(PinnedSpanByte key)

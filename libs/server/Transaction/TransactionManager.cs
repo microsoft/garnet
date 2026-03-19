@@ -68,6 +68,7 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
+        internal readonly ScratchBufferAllocator txnScratchBuffer;
         internal SessionParseState clusterKeyParseState;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
@@ -136,7 +137,8 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, scratchBufferAllocator);
+            this.txnScratchBuffer = new ScratchBufferAllocator();
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBuffer);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
@@ -188,14 +190,11 @@ namespace Garnet.server
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
 
-            // Reset cluster key parse state & rewind key slices in scratch buffer
+            // Reset cluster key parse state
             if (clusterEnabled)
             {
-                var idx = clusterKeyParseState.Count - 1;
-                while (idx >= 0 && scratchBufferAllocator.RewindScratchBuffer(ref clusterKeyParseState.GetArgSliceByRef(idx)))
-                    idx--;
-
                 clusterKeyParseState.Count = 0;
+                txnScratchBuffer.Reset();
             }
         }
 
