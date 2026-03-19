@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -39,6 +40,8 @@ namespace Garnet.server
         /// </summary>
         public void CopyExistingKeysToScratchBuffer()
         {
+            Debug.Assert(clusterEnabled);
+
             for (var i = 0; i < clusterKeyParseState.Count; i++)
             {
                 ref var key = ref clusterKeyParseState.GetArgSliceByRef(i);
