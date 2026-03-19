@@ -143,26 +143,36 @@ namespace Garnet.cluster
 
         ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
         {
-            ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
-            var slot = HashSlotUtils.HashSlot(key);
-            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
-            var secondKey = csvi.firstKey + csvi.step;
+            var firstSlot = (ushort)0;
+            var verifyResult = default(ClusterSlotVerificationResult);
+            var isFirstKey = true;
 
-            for (var i = secondKey; i < csvi.lastKey; i += csvi.step)
+            foreach (var keySpec in csvi.keySpecs)
             {
-                if (csvi.keyNumOffset == i)
+                if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, csvi.isSubCommand, out var searchArgs))
                     continue;
-                key = ref parseState.GetArgSliceByRef(i);
-                var _slot = HashSlotUtils.HashSlot(key);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, _slot);
 
-                // Check if slot changes between keys
-                if (_slot != slot)
-                    return new(SlotVerifiedState.CROSSSLOT, slot);
+                for (var i = searchArgs.firstIdx; i <= searchArgs.lastIdx; i += searchArgs.step)
+                {
+                    ref var key = ref parseState.GetArgSliceByRef(i);
+                    var slot = HashSlotUtils.HashSlot(key);
+                    var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
 
-                // Check if any key might have moved
-                if (_verifyResult.state != verifyResult.state)
-                    return new(SlotVerifiedState.TRYAGAIN, slot);
+                    if (isFirstKey)
+                    {
+                        firstSlot = slot;
+                        verifyResult = result;
+                        isFirstKey = false;
+                    }
+                    else
+                    {
+                        if (slot != firstSlot)
+                            return new(SlotVerifiedState.CROSSSLOT, firstSlot);
+
+                        if (result.state != verifyResult.state)
+                            return new(SlotVerifiedState.TRYAGAIN, firstSlot);
+                    }
+                }
             }
 
             return verifyResult;
