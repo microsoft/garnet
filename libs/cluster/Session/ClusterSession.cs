@@ -72,7 +72,7 @@ namespace Garnet.cluster
             {
                 if (command.IsClusterSubCommand())
                 {
-                    if (RespCommandsInfo.TryGetSimpleRespCommandInfo(command, out var cmdInfo) && cmdInfo.KeySpecs is { Length: > 0 })
+                    if (RespCommandsInfo.TryGetSimpleRespCommandInfo(command, out var cmdInfo) && cmdInfo.KeySpecs?.Length > 0)
                     {
                         csvi.keySpecs = cmdInfo.KeySpecs;
                         csvi.isSubCommand = cmdInfo.IsSubCommand;

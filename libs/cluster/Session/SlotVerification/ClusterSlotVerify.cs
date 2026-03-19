@@ -143,8 +143,8 @@ namespace Garnet.cluster
 
         ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
         {
-            var firstSlot = (ushort)0;
-            var verifyResult = default(ClusterSlotVerificationResult);
+            ushort firstSlot = 0;
+            ClusterSlotVerificationResult verifyResult = default;
             var isFirstKey = true;
 
             foreach (var keySpec in csvi.keySpecs)
