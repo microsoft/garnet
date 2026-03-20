@@ -273,7 +273,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="heapObject">The deserialized object</param>
         /// <param name="deserializedLength">The deserialized length of the object</param>
-        internal void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
+        internal readonly void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
         {
             var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
 
@@ -579,7 +579,7 @@ namespace Tsavorite.core
             // Evaluate in order of most common (i.e. most perf-critical) cases first.
             if (Info.ValueIsInline && sizeInfo.ValueIsInline)
             {
-                // Both are inline, so nothing to do here; we will adjust the lengths below below.
+                // Both are inline, so nothing to do here; we will adjust the lengths below.
             }
             else if (Info.ValueIsOverflow && sizeInfo.ValueIsOverflow)
             {
@@ -640,7 +640,8 @@ namespace Tsavorite.core
 
             // Update record part 4: Update Filler length in the record. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
             // because we are not updating those optionals here, so don't adjust fillerLen for that. However, a change in the presence or absence of the pseudo-optional
-            // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects.
+            // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects. Note that we don't have a valueLength to update;
+            // it is a calculated value, which depends (in part) upon FillerLength.
             var newFillerLen = oldFillerLen - inlineValueGrowth - optionalGrowth;
             if (newFillerLen != oldFillerLen)
                 dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen > 0 ? newFillerLen : 0);
@@ -652,6 +653,55 @@ namespace Tsavorite.core
 
             Debug.Assert(Info.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
             Debug.Assert(!Info.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSize}");
+            return true;
+        }
+
+        /// <summary>
+        /// Tries to set the length of the value field, including shifting optionals as needed. Does NOT change the presence of optionals,
+        /// and only works on Inline values.
+        /// </summary>
+        /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        public readonly bool TrySetInlineValueLength(in int newInlineValueSize, out long valueAddress, out int valueLength, bool zeroInit = false)
+        {
+            if (!Info.ValueIsInline)
+            {
+                Debug.Fail("TrySetInlineValueLength should only be called when Value is known to be inline, such as INCRBY");
+                valueAddress = valueLength = 0;
+                return false;
+            }
+
+            // Get the number of bytes in existing key and value lengths.
+            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var (_ /*keyLength*/, oldInlineValueSize) = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen);
+            var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
+
+            var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
+            if (oldFillerLen < inlineValueGrowth)
+            {
+                valueAddress = valueLength = 0;
+                return false;
+            }
+
+            // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
+            // optionalStartAddress will change if inline value size changes.
+            valueAddress = physicalAddress + recordLength - oldFillerLen - oldOptionalSize - oldInlineValueSize;
+            var optionalStartAddress = valueAddress + oldInlineValueSize;
+
+            if (inlineValueGrowth != 0)
+            {
+                // Shift optionals if needed.
+                if (oldOptionalSize != 0)
+                    Buffer.MemoryCopy((void*)optionalStartAddress, (void*)(optionalStartAddress + inlineValueGrowth), oldOptionalSize, oldOptionalSize);
+
+                // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
+                if (zeroInit && inlineValueGrowth > 0)
+                    new Span<byte>((byte*)(valueAddress + oldInlineValueSize), inlineValueGrowth).Clear();
+
+                // Update FillerLength. Note that we don't have a valueLength to update; it is a calculated value, which depends (in part) upon FillerLength.
+                dataHeader.SetFillerLength(ref InfoRef, recordLength, oldFillerLen - inlineValueGrowth);
+            }
+            valueLength = oldInlineValueSize + inlineValueGrowth;
             return true;
         }
 
@@ -672,7 +722,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        internal bool TryReinitializeValueLength(in RecordSizeInfo sizeInfo)
+        internal readonly bool TryReinitializeValueLength(in RecordSizeInfo sizeInfo)
         {
             // This is called when reinitializing a record for InitialUpdater or InitialWriter; we don't want to them to see initial state with optionals set.
             // Because it is for (re)initialization, we don't zero-initialize; the caller should assume they have to do that if they only copy partial data in.
@@ -764,7 +814,6 @@ namespace Tsavorite.core
             get
             {
                 Debug.Assert(HasNamespace, "Shouldn't call if !HasNamespace");
-
                 return Namespace;
             }
         }
@@ -1266,7 +1315,7 @@ namespace Tsavorite.core
             return objectLengths;
         }
 
-        internal void OnDeserializationError(bool keyWasSet)
+        internal readonly void OnDeserializationError(bool keyWasSet)
         {
             // If the key was set, clear it. Then set things as inline so we don't try to release objects on Dispose().
             // This is a transient logRecord, so it is no problem to clear these fields.

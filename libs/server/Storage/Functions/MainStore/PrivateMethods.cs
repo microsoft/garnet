@@ -363,13 +363,29 @@ namespace Garnet.server
         static bool InPlaceUpdateNumber(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, long val, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             var ndigits = NumUtils.CountDigits(val, out var isNegative);
-            ndigits += isNegative ? 1 : 0;
+            var inputLength = ndigits;
+            if (isNegative)
+                inputLength++;
 
-            if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
-                return false;
+            // Set the destination value length, including space for the negative sign if present.
+            Span<byte> value;
+            if (logRecord.IsPinnedValue)
+            {
+                if (!logRecord.TrySetInlineValueLength(inputLength, out var valueAddress, out var valueLength))
+                    return false;
+                value = SpanByte.FromPinnedPointer((byte*)valueAddress, valueLength);   // Faster than ValueSpan (which decodes RecordDataHeader lengths)
 
-            var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
-            _ = NumUtils.WriteInt64(val, value);
+                // Call the pinned form of the number-writer. Don't include space for the negative sign; that's added in the callee.
+                var ptr = (byte*)valueAddress;
+                NumUtils.WriteInt64(val, ndigits, ref ptr);
+            }
+            else
+            {
+                if (!logRecord.TrySetContentLengths(inputLength, in sizeInfo))
+                    return false;
+                value = logRecord.ValueSpan;
+                _ = NumUtils.WriteInt64(val, value);
+            }
 
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             value.CopyTo(output.SpanByteAndMemory.SpanByte.Span);
@@ -381,11 +397,26 @@ namespace Garnet.server
         {
             var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
 
-            if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
-                return false;
+            // Set the destination value length, including space for the negative sign if present.
+            Span<byte> value;
+            if (logRecord.IsPinnedValue)
+            {
+                // We've verified the current value is a valid number so we are in-place and pinned; this call only fails if the record value space is too small.
+                if (!logRecord.TrySetInlineValueLength(ndigits, out var valueAddress, out var valueLength))
+                    return false;
+                value = SpanByte.FromPinnedPointer((byte*)valueAddress, valueLength);   // Faster than ValueSpan (which decodes RecordDataHeader lengths)
 
-            var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
-            _ = NumUtils.WriteDouble(val, value);
+                // Call the pinned form of the number-writer. ndigits includes space for the negative sign if present.
+                var ptr = (byte*)valueAddress;
+                NumUtils.WriteDouble(val, ndigits, ref ptr);
+            }
+            else
+            {
+                if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
+                    return false;
+                value = logRecord.ValueSpan;
+                _ = NumUtils.WriteDouble(val, value);
+            }
 
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             value.CopyTo(output.SpanByteAndMemory.SpanByte.Span);

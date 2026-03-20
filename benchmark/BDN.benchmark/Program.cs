@@ -40,7 +40,7 @@ public class BaseConfig : ManualConfig
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
         // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net10.0 or both (if env var is not set or invalid)
-        var bdnRunParam = Environment.GetEnvironmentVariable("BDNRUNPARAM");
+        var bdnRunParam = (Environment.GetEnvironmentVariable("BDNRUNPARAM") ?? string.Empty).ToLower();
 
         switch (bdnRunParam)
         {
@@ -55,6 +55,17 @@ public class BaseConfig : ManualConfig
                     Net8BaseJob.WithId(".NET 8"),
                     Net10BaseJob.WithId(".NET 10")
                     );
+                break;
+        }
+
+        // Get value of environment variable BDN_OP_PARAM - determines if running ACL and AOF as well as 'none'
+        var bdnOpParam = (Environment.GetEnvironmentVariable("BDN_OP_PARAM") ?? string.Empty).ToLower();
+        switch (bdnOpParam)
+        {
+            case "none":
+                BDN.benchmark.Operations.OperationsBase.ParamsNoneOnly = true;
+                break;
+            default:
                 break;
         }
     }
