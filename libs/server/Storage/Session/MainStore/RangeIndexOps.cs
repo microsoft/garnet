@@ -494,8 +494,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Backfill the RESP array header (*count\r\n) at the start of the buffer,
-        /// compacting the gap between the reserved header space and the actual header size.
+        /// Backfill the RESP array header (*count\r\n) into the gap before the record bodies.
+        /// Compacts by shifting data to eliminate the gap.
         /// </summary>
         private static void BackfillArrayHeader(byte* bufStart, byte* curr, int maxHeaderSize, int recCount,
             ref StringOutput output, out int recordCount)
@@ -504,6 +504,7 @@ namespace Garnet.server
             var actualHeaderSize = 1 + countDigits + 2; // *N\r\n
             var headerGap = maxHeaderSize - actualHeaderSize;
 
+            // Write the header right before the record bodies
             var headerStart = bufStart + headerGap;
             var tmp = headerStart;
             *tmp++ = (byte)'*';
@@ -512,12 +513,14 @@ namespace Garnet.server
             *tmp++ = (byte)'\n';
 
             var recordBytes = (int)(curr - (bufStart + maxHeaderSize));
+            var totalLen = actualHeaderSize + recordBytes;
+
+            // Shift header + records to the start of the buffer to keep contiguous output
             if (headerGap > 0)
             {
-                Buffer.MemoryCopy(headerStart, bufStart, actualHeaderSize, actualHeaderSize);
-                Buffer.MemoryCopy(bufStart + maxHeaderSize, bufStart + actualHeaderSize, recordBytes, recordBytes);
+                Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
             }
-            output.SpanByteAndMemory.Length = actualHeaderSize + recordBytes;
+            output.SpanByteAndMemory.Length = totalLen;
             recordCount = recCount;
         }
 
