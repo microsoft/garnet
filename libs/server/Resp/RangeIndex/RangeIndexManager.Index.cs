@@ -94,31 +94,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Deserialize stub fields from a store value span.
+        /// Get a readonly reference to the stub from a store value span (zero-copy).
         /// </summary>
-        internal static void ReadIndex(
-            ReadOnlySpan<byte> value,
-            out nint treeHandle,
-            out ulong cacheSize,
-            out uint minRecordSize,
-            out uint maxRecordSize,
-            out uint maxKeyLen,
-            out uint leafPageSize,
-            out byte storageBackend,
-            out byte flags,
-            out Guid pid)
-        {
-            ref readonly var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(value));
-            treeHandle = stub.TreeHandle;
-            cacheSize = stub.CacheSize;
-            minRecordSize = stub.MinRecordSize;
-            maxRecordSize = stub.MaxRecordSize;
-            maxKeyLen = stub.MaxKeyLen;
-            leafPageSize = stub.LeafPageSize;
-            storageBackend = stub.StorageBackend;
-            flags = stub.Flags;
-            pid = stub.ProcessInstanceId;
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ref readonly RangeIndexStub ReadIndex(ReadOnlySpan<byte> value)
+            => ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(value));
 
         /// <summary>
         /// Update TreeHandle and ProcessInstanceId after recovery (old pointer is stale).

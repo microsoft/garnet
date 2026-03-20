@@ -172,10 +172,8 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                RangeIndexManager.ReadIndex(stubSpan,
-                    out var treePtr, out _, out _, out var maxRecordSize,
-                    out _, out _, out _, out _, out _);
-                if (treePtr == 0)
+                ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);
+                if (stub.TreeHandle == 0)
                 {
                     result = RangeIndexResult.Error;
                     return GarnetStatus.OK;
@@ -183,7 +181,7 @@ namespace Garnet.server
 
                 // RESP bulk string: $len\r\nvalue\r\n
                 // Header size based on max record size: $<digits(maxRecordSize)>\r\n
-                var maxValueSize = (int)maxRecordSize;
+                var maxValueSize = (int)stub.MaxRecordSize;
                 var maxHeaderSize = 1 + NumUtils.CountDigits(maxValueSize) + 2; // $N\r\n
                 const int TrailerSize = 2; // \r\n
                 var minBufferNeeded = maxHeaderSize + maxValueSize + TrailerSize;
@@ -199,7 +197,7 @@ namespace Garnet.server
                         var valueStart = bufStart + maxHeaderSize;
                         var maxValueLen = bufLen - maxHeaderSize - TrailerSize;
 
-                        var readResult = BfTreeService.ReadByPtrInto(treePtr, field, valueStart, maxValueLen, out var bytesWritten);
+                        var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueLen, out var bytesWritten);
 
                         if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
                         {
@@ -246,7 +244,7 @@ namespace Garnet.server
                         var valueStart = bufStart + maxHeaderSize;
                         var maxValueLen = minBufferNeeded - maxHeaderSize - TrailerSize;
 
-                        var readResult = BfTreeService.ReadByPtrInto(treePtr, field, valueStart, maxValueLen, out var bytesWritten);
+                        var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueLen, out var bytesWritten);
 
                         if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
                         {
@@ -578,10 +576,7 @@ namespace Garnet.server
             if (stubSpan.Length < RangeIndexManager.IndexSizeBytes)
                 return 0;
 
-            RangeIndexManager.ReadIndex(stubSpan,
-                out var treePtr, out _, out _, out _, out _, out _, out _, out _, out _);
-
-            return treePtr;
+            return RangeIndexManager.ReadIndex(stubSpan).TreeHandle;
         }
     }
 }

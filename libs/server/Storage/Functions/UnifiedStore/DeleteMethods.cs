@@ -39,12 +39,11 @@ namespace Garnet.server
                 // We need to also dispose any unevicted trees in read-only region of memory
                 if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
-                    RangeIndexManager.ReadIndex(logRecord.ValueSpan,
-                        out var treePtr, out _, out _, out _, out _, out _, out _, out _, out var pid);
-                    if (treePtr != 0 && pid == functionsState.rangeIndexManager.ProcessInstanceId)
+                    ref readonly var stub = ref RangeIndexManager.ReadIndex(logRecord.ValueSpan);
+                    if (stub.TreeHandle != 0 && stub.ProcessInstanceId == functionsState.rangeIndexManager.ProcessInstanceId)
                     {
                         using (functionsState.rangeIndexManager.AcquireExclusiveForDelete(deleteInfo.KeyHash))
-                            functionsState.rangeIndexManager.UnregisterIndex(treePtr);
+                            functionsState.rangeIndexManager.UnregisterIndex(stub.TreeHandle);
                     }
                 }
 
