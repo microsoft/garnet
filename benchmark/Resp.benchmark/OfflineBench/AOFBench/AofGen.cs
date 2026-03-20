@@ -163,7 +163,7 @@ namespace Resp.benchmark
                 var number_of_aof_records = 0L;
                 var number_of_aof_bytes = 0L;
                 var kvPairs = GenerateKVPairs(threadId, options.AofPhysicalSublogCount == 1);
-                //Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
+                // Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
                 var pages = options.DbSize;
                 pageBuffers[threadId] = new Page[pages];
                 for (var i = 0; i < pages; i++)
@@ -172,7 +172,7 @@ namespace Resp.benchmark
                     FillPage(threadId, kvPairs, i, pageBuffers[threadId][i]);
                 }
 
-                //Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
+                // Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
                 _ = Interlocked.Add(ref total_number_of_aof_records, number_of_aof_records);
                 _ = Interlocked.Add(ref total_number_of_aof_bytes, number_of_aof_bytes);
 
@@ -213,6 +213,7 @@ namespace Resp.benchmark
                                     {
                                         basicHeader = new AofHeader
                                         {
+                                            padding = (byte)AofHeaderType.ShardedHeader,
                                             opType = aofHeader.opType,
                                             storeVersion = aofHeader.storeVersion,
                                             sessionID = aofHeader.sessionID

@@ -184,6 +184,9 @@ namespace Garnet.cluster
             var config = clusterProvider.clusterManager.CurrentConfig;
             config = config.MakeReplicaOf(replicaOf);
             clusterProvider.clusterManager.UnsafeSetConfig(config);
+
+            if (replicaOf != null)
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
         }
 
         public void Dispose()

@@ -21,6 +21,7 @@ namespace Resp.benchmark
         string primaryId;
         readonly long startAddress;
         long previousAddress;
+        bool initialized = false;
         readonly ILogger logger = null;
 
         public long Size => previousAddress - startAddress;
@@ -39,7 +40,7 @@ namespace Resp.benchmark
 
             if (options.Client == ClientType.InProc)
             {
-                this.buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
+                buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
                 primaryId = aofBench.primaryId;
                 if (options.EnableCluster)
                     aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
@@ -99,7 +100,40 @@ namespace Resp.benchmark
             return replicaNode;
         }
 
-        public unsafe int WriterClusterAppendLog(
+        unsafe void InitializeReplayStream()
+        {
+            if (options.Client == ClientType.InProc)
+            {
+                fixed (byte* ptr = buffer)
+                {
+                    var respMessageSize = WriterClusterAppendLog(
+                        ptr,
+                        buffer.Length,
+                        nodeId: primaryId,
+                        physicalSublogIdx: threadId,
+                        previousAddress: -1,
+                        currentAddress: -1,
+                        nextAddress: -1,
+                        payloadPtr: -1,
+                        payloadLength: 0);
+                    _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
+                }
+            }
+            else
+            {
+                garnetClient.ExecuteClusterAppendLog(
+                    primaryId,
+                    physicalSublogIdx: threadId,
+                    previousAddress: -1,
+                    currentAddress: -1,
+                    nextAddress: -1,
+                    payloadPtr: -1,
+                    payloadLength: 0);
+                garnetClient.CompletePending(false);
+            }
+        }
+
+        unsafe int WriterClusterAppendLog(
             byte* bufferPtr,
             int bufferLength,
             string nodeId,
@@ -153,6 +187,12 @@ namespace Resp.benchmark
         {
             try
             {
+                if (!initialized)
+                {
+                    InitializeReplayStream();
+                    initialized = true;
+                }
+
                 if (options.Client == ClientType.InProc)
                 {
                     fixed (byte* ptr = buffer)
