@@ -243,6 +243,52 @@ namespace Garnet.server.BfTreeInterop
             NativeBfTreeMethods.bftree_delete(treePtr, key.ToPointer(), key.Length);
         }
 
+        /// <summary>
+        /// Scan with count via native pointer using a zero-allocation callback.
+        /// </summary>
+        /// <returns>Number of records passed to the callback.</returns>
+        public static int ScanWithCountByPtrCallback(nint treePtr, ReadOnlySpan<byte> startKey, int count, ScanReturnField returnField, ScanRecordAction onRecord)
+        {
+            nint handle;
+            fixed (byte* skp = startKey)
+            {
+                handle = NativeBfTreeMethods.bftree_scan_with_count(
+                    treePtr, skp, startKey.Length, count, (byte)returnField);
+            }
+            try
+            {
+                Span<byte> buffer = stackalloc byte[8192];
+                return DrainScanIteratorWithCallback(handle, buffer, returnField, onRecord);
+            }
+            finally
+            {
+                NativeBfTreeMethods.bftree_scan_drop(handle);
+            }
+        }
+
+        /// <summary>
+        /// Scan with end key via native pointer using a zero-allocation callback.
+        /// </summary>
+        /// <returns>Number of records passed to the callback.</returns>
+        public static int ScanWithEndKeyByPtrCallback(nint treePtr, ReadOnlySpan<byte> startKey, ReadOnlySpan<byte> endKey, ScanReturnField returnField, ScanRecordAction onRecord)
+        {
+            nint handle;
+            fixed (byte* skp = startKey, ekp = endKey)
+            {
+                handle = NativeBfTreeMethods.bftree_scan_with_end_key(
+                    treePtr, skp, startKey.Length, ekp, endKey.Length, (byte)returnField);
+            }
+            try
+            {
+                Span<byte> buffer = stackalloc byte[8192];
+                return DrainScanIteratorWithCallback(handle, buffer, returnField, onRecord);
+            }
+            finally
+            {
+                NativeBfTreeMethods.bftree_scan_drop(handle);
+            }
+        }
+
         // ---------------------------------------------------------------
         // Point operations — span-based (safe wrappers: fixed → PinnedSpanByte → native)
         // ---------------------------------------------------------------

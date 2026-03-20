@@ -1238,6 +1238,34 @@ namespace Garnet.server
         GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
             out RangeIndexResult result);
 
+        /// <summary>
+        /// RI.SCAN – scan entries from a RangeIndex starting at a key.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="startKey">Key to start scanning from (inclusive).</param>
+        /// <param name="count">Maximum number of records to return.</param>
+        /// <param name="returnField">Which fields to return (Key, Value, or KeyAndValue).</param>
+        /// <param name="records">The list of scan records.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey, int count,
+            BfTreeInterop.ScanReturnField returnField, out List<BfTreeInterop.ScanRecord> records,
+            out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.RANGE – scan entries in [start, end] range from a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="startKey">Start key (inclusive).</param>
+        /// <param name="endKey">End key (inclusive).</param>
+        /// <param name="returnField">Which fields to return (Key, Value, or KeyAndValue).</param>
+        /// <param name="records">The list of scan records.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
+            BfTreeInterop.ScanReturnField returnField, out List<BfTreeInterop.ScanRecord> records,
+            out RangeIndexResult result);
+
         #endregion
     }
 

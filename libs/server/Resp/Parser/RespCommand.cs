@@ -110,6 +110,8 @@ namespace Garnet.server
 
         // Read-only RangeIndex commands
         RIGET,
+        RIRANGE,
+        RISCAN,
 
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
@@ -568,7 +570,8 @@ namespace Garnet.server
         public static bool IsLegalOnRangeIndex(this RespCommand cmd)
             => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE
                or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX
-               or RespCommand.RICREATE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL;
+               or RespCommand.RICREATE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL
+               or RespCommand.RISCAN or RespCommand.RIRANGE;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -2628,6 +2631,14 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.RIDEL))
             {
                 return RespCommand.RIDEL;
+            }
+            else if (command.SequenceEqual(CmdStrings.RISCAN))
+            {
+                return RespCommand.RISCAN;
+            }
+            else if (command.SequenceEqual(CmdStrings.RIRANGE))
+            {
+                return RespCommand.RIRANGE;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.

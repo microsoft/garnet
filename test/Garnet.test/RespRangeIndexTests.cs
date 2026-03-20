@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -251,6 +252,127 @@ namespace Garnet.test
             // GET on a RI key returns nil (CancelOperation in Reader guard)
             var val = db.StringGet("myindex");
             ClassicAssert.IsTrue(val.IsNull);
+        }
+
+        [Test]
+        public void RIScanBasicTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var diskPath = Path.Combine(TestUtils.MethodTestDir, "scanidx");
+            db.Execute("RI.CREATE", "myindex", "DISK", diskPath, "CACHESIZE", "65536", "MINRECORD", "8");
+
+            db.Execute("RI.SET", "myindex", "aaa", "val-a");
+            db.Execute("RI.SET", "myindex", "bbb", "val-b");
+            db.Execute("RI.SET", "myindex", "ccc", "val-c");
+            db.Execute("RI.SET", "myindex", "ddd", "val-d");
+            db.Execute("RI.SET", "myindex", "eee", "val-e");
+
+            var result = (RedisResult[])db.Execute("RI.SCAN", "myindex", "aaa", "COUNT", "3");
+            ClassicAssert.AreEqual(3, result.Length);
+
+            // Each element is [key, value] since default FIELDS is BOTH
+            var first = (RedisResult[])result[0];
+            ClassicAssert.AreEqual("aaa", (string)first[0]);
+            ClassicAssert.AreEqual("val-a", (string)first[1]);
+
+            var second = (RedisResult[])result[1];
+            ClassicAssert.AreEqual("bbb", (string)second[0]);
+            ClassicAssert.AreEqual("val-b", (string)second[1]);
+
+            var third = (RedisResult[])result[2];
+            ClassicAssert.AreEqual("ccc", (string)third[0]);
+            ClassicAssert.AreEqual("val-c", (string)third[1]);
+        }
+
+        [Test]
+        public void RIScanFieldsKeyTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var diskPath = Path.Combine(TestUtils.MethodTestDir, "scanidx");
+            db.Execute("RI.CREATE", "myindex", "DISK", diskPath, "CACHESIZE", "65536", "MINRECORD", "8");
+
+            db.Execute("RI.SET", "myindex", "aaa", "val-a");
+            db.Execute("RI.SET", "myindex", "bbb", "val-b");
+
+            var result = (RedisResult[])db.Execute("RI.SCAN", "myindex", "aaa", "COUNT", "10", "FIELDS", "KEY");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual("aaa", (string)result[0]);
+            ClassicAssert.AreEqual("bbb", (string)result[1]);
+        }
+
+        [Test]
+        public void RIScanFieldsValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var diskPath = Path.Combine(TestUtils.MethodTestDir, "scanidx");
+            db.Execute("RI.CREATE", "myindex", "DISK", diskPath, "CACHESIZE", "65536", "MINRECORD", "8");
+
+            db.Execute("RI.SET", "myindex", "aaa", "val-a");
+            db.Execute("RI.SET", "myindex", "bbb", "val-b");
+
+            var result = (RedisResult[])db.Execute("RI.SCAN", "myindex", "aaa", "COUNT", "10", "FIELDS", "VALUE");
+            ClassicAssert.AreEqual(2, result.Length);
+            ClassicAssert.AreEqual("val-a", (string)result[0]);
+            ClassicAssert.AreEqual("val-b", (string)result[1]);
+        }
+
+        [Test]
+        public void RIRangeBasicTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var diskPath = Path.Combine(TestUtils.MethodTestDir, "rangeidx");
+            db.Execute("RI.CREATE", "myindex", "DISK", diskPath, "CACHESIZE", "65536", "MINRECORD", "8");
+
+            db.Execute("RI.SET", "myindex", "aaa", "val-a");
+            db.Execute("RI.SET", "myindex", "bbb", "val-b");
+            db.Execute("RI.SET", "myindex", "ccc", "val-c");
+            db.Execute("RI.SET", "myindex", "ddd", "val-d");
+            db.Execute("RI.SET", "myindex", "eee", "val-e");
+
+            var result = (RedisResult[])db.Execute("RI.RANGE", "myindex", "bbb", "ddd");
+            ClassicAssert.AreEqual(3, result.Length);
+
+            var first = (RedisResult[])result[0];
+            ClassicAssert.AreEqual("bbb", (string)first[0]);
+            ClassicAssert.AreEqual("val-b", (string)first[1]);
+
+            var second = (RedisResult[])result[1];
+            ClassicAssert.AreEqual("ccc", (string)second[0]);
+            ClassicAssert.AreEqual("val-c", (string)second[1]);
+
+            var third = (RedisResult[])result[2];
+            ClassicAssert.AreEqual("ddd", (string)third[0]);
+            ClassicAssert.AreEqual("val-d", (string)third[1]);
+        }
+
+        [Test]
+        public void RIScanOnNonExistentIndexTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() =>
+                db.Execute("RI.SCAN", "noindex", "aaa", "COUNT", "10"));
+            ClassicAssert.IsTrue(ex.Message.Contains("range index"));
+        }
+
+        [Test]
+        public void RIRangeOnNonExistentIndexTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() =>
+                db.Execute("RI.RANGE", "noindex", "aaa", "zzz"));
+            ClassicAssert.IsTrue(ex.Message.Contains("range index"));
         }
     }
 }

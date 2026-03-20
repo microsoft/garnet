@@ -1003,6 +1003,8 @@ namespace Garnet.server
                 RespCommand.RISET => NetworkRISET(ref storageApi),
                 RespCommand.RIGET => NetworkRIGET(ref storageApi),
                 RespCommand.RIDEL => NetworkRIDEL(ref storageApi),
+                RespCommand.RISCAN => NetworkRISCAN(ref storageApi),
+                RespCommand.RIRANGE => NetworkRIRANGE(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

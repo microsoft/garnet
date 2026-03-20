@@ -66,6 +66,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RISET => "RI.SET"u8;
         public static ReadOnlySpan<byte> RIGET => "RI.GET"u8;
         public static ReadOnlySpan<byte> RIDEL => "RI.DEL"u8;
+        public static ReadOnlySpan<byte> RIRANGE => "RI.RANGE"u8;
+        public static ReadOnlySpan<byte> RISCAN => "RI.SCAN"u8;
         public static ReadOnlySpan<byte> SLAVEOF => "SLAVEOF"u8;
         public static ReadOnlySpan<byte> SECONDARYOF => "SECONDARYOF"u8;
         public static ReadOnlySpan<byte> HELP => "HELP"u8;

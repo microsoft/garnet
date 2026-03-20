@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
 using Garnet.common;
+using Garnet.server.BfTreeInterop;
 
 namespace Garnet.server
 {
@@ -246,6 +248,129 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Handles the RI.SCAN command.
+        /// Syntax: RI.SCAN key start COUNT n [FIELDS KEY|VALUE|BOTH]
+        /// </summary>
+        private bool NetworkRISCAN<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 4)
+                return AbortWithWrongNumberOfArguments("RI.SCAN");
+
+            var key = parseState.GetArgSliceByRef(0);
+            var startKey = parseState.GetArgSliceByRef(1);
+
+            if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
+            {
+                while (!RespWriteUtils.TryWriteError("ERR syntax error, expected COUNT"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (!parseState.TryGetInt(3, out var count) || count <= 0)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR invalid count"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var returnField = ScanReturnField.KeyAndValue;
+            if (parseState.Count >= 6 && parseState.GetArgSliceByRef(4).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("FIELDS"u8))
+            {
+                var fieldsVal = parseState.GetArgSliceByRef(5).ReadOnlySpan;
+                if (fieldsVal.EqualsUpperCaseSpanIgnoringCase("KEY"u8))
+                    returnField = ScanReturnField.Key;
+                else if (fieldsVal.EqualsUpperCaseSpanIgnoringCase("VALUE"u8))
+                    returnField = ScanReturnField.Value;
+                else
+                    returnField = ScanReturnField.KeyAndValue;
+            }
+
+            storageApi.RangeIndexScan(key, startKey, count, returnField, out var records, out var result);
+
+            if (result != RangeIndexResult.OK)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR range index not found"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            WriteScanResponse(records, returnField);
+            return true;
+        }
+
+        /// <summary>
+        /// Handles the RI.RANGE command.
+        /// Syntax: RI.RANGE key start end [FIELDS KEY|VALUE|BOTH]
+        /// </summary>
+        private bool NetworkRIRANGE<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 3)
+                return AbortWithWrongNumberOfArguments("RI.RANGE");
+
+            var key = parseState.GetArgSliceByRef(0);
+            var startKey = parseState.GetArgSliceByRef(1);
+            var endKey = parseState.GetArgSliceByRef(2);
+
+            var returnField = ScanReturnField.KeyAndValue;
+            if (parseState.Count >= 5 && parseState.GetArgSliceByRef(3).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("FIELDS"u8))
+            {
+                var fieldsVal = parseState.GetArgSliceByRef(4).ReadOnlySpan;
+                if (fieldsVal.EqualsUpperCaseSpanIgnoringCase("KEY"u8))
+                    returnField = ScanReturnField.Key;
+                else if (fieldsVal.EqualsUpperCaseSpanIgnoringCase("VALUE"u8))
+                    returnField = ScanReturnField.Value;
+                else
+                    returnField = ScanReturnField.KeyAndValue;
+            }
+
+            storageApi.RangeIndexRange(key, startKey, endKey, returnField, out var records, out var result);
+
+            if (result != RangeIndexResult.OK)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR range index not found"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            WriteScanResponse(records, returnField);
+            return true;
+        }
+
+        /// <summary>
+        /// Write a scan/range response as a RESP array.
+        /// </summary>
+        private void WriteScanResponse(List<ScanRecord> records, ScanReturnField returnField)
+        {
+            while (!RespWriteUtils.TryWriteArrayLength(records.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var record in records)
+            {
+                if (returnField == ScanReturnField.KeyAndValue)
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteBulkString(record.Key.Span, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteBulkString(record.Value.Span, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else if (returnField == ScanReturnField.Key)
+                {
+                    while (!RespWriteUtils.TryWriteBulkString(record.Key.Span, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteBulkString(record.Value.Span, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
         }
     }
 }

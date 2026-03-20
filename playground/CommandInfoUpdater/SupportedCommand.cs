@@ -257,6 +257,8 @@ namespace CommandInfoUpdater
             new("RI.CREATE", RespCommand.RICREATE, StoreType.Main),
             new("RI.DEL", RespCommand.RIDEL, StoreType.Main),
             new("RI.GET", RespCommand.RIGET, StoreType.Main),
+            new("RI.RANGE", RespCommand.RIRANGE, StoreType.Main),
+            new("RI.SCAN", RespCommand.RISCAN, StoreType.Main),
             new("RI.SET", RespCommand.RISET, StoreType.Main),
             new("ROLE", RespCommand.ROLE),
             new("RPOP", RespCommand.RPOP, StoreType.Object),

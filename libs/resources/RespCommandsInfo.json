@@ -3989,6 +3989,58 @@
     "StoreType": "Main"
   },
   {
+    "Command": "RIRANGE",
+    "Name": "RI.RANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "RISCAN",
+    "Name": "RI.SCAN",
+    "Arity": -5,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
     "Command": "RISET",
     "Name": "RI.SET",
     "Arity": 4,
@@ -4364,7 +4416,7 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
+        "Notes": "RW and ACCESS due to the optional `GET` argument",
         "Flags": "RW, Access, Update, VariableFlags"
       }
     ],

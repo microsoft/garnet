@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
@@ -209,6 +210,78 @@ namespace Garnet.server
                 }
 
                 BfTreeService.DeleteByPtr(treePtr, field);
+                result = RangeIndexResult.OK;
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// RI.SCAN — scan entries starting at a key with a count limit.
+        /// Acquires shared lock, reads stub, calls BfTreeService while lock is held.
+        /// </summary>
+        public GarnetStatus RangeIndexScan(
+            PinnedSpanByte key, PinnedSpanByte startKey, int count,
+            ScanReturnField returnField, out List<ScanRecord> records,
+            out RangeIndexResult result)
+        {
+            records = null;
+
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.RISCAN, ref parseState);
+            Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
+
+            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                var treePtr = ExtractTreePtr(stubSpan);
+                if (treePtr == 0)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                records = BfTreeService.ScanWithCountByPtr(treePtr, startKey.ReadOnlySpan, count, returnField);
+                result = RangeIndexResult.OK;
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// RI.RANGE — scan entries in [start, end] range from a range index.
+        /// Acquires shared lock, reads stub, calls BfTreeService while lock is held.
+        /// </summary>
+        public GarnetStatus RangeIndexRange(
+            PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
+            ScanReturnField returnField, out List<ScanRecord> records,
+            out RangeIndexResult result)
+        {
+            records = null;
+
+            parseState.InitializeWithArgument(key);
+            var input = new StringInput(RespCommand.RIRANGE, ref parseState);
+            Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
+
+            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                var treePtr = ExtractTreePtr(stubSpan);
+                if (treePtr == 0)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                records = BfTreeService.ScanWithEndKeyByPtr(treePtr, startKey.ReadOnlySpan, endKey.ReadOnlySpan, returnField);
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }

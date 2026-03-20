@@ -5434,6 +5434,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task RIRangeACLsAsync()
+        {
+            // Pre-create the index and insert fields using default user (DISK mode required for scan)
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            var diskPath = Path.Combine(TestUtils.MethodTestDir, "rirange-acl-idx");
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["rirange-acl-idx", "DISK", diskPath, "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["rirange-acl-idx", "aaa", "val-a"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["rirange-acl-idx", "bbb", "val-b"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.RANGE",
+                [DoRIRangeAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIRangeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("RI.RANGE", ["rirange-acl-idx", "aaa", "bbb", "FIELDS", "KEY"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                ClassicAssert.AreEqual(2, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task RIScanACLsAsync()
+        {
+            // Pre-create the index and insert a field using default user (DISK mode required for scan)
+            using var setupClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword).ConfigureAwait(false);
+            var diskPath = Path.Combine(TestUtils.MethodTestDir, "riscan-acl-idx");
+            await setupClient.ExecuteForStringResultAsync("RI.CREATE", ["riscan-acl-idx", "DISK", diskPath, "CACHESIZE", "65536", "MINRECORD", "8"]).ConfigureAwait(false);
+            await setupClient.ExecuteForStringResultAsync("RI.SET", ["riscan-acl-idx", "aaa", "val-a"]).ConfigureAwait(false);
+
+            await CheckCommandsAsync(
+                "RI.SCAN",
+                [DoRIScanAsync]
+            ).ConfigureAwait(false);
+
+            static async Task DoRIScanAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("RI.SCAN", ["riscan-acl-idx", "aaa", "COUNT", "10", "FIELDS", "KEY"]).ConfigureAwait(false);
+                ClassicAssert.IsNotNull(val);
+                ClassicAssert.IsTrue(val.Length >= 1);
+            }
+        }
+
+        [Test]
         public async Task ReplicaOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests

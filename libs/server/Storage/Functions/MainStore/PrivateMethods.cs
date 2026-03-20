@@ -104,6 +104,8 @@ namespace Garnet.server
                 case RespCommand.RIGET:
                 case RespCommand.RISET:
                 case RespCommand.RIDEL:
+                case RespCommand.RISCAN:
+                case RespCommand.RIRANGE:
                     // Get value without RESP header; exclude expiration
                     if (value.Length <= output.SpanByteAndMemory.Length)
                     {
