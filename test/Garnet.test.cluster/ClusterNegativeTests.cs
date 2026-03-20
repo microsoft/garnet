@@ -291,7 +291,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(7), CancelAfter(testTimeout)]
         public void ClusterReplicaAttachIntenseWrite(CancellationToken cancellationToken)
         {
             var primaryIndex = 0;
@@ -369,7 +369,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(8), CancelAfter(testTimeout)]
         public void ClusterFailedToAddAofSyncTask()
         {
             var primaryIndex = 0;
@@ -419,7 +419,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(9), CancelAfter(testTimeout)]
         public void ClusterReplicaSyncTimeoutTest()
         {
             var primaryIndex = 0;
@@ -468,7 +468,7 @@ namespace Garnet.test.cluster
         }
 #endif
 
-        [Test, CancelAfter(60_000)]
+        [Test, Order(10), CancelAfter(60_000)]
         public async Task ClusterParallelFailoverOnDistinctShards(CancellationToken cancellationToken)
         {
             var nodes_count = 4;
@@ -523,8 +523,7 @@ namespace Garnet.test.cluster
             }
         }
 
-
-        [Test, CancelAfter(60_000)]
+        [Test, Order(11), CancelAfter(60_000)]
         public void ClusterMeetFromReplica(CancellationToken cancellationToken)
         {
             var nodes_count = 3;
@@ -558,6 +557,72 @@ namespace Garnet.test.cluster
             {
                 Assert.That(nodes_count, Is.EqualTo(context.clusterTestUtils.ClusterNodes(i).Nodes.Count));
             }
+        }
+
+        [Test, Order(12)]
+        [Category("REPLICATION")]
+        public void ClusterDontKnowReplicaFailTest([Values] bool useReplicaOf)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            ClassicAssert.IsTrue(primary_count > 0);
+            context.CreateInstances(nodes_count, disableObjects: true, FastAofTruncate: false, OnDemandCheckpoint: false, CommitFrequencyMs: -1, enableAOF: true, useTLS: false, asyncReplay: false);
+            context.CreateConnection(useTLS: false);
+
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, 2, logger: context.logger);
+
+            var primaryId = context.clusterTestUtils.ClusterMyId(primaryNodeIndex, logger: context.logger);
+            string resp;
+            if (!useReplicaOf)
+            {
+                resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual($"ERR I don't know about node {primaryId}.", resp);
+            }
+            else
+            {
+                resp = context.clusterTestUtils.ReplicaOf(replicaNodeIndex, primaryNodeIndex, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual($"ERR I don't know about node {context.clusterTestUtils.GetEndPoint(primaryNodeIndex)}.", resp);
+            }
+        }
+
+        [Test, Order(13)]
+        [Category("REPLICATION")]
+        public void ClusterReplicateFails()
+        {
+            const string UserName = "temp-user";
+            const string Password = "temp-password";
+
+            const string ClusterUserName = "cluster-user";
+            const string ClusterPassword = "cluster-password";
+
+            // Setup a cluster (mimicking the style in which this bug was first found)
+            ServerCredential clusterCreds = new(ClusterUserName, ClusterPassword, IsAdmin: true, UsedForClusterAuth: true, IsClearText: true);
+            ServerCredential userCreds = new(UserName, Password, IsAdmin: true, UsedForClusterAuth: false, IsClearText: true);
+
+            context.GenerateCredentials([userCreds, clusterCreds]);
+            context.CreateInstances(2, disableObjects: true, disablePubSub: true, enableAOF: true, clusterCreds: clusterCreds, useAcl: true, FastAofTruncate: true, CommitFrequencyMs: -1, asyncReplay: false);
+            var primaryEndpoint = (IPEndPoint)context.endpoints.First();
+            var replicaEndpoint = (IPEndPoint)context.endpoints.Last();
+
+            ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
+
+            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password}");
+            var primaryServer = primaryConnection.GetServer(primaryEndpoint);
+
+            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
+
+            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
+            var replicaServer = replicaConnection.GetServer(replicaEndpoint);
+
+            // Try to replicate from a server that doesn't exist
+            var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
     }
 }
