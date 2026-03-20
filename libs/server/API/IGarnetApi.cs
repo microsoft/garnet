@@ -1197,7 +1197,7 @@ namespace Garnet.server
         /// <param name="minRecordSize">BfTree minimum record size.</param>
         /// <param name="maxRecordSize">BfTree maximum record size.</param>
         /// <param name="maxKeyLen">BfTree maximum key length.</param>
-        /// <param name="leafPageSize">BfTree leaf page size.</param>
+        /// <param name="leafPageSize">BfTree leaf page size (0 = auto-compute from maxRecordSize).</param>
         /// <param name="result">Result code of the operation.</param>
         /// <param name="errorMsg">Error message if the operation failed.</param>
         /// <returns>Garnet status.</returns>

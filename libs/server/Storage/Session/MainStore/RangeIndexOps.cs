@@ -36,6 +36,10 @@ namespace Garnet.server
 
             var rangeIndexManager = functionsState.rangeIndexManager;
 
+            // Auto-compute leaf page size if not specified
+            if (leafPageSize == 0)
+                leafPageSize = RangeIndexManager.ComputeLeafPageSize(maxRecordSize);
+
             // Create the BfTree instance via interop
             BfTreeService bfTree;
             try
@@ -168,74 +172,116 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                var treePtr = ExtractTreePtr(stubSpan);
+                RangeIndexManager.ReadIndex(stubSpan,
+                    out var treePtr, out _, out _, out var maxRecordSize,
+                    out _, out _, out _, out _, out _);
                 if (treePtr == 0)
                 {
                     result = RangeIndexResult.Error;
                     return GarnetStatus.OK;
                 }
 
-                // Read from BfTree into a stack buffer
-                Span<byte> readBuffer = stackalloc byte[4096];
-                int bytesWritten;
-                BfTreeReadResult readResult;
-                fixed (byte* bp = readBuffer)
-                {
-                    readResult = BfTreeService.ReadByPtrInto(treePtr, field, bp, readBuffer.Length, out bytesWritten);
-                }
-
-                if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
-                {
-                    result = RangeIndexResult.NotFound;
-                    return GarnetStatus.OK;
-                }
-
-                // Write RESP bulk string ($len\r\nvalue\r\n) directly into the output,
-                // following the CopyRespTo pattern from MainStore PrivateMethods.
-                var valueSpan = readBuffer[..bytesWritten];
-                var numLength = NumUtils.CountDigits(bytesWritten);
-                var totalSize = 1 + numLength + 2 + bytesWritten + 2;
+                // RESP bulk string: $len\r\nvalue\r\n
+                // Header size based on max record size: $<digits(maxRecordSize)>\r\n
+                var maxValueSize = (int)maxRecordSize;
+                var maxHeaderSize = 1 + NumUtils.CountDigits(maxValueSize) + 2; // $N\r\n
+                const int TrailerSize = 2; // \r\n
+                var minBufferNeeded = maxHeaderSize + maxValueSize + TrailerSize;
 
                 if (output.SpanByteAndMemory.IsSpanByte)
                 {
-                    if (output.SpanByteAndMemory.Length >= totalSize)
-                    {
-                        output.SpanByteAndMemory.Length = totalSize;
+                    var bufStart = output.SpanByteAndMemory.SpanByte.ToPointer();
+                    var bufLen = output.SpanByteAndMemory.Length;
 
-                        var tmp = output.SpanByteAndMemory.SpanByte.ToPointer();
+                    if (bufLen >= minBufferNeeded)
+                    {
+                        // Read BfTree value directly into output buffer past the header reservation
+                        var valueStart = bufStart + maxHeaderSize;
+                        var maxValueLen = bufLen - maxHeaderSize - TrailerSize;
+
+                        var readResult = BfTreeService.ReadByPtrInto(treePtr, field, valueStart, maxValueLen, out var bytesWritten);
+
+                        if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
+                        {
+                            result = RangeIndexResult.NotFound;
+                            return GarnetStatus.OK;
+                        }
+
+                        // Backfill exact header, append trailer, shift to eliminate gap
+                        var numLength = NumUtils.CountDigits(bytesWritten);
+                        var actualHeaderSize = 1 + numLength + 2; // $N\r\n
+                        var headerGap = maxHeaderSize - actualHeaderSize;
+                        var headerStart = bufStart + headerGap;
+
+                        var tmp = headerStart;
                         *tmp++ = (byte)'$';
                         NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
                         *tmp++ = (byte)'\r';
                         *tmp++ = (byte)'\n';
-                        valueSpan.CopyTo(new Span<byte>(tmp, bytesWritten));
-                        tmp += bytesWritten;
-                        *tmp++ = (byte)'\r';
-                        *tmp = (byte)'\n';
 
+                        var trailerPtr = valueStart + bytesWritten;
+                        *trailerPtr++ = (byte)'\r';
+                        *trailerPtr = (byte)'\n';
+
+                        var totalLen = actualHeaderSize + bytesWritten + TrailerSize;
+
+                        if (headerGap > 0)
+                            Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
+
+                        output.SpanByteAndMemory.Length = totalLen;
                         result = RangeIndexResult.OK;
                         return GarnetStatus.OK;
                     }
+
+                    // Not enough space in network buffer — fall through to heap path
                     output.SpanByteAndMemory.ConvertToHeap();
                 }
 
-                // Heap fallback when the network buffer is too small
-                output.SpanByteAndMemory.Memory = functionsState.memoryPool.Rent(totalSize);
-                output.SpanByteAndMemory.Length = totalSize;
-                fixed (byte* ptr = output.SpanByteAndMemory.MemorySpan)
+                // Heap fallback: rent buffer sized for max record, read directly
                 {
-                    var tmp = ptr;
-                    *tmp++ = (byte)'$';
-                    NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
-                    *tmp++ = (byte)'\r';
-                    *tmp++ = (byte)'\n';
-                    valueSpan.CopyTo(new Span<byte>(tmp, bytesWritten));
-                    tmp += bytesWritten;
-                    *tmp++ = (byte)'\r';
-                    *tmp = (byte)'\n';
-                }
+                    var heapMemory = functionsState.memoryPool.Rent(minBufferNeeded);
 
-                result = RangeIndexResult.OK;
-                return GarnetStatus.OK;
+                    fixed (byte* bufStart = heapMemory.Memory.Span)
+                    {
+                        var valueStart = bufStart + maxHeaderSize;
+                        var maxValueLen = minBufferNeeded - maxHeaderSize - TrailerSize;
+
+                        var readResult = BfTreeService.ReadByPtrInto(treePtr, field, valueStart, maxValueLen, out var bytesWritten);
+
+                        if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
+                        {
+                            heapMemory.Dispose();
+                            result = RangeIndexResult.NotFound;
+                            return GarnetStatus.OK;
+                        }
+
+                        var numLength = NumUtils.CountDigits(bytesWritten);
+                        var actualHeaderSize = 1 + numLength + 2;
+                        var headerGap = maxHeaderSize - actualHeaderSize;
+                        var headerStart = bufStart + headerGap;
+
+                        var tmp = headerStart;
+                        *tmp++ = (byte)'$';
+                        NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
+                        *tmp++ = (byte)'\r';
+                        *tmp++ = (byte)'\n';
+
+                        var trailerPtr = valueStart + bytesWritten;
+                        *trailerPtr++ = (byte)'\r';
+                        *trailerPtr = (byte)'\n';
+
+                        var totalLen = actualHeaderSize + bytesWritten + TrailerSize;
+
+                        if (headerGap > 0)
+                            Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
+
+                        output.SpanByteAndMemory.Memory = heapMemory;
+                        output.SpanByteAndMemory.Length = totalLen;
+                    }
+
+                    result = RangeIndexResult.OK;
+                    return GarnetStatus.OK;
+                }
             }
         }
 

@@ -105,13 +105,12 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // RI.CREATE with all options
+            // RI.CREATE with all options (PAGESIZE auto-computed from MAXRECORD)
             var result = db.Execute("RI.CREATE", "myindex", "MEMORY",
                 "CACHESIZE", "131072",
-                "MINRECORD", "32",
-                "MAXRECORD", "2048",
-                "MAXKEYLEN", "256",
-                "PAGESIZE", "8192");
+                "MINRECORD", "8",
+                "MAXRECORD", "1024",
+                "MAXKEYLEN", "128");
             ClassicAssert.AreEqual("OK", (string)result);
         }
 

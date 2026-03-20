@@ -32,7 +32,7 @@ namespace Garnet.server
             uint minRecordSize = 64;
             uint maxRecordSize = 1024;
             uint maxKeyLen = 128;
-            uint leafPageSize = 4096;
+            uint leafPageSize = 0; // 0 = auto-compute from maxRecordSize
 
             // Parse optional keyword arguments
             var idx = 1;

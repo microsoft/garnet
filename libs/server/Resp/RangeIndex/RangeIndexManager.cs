@@ -69,6 +69,37 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Compute the leaf page size from the max record size.
+        /// For max record size &lt;= 2KB: page size = 4KB.
+        /// For larger (up to 16KB): 2.5x record size rounded to next power of 2, max 32KB.
+        /// </summary>
+        internal static uint ComputeLeafPageSize(uint maxRecordSize)
+        {
+            if (maxRecordSize <= 2048)
+                return 4096;
+
+            // 2.5x, capped at 32KB
+            var target = (uint)(maxRecordSize * 2.5);
+            if (target > 32768)
+                target = 32768;
+
+            // Round up to next power of 2
+            return RoundUpToPowerOf2(target);
+        }
+
+        private static uint RoundUpToPowerOf2(uint v)
+        {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v++;
+            return v;
+        }
+
+        /// <summary>
         /// Register a BfTreeService after successful index creation. Cold path only.
         /// </summary>
         internal void RegisterIndex(BfTreeService bfTree)
