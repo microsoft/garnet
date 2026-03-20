@@ -179,7 +179,7 @@ namespace Garnet.cluster
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        ClusterSlotVerificationResult VerifyKeysInRange(ref ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, 
+        ClusterSlotVerificationResult VerifyKeysInRange(ref ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi,
             int startIdx, int lastIdx, int step, ushort firstSlot, ref ClusterSlotVerificationResult verifyResult)
         {
             for (var i = startIdx; i <= lastIdx; i += step)
