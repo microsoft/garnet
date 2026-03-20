@@ -82,15 +82,36 @@ namespace Garnet.server
             this.unixSocketPath = unixSocketPath;
             this.unixSocketPermission = unixSocketPermission;
 
-            listenSocket = endpoint switch
+            if (endpoint is UnixDomainSocketEndPoint unix)
             {
-                UnixDomainSocketEndPoint unix => new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified),
+                // UDS Initialization & Cleanup
+                listenSocket = new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                var socketPath = unix.ToString();
+                if (File.Exists(socketPath))
+                {
+                    File.Delete(socketPath);
+                }
+            }
+            else
+            {
+                // TCP Initialization & Port Reuse
+                listenSocket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-                _ => new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
-            };
+                // Set reuse BEFORE Bind to handle TIME_WAIT states
+                listenSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            }
 
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
+        }
+
+        /// <summary>
+        /// Stop listening for new connections. Frees the listening port
+        /// without waiting for active connections to drain.
+        /// </summary>
+        public override void Close()
+        {
+            listenSocket.Close();
         }
 
         /// <summary>
@@ -98,11 +119,10 @@ namespace Garnet.server
         /// </summary>
         public override void Dispose()
         {
-            // Close listening socket first to prevent adding new handlers.
+            // Close listening socket to free the port and stop accepting new connections.
+            // This also prevents new connections from arriving while DisposeActiveHandlers drains existing ones.
             listenSocket.Dispose();
-            // Dispose active handlers.
             base.Dispose();
-            // Dispose acceptEventArg after handlers have been disposed.
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
             networkPool?.Dispose();
