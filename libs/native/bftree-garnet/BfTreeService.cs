@@ -235,6 +235,19 @@ namespace Garnet.server.BfTreeInterop
         }
 
         /// <summary>
+        /// Read via native pointer into a caller-provided buffer without allocating.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static BfTreeReadResult ReadByPtrInto(nint treePtr, PinnedSpanByte key, byte* outputBuffer, int outputBufferLen, out int bytesWritten)
+        {
+            int valueLen = 0;
+            var rc = NativeBfTreeMethods.bftree_read(
+                treePtr, key.ToPointer(), key.Length, outputBuffer, outputBufferLen, &valueLen);
+            bytesWritten = valueLen;
+            return (BfTreeReadResult)rc;
+        }
+
+        /// <summary>
         /// Delete via native pointer.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
 
@@ -200,17 +199,16 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var field = parseState.GetArgSliceByRef(1);
 
-            storageApi.RangeIndexGet(key, field, out var valueBytes, out var result);
+            var output = GetStringOutput();
+            storageApi.RangeIndexGet(key, field, ref output, out var result);
 
-            if (result == RangeIndexResult.OK && valueBytes != null)
+            if (result == RangeIndexResult.OK)
             {
-                while (!RespWriteUtils.TryWriteBulkString(valueBytes, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else if (result == RangeIndexResult.NotFound)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
             else
             {
@@ -289,7 +287,9 @@ namespace Garnet.server
                     returnField = ScanReturnField.KeyAndValue;
             }
 
-            storageApi.RangeIndexScan(key, startKey, count, returnField, out var records, out var result);
+            var output = GetStringOutput();
+            storageApi.RangeIndexScan(key, startKey, count, returnField,
+                ref output, out _, out var result);
 
             if (result != RangeIndexResult.OK)
             {
@@ -298,7 +298,7 @@ namespace Garnet.server
                 return true;
             }
 
-            WriteScanResponse(records, returnField);
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
 
@@ -328,7 +328,9 @@ namespace Garnet.server
                     returnField = ScanReturnField.KeyAndValue;
             }
 
-            storageApi.RangeIndexRange(key, startKey, endKey, returnField, out var records, out var result);
+            var output = GetStringOutput();
+            storageApi.RangeIndexRange(key, startKey, endKey, returnField,
+                ref output, out _, out var result);
 
             if (result != RangeIndexResult.OK)
             {
@@ -337,40 +339,8 @@ namespace Garnet.server
                 return true;
             }
 
-            WriteScanResponse(records, returnField);
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
-        }
-
-        /// <summary>
-        /// Write a scan/range response as a RESP array.
-        /// </summary>
-        private void WriteScanResponse(List<ScanRecord> records, ScanReturnField returnField)
-        {
-            while (!RespWriteUtils.TryWriteArrayLength(records.Count, ref dcurr, dend))
-                SendAndReset();
-
-            foreach (var record in records)
-            {
-                if (returnField == ScanReturnField.KeyAndValue)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteBulkString(record.Key.Span, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteBulkString(record.Value.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else if (returnField == ScanReturnField.Key)
-                {
-                    while (!RespWriteUtils.TryWriteBulkString(record.Key.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteBulkString(record.Value.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
         }
     }
 }

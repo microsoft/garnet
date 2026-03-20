@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
@@ -149,14 +149,13 @@ namespace Garnet.server
 
         /// <summary>
         /// RI.GET — read a field from a range index.
-        /// Hot path: acquires shared lock, reads stub, calls BfTreeService while lock is held.
+        /// Hot path: acquires shared lock, reads stub, reads from BfTree,
+        /// and writes the value as a RESP bulk string directly into <paramref name="output"/>.
         /// </summary>
         public GarnetStatus RangeIndexGet(
             PinnedSpanByte key, PinnedSpanByte field,
-            out byte[] value, out RangeIndexResult result)
+            ref StringOutput output, out RangeIndexResult result)
         {
-            value = null;
-
             parseState.InitializeWithArgument(key);
             var input = new StringInput(RespCommand.RIGET, ref parseState);
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
@@ -176,8 +175,66 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                var readResult = BfTreeService.ReadByPtr(treePtr, field, out value);
-                result = readResult == BfTreeReadResult.Found ? RangeIndexResult.OK : RangeIndexResult.NotFound;
+                // Read from BfTree into a stack buffer
+                Span<byte> readBuffer = stackalloc byte[4096];
+                int bytesWritten;
+                BfTreeReadResult readResult;
+                fixed (byte* bp = readBuffer)
+                {
+                    readResult = BfTreeService.ReadByPtrInto(treePtr, field, bp, readBuffer.Length, out bytesWritten);
+                }
+
+                if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
+                {
+                    result = RangeIndexResult.NotFound;
+                    return GarnetStatus.OK;
+                }
+
+                // Write RESP bulk string ($len\r\nvalue\r\n) directly into the output,
+                // following the CopyRespTo pattern from MainStore PrivateMethods.
+                var valueSpan = readBuffer[..bytesWritten];
+                var numLength = NumUtils.CountDigits(bytesWritten);
+                var totalSize = 1 + numLength + 2 + bytesWritten + 2;
+
+                if (output.SpanByteAndMemory.IsSpanByte)
+                {
+                    if (output.SpanByteAndMemory.Length >= totalSize)
+                    {
+                        output.SpanByteAndMemory.Length = totalSize;
+
+                        var tmp = output.SpanByteAndMemory.SpanByte.ToPointer();
+                        *tmp++ = (byte)'$';
+                        NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
+                        *tmp++ = (byte)'\r';
+                        *tmp++ = (byte)'\n';
+                        valueSpan.CopyTo(new Span<byte>(tmp, bytesWritten));
+                        tmp += bytesWritten;
+                        *tmp++ = (byte)'\r';
+                        *tmp = (byte)'\n';
+
+                        result = RangeIndexResult.OK;
+                        return GarnetStatus.OK;
+                    }
+                    output.SpanByteAndMemory.ConvertToHeap();
+                }
+
+                // Heap fallback when the network buffer is too small
+                output.SpanByteAndMemory.Memory = functionsState.memoryPool.Rent(totalSize);
+                output.SpanByteAndMemory.Length = totalSize;
+                fixed (byte* ptr = output.SpanByteAndMemory.MemorySpan)
+                {
+                    var tmp = ptr;
+                    *tmp++ = (byte)'$';
+                    NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
+                    *tmp++ = (byte)'\r';
+                    *tmp++ = (byte)'\n';
+                    valueSpan.CopyTo(new Span<byte>(tmp, bytesWritten));
+                    tmp += bytesWritten;
+                    *tmp++ = (byte)'\r';
+                    *tmp = (byte)'\n';
+                }
+
+                result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
         }
@@ -217,14 +274,14 @@ namespace Garnet.server
 
         /// <summary>
         /// RI.SCAN — scan entries starting at a key with a count limit.
-        /// Acquires shared lock, reads stub, calls BfTreeService while lock is held.
+        /// Acquires shared lock, reads stub, writes RESP response into output while lock is held.
         /// </summary>
         public GarnetStatus RangeIndexScan(
             PinnedSpanByte key, PinnedSpanByte startKey, int count,
-            ScanReturnField returnField, out List<ScanRecord> records,
-            out RangeIndexResult result)
+            ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
         {
-            records = null;
+            recordCount = 0;
 
             parseState.InitializeWithArgument(key);
             var input = new StringInput(RespCommand.RISCAN, ref parseState);
@@ -245,7 +302,9 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                records = BfTreeService.ScanWithCountByPtr(treePtr, startKey.ReadOnlySpan, count, returnField);
+                WriteScanToOutput(treePtr, startKey.ReadOnlySpan, count, returnField,
+                    isScanWithCount: true, [],
+                    ref output, out recordCount);
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
@@ -253,14 +312,14 @@ namespace Garnet.server
 
         /// <summary>
         /// RI.RANGE — scan entries in [start, end] range from a range index.
-        /// Acquires shared lock, reads stub, calls BfTreeService while lock is held.
+        /// Acquires shared lock, reads stub, writes RESP response into output while lock is held.
         /// </summary>
         public GarnetStatus RangeIndexRange(
             PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
-            ScanReturnField returnField, out List<ScanRecord> records,
-            out RangeIndexResult result)
+            ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
         {
-            records = null;
+            recordCount = 0;
 
             parseState.InitializeWithArgument(key);
             var input = new StringInput(RespCommand.RIRANGE, ref parseState);
@@ -281,10 +340,185 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                records = BfTreeService.ScanWithEndKeyByPtr(treePtr, startKey.ReadOnlySpan, endKey.ReadOnlySpan, returnField);
+                WriteScanToOutput(treePtr, startKey.ReadOnlySpan, 0, returnField,
+                    isScanWithCount: false, endKey.ReadOnlySpan,
+                    ref output, out recordCount);
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
+        }
+
+        /// <summary>
+        /// Scan BfTree and write the complete RESP array response directly into StringOutput.
+        /// Reserves space for the array header, writes records directly via pointer arithmetic,
+        /// then backfills the header. On overflow, grows the buffer in-place without restarting the scan.
+        /// </summary>
+        private void WriteScanToOutput(
+            nint treePtr, ReadOnlySpan<byte> startKey, int count,
+            ScanReturnField returnField, bool isScanWithCount,
+            ReadOnlySpan<byte> endKey, ref StringOutput output, out int recordCount)
+        {
+            // We need to write *count\r\n before records, but count isn't known until scan completes.
+            // Strategy: reserve max header space, write records, backfill header, compact.
+            // On overflow from inline (network buffer), transition to heap and continue without re-scanning.
+            const int MaxArrayHeaderSize = 13; // *2147483647\r\n (max int)
+
+            int recCount = 0;
+            var rf = returnField;
+
+            // State for the grow-in-place callback
+            byte* curr;
+            byte* bufEnd;
+            byte* bufStart;
+            bool isHeap = false;
+            IMemoryOwner<byte> heapMemory = null;
+            MemoryHandle heapHandle = default;
+            var memoryPool = functionsState.memoryPool;
+
+            if (output.SpanByteAndMemory.IsSpanByte)
+            {
+                bufStart = output.SpanByteAndMemory.SpanByte.ToPointer();
+                bufEnd = bufStart + output.SpanByteAndMemory.Length;
+                curr = bufStart + MaxArrayHeaderSize;
+            }
+            else
+            {
+                // Already on heap (shouldn't normally happen, but handle it)
+                var heapSize = 64 * 1024;
+                heapMemory = memoryPool.Rent(heapSize);
+                heapHandle = heapMemory.Memory.Pin();
+                bufStart = (byte*)heapHandle.Pointer;
+                bufEnd = bufStart + heapSize;
+                curr = bufStart + MaxArrayHeaderSize;
+                isHeap = true;
+            }
+
+            ScanRecordAction callback = (k, v) =>
+            {
+                recCount++;
+
+                if (TryWriteRecordResp(rf, k, v, ref curr, bufEnd))
+                    return true;
+
+                // Doesn't fit — grow the buffer and retry this record
+                var writtenBytes = (int)(curr - bufStart);
+                var newSize = Math.Max((int)(bufEnd - bufStart) * 2, writtenBytes + k.Length + v.Length + 256);
+
+                var newMemory = memoryPool.Rent(newSize);
+                var newHandle = newMemory.Memory.Pin();
+                var newStart = (byte*)newHandle.Pointer;
+
+                // Copy partial data written so far
+                new Span<byte>(bufStart, writtenBytes).CopyTo(new Span<byte>(newStart, writtenBytes));
+
+                // Release old heap buffer if we were on heap
+                if (isHeap)
+                {
+                    heapHandle.Dispose();
+                    heapMemory?.Dispose();
+                }
+
+                heapMemory = newMemory;
+                heapHandle = newHandle;
+                bufStart = newStart;
+                bufEnd = newStart + newSize;
+                curr = newStart + writtenBytes;
+                isHeap = true;
+
+                // Retry the record write — guaranteed to succeed now
+                TryWriteRecordResp(rf, k, v, ref curr, bufEnd);
+                return true;
+            };
+
+            try
+            {
+                if (isScanWithCount)
+                    BfTreeService.ScanWithCountByPtrCallback(treePtr, startKey, count, returnField, callback);
+                else
+                    BfTreeService.ScanWithEndKeyByPtrCallback(treePtr, startKey, endKey, returnField, callback);
+
+                // Backfill the array header
+                if (!isHeap)
+                {
+                    // Fast path: data stayed in the inline network buffer
+                    BackfillArrayHeader(bufStart, curr, MaxArrayHeaderSize, recCount, ref output, out recordCount);
+                }
+                else
+                {
+                    // Heap path: set the Memory on the output
+                    output.SpanByteAndMemory.ConvertToHeap();
+                    output.SpanByteAndMemory.Memory = heapMemory;
+                    BackfillArrayHeader(bufStart, curr, MaxArrayHeaderSize, recCount, ref output, out recordCount);
+                    heapMemory = null; // Ownership transferred to output
+                }
+            }
+            finally
+            {
+                // Only dispose if we still own it (not transferred to output)
+                if (isHeap && heapMemory != null)
+                {
+                    heapHandle.Dispose();
+                    heapMemory.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Try to write a single scan record as RESP directly into a buffer via pointer arithmetic.
+        /// Returns false if there isn't enough space.
+        /// </summary>
+        private static bool TryWriteRecordResp(ScanReturnField returnField,
+            ReadOnlySpan<byte> keySpan, ReadOnlySpan<byte> valueSpan,
+            ref byte* curr, byte* end)
+        {
+            if (returnField == ScanReturnField.KeyAndValue)
+            {
+                if (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
+                    return false;
+                if (!RespWriteUtils.TryWriteBulkString(keySpan, ref curr, end))
+                    return false;
+                if (!RespWriteUtils.TryWriteBulkString(valueSpan, ref curr, end))
+                    return false;
+            }
+            else if (returnField == ScanReturnField.Key)
+            {
+                if (!RespWriteUtils.TryWriteBulkString(keySpan, ref curr, end))
+                    return false;
+            }
+            else
+            {
+                if (!RespWriteUtils.TryWriteBulkString(valueSpan, ref curr, end))
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Backfill the RESP array header (*count\r\n) at the start of the buffer,
+        /// compacting the gap between the reserved header space and the actual header size.
+        /// </summary>
+        private static void BackfillArrayHeader(byte* bufStart, byte* curr, int maxHeaderSize, int recCount,
+            ref StringOutput output, out int recordCount)
+        {
+            var countDigits = NumUtils.CountDigits(recCount);
+            var actualHeaderSize = 1 + countDigits + 2; // *N\r\n
+            var headerGap = maxHeaderSize - actualHeaderSize;
+
+            var headerStart = bufStart + headerGap;
+            var tmp = headerStart;
+            *tmp++ = (byte)'*';
+            NumUtils.WriteInt32(recCount, countDigits, ref tmp);
+            *tmp++ = (byte)'\r';
+            *tmp++ = (byte)'\n';
+
+            var recordBytes = (int)(curr - (bufStart + maxHeaderSize));
+            if (headerGap > 0)
+            {
+                Buffer.MemoryCopy(headerStart, bufStart, actualHeaderSize, actualHeaderSize);
+                Buffer.MemoryCopy(bufStart + maxHeaderSize, bufStart + actualHeaderSize, recordBytes, recordBytes);
+            }
+            output.SpanByteAndMemory.Length = actualHeaderSize + recordBytes;
+            recordCount = recCount;
         }
 
         /// <summary>

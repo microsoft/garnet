@@ -1219,14 +1219,15 @@ namespace Garnet.server
 
         /// <summary>
         /// RI.GET – read a field from a RangeIndex.
+        /// Writes the value as a RESP bulk string directly into <paramref name="output"/>.
         /// </summary>
         /// <param name="key">Key of the RangeIndex.</param>
         /// <param name="field">Entry key within the BfTree.</param>
-        /// <param name="value">The value bytes if found, null otherwise.</param>
+        /// <param name="output">Output buffer (typically pointing at the network buffer).</param>
         /// <param name="result">Result code of the operation.</param>
         /// <returns>Garnet status.</returns>
         GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
-            out byte[] value, out RangeIndexResult result);
+            ref StringOutput output, out RangeIndexResult result);
 
         /// <summary>
         /// RI.DEL – delete a field from a RangeIndex.
@@ -1240,31 +1241,35 @@ namespace Garnet.server
 
         /// <summary>
         /// RI.SCAN – scan entries from a RangeIndex starting at a key.
+        /// Writes the complete RESP array response into <paramref name="output"/>.
         /// </summary>
         /// <param name="key">Key of the RangeIndex.</param>
         /// <param name="startKey">Key to start scanning from (inclusive).</param>
         /// <param name="count">Maximum number of records to return.</param>
         /// <param name="returnField">Which fields to return (Key, Value, or KeyAndValue).</param>
-        /// <param name="records">The list of scan records.</param>
+        /// <param name="output">Output buffer for the RESP-formatted response (points at network buffer).</param>
+        /// <param name="recordCount">Number of records scanned.</param>
         /// <param name="result">Result code of the operation.</param>
         /// <returns>Garnet status.</returns>
         GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey, int count,
-            BfTreeInterop.ScanReturnField returnField, out List<BfTreeInterop.ScanRecord> records,
-            out RangeIndexResult result);
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result);
 
         /// <summary>
         /// RI.RANGE – scan entries in [start, end] range from a RangeIndex.
+        /// Writes the complete RESP array response into <paramref name="output"/>.
         /// </summary>
         /// <param name="key">Key of the RangeIndex.</param>
         /// <param name="startKey">Start key (inclusive).</param>
         /// <param name="endKey">End key (inclusive).</param>
         /// <param name="returnField">Which fields to return (Key, Value, or KeyAndValue).</param>
-        /// <param name="records">The list of scan records.</param>
+        /// <param name="output">Output buffer for the RESP-formatted response (points at network buffer).</param>
+        /// <param name="recordCount">Number of records scanned.</param>
         /// <param name="result">Result code of the operation.</param>
         /// <returns>Garnet status.</returns>
         GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
-            BfTreeInterop.ScanReturnField returnField, out List<BfTreeInterop.ScanRecord> records,
-            out RangeIndexResult result);
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result);
 
         #endregion
     }

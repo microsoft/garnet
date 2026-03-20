@@ -384,8 +384,8 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
-            out byte[] value, out RangeIndexResult result)
-            => storageSession.RangeIndexGet(key, field, out value, out result);
+            ref StringOutput output, out RangeIndexResult result)
+            => storageSession.RangeIndexGet(key, field, ref output, out result);
 
         /// <inheritdoc />
         public GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
@@ -394,15 +394,15 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey, int count,
-            BfTreeInterop.ScanReturnField returnField, out List<BfTreeInterop.ScanRecord> records,
-            out RangeIndexResult result)
-            => storageSession.RangeIndexScan(key, startKey, count, returnField, out records, out result);
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
+            => storageSession.RangeIndexScan(key, startKey, count, returnField, ref output, out recordCount, out result);
 
         /// <inheritdoc />
         public GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
-            BfTreeInterop.ScanReturnField returnField, out List<BfTreeInterop.ScanRecord> records,
-            out RangeIndexResult result)
-            => storageSession.RangeIndexRange(key, startKey, endKey, returnField, out records, out result);
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
+            => storageSession.RangeIndexRange(key, startKey, endKey, returnField, ref output, out recordCount, out result);
         #endregion
     }
 }
