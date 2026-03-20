@@ -42,6 +42,15 @@ namespace Garnet.common
             }
 
             ExceptionInjectionTypes[(int)exceptionType] = true;
+
+            TaskCompletionSource<bool> release;
+
+            lock (@lock)
+            {
+                release = update;
+                update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            _ = release.TrySetResult(true);
         }
 
         /// <summary>
@@ -49,7 +58,18 @@ namespace Garnet.common
         /// </summary>
         /// <param name="exceptionType"></param>
         [Conditional("DEBUG")]
-        public static void DisableException(ExceptionInjectionType exceptionType) => ExceptionInjectionTypes[(int)exceptionType] = false;
+        public static void DisableException(ExceptionInjectionType exceptionType)
+        {
+            ExceptionInjectionTypes[(int)exceptionType] = false;
+            TaskCompletionSource<bool> release;
+
+            lock (@lock)
+            {
+                release = update;
+                update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            _ = release.TrySetResult(true);
+        }
 
         /// <summary>
         /// Trigger exception scenario (NOTE: add this to the location where the exception should be emulated/triggered)
@@ -92,7 +112,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="exceptionType"></param>
         /// <returns></returns>
-        public static async Task WaitOnSet(ExceptionInjectionType exceptionType)
+        public static async Task ResetAndWaitAsync(ExceptionInjectionType exceptionType)
         {
             if (exceptionType == ExceptionInjectionType.None)
             {
