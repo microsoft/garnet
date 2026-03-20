@@ -36,17 +36,19 @@ namespace Garnet.server
                 return true;
 
             cmd = cmd.NormalizeForACLs();
-            if (!RespCommandsInfo.TryFastGetRespCommandInfo(cmd, out var commandInfo))
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo))
                 // This only happens if we failed to parse the json file
                 return false;
 
-            // The provided command is not a data command
+            // The provided command does not have key specs
             // so we can serve without any slot restrictions
-            if (commandInfo == null)
+            if (cmdInfo.KeySpecs == null || cmdInfo.KeySpecs.Length == 0)
                 return true;
 
-            csvi.keyNumOffset = -1;
-            storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
+            csvi.keySpecs = cmdInfo.KeySpecs;
+            // BITOP's operation argument (AND/OR/XOR/NOT) is consumed by the parser,
+            // so key indices need a -2 offset like subcommands
+            csvi.isSubCommand = cmdInfo.IsSubCommand || cmd == RespCommand.BITOP;
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
