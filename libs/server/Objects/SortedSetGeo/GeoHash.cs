@@ -239,8 +239,13 @@ namespace Garnet.server
 
                 for (var i = 0; i < chars.Length; i++)
                 {
-                    // Shift and mask the five most significant bits for index to the base-32 table.
-                    chars[i] = (char)base32Chars[(int)(hash >> (BitsOfPrecision - 5)) & 0x1F];
+                    // We have just 52 bits, but the API outputs an 11-character geohash (55 bits).
+                    // For compatibility with Redis, the last character is always '0' since the
+                    // remaining bits are not stored with sufficient precision to determine it.
+                    var idx = i < chars.Length - 1
+                        ? (int)(hash >> (BitsOfPrecision - 5)) & 0x1F
+                        : 0;
+                    chars[i] = (char)base32Chars[idx];
 
                     // Shift the encoded bits out.
                     hash <<= 5;
