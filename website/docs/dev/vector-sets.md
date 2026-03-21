@@ -415,6 +415,83 @@ Garnet calls into the following DiskANN functions:
   - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
   - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
 
+## Vector Filter Expressions (`VSIM ... FILTER`)
+
+`VSIM` supports `FILTER <expression>` for attribute-based post filtering.
+
+### Expression syntax
+
+- Arithmetic: `+`, `-`, `*`, `/`, `%`, `**`
+- Comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- Logical: `and`, `or`, `not` (also `&&`, `||`, `!`)
+- Containment: `in`
+- Grouping: parentheses `()`
+
+Field access uses dot notation (for example, `.year`, `.rating`, `.genre`).
+
+### Supported values
+
+- Numbers (integer and floating-point, e.g. `42`, `3.14`, `-5`)
+- Strings (double or single quoted, e.g. `"action"`, `'drama'`)
+- Booleans (`true` / `false`, evaluated as `1.0` / `0.0`)
+- Null (`null`, for equality checks like `.field != null`)
+- Tuple literals (for `in`, e.g. `.director in ["Spielberg", "Nolan"]`)
+- JSON arrays (for `in` when the right side is an attribute array field, e.g. `"classic" in .tags`)
+
+### Operator precedence (low to high)
+
+Precedence matches the internal `OpTable` and determines evaluation order:
+
+| Precedence | Operators | Description |
+|-----------|-----------|-------------|
+| 0 | `or`, `\|\|` | Logical OR |
+| 1 | `and`, `&&` | Logical AND |
+| 2 | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` | Comparison and containment |
+| 3 | `+`, `-` | Addition and subtraction |
+| 4 | `*`, `/`, `%` | Multiplication, division, modulo |
+| 5 | `**` | Power (right-associative) |
+| 6 | `not`, `!` | Logical NOT (unary) |
+
+### `in` operator
+
+The `in` operator supports three use cases:
+
+- **Tuple literal membership:** `.director in ["Spielberg", "Nolan", "Kubrick"]`
+- **JSON array membership:** `"classic" in .tags` (when `.tags` is a JSON array)
+- **String substring:** `"act" in .genre` (when `.genre` is a string, checks substring containment)
+
+### Limits
+
+Filter expressions are compiled and evaluated entirely on the thread stack (~9 KB) with zero heap allocation. This imposes fixed upper bounds:
+
+| Limit | Value | What it means | On overflow |
+|-------|-------|---------------|-------------|
+| Max tokens | 128 | Total number of operands + operators in the expression. A typical `.a > 1 and .b < 2` uses 7 tokens. 128 supports ~18 AND/OR clauses. | Compile error — filter returns no results |
+| Max tuple elements | 64 | Total elements across all `[...]` literals (e.g. `.x in [1,2,...,64]`) | Compile error |
+| Max runtime array elements | 64 | Total elements extracted from JSON array fields (for `in .tags`) across all candidates. Reset per candidate. | Array treated as null — `in` returns false |
+| Max unique selectors | 32 | Unique field names referenced (e.g. `.year`, `.rating`). 32 supports very complex filters. | Extra selectors silently ignored |
+| Max eval stack depth | 16 | Postfix evaluation stack depth. Typical expressions use 3–4. | Candidate excluded |
+| Max parenthesis nesting | 128 | Currently bounded by token buffer size | Compile error |
+
+### Notes
+
+- Keywords are case-sensitive lowercase (`and`, `or`, `not`, `in`, `true`, `false`, `null`)
+- Missing attributes cause the filter to return false for that candidate
+- Escaped strings are supported (e.g. `"hello\"world"`) and compared correctly
+- `VSIM` query source can be either `ELE <element-id>` or `VALUES <dimensions> <v1> ... <vN>`
+
+### Examples
+
+```text
+VSIM movies ELE dune FILTER '.year >= 1980 and .rating > 7'
+VSIM movies ELE dune FILTER '.genre == "action" && .rating > 8.0'
+VSIM movies ELE dune FILTER '"classic" in .tags'
+VSIM movies ELE dune FILTER '.director in ["Spielberg", "Nolan"]'
+VSIM movies ELE dune FILTER '(.year - 2000) ** 2 < 100 and .rating / 2 > 4'
+VSIM movies ELE dune FILTER '.year != null and .rating >= 4.0'
+VSIM movies VALUES 3 0.12 0.34 0.56 FILTER '.year >= 1980 and .rating > 7'
+```
+
 > [!IMPORTANT]
 > These p/invoke definitions are all a little rough and should be cleaned up.
 >
