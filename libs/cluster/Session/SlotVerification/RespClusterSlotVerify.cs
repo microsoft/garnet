@@ -94,13 +94,13 @@ namespace Garnet.cluster
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <returns></returns>
-        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
@@ -116,14 +116,15 @@ namespace Garnet.cluster
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn);
 
             return vres.state != SlotVerifiedState.OK;
         }

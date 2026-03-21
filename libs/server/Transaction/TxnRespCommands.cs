@@ -67,7 +67,7 @@ namespace Garnet.server
                     txnManager.GetSlotVerificationInput(recvBufferPtr, SessionAsking, out var clusterSlotVerificationInput);
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
-                        clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend))
+                        clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
                     {
                         logger?.LogWarning("Failed CheckClusterTxnKeys");
                         txnManager.Reset(false);

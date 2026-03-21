@@ -351,7 +351,7 @@ namespace Garnet.server
             {
                 readOnly = keyEntries.IsReadOnly,
                 sessionAsking = sessionAsking,
-                keySpecs = SimpleRespKeySpec.AllKeysKeySpecs
+                // We don't specify key specs here as slot verification will know to iterate over all keys in this context
             };
         }
 

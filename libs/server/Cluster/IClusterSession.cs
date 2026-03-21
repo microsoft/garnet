@@ -92,8 +92,9 @@ namespace Garnet.server
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false);
 
         /// <summary>
         /// Array slot verify with no response
@@ -102,8 +103,9 @@ namespace Garnet.server
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false);
 
         /// <summary>
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)

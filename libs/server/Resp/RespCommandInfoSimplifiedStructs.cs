@@ -188,19 +188,6 @@ namespace Garnet.server
         /// Key specification flags
         /// </summary>
         public KeySpecificationFlags Flags;
-
-        /// <summary>
-        /// Predefined key specs for finding consecutive keys without limit
-        /// (Used for key verification where a parse state is built containing all keys)
-        /// </summary>
-        public static readonly SimpleRespKeySpec[] AllKeysKeySpecs =
-        [
-            new()
-            {
-                BeginSearch = new SimpleRespKeySpecBeginSearch(index: 0),
-                FindKeys = new SimpleRespKeySpecFindKeys(keyStep: 1, lastKeyOrLimit: -1, isLimit: false)
-            }
-        ];
     }
 
     /// <summary>
