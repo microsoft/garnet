@@ -351,10 +351,7 @@ namespace Garnet.server
             {
                 readOnly = keyEntries.IsReadOnly,
                 sessionAsking = sessionAsking,
-                firstKey = 0,
-                lastKey = txnKeysParseState.Count,
-                step = 1,
-                keyNumOffset = -1,
+                keySpecs = SimpleRespKeySpec.AllKeysKeySpecs
             };
         }
 
