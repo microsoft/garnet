@@ -68,6 +68,8 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
+        internal readonly ScratchBufferAllocator txnScratchBufferAllocator;
+        internal SessionParseState txnKeysParseState;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -135,7 +137,8 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
+            txnScratchBufferAllocator = new ScratchBufferAllocator();
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
@@ -149,7 +152,10 @@ namespace Garnet.server
 
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)
-                keys = new PinnedSpanByte[initialKeyBufferSize];
+            {
+                txnKeysParseState.Initialize(initialKeyBufferSize);
+                txnKeysParseState.Count = 0;
+            }
 
             Reset(false);
         }
@@ -184,9 +190,13 @@ namespace Garnet.server
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
 
-            // Reset cluster variables used for slot verification
-            this.saveKeyRecvBufferPtr = null;
-            this.keyCount = 0;
+            // Reset cluster key parse state
+            if (clusterEnabled)
+            {
+                txnKeysParseState.Count = 0;
+                saveKeyRecvBufferPtr = null;
+                txnScratchBufferAllocator.Reset();
+            }
         }
 
         internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isReplaying = false)
@@ -256,7 +266,6 @@ namespace Garnet.server
                 // Reset scratch buffer for next txn invocation
                 scratchBufferAllocator.Reset();
             }
-
 
             return true;
         }
@@ -328,13 +337,22 @@ namespace Garnet.server
 
         internal string GetLockset() => keyEntries.GetLockset();
 
-        internal void GetKeysForValidation(byte* recvBufferPtr, out PinnedSpanByte[] keys, out int keyCount, out bool readOnly)
+        internal void GetSlotVerificationInput(byte* recvBufferPtr, byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
         {
-            UpdateRecvBufferPtr(recvBufferPtr);
+            // Copy keys if buffer changed since last queued command
+            if (recvBufferPtr != saveKeyRecvBufferPtr)
+            {
+                CopyExistingKeysToScratchBuffer();
+                saveKeyRecvBufferPtr = recvBufferPtr;
+            }
+
             watchContainer.SaveKeysToKeyList(this);
-            keys = this.keys;
-            keyCount = this.keyCount;
-            readOnly = keyEntries.IsReadOnly;
+            clusterSlotVerificationInput = new ClusterSlotVerificationInput
+            {
+                readOnly = keyEntries.IsReadOnly,
+                sessionAsking = sessionAsking,
+                // We don't specify key specs here as slot verification will know to iterate over all keys in this context
+            };
         }
 
         void BeginTransaction()

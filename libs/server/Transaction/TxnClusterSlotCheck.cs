@@ -1,51 +1,51 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     sealed unsafe partial class TransactionManager
     {
-        // Keys involved in the current transaction
-        PinnedSpanByte[] keys;
-        int keyCount;
-
-        internal byte* saveKeyRecvBufferPtr;
         readonly bool clusterEnabled;
+        internal byte* saveKeyRecvBufferPtr;
 
         /// <summary>
         /// Keep track of actual key accessed by command
         /// </summary>
-        /// <param name="argSlice"></param>
-        public void SaveKeyArgSlice(PinnedSpanByte argSlice)
+        /// <param name="keySlice"></param>
+        public void SaveKeyArgSlice(PinnedSpanByte keySlice)
         {
             // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
-            // Grow the buffer if needed
-            if (keyCount >= keys.Length)
+
+            var count = txnKeysParseState.Count;
+
+            // Double the parse state buffer capacity if needed, and copy existing parameters to the extended buffer
+            if (count >= txnKeysParseState.Capacity)
             {
-                var oldKeys = keys;
-                keys = new PinnedSpanByte[keys.Length * 2];
-                Array.Copy(oldKeys, keys, oldKeys.Length);
+                var oldParams = txnKeysParseState.Parameters;
+                txnKeysParseState.Initialize(count * 2);
+                txnKeysParseState.SetArguments(0, oldParams);
             }
 
-            keys[keyCount++] = argSlice;
+            txnKeysParseState.Count = count + 1;
+            txnKeysParseState.SetArgument(count, keySlice);
         }
 
         /// <summary>
-        /// Update argslice ptr if input buffer has been resized
+        /// Copy all existing keys into <see cref="txnScratchBufferAllocator"/> so they are independent of the old receive buffer.
+        /// Called when the receive buffer has been reallocated since keys were last stored.
         /// </summary>
-        /// <param name="recvBufferPtr"></param>
-        public unsafe void UpdateRecvBufferPtr(byte* recvBufferPtr)
+        public void CopyExistingKeysToScratchBuffer()
         {
-            // Execute method only if clusterEnabled
-            if (!clusterEnabled) return;
-            if (recvBufferPtr != saveKeyRecvBufferPtr)
+            Debug.Assert(clusterEnabled);
+
+            for (var i = 0; i < txnKeysParseState.Count; i++)
             {
-                for (int i = 0; i < keyCount; i++)
-                    keys[i].ptr = recvBufferPtr + (keys[i].ptr - saveKeyRecvBufferPtr);
+                ref var key = ref txnKeysParseState.GetArgSliceByRef(i);
+                key = txnScratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
             }
         }
     }

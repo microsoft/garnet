@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -12,16 +10,6 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        /// <summary>
-        /// This method is used to verify slot ownership for provided array of key argslices.
-        /// </summary>
-        /// <param name="keys">Array of key ArgSlice</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
-        /// <param name="count">Key count if different than keys array length</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
-
         /// <summary>
         /// Validate if this command can be served based on the current slot assignment
         /// </summary>

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
@@ -118,39 +117,17 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, int count)
-        {
-            var _end = count < 0 ? keys.Length : count;
-            var slot = HashSlotUtils.HashSlot(keys[0]);
-            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, slot);
-
-            for (var i = 1; i < _end; i++)
-            {
-                var _slot = HashSlotUtils.HashSlot(keys[i]);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, _slot);
-
-                // Check if slot changes between keys
-                if (_slot != slot)
-                    return new(SlotVerifiedState.CROSSSLOT, slot);
-
-                // Check if state of key changes
-                if (_verifyResult.state != verifyResult.state)
-                    return new(SlotVerifiedState.TRYAGAIN, slot);
-            }
-
-            return verifyResult;
-        }
-
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, bool isTxn)
         {
             // Find the first valid key and initialize slot/result
             var specIndex = 0;
-            (int firstIdx, int lastIdx, int step) searchArgs = default;
-            while (specIndex < csvi.keySpecs.Length &&
+            // If slot verification is called from transaction manager, parse state contains consecutive keys so we can skip key search
+            (int firstIdx, int lastIdx, int step) searchArgs = isTxn ? (0, parseState.Count - 1, 1) : default;
+            while (specIndex < csvi.keySpecs?.Length &&
                    !parseState.TryGetKeySearchArgsFromSimpleKeySpec(csvi.keySpecs[specIndex], csvi.isSubCommand, out searchArgs))
                 specIndex++;
 
-            if (specIndex == csvi.keySpecs.Length)
+            if (specIndex == csvi.keySpecs?.Length && !isTxn)
                 return default;
 
             ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
@@ -164,7 +141,7 @@ namespace Garnet.cluster
                 return verifyResult;
 
             // Verify keys from remaining specs
-            for (specIndex++; specIndex < csvi.keySpecs.Length; specIndex++)
+            for (specIndex++; specIndex < csvi.keySpecs?.Length; specIndex++)
             {
                 if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(csvi.keySpecs[specIndex], csvi.isSubCommand, out searchArgs))
                     continue;
