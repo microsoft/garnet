@@ -70,13 +70,13 @@ namespace Garnet.cluster
 
             try
             {
-                RespCommandsInfo commandInfo = null;
                 if (command.IsClusterSubCommand())
                 {
-                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo) && commandInfo.KeySpecifications != null)
+                    if (RespCommandsInfo.TryGetSimpleRespCommandInfo(command, out var cmdInfo) && cmdInfo.KeySpecs?.Length > 0)
                     {
-                        csvi.keyNumOffset = -1;
-                        clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
+                        csvi.keySpecs = cmdInfo.KeySpecs;
+                        csvi.isSubCommand = cmdInfo.IsSubCommand;
+                        csvi.readOnly = command.IsReadOnly();
                         if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
                             return;
                     }
@@ -96,7 +96,7 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var cmdName = commandInfo?.Name ?? RespCommandsInfo.GetRespCommandName(command);
+                    var cmdName = RespCommandsInfo.GetRespCommandName(command);
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName.ToLowerInvariant());
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
