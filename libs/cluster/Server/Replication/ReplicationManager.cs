@@ -596,6 +596,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
         /// <param name="tailAddress">Tail address snapshot.</param>
+        /// <seealso cref="T:Garnet.cluster.AofSyncDriver.AdvancePhysicalSublogTime"/>
         /// <returns></returns>
         public void SignalAdvanceTime(long sequenceNumber, AofAddress tailAddress)
         {
@@ -646,7 +647,7 @@ namespace Garnet.cluster
 
                     while (true)
                     {
-                        await signal.Task.WaitAsync(token).ConfigureAwait(false);
+                        _ = await signal.Task.WaitAsync(token).ConfigureAwait(false);
 
                         // Read the latest event and grab the next signal atomically
                         AdvanceTimeEvent result;

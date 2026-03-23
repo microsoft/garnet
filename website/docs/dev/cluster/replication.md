@@ -13,6 +13,7 @@ Replicas aim to be an exact copy of the primary by receiving and replaying indiv
 For this reason, the nodes excercising replication need to be setup with the AOF feature enabled.
 
 # Garnet Replication Attach/Sync Workflow
+
 Every node in the cluster starts as a primary node and it can be assigned to be a replica by using either CLUSTER REPLICATE or REPLICAOF commands.
 When this command is issued to a specific node, depending on how the node is configured (i.e. using diskless or disk-based replication), it will follow
 a synchronization workflow according to the following steps:
@@ -26,6 +27,7 @@ a synchronization workflow according to the following steps:
 The primary maintains one distinct AofSyncTask per replica, keeping track the pages it has send.
 
 ## Replication Options
+
 Users can configure Garnet replication by adjusting the AOF parameters in garnet options as well as a number of other options.
 The most important options are shown below:
 - EnableAOF: Enables AOF
@@ -72,6 +74,7 @@ At startup of the AOF sync task, we validate the AOF integrity unless the nodes 
 Integrity validation is required to ensure that the start address requested by the replica has not been truncated and the AOF sync task can start streaming the AOF records to the replica from.
 
 ## Diskless Attach/Sync Details
+
 Diskless synchronization works similar to the diskbased approach.
 Its major difference is that it does not require a disk checkpoint.
 It leverages the Streaming Checkpoint primitive to scan and transmit the kv pairs from the underlying Tsavorite store.
@@ -91,6 +94,7 @@ At completion the replica sets its version number to be equal the the version nu
 Finally, the primary executes the partial synchronization workflow which includes steps to validate the integrity of the AOF and the creation of the AOF sync tasks to start streaming the corresponding AOF records to each replica.
 
 # Sharded Append-Only-File Feature
+
 Garnet replication leverages the Append-Only-File (AOF) implementation to stream update operations to the corresponding replica.
 The Garnet's AOF implementation uses a single instance of TsavoriteLog to record update operations as they occur at the primary.
 Writing, streaming and replaying the AOF in order to support replication is single threaded operation
@@ -102,6 +106,7 @@ The read consistency protocol relies on virtual timestamps (i.e. sequence number
 These timestamps are used to ensure prefix consistency per Garnet session.
 
 ## Sharded AOF architecture
+
 Garnet can be configured to use the sharded AOF implementation by adjusting the following configuration parameters;
 1. AofPhysicalSublogCount:
     This parameter controls the number of TsavoriteLog instances used by the GarnetAppendOnlyFile implementation.
@@ -133,6 +138,7 @@ The starting offset is used to eliminate clock divergence between nodes and on r
 Note recovery can happen on startup or when a failover occurs where a replica takes over as primary making it so it needs to generate consistent sequence numbers for writes that is going to serve in the future.
 
 #### ReadConsistencyManager
+
 This `ReadConsistencyManager` class is instantiated when a node becomes a replica.
 It is used to track the key sequence numbers of the replayed records.
 This happens because replicas needs to ensure read prefix-consistency through tracking the maximum session sequence number seen across reads
@@ -168,6 +174,7 @@ Read prefix consistency is guaranteed for a given batch of reads because reading
 Across requests, the version of the `ReadConsistencyManager` may change with the database version change, so prefix read consistency follows the same rules as if a new database was recovered while a client was connected.
 
 ### GarnetLog
+
 The `GarnetLog` instance implements an API that offers the same functionality as `TsavoriteLog` extended to support operations across multiple instances (`ShardedLog`).
 The functionality that had to be extended to support multiple `TsavoriteLog` instances is as follows:
 1. Metadata Operations
@@ -195,11 +202,46 @@ The `ReplicationManager` manages the `AofSynDriverStore` containing all the `Aof
 The number of `AofSyncTask` instance spawned is equal to the number of physical sublogs configured on the corresponding Garnet instance.
 When a Garnet instance is configured with more than one physical sublog, a refresh tail task is also created.
 
-#### Refresh Sublog Tail
-This task is used to refresh the sublog tail by enqueuing a record with most recent sequence number to ensure that time moves forward for sublogs that have not received
-any enqueues.
-In fact, this task is making an effort to converge the tail sequence number for each physical sublog to ensure that the read protocol does not get stuck waiting falsely for
-future updates.
-For example, given the key-sequence number pairs (A,t1), (B,t2) where each one is mapped to a different physical log, if t1 < t2 and we first read B, then trying to read A
-will result in the read session waiting for A to reach a sequence number t3 > t2
-This could happen due to updating key A or another key, or should be forced by the refresh task which will create a record to indicate that time has moved forward.
+#### Advance Physical Sublog Time
+
+When using the sharded log feature, a background task is created for each replica connection to signal time advancement for the underlying physical sublogs. This is essential when a physical sublog receives no writes—a condition that is opaque to the replica side and indistinguishable from log-shipping or replay delays. Without this signal, readers may wait indefinitely for data to arrive, significantly increasing read tail latency.
+
+Consider this example: given key-sequence number pairs (A,t1) and (B,t2) mapped to different physical logs with t1 < t2, if we read B first and then attempt to read A, the read session will wait for A to reach sequence number t3 > t2.
+
+The advance time background task periodically checks for new writes and captures a tail snapshot containing all physical sublog tails, associating them with a sequence number. It then sends this information to the replica, which updates its replayed max sequence number at the ReadConsistencyManager.
+
+The replica maintains its own background consumer task to process incoming signals as they arrive. The replica waits until its background replay reaches at least the provided tail snapshot before updating the max sequence number for that sublog. Since sequence number updates are monotonic, they can be applied multiple times, allowing the consumer to converge eventually toward the snapshot tail.
+
+# Transaction Replay
+
+Garnet supports two distinct types of transactions, each with different behaviors and requirements:
+
+1. **MULTI-EXEC transactions** — These follow the standard RESP protocol and allow users to dynamically declare operations at runtime, accumulating them within a transaction and executing them atomically when the EXEC command is issued.
+
+2. **Custom transaction procedures** — These are server-side procedures defined programmatically at compile time and registered with the Garnet server, providing a more structured alternative for complex multi-key operations.
+
+## Replay Behavior During Replication
+
+The replay behavior differs between these two transaction types, particularly when replicating across multiple physical sublogs.
+
+**For MULTI-EXEC transactions:** The replica must gather and buffer all individual operations sequentially until it encounters the associated transaction commit marker before initiating the actual replay of all buffered operations.
+
+**For custom transaction procedures:** Replay can begin immediately upon encountering the custom transaction body record, which itself acts as the commit marker and contains the complete transaction definition.
+
+## Single-Log Replay
+
+When operating with a single AOF log, both transaction types employ the same fundamental replay mechanism: the replay process encounters the commit marker, acquires the necessary locks for all keys specified in the transaction, and then executes the associated operations in sequence. This approach is straightforward since all operations are naturally ordered within a single sequential log.
+
+## Multi-Log Replay
+
+When operating with multiple physical sublogs, both transaction types must perform an additional synchronization step to maintain strict isolation guarantees. This is necessary because the keys involved in a transaction may be distributed across multiple physical sublogs, and each sublog is replayed independently by its own background task. The core challenge is ensuring that all transaction operations complete across all involved sublogs before allowing subsequent operations to proceed.
+
+The replay behavior diverges at this point:
+
+- **MULTI-EXEC transactions** allow for parallel replay of the operations encountered across different physical sublogs.
+This method of parallel replay is subject to the constraint that the transaction cannot complete until all operations across all sublogs have finished to maintain isolation.
+
+- **Custom transaction procedures** replay is currently restricted by the fact that the body of the transaction is programmatically defined, disallowing parallel operation replay.
+Hence, only a single designated replay background task is used to execute the entire transaction body sequentially.
+The remaining participating replay tasks suspend their replay operation until the main replay tasks completes.
+

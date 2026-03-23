@@ -248,3 +248,21 @@ Hence every time a full sync is performed, the AOF is not automatically truncate
 This happens to ensure durability in the event of a failure which will not be possible if the AOF gets truncated without a persistent checkpoint.
 However, the store version gets incremented to ensure consistency across different instances that may be fully synced at different times.
 Users can still utilize SAVE/BGSAVE commands or --aof-size-limit to periodically take a checkpoint and safely truncates the AOF.
+
+# Parallel Replication
+
+Garnet supports a parallel replication feature, leveraging multiple tsavorite logs to improve write throughput at the primary and replay speed at the replica.
+This feature can be configured using the following configuration parameters
+
+| Parameter | Purpose | 
+|-----------|---------|
+| `AofPhysicalSublogCount` | Number of physical `TsavoriteLog` instances by GarnetLog. |
+| `AofReplayTaskCount` | Replay tasks per physical sublog at replica. |
+| `AofRefreshPhysicalSublogTailFrequencyMs` | Background task frequency for advancing time for idle sublogs. |
+
+By default Garnet is configured to operate without parallel replication when AOF is enabled with cluster mode.
+Parallel replication is enabled when `AofPhysicalSublogCount` > 1 or `AofReplayTaskCount` > 1.
+Using `AofPhysicalSublogCount` > 1 requires also adjusting the `AofRefreshPhysicalSublogTailFrequencyMs` value which is used to ensure time is advanced appropriately.
+For more information, check the [development instructions](../dev/cluster/replication).
+Note that switching to parallel replication from the legacy replication scheme supported by Garnet is not currently possible out of the box or vice versa.
+However, migration to the new replication scheme can be achieved easily by dumping the keys 
