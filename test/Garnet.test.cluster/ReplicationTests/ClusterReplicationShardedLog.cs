@@ -324,18 +324,18 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: useTLS);
 
             // Assign slot to source node
-            ClassicAssert.AreEqual("OK",context.clusterTestUtils.AddSlotsRange(sourceIndex, [(0, 16383)], context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddSlotsRange(sourceIndex, [(0, 16383)], context.logger));
 
             // Set config epoch
-            for(var i = 0; i < nodes_count; i++)
+            for (var i = 0; i < nodes_count; i++)
                 context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
 
             // Introduce nodes
-            for(var i = 1; i < nodes_count; i++)
+            for (var i = 1; i < nodes_count; i++)
                 context.clusterTestUtils.Meet(0, i, context.logger);
 
             // Wait for gossip to propagate
-            for(var i = 0; i < nodes_count; i++)
+            for (var i = 0; i < nodes_count; i++)
             {
                 for (var j = 0; j < nodes_count; j++)
                 {
