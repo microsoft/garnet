@@ -302,9 +302,23 @@ namespace Tsavorite.core
             get
             {
                 if (!IsPinnedValue)
-                    ThrowTsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedKey");
-                (_ /*length*/, var dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-                return (byte*)dataAddress;
+                    ThrowTsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedValue");
+                return (byte*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress;
+            }
+        }
+
+        /// <summary>
+        /// Return the pinned value address and length, or throw if the value is not pinned
+        /// </summary>
+        public readonly (long address, int length) PinnedValueAddressAndLength
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                if (!IsPinnedValue)
+                    ThrowTsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedValue");
+                var (length, address) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                return (address, (int)length);
             }
         }
 
@@ -658,35 +672,35 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Tries to set the length of the value field, including shifting optionals as needed. Does NOT change the presence of optionals,
-        /// and only works on Inline values.
+        /// and only works on Inline values. Used for in-place updates and preceded by calling <see cref="PinnedValueAddressAndLength"/>
+        /// which is usually necessary to evaluate the current value data, e.g. for INCRBY.
         /// </summary>
+        /// <param name="newValueSize">The new size of the value.</param>
+        /// <param name="valueAddress">The address of the value, obtained from <see cref="PinnedValueAddressAndLength"/></param>
+        /// <param name="valueLength">The current length of the value; on input obtained from <see cref="PinnedValueAddressAndLength"/>; set on output to newValueSize</param>
+        /// <param name="zeroInit">If true, set any value space "exposed" by increasing <paramref name="valueLength"/></param>
         /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
-        public readonly bool TrySetInlineValueLength(in int newInlineValueSize, out long valueAddress, out int valueLength, bool zeroInit = false)
+        public readonly bool TrySetPinnedValueLength(in int newValueSize, long valueAddress, ref int valueLength, bool zeroInit = false)
         {
             if (!Info.ValueIsInline)
             {
-                Debug.Fail("TrySetInlineValueLength should only be called when Value is known to be inline, such as INCRBY");
-                valueAddress = valueLength = 0;
+                Debug.Fail($"{nameof(TrySetPinnedValueLength)} should only be called when Value is known to be inline, such as INCRBY");
                 return false;
             }
 
             // Get the number of bytes in existing key and value lengths.
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (_ /*keyLength*/, oldInlineValueSize) = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen);
+            _ = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen);
             var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
 
-            var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
+            var inlineValueGrowth = newValueSize - valueLength;
             if (oldFillerLen < inlineValueGrowth)
-            {
-                valueAddress = valueLength = 0;
                 return false;
-            }
 
             // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // optionalStartAddress will change if inline value size changes.
-            valueAddress = physicalAddress + recordLength - oldFillerLen - oldOptionalSize - oldInlineValueSize;
-            var optionalStartAddress = valueAddress + oldInlineValueSize;
+            var optionalStartAddress = valueAddress + valueLength;
 
             if (inlineValueGrowth != 0)
             {
@@ -696,12 +710,12 @@ namespace Tsavorite.core
 
                 // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
                 if (zeroInit && inlineValueGrowth > 0)
-                    new Span<byte>((byte*)(valueAddress + oldInlineValueSize), inlineValueGrowth).Clear();
+                    new Span<byte>((byte*)(valueAddress + valueLength), inlineValueGrowth).Clear();
 
                 // Update FillerLength. Note that we don't have a valueLength to update; it is a calculated value, which depends (in part) upon FillerLength.
                 dataHeader.SetFillerLength(ref InfoRef, recordLength, oldFillerLen - inlineValueGrowth);
             }
-            valueLength = oldInlineValueSize + inlineValueGrowth;
+            valueLength = valueLength + inlineValueGrowth;
             return true;
         }
 
