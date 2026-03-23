@@ -6,11 +6,11 @@ title: Replication Overview
 
 # Garnet Replication Overview
 
-Garnet cluster mode allows users to setup a replication stream by assingning certain nodes of the cluster to be replicas of a single primary.
+Garnet cluster mode allows users to setup a replication stream by assigning certain nodes of the cluster to be replicas of a single primary.
 The replicas are configured by default to serve only reads, redirecting any write request to their primary.
 Replicas server only a single primary but any primary can have multiple replicas.
 Replicas aim to be an exact copy of the primary by receiving and replaying individual operations through log shipping.
-For this reason, the nodes excercising replication need to be setup with the AOF feature enabled.
+For this reason, the nodes exercising replication need to be setup with the AOF feature enabled.
 
 # Garnet Replication Attach/Sync Workflow
 
@@ -21,7 +21,7 @@ a synchronization workflow according to the following steps:
 1. Replica initiates attach and sends its local latest checkpoint and AOF information to the primary
 2. The primary will decide if the a checkpoint needs to be shipped to the replica. For diskless replication, the primary will execute a streaming checkpoint only if the replica does not have enough data to partially synchronize using its local AOF.
 3. The primary signals to the replica to recover from its latest checkpoint and replay its local AOF.
-4. After recovery the replica, signals back to the primary to let it know that it is ready to start receiving the AOF pages not contained in the checkpoit that it recovered from.
+4. After recovery the replica, signals back to the primary to let it know that it is ready to start receiving the AOF pages not contained in the checkpoint that it recovered from.
 5. A background AofSyncTask is spawned to start iterating from the address beyond the one that is covered from the replicas recovered checkpoint.
 
 The primary maintains one distinct AofSyncTask per replica, keeping track the pages it has send.

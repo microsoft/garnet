@@ -263,6 +263,11 @@ This feature can be configured using the following configuration parameters
 By default Garnet is configured to operate without parallel replication when AOF is enabled with cluster mode.
 Parallel replication is enabled when `AofPhysicalSublogCount` > 1 or `AofReplayTaskCount` > 1.
 Using `AofPhysicalSublogCount` > 1 requires also adjusting the `AofRefreshPhysicalSublogTailFrequencyMs` value which is used to ensure time is advanced appropriately.
-For more information, check the [development instructions](../dev/cluster/replication).
-Note that switching to parallel replication from the legacy replication scheme supported by Garnet is not currently possible out of the box or vice versa.
-However, migration to the new replication scheme can be achieved easily by dumping the keys 
+For more information, check the [development instructions](../dev/cluster/replication-dev).
+Note that an in-place upgrade or downgrade between legacy and parallel replication schemes is not currently supported.
+
+To migrate between replication schemes, you have two options:
+
+1. **Use the migration functionality** — Migrate keys and slots from an instance using the legacy replication scheme to an instance configured with parallel replication (or vice versa).
+
+2. **Dump and restore** — Export keys from the source instance and let your client application handle the migration to a target node configured with the desired replication scheme.
