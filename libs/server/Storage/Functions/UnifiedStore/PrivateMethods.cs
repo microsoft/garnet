@@ -43,6 +43,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    ref input,
                     epochAccessor,
                     out _);
             }
@@ -64,6 +65,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    ref input,
                     epochAccessor,
                     out _);
             }
@@ -97,6 +99,7 @@ namespace Garnet.server
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        ref input,
                         epochAccessor,
                         out _);
                 }
@@ -118,6 +121,7 @@ namespace Garnet.server
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        ref input,
                         epochAccessor,
                         out _);
                 }

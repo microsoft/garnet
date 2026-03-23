@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Text;
 using NUnit.Framework;
@@ -266,6 +267,104 @@ namespace Garnet.test.cluster
 
             // Validate database
             context.SimpleValidateDB(disableObjects: true, replicaNodeIndex);
+        }
+
+        [Test, Order(4)]
+        [Category("REPLICATION")]
+        public void ClusterParallelReplicationUpgrade([Values] bool upgradeFromSingleLog)
+        {
+            var nodes_count = 3;
+            var singleLogNodeIndex = 0;
+            var multiLogNodeIndex = 1;
+            var replicaIndex = 2;
+            var timeout = 60;
+            var sourceIndex = upgradeFromSingleLog ? singleLogNodeIndex : multiLogNodeIndex;
+            var targetIndex = upgradeFromSingleLog ? multiLogNodeIndex : singleLogNodeIndex;
+
+            context.nodes = new GarnetServer[nodes_count];
+            context.endpoints = TestUtils.GetShardEndPoints(nodes_count, IPAddress.Loopback, 7000);
+
+            context.clusterTestUtils = new ClusterTestUtils(
+                context.endpoints,
+                context: context,
+                textWriter: context.logTextWriter,
+                UseTLS: false,
+                authUsername: null,
+                authPassword: null,
+                certificates: null);
+
+            // Create nodes with single log
+            context.nodes[singleLogNodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(singleLogNodeIndex),
+                disableObjects: true,
+                enableAOF: true,
+                timeout: timeout,
+                sublogCount: 1);
+            context.nodes[singleLogNodeIndex].Start();
+
+            // Create nodes with multi-log
+            context.nodes[multiLogNodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(multiLogNodeIndex),
+                disableObjects: true,
+                enableAOF: true,
+                timeout: timeout,
+                sublogCount: TestSublogCount);
+            context.nodes[multiLogNodeIndex].Start();
+
+            // Create replica with single or multi-log configuration
+            context.nodes[replicaIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(replicaIndex),
+                disableObjects: true,
+                enableAOF: true,
+                timeout: timeout,
+                sublogCount: upgradeFromSingleLog ? TestSublogCount : 1);
+            context.nodes[replicaIndex].Start();
+
+            // Create connection
+            context.CreateConnection(useTLS: useTLS);
+
+            // Assign slot to source node
+            ClassicAssert.AreEqual("OK",context.clusterTestUtils.AddSlotsRange(sourceIndex, [(0, 16383)], context.logger));
+
+            // Set config epoch
+            for(var i = 0; i < nodes_count; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
+
+            // Introduce nodes
+            for(var i = 1; i < nodes_count; i++)
+                context.clusterTestUtils.Meet(0, i, context.logger);
+
+            // Wait for gossip to propagate
+            for(var i = 0; i < nodes_count; i++)
+            {
+                for (var j = 0; j < nodes_count; j++)
+                {
+                    if (i == j) continue;
+                    context.clusterTestUtils.WaitUntilNodeIsKnown(i, j, context.logger);
+                    context.clusterTestUtils.WaitUntilNodeIsKnown(j, i, context.logger);
+                }
+            }
+
+            // Add replica
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.ClusterReplicate(replicaIndex, targetIndex, logger: context.logger));
+
+            var keyLength = 16;
+            var kvpairCount = keyCount;
+            context.kvPairs = [];
+            context.kvPairsObj = [];
+
+            // Populate node
+            context.SimplePopulateDB(disableObjects: true, keyLength, kvpairCount, sourceIndex);
+
+            // Migrate slots
+            var sourcePort = context.clusterTestUtils.GetEndPoint(sourceIndex);
+            var targetPort = context.clusterTestUtils.GetEndPoint(targetIndex);
+            context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, [0, 16383], range: true, logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, context.logger);
+
+            // Validate migrated keys
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, targetIndex);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
     }
 
