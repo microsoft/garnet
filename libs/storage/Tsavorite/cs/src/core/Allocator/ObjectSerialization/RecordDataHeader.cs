@@ -354,8 +354,16 @@ namespace Tsavorite.core
             => recordInfo.HasFiller ? GetFillerLength(recordLength) : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetFillerLength(RecordInfo recordInfo)
-            => recordInfo.HasFiller ? GetFillerLength(GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes)) : 0;
+        internal readonly int GetFillerLength(RecordInfo recordInfo, out int recordLength)
+        {
+            if (recordInfo.HasFiller)
+            {
+                recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
+                return GetFillerLength(recordLength);
+            }
+            recordLength = 0;
+            return 0;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly int GetFillerLength(int recordLength)

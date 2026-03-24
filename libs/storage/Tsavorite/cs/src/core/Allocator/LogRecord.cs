@@ -36,11 +36,11 @@ namespace Tsavorite.core
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
         /// <summary>Invalid ETag, and also the pre-incremented value</summary>
-        public const int NoETag = 0;
+        public const long NoETag = 0;
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
         /// <summary>Invalid Expiration</summary>
-        public const int NoExpiration = 0;
+        public const long NoExpiration = 0;
         /// <summary>Number of bytes required to the object log position</summary>
         public const int ObjectLogPositionSize = sizeof(long);
         /// <summary>Number of bytes required to store the FillerLen</summary>
@@ -389,8 +389,6 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
-        internal readonly int GetFillerLength() => new RecordDataHeader((byte*)DataHeaderAddress).GetFillerLength(Info);
-
         internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
         {
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
@@ -689,33 +687,43 @@ namespace Tsavorite.core
                 return false;
             }
 
+            var inlineValueGrowth = newValueSize - valueLength;
+            if (inlineValueGrowth == 0)
+                return true;
+
             // Get the number of bytes in existing key and value lengths.
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen);
-            var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
-
-            var inlineValueGrowth = newValueSize - valueLength;
-            if (oldFillerLen < inlineValueGrowth)
-                return false;
-
-            // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
-            // optionalStartAddress will change if inline value size changes.
-            var optionalStartAddress = valueAddress + valueLength;
-
-            if (inlineValueGrowth != 0)
+            int oldFillerLen, recordLength;
+            if (Info.HasOptionalOrObjectFields)
             {
-                // Shift optionals if needed.
+                _ = dataHeader.GetKVLengths(Info, out recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out oldFillerLen);
+                if (oldFillerLen < inlineValueGrowth)
+                    return false;
+
+                // Shift optionals if needed. We include space for the ObjectLogPosition here even though it's the last field and not used until we
+                // serialize the record, because otherwise we may not have enough bytes to write the full FillerLength.
+                var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
+                var optionalStartAddress = valueAddress + valueLength;
                 if (oldOptionalSize != 0)
                     Buffer.MemoryCopy((void*)optionalStartAddress, (void*)(optionalStartAddress + inlineValueGrowth), oldOptionalSize, oldOptionalSize);
-
-                // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
-                if (zeroInit && inlineValueGrowth > 0)
-                    new Span<byte>((byte*)(valueAddress + valueLength), inlineValueGrowth).Clear();
-
-                // Update FillerLength. Note that we don't have a valueLength to update; it is a calculated value, which depends (in part) upon FillerLength.
-                dataHeader.SetFillerLength(ref InfoRef, recordLength, oldFillerLen - inlineValueGrowth);
             }
-            valueLength = valueLength + inlineValueGrowth;
+            else
+            {
+                oldFillerLen = dataHeader.GetFillerLength(Info, out recordLength);
+                if (oldFillerLen < inlineValueGrowth)
+                    return false;
+            }
+
+            // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
+            if (zeroInit && inlineValueGrowth > 0)
+                new Span<byte>((byte*)(valueAddress + valueLength), inlineValueGrowth).Clear();
+
+            // Update FillerLength. Note that we don't have a valueLength to update; it is a calculated value, which depends (in part) upon FillerLength.
+            dataHeader.SetFillerLength(ref InfoRef, recordLength, oldFillerLen - inlineValueGrowth);
+
+            // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
+            // So the only things that change are FillerLength and ValueLength.
+            valueLength += inlineValueGrowth;
             return true;
         }
 
