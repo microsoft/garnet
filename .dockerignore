@@ -4,6 +4,7 @@
 .git
 .vs
 .vscode
+DiskANN/target
 
 # Files
 .gitignore

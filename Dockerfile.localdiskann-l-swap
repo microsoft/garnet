@@ -1,0 +1,38 @@
+# Build only the Rust DiskANN library, then overlay on known-good approach-e C# image
+# This separates the Rust code changes from the C# code state
+
+# Stage 1: Build DiskANN native library from Rust source (release mode)
+FROM rust:1.86-bookworm AS diskann-build
+WORKDIR /diskann
+
+# Cache buster for Rust rebuild
+ARG CACHEBUST=1
+
+# Copy only the DiskANN Rust workspace
+COPY DiskANN/ .
+
+# Remove any pre-existing build artifacts from the host
+RUN rm -rf target
+
+# Swap dyn_index.rs with the decoupled beam/effort variant
+RUN cp diskann-garnet/src/dyn_index_decoupled.rs diskann-garnet/src/dyn_index.rs
+
+# Build diskann-garnet in release mode
+RUN cargo build --release -p diskann-garnet
+
+# Stage 2: Start from the known-good approach-e image and swap just the .so
+FROM garnet-approach-e:latest AS runtime
+
+# Switch to root to replace the library
+USER root
+
+# Overwrite the NuGet-provided native library with the locally-built one
+COPY --from=diskann-build /diskann/target/release/libdiskann_garnet.so /tmp/libdiskann_garnet.so
+RUN find /app -name 'libdiskann_garnet.so' -exec cp /tmp/libdiskann_garnet.so {} \; \
+    && rm /tmp/libdiskann_garnet.so \
+    && echo "Replaced libdiskann_garnet.so in approach-e image with decoupled beam/effort variant (BEAM_CAP=2000)"
+
+# Return to non-root user
+USER $APP_UID
+
+ENTRYPOINT ["/app/GarnetServer"]

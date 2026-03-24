@@ -316,6 +316,12 @@ namespace Garnet.server
                             newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                         }
 
+                        if (newlyAllocatedIndex == 0)
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            throw new InvalidOperationException($"DiskANN RecreateIndex returned null pointer (dims={dims}, quantType={quantType}, metric={distanceMetric})");
+                        }
+
                         input.parseState.EnsureCapacity(12);
 
                         // Save off for recreation
@@ -346,6 +352,12 @@ namespace Garnet.server
                         unsafe
                         {
                             newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                        }
+
+                        if (newlyAllocatedIndex == 0)
+                        {
+                            vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
+                            throw new InvalidOperationException($"DiskANN CreateIndex returned null pointer (dims={dims}, quantType={quantizer}, metric={distanceMetric})");
                         }
 
                         input.parseState.EnsureCapacity(12);

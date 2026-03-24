@@ -1,0 +1,9 @@
+# Take the working approach-e image and just swap the DiskANN library
+FROM garnet-approach-e AS base
+
+USER root
+COPY libdiskann_beam1k.so /app/libdiskann_garnet.so
+RUN chmod 644 /app/libdiskann_garnet.so && chown 1654:1654 /app/libdiskann_garnet.so
+USER 1654
+
+ENTRYPOINT ["/app/GarnetServer"]

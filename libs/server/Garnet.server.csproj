@@ -25,4 +25,19 @@
 	  <PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
+  <!-- Copy locally-built diskann_garnet native library over the NuGet-provided one.
+       Usage: dotnet build -c Release -p:UseLocalDiskANN=true
+       Requires: cargo build (or cargo build release) in DiskANN/diskann-garnet first.
+       DiskANNProfile: debug (default) or release, maps to Cargo profile. -->
+  <Target Name="CopyLocalDiskANN" AfterTargets="Build" Condition="'$(UseLocalDiskANN)' == 'true'">
+    <PropertyGroup>
+      <DiskANNProfile Condition="'$(DiskANNProfile)' == '' and '$(Configuration)' == 'Release'">release</DiskANNProfile>
+      <DiskANNProfile Condition="'$(DiskANNProfile)' == ''">debug</DiskANNProfile>
+      <LocalDiskANNDll>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)..\..\DiskANN\target\$(DiskANNProfile)\diskann_garnet.dll'))</LocalDiskANNDll>
+      <NativeOutputDir>$(OutputPath)runtimes\win-x64\native\</NativeOutputDir>
+    </PropertyGroup>
+    <Copy SourceFiles="$(LocalDiskANNDll)" DestinationFolder="$(NativeOutputDir)" SkipUnchangedFiles="true" />
+    <Message Importance="High" Text="Copied local diskann_garnet.dll ($(DiskANNProfile)) to $(NativeOutputDir)" />
+  </Target>
+
 </Project>

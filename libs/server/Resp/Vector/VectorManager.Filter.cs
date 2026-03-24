@@ -3,7 +3,9 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -214,6 +216,128 @@ namespace Garnet.server
                     output[count++] = (start, len);
             }
             return count;
+        }
+
+        // ── Inplace post-processing filter callback infrastructure ─────
+        //
+        // These types allow the Rust DiskANN post-processing pipeline to call
+        // back into C# for per-candidate filter evaluation, avoiding the need
+        // to over-fetch candidates and post-filter them.
+        //
+        // The compiled filter program and scratch buffers are stored in
+        // [ThreadStatic] fields before the FFI call. The callback runs on the
+        // same thread, so it reads the pre-compiled state directly — no need
+        // to marshal pointers through the FFI boundary.
+
+        /// <summary>
+        /// Thread-static state for the inplace post-processing filter callback.
+        /// Set before the FFI call into Rust, read by <see cref="PostFilterCandidateCallbackImpl"/>.
+        /// </summary>
+        [ThreadStatic]
+        internal static InplacePostFilterState t_postFilterState;
+
+        /// <summary>
+        /// Per-query filter state maintained on the C# side.
+        /// Populated before calling into Rust; the callback reads it from thread-static storage.
+        /// All Span/pointer fields reference pinned scratch-buffer memory that remains
+        /// valid for the duration of the FFI call.
+        /// </summary>
+        internal unsafe struct InplacePostFilterState
+        {
+            /// <summary>Base Garnet context (no term bits).</summary>
+            public ulong Context;
+
+            /// <summary>Compiled instruction count.</summary>
+            public int InstrCount;
+
+            /// <summary>Compile-time tuple pool count.</summary>
+            public int TupleCount;
+
+            /// <summary>Unique selector count.</summary>
+            public int SelectorCount;
+
+            // Pointers into scratch buffer (pinned for FFI duration):
+            public ExprToken* InstrBufPtr;
+            public ExprToken* TuplePoolBufPtr;
+            public ExprToken* RuntimePoolBufPtr;
+            public ExprToken* ExtractedFieldsPtr;
+            public ExprToken* StackBufPtr;
+            public (int Start, int Length)* SelectorRangesPtr;
+
+            /// <summary>Pointer to the filter expression bytes.</summary>
+            public byte* FilterBytesPtr;
+
+            /// <summary>Length of the filter expression bytes.</summary>
+            public int FilterBytesLen;
+        }
+
+        /// <summary>
+        /// Per-candidate filter callback invoked from Rust during DiskANN inplace post-processing.
+        /// Reads the candidate's external ID and attributes from Garnet storage, then evaluates
+        /// the compiled filter expression stored in <see cref="t_postFilterState"/>.
+        /// </summary>
+        /// <returns>1 if the candidate passes the filter, 0 otherwise.</returns>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static unsafe byte PostFilterCandidateCallbackImpl(ulong context, uint internalId)
+        {
+            ref var state = ref t_postFilterState;
+
+            // 1. Read external ID for this internal_id via ExtMap
+            Span<byte> iidKey = stackalloc byte[sizeof(uint)];
+            BinaryPrimitives.WriteUInt32LittleEndian(iidKey, internalId);
+
+            Span<byte> eidBuf = stackalloc byte[128];
+            var eidMem = SpanByteAndMemory.FromPinnedSpan(eidBuf);
+            try
+            {
+                if (!ReadSizeUnknown(state.Context | DiskANNService.ExternalIdMap, iidKey, ref eidMem))
+                    return 0; // can't find external ID → exclude
+
+                // 2. Read attributes by external ID
+                Span<byte> attrBuf = stackalloc byte[256];
+                var attrMem = SpanByteAndMemory.FromPinnedSpan(attrBuf);
+                try
+                {
+                    if (!ReadSizeUnknown(state.Context | DiskANNService.Attributes, eidMem.AsReadOnlySpan(), ref attrMem))
+                        return 0; // no attributes → exclude
+
+                    // 3. Rebuild ExprProgram from thread-static state pointers
+                    var instrSpan = new Span<ExprToken>(state.InstrBufPtr, state.InstrCount);
+                    var tuplePool = new Span<ExprToken>(state.TuplePoolBufPtr, state.TupleCount);
+                    var runtimePool = new Span<ExprToken>(state.RuntimePoolBufPtr, MaxRuntimePool);
+                    var extractedFields = new Span<ExprToken>(state.ExtractedFieldsPtr, Math.Max(state.SelectorCount, 1));
+                    var stackBuf = new Span<ExprToken>(state.StackBufPtr, StackCapacity);
+                    var selectorRanges = new Span<(int, int)>(state.SelectorRangesPtr, state.SelectorCount);
+                    var filterBytes = new ReadOnlySpan<byte>(state.FilterBytesPtr, state.FilterBytesLen);
+
+                    var program = new ExprProgram
+                    {
+                        Instructions = instrSpan,
+                        Length = state.InstrCount,
+                        TuplePool = tuplePool,
+                        TuplePoolLength = state.TupleCount,
+                        RuntimePool = runtimePool,
+                        RuntimePoolLength = 0,
+                    };
+
+                    program.ResetRuntimePool();
+
+                    AttributeExtractor.ExtractFields(attrMem.AsReadOnlySpan(), filterBytes, selectorRanges, extractedFields, ref program);
+
+                    var stack = new ExprStack(stackBuf);
+                    var pass = ExprRunner.Run(ref program, attrMem.AsReadOnlySpan(), filterBytes, selectorRanges, extractedFields, ref stack);
+
+                    return pass ? (byte)1 : (byte)0;
+                }
+                finally
+                {
+                    attrMem.Memory?.Dispose();
+                }
+            }
+            finally
+            {
+                eidMem.Memory?.Dispose();
+            }
         }
     }
 }

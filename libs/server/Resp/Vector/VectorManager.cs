@@ -477,7 +477,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal VectorManagerResult ValueSimilarity(
+        internal unsafe VectorManagerResult ValueSimilarity(
             ReadOnlySpan<byte> indexValue,
             VectorValueType valueType,
             ReadOnlySpan<byte> values,
@@ -505,120 +505,223 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            // When a filter is present, over-retrieve candidates from DiskANN so that
-            // post-filtering has enough results to fill the requested count.
-            //
-            // FILTER-EF controls both the graph exploration breadth and the output
-            // buffer size when a filter is active, allowing it to be tuned independently
-            // from EF (which is used for unfiltered searches).
-            var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
             var effectiveEF = !filter.IsEmpty
                 ? Math.Max(searchExplorationFactor, maxFilteringEffort)
                 : searchExplorationFactor;
 
-            // No point in asking for more data than the effort we'll put in
-            if (retrieveCount > effectiveEF)
-            {
-                retrieveCount = effectiveEF;
-            }
-
-            // Make sure enough space in distances for requested count
-            if (retrieveCount > outputDistances.Length)
-            {
-                if (!outputDistances.IsSpanByte)
-                {
-                    outputDistances.Memory.Dispose();
-                }
-
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
-            }
-
-            // Indicate requested # of matches
-            outputDistances.Length = retrieveCount * sizeof(float);
-
-            // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-            //
-            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
-            if (retrieveCount * MinimumSpacePerId > outputIds.Length)
-            {
-                if (!outputIds.IsSpanByte)
-                {
-                    outputIds.Memory.Dispose();
-                }
-
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
-            }
-
-            var found =
-                Service.SearchVector(
-                    context,
-                    indexPtr,
-                    valueType,
-                    values,
-                    delta,
-                    effectiveEF,
-                    filter,
-                    maxFilteringEffort,
-                    outputIds,
-                    outputDistances,
-                    out var continuation
-                );
-
-            if (found < 0)
-            {
-                logger?.LogWarning("Error indicating response from vector service {found}", found);
-                outputIdFormat = VectorIdFormat.Invalid;
-                return VectorManagerResult.BadParams;
-            }
-
-            if (includeAttributes || !filter.IsEmpty)
-            {
-                FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
-            }
-
-            // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                // Ensure bitmap is large enough for the over-retrieved result set
-                var requiredBitmapBytes = (found + 7) >> 3;
-                if (requiredBitmapBytes > filterBitmap.Length)
-                {
-                    if (!filterBitmap.IsSpanByte)
-                    {
-                        filterBitmap.Memory.Dispose();
-                    }
+                // ── Inplace post-processing filtered search path ─────────
+                // Compile the filter, set up callback state, and let Rust
+                // evaluate per-candidate via PostFilterCandidateCallbackImpl.
+                // Only passing candidates are written to the output buffer,
+                // so we size it for the desired count, not the overfetch.
 
-                    filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
+                // Size output buffers for desired result count
+                if (count * sizeof(float) > outputDistances.Length)
+                {
+                    if (!outputDistances.IsSpanByte)
+                        outputDistances.Memory.Dispose();
+                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
+                }
+                outputDistances.Length = count * sizeof(float);
+
+                if (count * MinimumSpacePerId > outputIds.Length)
+                {
+                    if (!outputIds.IsSpanByte)
+                        outputIds.Memory.Dispose();
+                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+                // Borrow scratch space for compiled filter program
+                var bufferSlice = ActiveThreadSession.scratchBufferBuilder.CreateArgSlice(
+                    TotalPoolTokens * ExprToken.Size + MaxSelectors * 2 * sizeof(int));
+                var span = MemoryMarshal.Cast<byte, ExprToken>(bufferSlice.Span);
+                var selectorBuf = MemoryMarshal.Cast<byte, (int Start, int Length)>(
+                    bufferSlice.Span.Slice(TotalPoolTokens * ExprToken.Size));
+
+                try
+                {
+                    span.Clear();
+
+                    var offset = 0;
+                    var instrBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var tuplePoolBuf = span.Slice(offset, MaxTuplePool); offset += MaxTuplePool;
+                    var tokensBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var opsStackBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var runtimePoolBuf = span.Slice(offset, MaxRuntimePool); offset += MaxRuntimePool;
+                    var extractedFields = span.Slice(offset, MaxSelectors); offset += MaxSelectors;
+                    var stackBuf = span.Slice(offset, StackCapacity);
+
+                    var instrCount = ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+                    if (instrCount < 0)
+                    {
+                        // Compile failed — return zero results
+                        outputDistances.Length = 0;
+                        filterBitmap.Length = 0;
+                        outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        return VectorManagerResult.OK;
+                    }
+
+                    var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);
+
+                    // Pin filter bytes and scratch buffer pointers, then populate thread-static state
+                    fixed (byte* filterPtr = filter)
+                    fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
+                    fixed ((int, int)* selPtr = selectorBuf)
+                    {
+                        t_postFilterState = new InplacePostFilterState
+                        {
+                            Context = context,
+                            InstrCount = instrCount,
+                            TupleCount = tupleCount,
+                            SelectorCount = selectorCount,
+                            InstrBufPtr = instrPtr,
+                            TuplePoolBufPtr = tuplePtr,
+                            RuntimePoolBufPtr = runtimePtr,
+                            ExtractedFieldsPtr = fieldsPtr,
+                            StackBufPtr = stackPtr,
+                            SelectorRangesPtr = selPtr,
+                            FilterBytesPtr = filterPtr,
+                            FilterBytesLen = filter.Length,
+                        };
+
+                        var callbackPtr = (nint)(delegate* unmanaged[Cdecl]<ulong, uint, byte>)&PostFilterCandidateCallbackImpl;
+
+                        var found = Service.SearchVectorFiltered(
+                            context,
+                            indexPtr,
+                            valueType,
+                            values,
+                            delta,
+                            effectiveEF,
+                            filter,
+                            maxFilteringEffort,
+                            outputIds,
+                            outputDistances,
+                            out var continuation,
+                            callbackPtr
+                        );
+
+                        if (found < 0)
+                        {
+                            logger?.LogWarning("Error indicating response from vector service {found}", found);
+                            outputIdFormat = VectorIdFormat.Invalid;
+                            return VectorManagerResult.BadParams;
+                        }
+
+                        if (includeAttributes)
+                        {
+                            FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+                        }
+
+                        if (continuation != 0)
+                        {
+                            throw new NotImplementedException();
+                        }
+
+                        outputDistances.Length = sizeof(float) * found;
+                        filterBitmap.Length = 0; // No bitmap needed — results are already filtered
+
+                        outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        if (quantType == VectorQuantType.XPreQ8)
+                        {
+                            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        }
+
+                        return VectorManagerResult.OK;
+                    }
+                }
+                finally
+                {
+                    ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(ref bufferSlice);
+                }
             }
-
-            if (continuation != 0)
+            else
             {
-                // TODO: paged results!
-                throw new NotImplementedException();
-            }
+                // ── Unfiltered search path (unchanged) ───────────────────
+                var retrieveCount = count;
 
-            outputDistances.Length = sizeof(float) * found;
+                // Make sure enough space in distances for requested count
+                if (retrieveCount > outputDistances.Length)
+                {
+                    if (!outputDistances.IsSpanByte)
+                    {
+                        outputDistances.Memory.Dispose();
+                    }
 
-            // Default assumption is length prefixed
-            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
+                }
 
-            if (quantType == VectorQuantType.XPreQ8)
-            {
-                // But in this special case, we force them to be 4-byte ids
-                //outputIdFormat = VectorIdFormat.FixedI32;
+                // Indicate requested # of matches
+                outputDistances.Length = retrieveCount * sizeof(float);
+
+                // If we're fairly sure the ids won't fit, go ahead and grab more memory now
+                //
+                // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+                if (retrieveCount * MinimumSpacePerId > outputIds.Length)
+                {
+                    if (!outputIds.IsSpanByte)
+                    {
+                        outputIds.Memory.Dispose();
+                    }
+
+                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
+                }
+
+                var found =
+                    Service.SearchVector(
+                        context,
+                        indexPtr,
+                        valueType,
+                        values,
+                        delta,
+                        effectiveEF,
+                        filter,
+                        maxFilteringEffort,
+                        outputIds,
+                        outputDistances,
+                        out var continuation
+                    );
+
+                if (found < 0)
+                {
+                    logger?.LogWarning("Error indicating response from vector service {found}", found);
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (includeAttributes)
+                {
+                    FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+                }
+
+                if (continuation != 0)
+                {
+                    // TODO: paged results!
+                    throw new NotImplementedException();
+                }
+
+                outputDistances.Length = sizeof(float) * found;
+
+                // Default assumption is length prefixed
                 outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-            }
 
-            return VectorManagerResult.OK;
+                if (quantType == VectorQuantType.XPreQ8)
+                {
+                    // But in this special case, we force them to be 4-byte ids
+                    //outputIdFormat = VectorIdFormat.FixedI32;
+                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                }
+
+                return VectorManagerResult.OK;
+            }
         }
 
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal VectorManagerResult ElementSimilarity(
+        internal unsafe VectorManagerResult ElementSimilarity(
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             int count,
@@ -638,108 +741,208 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
-            // When a filter is present, over-retrieve candidates from DiskANN
-            var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
             var effectiveEF = !filter.IsEmpty
                 ? Math.Max(searchExplorationFactor, maxFilteringEffort)
                 : searchExplorationFactor;
 
-            // No point in asking for more data than the effort we'll put in
-            if (retrieveCount > effectiveEF)
-            {
-                retrieveCount = effectiveEF;
-            }
-
-            // Make sure enough space in distances for requested count
-            if (retrieveCount * sizeof(float) > outputDistances.Length)
-            {
-                if (!outputDistances.IsSpanByte)
-                {
-                    outputDistances.Memory.Dispose();
-                }
-
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
-            }
-
-            // Indicate requested # of matches
-            outputDistances.Length = retrieveCount * sizeof(float);
-
-            // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-            //
-            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
-            if (retrieveCount * MinimumSpacePerId > outputIds.Length)
-            {
-                if (!outputIds.IsSpanByte)
-                {
-                    outputIds.Memory.Dispose();
-                }
-
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
-            }
-
-            var found =
-                Service.SearchElement(
-                    context,
-                    indexPtr,
-                    element,
-                    delta,
-                    effectiveEF,
-                    filter,
-                    maxFilteringEffort,
-                    outputIds,
-                    outputDistances,
-                    out var continuation
-                );
-
-            if (found < 0)
-            {
-                logger?.LogWarning("Error indicating response from vector service {found}", found);
-                outputIdFormat = VectorIdFormat.Invalid;
-                return VectorManagerResult.BadParams;
-            }
-
-            if (includeAttributes || !filter.IsEmpty)
-            {
-                FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
-            }
-
-            // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                // Ensure bitmap is large enough for the over-retrieved result set
-                var requiredBitmapBytes = (found + 7) >> 3;
-                if (requiredBitmapBytes > filterBitmap.Length)
+                // ── Inline-filtered search path ──────────────────────────
+                // Size output buffers for desired result count
+                if (count * sizeof(float) > outputDistances.Length)
                 {
-                    if (!filterBitmap.IsSpanByte)
-                    {
-                        filterBitmap.Memory.Dispose();
-                    }
+                    if (!outputDistances.IsSpanByte)
+                        outputDistances.Memory.Dispose();
+                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
+                }
+                outputDistances.Length = count * sizeof(float);
 
-                    filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
+                if (count * MinimumSpacePerId > outputIds.Length)
+                {
+                    if (!outputIds.IsSpanByte)
+                        outputIds.Memory.Dispose();
+                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
                 }
 
-                ApplyPostFilter(filter, found, outputAttributes.AsReadOnlySpan(), filterBitmap.AsSpan(), ActiveThreadSession.scratchBufferBuilder);
+                // Borrow scratch space for compiled filter program
+                var bufferSlice = ActiveThreadSession.scratchBufferBuilder.CreateArgSlice(
+                    TotalPoolTokens * ExprToken.Size + MaxSelectors * 2 * sizeof(int));
+                var span = MemoryMarshal.Cast<byte, ExprToken>(bufferSlice.Span);
+                var selectorBuf = MemoryMarshal.Cast<byte, (int Start, int Length)>(
+                    bufferSlice.Span.Slice(TotalPoolTokens * ExprToken.Size));
+
+                try
+                {
+                    span.Clear();
+
+                    var offset = 0;
+                    var instrBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var tuplePoolBuf = span.Slice(offset, MaxTuplePool); offset += MaxTuplePool;
+                    var tokensBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var opsStackBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var runtimePoolBuf = span.Slice(offset, MaxRuntimePool); offset += MaxRuntimePool;
+                    var extractedFields = span.Slice(offset, MaxSelectors); offset += MaxSelectors;
+                    var stackBuf = span.Slice(offset, StackCapacity);
+
+                    var instrCount = ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+                    if (instrCount < 0)
+                    {
+                        outputDistances.Length = 0;
+                        filterBitmap.Length = 0;
+                        outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        return VectorManagerResult.OK;
+                    }
+
+                    var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);
+
+                    fixed (byte* filterPtr = filter)
+                    fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
+                    fixed ((int, int)* selPtr = selectorBuf)
+                    {
+                        t_postFilterState = new InplacePostFilterState
+                        {
+                            Context = context,
+                            InstrCount = instrCount,
+                            TupleCount = tupleCount,
+                            SelectorCount = selectorCount,
+                            InstrBufPtr = instrPtr,
+                            TuplePoolBufPtr = tuplePtr,
+                            RuntimePoolBufPtr = runtimePtr,
+                            ExtractedFieldsPtr = fieldsPtr,
+                            StackBufPtr = stackPtr,
+                            SelectorRangesPtr = selPtr,
+                            FilterBytesPtr = filterPtr,
+                            FilterBytesLen = filter.Length,
+                        };
+
+                        var callbackPtr = (nint)(delegate* unmanaged[Cdecl]<ulong, uint, byte>)&PostFilterCandidateCallbackImpl;
+
+                        var found = Service.SearchElementFiltered(
+                            context,
+                            indexPtr,
+                            element,
+                            delta,
+                            effectiveEF,
+                            filter,
+                            maxFilteringEffort,
+                            outputIds,
+                            outputDistances,
+                            out var continuation,
+                            callbackPtr
+                        );
+
+                        if (found < 0)
+                        {
+                            logger?.LogWarning("Error indicating response from vector service {found}", found);
+                            outputIdFormat = VectorIdFormat.Invalid;
+                            return VectorManagerResult.BadParams;
+                        }
+
+                        if (includeAttributes)
+                        {
+                            FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+                        }
+
+                        if (continuation != 0)
+                        {
+                            throw new NotImplementedException();
+                        }
+
+                        outputDistances.Length = sizeof(float) * found;
+                        filterBitmap.Length = 0;
+
+                        outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        if (quantType == VectorQuantType.XPreQ8)
+                        {
+                            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        }
+
+                        return VectorManagerResult.OK;
+                    }
+                }
+                finally
+                {
+                    ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(ref bufferSlice);
+                }
             }
-
-            if (continuation != 0)
+            else
             {
-                // TODO: paged results!
-                throw new NotImplementedException();
-            }
+                // ── Unfiltered search path (unchanged) ───────────────────
+                var retrieveCount = count;
 
-            outputDistances.Length = sizeof(float) * found;
+                // Make sure enough space in distances for requested count
+                if (retrieveCount * sizeof(float) > outputDistances.Length)
+                {
+                    if (!outputDistances.IsSpanByte)
+                    {
+                        outputDistances.Memory.Dispose();
+                    }
 
-            // Default assumption is length prefixed
-            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * sizeof(float)), retrieveCount * sizeof(float));
+                }
 
-            if (quantType == VectorQuantType.XPreQ8)
-            {
-                // But in this special case, we force them to be 4-byte ids
-                //outputIdFormat = VectorIdFormat.FixedI32;
+                // Indicate requested # of matches
+                outputDistances.Length = retrieveCount * sizeof(float);
+
+                // If we're fairly sure the ids won't fit, go ahead and grab more memory now
+                //
+                // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+                if (retrieveCount * MinimumSpacePerId > outputIds.Length)
+                {
+                    if (!outputIds.IsSpanByte)
+                    {
+                        outputIds.Memory.Dispose();
+                    }
+
+                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(retrieveCount * MinimumSpacePerId), retrieveCount * MinimumSpacePerId);
+                }
+
+                var found =
+                    Service.SearchElement(
+                        context,
+                        indexPtr,
+                        element,
+                        delta,
+                        effectiveEF,
+                        filter,
+                        maxFilteringEffort,
+                        outputIds,
+                        outputDistances,
+                        out var continuation
+                    );
+
+                if (found < 0)
+                {
+                    logger?.LogWarning("Error indicating response from vector service {found}", found);
+                    outputIdFormat = VectorIdFormat.Invalid;
+                    return VectorManagerResult.BadParams;
+                }
+
+                if (includeAttributes)
+                {
+                    FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+                }
+
+                if (continuation != 0)
+                {
+                    // TODO: paged results!
+                    throw new NotImplementedException();
+                }
+
+                outputDistances.Length = sizeof(float) * found;
+
+                // Default assumption is length prefixed
                 outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-            }
 
-            return VectorManagerResult.OK;
+                if (quantType == VectorQuantType.XPreQ8)
+                {
+                    // But in this special case, we force them to be 4-byte ids
+                    //outputIdFormat = VectorIdFormat.FixedI32;
+                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                }
+
+                return VectorManagerResult.OK;
+            }
         }
 
         /// <summary>

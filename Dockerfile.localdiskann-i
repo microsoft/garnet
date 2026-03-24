@@ -1,0 +1,90 @@
+# Stage 1: Build DiskANN native library from Rust source (release mode)
+# Approach I: Small-page unlimited post-filter (L=200 per page)
+FROM rust:1.86-bookworm AS diskann-build
+WORKDIR /diskann
+
+# Copy only the DiskANN Rust workspace
+COPY DiskANN/ .
+
+# Remove any pre-existing build artifacts from the host
+RUN rm -rf target
+
+# Swap dyn_index.rs with the small-page variant
+RUN cp diskann-garnet/src/dyn_index_smallpage.rs diskann-garnet/src/dyn_index.rs
+
+# Build diskann-garnet in release mode
+RUN cargo build --release -p diskann-garnet
+
+# Stage 2: Build Garnet .NET application
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG TARGETARCH
+WORKDIR /src
+
+# Copy csproj and restore as distinct layers
+COPY libs/client/*.csproj libs/client/
+COPY libs/cluster/*.csproj libs/cluster/
+COPY libs/common/*.csproj libs/common/
+COPY libs/host/*.csproj libs/host/
+COPY libs/server/*.csproj libs/server/
+COPY libs/resources/*.csproj libs/resources/
+COPY libs/storage/Tsavorite/cs/src/core/*.csproj libs/storage/Tsavorite/cs/src/core/
+COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/
+COPY main/GarnetServer/*.csproj main/GarnetServer/
+COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
+COPY Directory.Build.props Directory.Build.props
+COPY Directory.Packages.props Directory.Packages.props
+COPY Version.props Version.props
+COPY .editorconfig .editorconfig
+
+RUN dotnet restore main/GarnetServer/GarnetServer.csproj -a $TARGETARCH
+
+# Copy everything else and publish app
+COPY Garnet.snk Garnet.snk
+COPY libs/ libs/
+COPY main/ main/
+COPY metrics/ metrics/
+COPY test/testcerts test/testcerts
+
+# Set protected mode to no for Docker images
+RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/defaults.conf
+
+WORKDIR /src/main/GarnetServer
+RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net10.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+
+# Delete xmldoc files
+RUN find /app -name '*.xml' -delete
+
+# Overwrite the NuGet-provided native library with the locally-built one
+COPY --from=diskann-build /diskann/target/release/libdiskann_garnet.so /tmp/libdiskann_garnet.so
+RUN find /app -name 'libdiskann_garnet.so' -exec cp /tmp/libdiskann_garnet.so {} \; \
+    && echo "Replaced NuGet libdiskann_garnet.so with locally-built release version (Approach I: Small-page unlimited L=200)"
+
+# Final stage/image
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       libaio1t64 \
+       liblua5.4-0 \
+    && ARCH="$(uname -m)" \
+    && case "$ARCH" in x86_64) MULTIARCH="x86_64-linux-gnu";; aarch64) MULTIARCH="aarch64-linux-gnu";; *) MULTIARCH="$ARCH-linux-gnu";; esac \
+    && ln -sf "/usr/lib/${MULTIARCH}/libaio.so.1t64" "/usr/lib/${MULTIARCH}/libaio.so.1" \
+    && DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* 2>/dev/null | head -n1 || true) \
+    && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/${MULTIARCH}/liblua5.4.so.0" "$DN_DIR/liblua54.so"; fi \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir /data /app \
+    && chown -R $APP_UID:$APP_UID /data /app
+
+VOLUME /data
+
+WORKDIR /app
+COPY --from=build --chown=$APP_UID:$APP_UID /app /app
+
+# Run container as a non-root user
+USER $APP_UID
+
+# For inter-container communication.
+EXPOSE 6379
+
+ENTRYPOINT ["/app/GarnetServer"]
