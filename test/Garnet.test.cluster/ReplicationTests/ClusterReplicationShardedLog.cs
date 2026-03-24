@@ -271,7 +271,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(4)]
         [Category("REPLICATION")]
-        public void ClusterParallelReplicationUpgrade([Values] bool upgradeFromSingleLog)
+        public void ClusterParallelReplicationUpgrade([Values] bool upgradeFromSingleLog, [Values] bool disableObjects)
         {
             var nodes_count = 3;
             var singleLogNodeIndex = 0;
@@ -296,7 +296,7 @@ namespace Garnet.test.cluster
             // Create nodes with single log
             context.nodes[singleLogNodeIndex] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(singleLogNodeIndex),
-                disableObjects: true,
+                disableObjects: disableObjects,
                 enableAOF: true,
                 timeout: timeout,
                 sublogCount: 1);
@@ -305,7 +305,7 @@ namespace Garnet.test.cluster
             // Create nodes with multi-log
             context.nodes[multiLogNodeIndex] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(multiLogNodeIndex),
-                disableObjects: true,
+                disableObjects: disableObjects,
                 enableAOF: true,
                 timeout: timeout,
                 sublogCount: TestSublogCount);
@@ -314,7 +314,7 @@ namespace Garnet.test.cluster
             // Create replica with single or multi-log configuration
             context.nodes[replicaIndex] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(replicaIndex),
-                disableObjects: true,
+                disableObjects: disableObjects,
                 enableAOF: true,
                 timeout: timeout,
                 sublogCount: upgradeFromSingleLog ? TestSublogCount : 1);
@@ -354,17 +354,18 @@ namespace Garnet.test.cluster
             context.kvPairsObj = [];
 
             // Populate node
-            context.SimplePopulateDB(disableObjects: true, keyLength, kvpairCount, sourceIndex);
+            context.SimplePopulateDB(disableObjects: disableObjects, keyLength, kvpairCount, sourceIndex);
 
             // Migrate slots
             var sourcePort = context.clusterTestUtils.GetEndPoint(sourceIndex);
             var targetPort = context.clusterTestUtils.GetEndPoint(targetIndex);
             context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, [0, 16383], range: true, logger: context.logger);
             context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(replicaIndex, context.clusterTestUtils.GetNodeIdFromNode(targetIndex, context.logger), [0, 16383], context.logger);
 
             // Validate migrated keys
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, targetIndex);
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+            context.SimpleValidateDB(disableObjects, targetIndex);
+            context.SimpleValidateDB(disableObjects, replicaIndex);
         }
     }
 

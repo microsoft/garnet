@@ -1902,6 +1902,37 @@ namespace Garnet.test.cluster
                 WaitForMigrationCleanup((IPEndPoint)endPoint, logger);
         }
 
+        public void WaitForSlotOwnership(int nodeIndex, string expectedOwnerId, List<int> ranges, ILogger logger = null)
+            => WaitForSlotOwnership(endpoints[nodeIndex].ToIPEndPoint(), expectedOwnerId, ranges, logger);
+
+        public void WaitForSlotOwnership(IPEndPoint endPoint, string expectedOwnerId, List<int> ranges, ILogger logger = null)
+        {
+            ClassicAssert.IsTrue((ranges.Count & 1) == 0, "Ranges should come in pairs!");
+            var server = redis.GetServer(endPoint);
+
+            while (true)
+            {
+            retry:
+                BackOff(cancellationToken: context.cts.Token, msg: "");
+                var config = server.ClusterNodes();
+                for (var i = 0; i < ranges.Count; i += 2)
+                {
+                    var from = ranges[i];
+                    var to = ranges[i + 1];
+                    for (var j = from; j <= to; j++)
+                    {
+                        var node = config.GetBySlot(j);
+                        var ownerId = node.NodeId;
+                        if (!ownerId.Equals(expectedOwnerId))
+                        {
+                            goto retry;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
         public static void Asking(ref LightClientRequest sourceNode)
         {
             var result = sourceNode.SendCommand($"ASKING");
