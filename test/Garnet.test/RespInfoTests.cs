@@ -76,6 +76,83 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("ALL")]
+        [TestCase("DEFAULT")]
+        [TestCase("EVERYTHING")]
+        public void InfoSectionOptionsTest(string option)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var infoResult = db.Execute("INFO", option).ToString();
+            ClassicAssert.IsNotNull(infoResult);
+            ClassicAssert.IsNotEmpty(infoResult);
+
+            // All options should include these core sections
+            ClassicAssert.IsTrue(infoResult.Contains("# Server"), $"INFO {option} should contain Server section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Memory"), $"INFO {option} should contain Memory section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Stats"), $"INFO {option} should contain Stats section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Clients"), $"INFO {option} should contain Clients section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Keyspace"), $"INFO {option} should contain Keyspace section");
+
+            // ALL excludes Modules section; DEFAULT and EVERYTHING include it
+            if (option == "ALL")
+            {
+                ClassicAssert.IsFalse(infoResult.Contains("# Modules"), "INFO ALL should not contain Modules section");
+            }
+            else
+            {
+                ClassicAssert.IsTrue(infoResult.Contains("# Modules"), $"INFO {option} should contain Modules section");
+            }
+
+            // All three options are based on DefaultInfo which excludes expensive sections
+            ClassicAssert.IsFalse(infoResult.Contains("MainStoreHashTableDistribution"), $"INFO {option} should not contain StoreHashTable section");
+            ClassicAssert.IsFalse(infoResult.Contains("MainStoreDeletedRecordRevivification"), $"INFO {option} should not contain StoreReviv section");
+        }
+
+        [Test]
+        public void InfoDefaultMatchesNoArgsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var infoNoArgs = db.Execute("INFO").ToString();
+            var infoDefault = db.Execute("INFO", "DEFAULT").ToString();
+
+            // Both should return the same set of section headers
+            var noArgsSections = GetSectionHeaders(infoNoArgs);
+            var defaultSections = GetSectionHeaders(infoDefault);
+
+            CollectionAssert.AreEquivalent(noArgsSections, defaultSections,
+                "INFO (no args) and INFO DEFAULT should return the same sections");
+        }
+
+        [Test]
+        public void InfoAllWithModulesEqualsEverythingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var infoEverything = db.Execute("INFO", "EVERYTHING").ToString();
+            var infoAllModules = db.Execute("INFO", "ALL", "MODULES").ToString();
+
+            var everythingSections = GetSectionHeaders(infoEverything);
+            var allModulesSections = GetSectionHeaders(infoAllModules);
+
+            CollectionAssert.AreEquivalent(everythingSections, allModulesSections,
+                "INFO EVERYTHING and INFO ALL MODULES should return the same sections");
+        }
+
+        private static List<string> GetSectionHeaders(string infoOutput)
+        {
+            return infoOutput.Split("\r\n")
+                .Where(line => line.StartsWith("# "))
+                .Select(line => line.TrimStart('#', ' '))
+                .OrderBy(s => s)
+                .ToList();
+        }
+
+        [Test]
         public async Task InfoHlogScanTest()
         {
             var metricsUpdateDelay = TimeSpan.FromSeconds(1.1);

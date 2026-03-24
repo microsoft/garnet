@@ -25,6 +25,16 @@ namespace Garnet.server
                 _ => true
             })];
 
+        /// <summary>
+        /// All info sections excluding module-generated ones.
+        /// </summary>
+        public static readonly HashSet<InfoMetricsType> AllInfoSet = [.. DefaultInfo.Where(e => e != InfoMetricsType.MODULES)];
+
+        /// <summary>
+        /// All info sections including module-generated ones.
+        /// </summary>
+        public static readonly HashSet<InfoMetricsType> EverythingInfoSet = [.. DefaultInfo];
+
         MetricsItem[] serverInfo = null;
         MetricsItem[] memoryInfo = null;
         MetricsItem[] clusterInfo = null;
