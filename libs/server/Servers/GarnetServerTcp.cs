@@ -29,6 +29,12 @@ namespace Garnet.server
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
 
+        // Accept loop backoff state for resource pressure errors
+        const int InitialAcceptBackoffMs = 100;
+        const int MaxAcceptBackoffMs = 5000;
+        int acceptBackoffMs = InitialAcceptBackoffMs;
+        Timer acceptRetryTimer;
+
         /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
         {
@@ -100,6 +106,7 @@ namespace Garnet.server
         {
             base.Dispose();
             listenSocket.Dispose();
+            acceptRetryTimer?.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
             networkPool?.Dispose();
@@ -127,6 +134,13 @@ namespace Garnet.server
             {
                 do
                 {
+                    /*
+                    Wwhen the while condition exits normally(AcceptAsync returned true), an
+                    accept is already pending on IOCP — the callback will fire on next connection.But when
+                    HandleNewConnection returns false, the break skips the while entirely — no AcceptAsync is issued,
+                    nothing is pending.
+                    Without ScheduleAcceptRetry calling AcceptAsync after a delay, the accept loop would be permanently dead.
+                    */
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
                 } while (!listenSocket.AcceptAsync(e));
@@ -135,13 +149,69 @@ namespace Garnet.server
             catch (ObjectDisposedException) { }
         }
 
+        private bool HandleAcceptError(SocketAsyncEventArgs e)
+        {
+            switch (e.SocketError)
+            {
+                // Tier 1 — Fatal: listen socket is dead, stop accepting
+                case SocketError.OperationAborted:
+                case SocketError.NotSocket:
+                case SocketError.Shutdown:
+                case SocketError.NotInitialized:
+                case SocketError.VersionNotSupported:
+                    logger?.LogCritical("Fatal accept error, stopping accept loop: {error}", e.SocketError);
+                    e.Dispose();
+                    return false;
+
+                // Tier 2 — Resource pressure: backoff before retrying
+                case SocketError.TooManyOpenSockets:
+                case SocketError.NoBufferSpaceAvailable:
+                case SocketError.NetworkDown:
+                case SocketError.SystemNotReady:
+                case SocketError.ProcessLimit:
+                    logger?.LogWarning("Accept backoff ({backoffMs}ms) due to resource pressure: {error}", acceptBackoffMs, e.SocketError);
+                    ScheduleAcceptRetry(e);
+                    return false;
+
+                // Tier 3 — Client-caused transient or irrelevant: log and continue
+                default:
+                    logger?.LogDebug("Transient accept error, continuing: {error}", e.SocketError);
+                    return true;
+            }
+        }
+
+        private void ScheduleAcceptRetry(SocketAsyncEventArgs e)
+        {
+            // Schedules the accept loop to resume after a backoff delay.
+            // Use a Timer so we don't block the IOCP thread pool thread.
+            acceptRetryTimer?.Dispose();
+            acceptRetryTimer = new Timer(_ =>
+            {
+                e.AcceptSocket = null;
+                try
+                {
+                    if (!listenSocket.AcceptAsync(e))
+                        AcceptEventArg_Completed(null, e);
+                }
+                catch (ObjectDisposedException) { }
+            }, null, acceptBackoffMs, Timeout.Infinite);
+
+            // Exponential backoff with cap
+            acceptBackoffMs = Math.Min(acceptBackoffMs * 2, MaxAcceptBackoffMs);
+        }
+
         private unsafe bool HandleNewConnection(SocketAsyncEventArgs e)
         {
             if (e.SocketError != SocketError.Success)
             {
-                e.Dispose();
-                return false;
+                // returning false here breaks the accept loop in AcceptEventArg_Completed.
+                // if the accept loop was broken due to backpressure/resource related errors
+                // a timer will reschedule kicking off the loop again.
+                return HandleAcceptError(e);
             }
+
+            // Reset backoff on successful accept
+            acceptBackoffMs = InitialAcceptBackoffMs;
 
             if (e.AcceptSocket.LocalEndPoint is not UnixDomainSocketEndPoint)
                 e.AcceptSocket.NoDelay = true;
