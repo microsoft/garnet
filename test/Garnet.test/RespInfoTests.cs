@@ -145,6 +145,9 @@ namespace Garnet.test
 
         private static List<string> GetSectionHeaders(string infoOutput)
         {
+            ClassicAssert.IsNotNull(infoOutput, "INFO output should not be null");
+            ClassicAssert.IsNotEmpty(infoOutput, "INFO output should not be empty");
+
             return infoOutput.Split("\r\n")
                 .Where(line => line.StartsWith("# "))
                 .Select(line => line.TrimStart('#', ' '))
