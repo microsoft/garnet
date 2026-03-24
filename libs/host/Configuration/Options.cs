@@ -785,7 +785,7 @@ namespace Garnet
             }
             if (hasRecordCounts)
             {
-                if (enableRevivification)
+                if (useRevivBinsPowerOf2)
                     throw new Exception("Revivification cannot specify both record counts and powerof2 bins.");
                 if (!hasRecordSizes)
                     throw new Exception("Revivification bin counts require bin sizes.");
