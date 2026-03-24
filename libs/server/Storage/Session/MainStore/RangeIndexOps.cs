@@ -394,18 +394,18 @@ namespace Garnet.server
 
         /// <summary>
         /// Scan BfTree and write the complete RESP array response directly into StringOutput.
-        /// Reserves space for the array header, writes records directly via pointer arithmetic,
-        /// then backfills the header. On overflow, grows the buffer in-place without restarting the scan.
+        /// Optimistically reserves 5 bytes for the array header (*NN\r\n, up to 99 results).
+        /// If the actual count exceeds the reservation, shifts data to accommodate.
+        /// On overflow from inline (network buffer), transitions to heap without restarting the scan.
         /// </summary>
         private void WriteScanToOutput(
             nint treePtr, ReadOnlySpan<byte> startKey, int count,
             ScanReturnField returnField, bool isScanWithCount,
             ReadOnlySpan<byte> endKey, ref StringOutput output, out int recordCount)
         {
-            // We need to write *count\r\n before records, but count isn't known until scan completes.
-            // Strategy: reserve max header space, write records, backfill header, compact.
-            // On overflow from inline (network buffer), transition to heap and continue without re-scanning.
-            const int MaxArrayHeaderSize = 13; // *2147483647\r\n (max int)
+            // Optimistically reserve for 2-digit count (*NN\r\n = 5 bytes).
+            // Most scans return < 100 results, so the shift is 0 bytes in the common case.
+            const int ReservedHeaderSize = 5; // *NN\r\n
 
             int recCount = 0;
             var rf = returnField;
@@ -423,7 +423,7 @@ namespace Garnet.server
             {
                 bufStart = output.SpanByteAndMemory.SpanByte.ToPointer();
                 bufEnd = bufStart + output.SpanByteAndMemory.Length;
-                curr = bufStart + MaxArrayHeaderSize;
+                curr = bufStart + ReservedHeaderSize;
             }
             else
             {
@@ -433,7 +433,7 @@ namespace Garnet.server
                 heapHandle = heapMemory.Memory.Pin();
                 bufStart = (byte*)heapHandle.Pointer;
                 bufEnd = bufStart + heapSize;
-                curr = bufStart + MaxArrayHeaderSize;
+                curr = bufStart + ReservedHeaderSize;
                 isHeap = true;
             }
 
@@ -482,18 +482,36 @@ namespace Garnet.server
                     BfTreeService.ScanWithEndKeyByPtrCallback(treePtr, startKey, endKey, returnField, callback);
 
                 // Backfill the array header
+                var actualHeaderSize = 1 + NumUtils.CountDigits(recCount) + 2;
+                var extraNeeded = actualHeaderSize - ReservedHeaderSize;
+
+                if (!isHeap && extraNeeded > 0 && curr + extraNeeded > bufEnd)
+                {
+                    // Need more header space than reserved but inline buffer is full — move to heap
+                    var writtenBytes = (int)(curr - bufStart);
+                    var newSize = writtenBytes + extraNeeded + 64;
+                    var newMemory = memoryPool.Rent(newSize);
+                    var newHandle = newMemory.Memory.Pin();
+                    var newStart = (byte*)newHandle.Pointer;
+                    new Span<byte>(bufStart, writtenBytes).CopyTo(new Span<byte>(newStart, writtenBytes));
+
+                    heapMemory = newMemory;
+                    heapHandle = newHandle;
+                    bufStart = newStart;
+                    curr = newStart + writtenBytes;
+                    isHeap = true;
+                }
+
                 if (!isHeap)
                 {
-                    // Fast path: data stayed in the inline network buffer
-                    BackfillArrayHeader(bufStart, curr, MaxArrayHeaderSize, recCount, ref output, out recordCount);
+                    BackfillArrayHeader(bufStart, curr, ReservedHeaderSize, recCount, ref output, out recordCount);
                 }
                 else
                 {
-                    // Heap path: set the Memory on the output
                     output.SpanByteAndMemory.ConvertToHeap();
                     output.SpanByteAndMemory.Memory = heapMemory;
-                    BackfillArrayHeader(bufStart, curr, MaxArrayHeaderSize, recCount, ref output, out recordCount);
-                    heapMemory = null; // Ownership transferred to output
+                    BackfillArrayHeader(bufStart, curr, ReservedHeaderSize, recCount, ref output, out recordCount);
+                    heapMemory = null;
                 }
             }
             finally
@@ -538,33 +556,58 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Backfill the RESP array header (*count\r\n) into the gap before the record bodies.
-        /// Compacts by shifting data to eliminate the gap.
+        /// Backfill the RESP array header (*count\r\n) into the reserved space before the record bodies.
+        /// Handles three cases:
+        /// - headerGap > 0: actual header smaller than reserved → shift left (common for ≤99 results)
+        /// - headerGap == 0: exact fit → no shift needed
+        /// - headerGap &lt; 0: actual header larger than reserved → shift records right
         /// </summary>
-        private static void BackfillArrayHeader(byte* bufStart, byte* curr, int maxHeaderSize, int recCount,
+        private static void BackfillArrayHeader(byte* bufStart, byte* curr, int reservedHeaderSize, int recCount,
             ref StringOutput output, out int recordCount)
         {
             var countDigits = NumUtils.CountDigits(recCount);
             var actualHeaderSize = 1 + countDigits + 2; // *N\r\n
-            var headerGap = maxHeaderSize - actualHeaderSize;
+            var headerGap = reservedHeaderSize - actualHeaderSize;
+            var recordBytes = (int)(curr - (bufStart + reservedHeaderSize));
 
-            // Write the header right before the record bodies
-            var headerStart = bufStart + headerGap;
-            var tmp = headerStart;
-            *tmp++ = (byte)'*';
-            NumUtils.WriteInt32(recCount, countDigits, ref tmp);
-            *tmp++ = (byte)'\r';
-            *tmp++ = (byte)'\n';
-
-            var recordBytes = (int)(curr - (bufStart + maxHeaderSize));
-            var totalLen = actualHeaderSize + recordBytes;
-
-            // Shift header + records to the start of the buffer to keep contiguous output
-            if (headerGap > 0)
+            if (headerGap >= 0)
             {
-                Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
+                // Actual header fits in reserved space (or exact fit). Write header, shift left if needed.
+                var headerStart = bufStart + headerGap;
+                var tmp = headerStart;
+                *tmp++ = (byte)'*';
+                NumUtils.WriteInt32(recCount, countDigits, ref tmp);
+                *tmp++ = (byte)'\r';
+                *tmp++ = (byte)'\n';
+
+                var totalLen = actualHeaderSize + recordBytes;
+                if (headerGap > 0)
+                    Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
+
+                output.SpanByteAndMemory.Length = totalLen;
             }
-            output.SpanByteAndMemory.Length = totalLen;
+            else
+            {
+                // Actual header is larger than reserved (e.g., >99 results with 2-digit reservation).
+                // Shift records right to make room, then write header at the start.
+                var extraNeeded = -headerGap;
+                var totalLen = actualHeaderSize + recordBytes;
+
+                // Shift records right by extraNeeded bytes (overlapping memmove)
+                var recordSrc = bufStart + reservedHeaderSize;
+                var recordDst = bufStart + actualHeaderSize;
+                Buffer.MemoryCopy(recordSrc, recordDst, recordBytes, recordBytes);
+
+                // Write header at the start
+                var tmp = bufStart;
+                *tmp++ = (byte)'*';
+                NumUtils.WriteInt32(recCount, countDigits, ref tmp);
+                *tmp++ = (byte)'\r';
+                *tmp++ = (byte)'\n';
+
+                output.SpanByteAndMemory.Length = totalLen;
+            }
+
             recordCount = recCount;
         }
 
