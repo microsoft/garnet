@@ -80,4 +80,20 @@ global using UnifiedTransactionalContext = Tsavorite.core.TransactionalContext<
     Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Tsavorite.core.DefaultRecordDisposer>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 
+global using VectorBasicContext = Tsavorite.core.BasicContext<
+    Garnet.common.VectorElementKey,
+    Garnet.server.VectorInput,
+    Garnet.server.VectorOutput,
+    long, Garnet.server.VectorSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
+global using VectorTransactionalContext = Tsavorite.core.TransactionalContext<
+    Garnet.common.VectorElementKey,
+    Garnet.server.VectorInput,
+    Garnet.server.VectorOutput,
+    long, Garnet.server.VectorSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
 #endif

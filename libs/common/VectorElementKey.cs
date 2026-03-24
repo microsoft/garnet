@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 #if !NET9_0_OR_GREATER
 using System.Runtime.InteropServices;
@@ -12,21 +13,25 @@ using Tsavorite.core;
 namespace Garnet.common
 {
     /// <summary>
-    /// Key type which wraps a <see cref="ReadOnlySpan{Byte}"/>.
+    /// Key type for Vector Set element data - anything that's hidden in a namespace.
     /// 
-    /// In addition to the span being pinned during, it must also be "fixed" - that is unmoving and not-reused over the whole lifetime of a Tsavorite operation.
-    /// This is inclusive of asynchronous completions.
+    /// Has same constraints as <see cref="FixedSpanByteKey"/> - must be pinned and "fixed" for duration of operation.
+    /// 
+    /// Always has a namespace.
     /// </summary>
     public readonly
 #if NET9_0_OR_GREATER
         ref
 #endif
-        struct FixedSpanByteKey : IKey
+        struct VectorElementKey : IKey
     {
 #if !NET9_0_OR_GREATER
         private readonly unsafe void* ptr;
         private readonly int len;
 #endif
+
+        // TODO: When variable length namespaces are supported, this will need to change
+        private readonly byte namespaceByte;
 
         /// <inheritdoc/>
         public readonly bool IsPinned
@@ -62,21 +67,31 @@ namespace Garnet.common
         /// <inheritdoc/>
         public readonly bool HasNamespace
         {
-            get => false;
+            get => true;
         }
 
         /// <inheritdoc/>
+        [UnscopedRef]
         public readonly ReadOnlySpan<byte> NamespaceBytes
         {
             get
             {
                 Debug.Fail("Should never be called on FixedSpanByteKey");
-                return [];
+                return new(in namespaceByte);
             }
         }
 
-        private FixedSpanByteKey(ReadOnlySpan<byte> key)
+        /// <summary>
+        /// Construct a new <see cref="VectorElementKey"/>.
+        /// 
+        /// Note that <paramref name="namespaceByte"/> cannot be 0.
+        /// </summary>
+        public VectorElementKey(byte namespaceByte, ReadOnlySpan<byte> key)
         {
+            Debug.Assert(namespaceByte != 0, "Namespace must be non-zero");
+
+            this.namespaceByte = namespaceByte;
+
 #if NET9_0_OR_GREATER
             KeyBytes = key;
 #else
@@ -89,20 +104,6 @@ namespace Garnet.common
         }
 
         /// <inheritdoc/>
-        public override readonly string ToString() => SpanByte.ToShortString(KeyBytes);
-
-        /// <summary>
-        /// Convert a pinned and "fixed" (data will be unchanged and unmoving until after any async ops complete) <see cref="ReadOnlySpan{Byte}"/> to a <see cref="FixedSpanByteKey"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static explicit operator FixedSpanByteKey(ReadOnlySpan<byte> key)
-        => new(key);
-
-        /// <summary>
-        /// Convert a pinned and "fixed" (data will be unchanged and unmoving until after any async ops complete) <see cref="PinnedSpanByte"/> to a <see cref="FixedSpanByteKey"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static explicit operator FixedSpanByteKey(PinnedSpanByte key)
-        => new(key.ReadOnlySpan);
+        public override readonly string ToString() => $"ns: {namespaceByte}, {SpanByte.ToShortString(KeyBytes)}";
     }
 }

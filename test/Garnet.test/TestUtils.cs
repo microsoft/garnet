@@ -126,6 +126,9 @@ namespace Garnet.test
             }
         }
 
+        internal static bool IsRunningAsGitHubAction
+        => "true".Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), StringComparison.OrdinalIgnoreCase);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
         {
@@ -271,7 +274,9 @@ namespace Garnet.test
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
             bool useInChainRevivOnly = false,
-            bool useLogNullDevice = false
+            bool useLogNullDevice = false,
+            bool enableVectorSetPreview = true,
+            string aofMemorySize = "64m"
             )
         {
             if (useAzureStorage)
@@ -320,6 +325,7 @@ namespace Garnet.test
                 IndexMemorySize = indexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
@@ -354,6 +360,7 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
+                EnableVectorSetPreview = enableVectorSetPreview,
             };
 
             if (!string.IsNullOrEmpty(memorySize))
@@ -656,7 +663,8 @@ namespace Garnet.test
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            bool enableVectorSetPreview = true)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -778,6 +786,7 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                EnableVectorSetPreview = enableVectorSetPreview,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
             };
 

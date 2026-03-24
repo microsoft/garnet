@@ -80,6 +80,14 @@ namespace Garnet.server
         public SingleWriterMultiReaderLock CheckpointingLock;
 
         /// <summary>
+        /// Per-DB VectorManager
+        /// 
+        /// Contexts, metadata, and associated namespaces are DB-specific, and meaningless
+        /// outside of the container DB.
+        /// </summary>
+        public readonly VectorManager VectorManager;
+
+        /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
         internal StorageSession StoreCollectionDbStorageSession;
