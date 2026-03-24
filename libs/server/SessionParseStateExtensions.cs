@@ -1213,7 +1213,7 @@ namespace Garnet.server
         /// <param name="isSubCommand">True if command is a sub-command</param>
         /// <param name="searchArgs">First, last, and step arguments for key searching</param>
         /// <returns></returns>
-        internal static bool TryGetKeySearchArgsFromSimpleKeySpec(this ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, out (int firstIdx, int lastIdx, int step) searchArgs)
+        public static bool TryGetKeySearchArgsFromSimpleKeySpec(this ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, out (int firstIdx, int lastIdx, int step) searchArgs)
         {
             searchArgs = (-1, -1, -1);
 
