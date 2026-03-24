@@ -33,7 +33,7 @@ namespace Garnet.server
                     else if (sbSection.EqualsUpperCaseSpanIgnoringCase("DEFAULT"u8))
                         sections.UnionWith(GarnetInfoMetrics.DefaultInfo);
                     else if (sbSection.EqualsUpperCaseSpanIgnoringCase("EVERYTHING"u8))
-                        sections.UnionWith(GarnetInfoMetrics.EverythingInfoSet);
+                        sections.UnionWith(GarnetInfoMetrics.DefaultInfo);
                     else if (parseState.TryGetInfoMetricsType(i, out var sectionType))
                     {
                         sections.Add(sectionType);
