@@ -153,7 +153,7 @@ namespace Tsavorite.core
             get
             {
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                return (nameSpace & ExtendedNamespaceIndicatorBit) == 0 ? nameSpace : nameSpace & NamespaceIndicatorMask;
+                return (nameSpace & ExtendedNamespaceIndicatorBit) == 0 ? 0 : nameSpace & NamespaceIndicatorMask;
             }
         }
 
@@ -238,7 +238,7 @@ namespace Tsavorite.core
 
         #endregion
 
-        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long namespaceAddress, out long valueAddress)
+        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, out long keyAddress, out long namespaceAddress, out long valueAddress)
         {
             // Format of indicator byte is high->low: <2 bits reserved><2 bits encoded filler length><2 bits key length byte count - 1><2 bits record length byte count - 1>
             var keyLength = sizeInfo.InlineKeySize;
@@ -264,7 +264,7 @@ namespace Tsavorite.core
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
             *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (sizeInfo.FieldInfo.ExtendedNamespaceSize & NamespaceIndicatorMask)) : 0);
             namespaceAddress = (long)HeaderPtr + NamespaceOffsetInHeader;
-            *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
+            *(HeaderPtr + RecordTypeOffsetInHeader) = sizeInfo.FieldInfo.RecordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
             // If sizeInfo indicates the record is not inline, that won't have been reflected in RecordInfo yet and thus not in optionals, but we need to reserve the

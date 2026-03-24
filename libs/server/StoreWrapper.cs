@@ -345,6 +345,8 @@ namespace Garnet.server
                     ReplayAOF();
                 }
             }
+
+            databaseManager.RecoverVectorSets();
         }
 
         /// <summary>
@@ -800,6 +802,10 @@ namespace Garnet.server
             {
                 StartPrimaryTasks();
             }
+            else if (clusterProvider?.IsReplica() ?? false)
+            {
+                StartReplicaTasks();
+            }
 
             // Start generic node tasks
             StartGenericNodeTasks();
@@ -931,6 +937,18 @@ namespace Garnet.server
             if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
                 taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
+            }
+        }
+
+
+        /// <summary>
+        /// Start background maintenance tasks that should only be run when this node is a replica.
+        /// </summary>
+        public void StartReplicaTasks()
+        {
+            if (serverOptions.EnableVectorSetPreview)
+            {
+                _ = taskManager.RegisterAndRun(TaskType.VectorReplicationReplayTask, token => DefaultDatabase.VectorManager.StartReplicationTasksAsync(token));
             }
         }
 

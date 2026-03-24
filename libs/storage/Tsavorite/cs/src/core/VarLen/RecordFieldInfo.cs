@@ -40,8 +40,11 @@ namespace Tsavorite.core
         /// <summary>Whether the new record will have an Expiration.</summary>
         public bool HasExpiration;
 
+        /// <summary><see cref="RecordDataHeader.RecordType"/> for the record - defaults to 0.</summary>
+        public byte RecordType;
+
         /// <inheritdoc/>
         public override string ToString()
-            => $"KeySize {KeySize}, ValSize {ValueSize}, ValIsObj {ValueIsObject}, HasETag {HasETag}, HasExpir {HasExpiration}";
+            => $"KeySize {KeySize}, ValSize {ValueSize}, ValIsObj {ValueIsObject}, HasETag {HasETag}, HasExpir {HasExpiration}, RecType: {RecordType}";
     }
 }

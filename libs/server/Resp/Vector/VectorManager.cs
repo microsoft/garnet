@@ -45,6 +45,10 @@ namespace Garnet.server
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
 
+        // Byte stored on log records to distinguish the INDEX key as a Vector Set
+        // Element keys are tracked in separate namespaces and are not marked with a special RecordType
+        internal const byte RecordType = 1;
+
         /// <summary>
         /// Minimum size of an id is assumed to be at least 8 bytes + a length prefix.
         /// </summary>
@@ -140,7 +144,6 @@ namespace Garnet.server
                     contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
                 }
             }
-
         }
 
         /// <summary>
@@ -395,6 +398,12 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Used in deletion code to determine if a naive delete in the Tsavorite log can be performed on a record with RecordType == VectorSet.
+        /// </summary>
+        internal static bool CanDeleteIndex(ReadOnlySpan<byte> indexValue)
+        => !indexValue.ContainsAnyExcept((byte)0);
+
+        /// <summary>
         /// Deletion of a Vector Set needs special handling.
         /// 
         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
@@ -440,7 +449,7 @@ namespace Garnet.server
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
                 // Actually delete the value
-                var del = storageSession.stringBasicContext.Delete((FixedSpanByteKey)key);
+                var del = storageSession.unifiedBasicContext.Delete((FixedSpanByteKey)key);
                 if (!del.IsCompletedSuccessfully)
                 {
                     throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
@@ -746,7 +755,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element, ref outputAttributes);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
@@ -806,7 +815,7 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
+                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, id, ref attributeMem);
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
                     var neededSpace = 4 + (found ? attributeMem.Length : 0);
@@ -873,7 +882,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
                 {
                     return false;
                 }
@@ -889,7 +898,7 @@ namespace Garnet.server
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, internalId, ref asBytes))
                 {
                     return false;
                 }

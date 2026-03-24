@@ -104,7 +104,7 @@ namespace Garnet.server
         bool disposed = false;
 
         public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
-                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut)
+                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager)
             : this()
         {
             Id = id;
@@ -116,6 +116,7 @@ namespace Garnet.server
             AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
             StoreIndexMaxedOut = storeIndexMaxedOut;
+            VectorManager = vectorManager;
         }
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
@@ -152,6 +153,9 @@ namespace Garnet.server
             if (disposed)
                 return;
             disposed = true;
+
+            // Shutdown vector replays and cleanup operations
+            VectorManager?.Dispose();
 
             // Wait for checkpoints to complete and disable checkpointing
             while (!CheckpointingLock.TryWriteLock())

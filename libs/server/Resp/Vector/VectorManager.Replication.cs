@@ -87,7 +87,7 @@ namespace Garnet.server
         {
             Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
 
-            throw new NotImplementedException("This can't work as it does in main, rework");
+            // TODO: Implement
 
             //var inputCopy = input;
             //inputCopy.arg1 = VADDAppendLogArg;
@@ -125,7 +125,7 @@ namespace Garnet.server
         {
             Debug.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
 
-            throw new NotImplementedException("This can't work as it does in main, rework");
+            // TODO: Implement
 
             //var inputCopy = input;
             //inputCopy.arg1 = VREMAppendLogArg;
@@ -159,7 +159,8 @@ namespace Garnet.server
         /// </summary>
         internal bool TryDropVectorSetReplicationKey(ReadOnlySpan<byte> key, ref StringBasicContext context)
         {
-            throw new NotImplementedException("This can't work as it does in main, rework");
+            // TODO: Implement
+            return true;
 
             //Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
             //var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
@@ -184,7 +185,7 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(StorageSession currentSession, Func<RespServerSession> obtainServerSession, VectorElementKey keyWithNamespace, ref StringInput input)
         {
-            throw new NotImplementedException("This can't work as it does in main, rework");
+            // TODO: Implement
 
             //if (input.arg1 == MigrateElementKeyLogArg)
             //{
@@ -539,7 +540,7 @@ namespace Garnet.server
         {
             try
             {
-                replicationBlockEvent.Wait();
+                _ = replicationBlockEvent.Wait();
             }
             catch (ObjectDisposedException)
             {

@@ -27,11 +27,12 @@ namespace Garnet.server
         public readonly ILogger logger;
         public byte respProtocolVersion;
         public bool StoredProcMode;
+        public readonly VectorManager vectorManager;
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
-            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, ILogger logger,
+            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, VectorManager vectorManager, ILogger logger,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.appendOnlyFile = appendOnlyFile;
@@ -46,6 +47,7 @@ namespace Garnet.server
             this.etagState = new ETagState();
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;
+            this.vectorManager = vectorManager;
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)

@@ -631,6 +631,8 @@ namespace Garnet.server
         public nint CallbackContext { get; set; }
         public nint Callback { get; set; }
 
+        public bool AlignmentExpected { get; set; }
+
         public VectorInput()
         {
         }

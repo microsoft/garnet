@@ -76,7 +76,6 @@ namespace Garnet.common
         {
             get
             {
-                Debug.Fail("Should never be called on FixedSpanByteKey");
                 return new(in namespaceByte);
             }
         }

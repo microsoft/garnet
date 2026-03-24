@@ -32,6 +32,13 @@ namespace Garnet.server
 
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
+            if (logRecord.RecordType == VectorManager.RecordType && !VectorManager.CanDeleteIndex(logRecord.ValueSpan))
+            {
+                // Vector Set needs special handling
+                deleteInfo.Action = DeleteAction.CancelOperation;
+                return false;
+            }
+
             if (!logRecord.Info.ValueIsObject)
                 logRecord.ClearOptionals();
 

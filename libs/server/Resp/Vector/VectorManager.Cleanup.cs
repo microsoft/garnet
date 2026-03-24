@@ -199,17 +199,10 @@ namespace Garnet.server
                     remaining[^(sizeof(ulong) + sizeof(int) + curLen)..].Clear();
 
                     // Shrink record by removed chunk size
-
-                    // Old version
-                    //var newSize = inLogValue.TotalSize - (sizeof(ulong) + sizeof(int) + curLen);
-                    //rmwInfo.ClearExtraValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
-                    //inLogValue.ShrinkSerializedLength(inLogValue.TotalSize - newSize);
-                    //rmwInfo.SetUsedValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
-
-                    var newSize = recordInfo.ValueSpan.Length - (sizeof(ulong) + sizeof(int) + curLen);
                     var newSizeInfo = sizeInfo;
-                    newSizeInfo.FieldInfo.ValueSize = newSize;
-
+                    newSizeInfo.FieldInfo.ValueSize -= sizeof(ulong) + sizeof(int) + curLen;
+                    newSizeInfo.CalculateSizes(newSizeInfo.FieldInfo.KeySize, newSizeInfo.FieldInfo.ValueSize);
+                    
                     var shrinkRes = recordInfo.TrySetContentLengths(in newSizeInfo);
                     Debug.Assert(shrinkRes, "Should never fail to shrink");
 
@@ -235,16 +228,10 @@ namespace Garnet.server
                 remaining = remaining[(sizeof(ulong) + sizeof(int) + key.Length)..];
 
                 // Record used length
-
-                // Old version
-                //var newSize = inLogValue.TotalSize - remaining.Length;
-                //rmwInfo.ClearExtraValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
-                //inLogValue.ShrinkSerializedLength(newSize);
-                //rmwInfo.SetUsedValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
-
                 var newSize = recordInfo.ValueSpan.Length - remaining.Length;
                 var newSizeInfo = sizeInfo;
                 newSizeInfo.FieldInfo.ValueSize = newSize;
+                newSizeInfo.CalculateSizes(newSizeInfo.FieldInfo.KeySize, newSizeInfo.FieldInfo.ValueSize);
 
                 var growRes = recordInfo.TrySetContentLengths(in newSizeInfo);
                 Debug.Assert(growRes, "Should have reserved enough space for this to not fail");
@@ -307,7 +294,7 @@ namespace Garnet.server
                 {
                     // 1 is InProgressDeletes
                     // Note that ReadSizeUnknown will attach the namespace for us
-                    if (!ReadSizeUnknown(context: MetadataNamespace, [1], ref readValue))
+                    if (!ReadSizeUnknown(context: MetadataNamespace, forceAlignment: false, [1], ref readValue))
                     {
                         return ret;
                     }

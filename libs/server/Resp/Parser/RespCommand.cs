@@ -2278,6 +2278,10 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_MIGRATE;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.reserve))
+                {
+                    return RespCommand.CLUSTER_RESERVE;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.mtasks))
                 {
                     return RespCommand.CLUSTER_MTASKS;

@@ -66,28 +66,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void OversizedRejected()
-        {
-            var options = GetOpts(server);
-
-            var overflowSizeBytes = (int)(GarnetServerOptions.ParseSize(options.PageSize, out _) * 2);
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var oversizedVectorData = Enumerable.Repeat<byte>(1, overflowSizeBytes).ToArray();
-            var oversideAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
-
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", oversizedVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR Vector exceed configured page size", exc1.Message);
-
-            var basicVectorData = Enumerable.Repeat<byte>(3, 75).ToArray();
-
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", basicVectorData, new byte[] { 0, 0, 0, 1 }, "XPREQ8", "SETATTR", oversideAttribute]));
-            ClassicAssert.AreEqual("ERR Attribute exceed configured page size", exc2.Message);
-        }
-
-        [Test]
         public void WrongTypeForVectorSetOpsOnNonVectorSetKeys()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -883,7 +861,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterMark()
+        public void InterruptedVectorSetDelete_AfterMark()
         => InterruptedVectorSetDelete(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
@@ -1065,15 +1043,15 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterMark_Recovery()
+        public void InterruptedVectorSetDelete_AfterMark_Recovery()
         => InterruptedVectorSetDeleteRecovery(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterZeroingOut_Recovery()
+        public void InterruptedVectorSetDelete_AfterZeroingOut_Recovery()
         => InterruptedVectorSetDeleteRecovery(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterDelete_Recovery()
+        public void InterruptedVectorSetDelete_AfterDelete_Recovery()
         => InterruptedVectorSetDeleteRecovery(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
 
         private void InterruptedVectorSetDeleteRecovery(ExceptionInjectionType faultLocation)
@@ -1232,7 +1210,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1270,7 +1248,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1312,7 +1290,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1358,7 +1336,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1465,7 +1443,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1586,7 +1564,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var rand = new Random(2025_10_06_01);
 

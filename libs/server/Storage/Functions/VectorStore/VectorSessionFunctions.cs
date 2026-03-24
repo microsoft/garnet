@@ -36,42 +36,47 @@ namespace Garnet.server
             Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(srcLogRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
-            var value = srcLogRecord.ValueSpan;
-
-            value = Align(value);
-
-            unsafe
+            var value = AlignOrPin(in srcLogRecord, ref input, out var pin);
+            try
             {
-                if (input.Callback != 0)
+
+                unsafe
                 {
-                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
+                    if (input.Callback != 0)
+                    {
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
 
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
-                    var dataLen = (nuint)value.Length;
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
+                        var dataLen = (nuint)value.Length;
 
-                    callback(input.Index, input.CallbackContext, dataPtr, dataLen);
-                    return true;
+                        callback(input.Index, input.CallbackContext, dataPtr, dataLen);
+                        return true;
+                    }
                 }
-            }
 
-            if (input.ReadDesiredSize > 0)
-            {
-                Debug.Assert(output.SpanByteAndMemory.Length >= value.Length, "Should always have space for vector point reads");
-
-                output.SpanByteAndMemory.Length = value.Length;
-                value.CopyTo(output.SpanByteAndMemory.Span);
-            }
-            else
-            {
-                input.ReadDesiredSize = value.Length;
-                if (output.SpanByteAndMemory.Length >= value.Length)
+                if (input.ReadDesiredSize > 0)
                 {
-                    value.CopyTo(output.SpanByteAndMemory.Span);
+                    Debug.Assert(output.SpanByteAndMemory.Length >= value.Length, "Should always have space for vector point reads");
+
                     output.SpanByteAndMemory.Length = value.Length;
+                    value.CopyTo(output.SpanByteAndMemory.Span);
                 }
-            }
+                else
+                {
+                    input.ReadDesiredSize = value.Length;
+                    if (output.SpanByteAndMemory.Length >= value.Length)
+                    {
+                        value.CopyTo(output.SpanByteAndMemory.Span);
+                        output.SpanByteAndMemory.Length = value.Length;
+                    }
+                }
 
-            return true;
+                return true;
+            }
+            finally
+            {
+                pin?.Free();
+            }
         }
 
         /// <inheritdoc/>
@@ -101,12 +106,17 @@ namespace Garnet.server
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
-            var rawValue = logRecord.ValueSpan;
-            var value = Align(rawValue);
+            var value = AlignOrPin(in logRecord, ref input, out var pin);
+            try
+            {
+                newValue.CopyTo(value);
 
-            newValue.CopyTo(value);
-
-            return logRecord.TrySetContentLengths(rawValue.Length, in sizeInfo);
+                return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+            }
+            finally
+            {
+                pin?.Free();
+            }
         }
 
         /// <inheritdoc/>
@@ -129,12 +139,21 @@ namespace Garnet.server
 
             if (input.WriteDesiredSize < 0)
             {
-                // Add to value, this is a dynamically sized type
+                // Add to value, this is a dynamically sized type - which are only used from Garnet, not DiskANN
                 return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = value.Length + (-input.WriteDesiredSize) };
             }
 
+            var needsAlignmentPadding = input.AlignmentExpected || input.Callback != 0;
+
             // Constant size indicated
-            return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes };
+            if (needsAlignmentPadding)
+            {
+                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes };
+            }
+            else
+            {
+                return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize };
+            }
         }
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
@@ -146,12 +165,21 @@ namespace Garnet.server
         {
             var effectiveWriteDesiredSize = input.WriteDesiredSize;
 
+            var needsAlignmentPadding = input.AlignmentExpected || input.Callback != 0;
+
             if (effectiveWriteDesiredSize < 0)
             {
                 effectiveWriteDesiredSize = -effectiveWriteDesiredSize;
             }
 
-            return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize + ValueAlignmentBytes };
+            if (!needsAlignmentPadding)
+            {
+                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize };
+            }
+            else
+            {
+                return new() { KeySize = key.KeyBytes.Length, ValueSize = effectiveWriteDesiredSize + ValueAlignmentBytes };
+            }
         }
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
@@ -202,82 +230,87 @@ namespace Garnet.server
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var key = logRecord.Key;
-            var rawValue = logRecord.ValueSpan;
+            var alignedValue = AlignOrPin(in logRecord, ref input, out var pin);
 
-            var value = Align(rawValue);
-
-            if (input.Callback == 0)
+            try
             {
-                Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
-                if (key.Length == 0)
+                if (input.Callback == 0)
                 {
-                    // Operating on ContextMetadata
+                    Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
-                    PinnedSpanByte newMetadataValue;
-                    unsafe
+                    if (key.Length == 0)
                     {
-                        newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
-                    }
+                        // Operating on ContextMetadata
 
-                    newMetadataValue.CopyTo(value);
-                    return logRecord.TrySetContentLengths(rawValue.Length, in sizeInfo);
+                        PinnedSpanByte newMetadataValue;
+                        unsafe
+                        {
+                            newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                        }
+
+                        newMetadataValue.CopyTo(alignedValue);
+
+                        return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+                    }
+                    else
+                    {
+                        // Operating on InProgressDeletes
+                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                        Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+                        Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
+
+                        Span<byte> inProgressDeleteUpdateData;
+                        bool adding;
+
+                        unsafe
+                        {
+                            var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
+                            adding = len > 0;
+                            if (!adding)
+                            {
+                                len = -len;
+                            }
+
+                            inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
+                        }
+
+                        if (!adding)
+                        {
+                            // We may be recovering and doing some optimistic deletes, but since we're creating... just ignore the op, it does nothing
+                            rmwInfo.Action = RMWAction.CancelOperation;
+                            return false;
+                        }
+
+                        var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
+                        Debug.Assert(fits, "Initial size of record should have been correct for in progress deletes");
+
+                        return true;
+                    }
                 }
                 else
                 {
-                    // Operating on InProgressDeletes
-                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                    Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-                    Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
+                    Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for initial update, this should never happen");
 
-                    Span<byte> inProgressDeleteUpdateData;
-                    bool adding;
+                    // Must explicitly 0 before passing if we're doing an initial update
+                    alignedValue.Clear();
 
                     unsafe
                     {
-                        var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
-                        adding = len > 0;
-                        if (!adding)
-                        {
-                            len = -len;
-                        }
+                        // Callback takes: dataCallbackContext, dataPtr, dataLength
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
-                        inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
+                        var dataLen = (nuint)input.WriteDesiredSize;
+                        callback(input.CallbackContext, dataPtr, dataLen);
+
+                        return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                     }
-
-                    if (!adding)
-                    {
-                        // We may be recovering and doing some optimistic deletes, but since we're creating... just ignore the op, it does nothing
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
-                    }
-
-                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
-                    Debug.Assert(fits, "Initial size of record should have been correct for in progress deletes");
-
-                    return true;
                 }
             }
-            else
+            finally
             {
-                Debug.Assert(input.WriteDesiredSize <= value.Length, "Insufficient space for initial update, this should never happen");
-
-                // Must explicitly 0 before passing if we're doing an initial update
-                value.Clear();
-
-                value = Align(value);
-
-                unsafe
-                {
-                    // Callback takes: dataCallbackContext, dataPtr, dataLength
-                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
-
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
-                    var dataLen = (nuint)input.WriteDesiredSize;
-                    callback(input.CallbackContext, dataPtr, dataLen);
-
-                    return logRecord.TrySetContentLengths(rawValue.Length, in sizeInfo);
-                }
+                pin?.Free();
             }
         }
         #endregion InitialUpdater
@@ -296,91 +329,99 @@ namespace Garnet.server
             Debug.Assert(srcLogRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var key = srcLogRecord.Key;
-            var oldValue = srcLogRecord.ValueSpan;
-            var newValue = dstLogRecord.ValueSpan;
 
-            if (input.Callback == 0)
+            var oldValueAligned = AlignOrPin(in srcLogRecord, ref input, out var srcPin);
+            var newValueAligned = AlignOrPin(in dstLogRecord, ref input, out var dstPin);
+
+            try
             {
-                // We're doing a Metadata or InProgressDelete update
-
-                Debug.Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
-
-                if (key.Length == 0)
+                if (input.Callback == 0)
                 {
-                    // Doing a Metadata update
-                    Debug.Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                    Debug.Assert(dstLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                    // We're doing a Metadata or InProgressDelete update
 
-                    ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(oldValue)[0];
+                    Debug.Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
 
-                    PinnedSpanByte newMetadataValue;
-                    unsafe
+                    if (key.Length == 0)
                     {
-                        newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                        // Doing a Metadata update
+                        Debug.Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                        Debug.Assert(dstLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+
+                        ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(oldValueAligned)[0];
+
+                        PinnedSpanByte newMetadataValue;
+                        unsafe
+                        {
+                            newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                        }
+
+                        ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
+
+                        if (newMetadata.Version < oldMetadata.Version)
+                        {
+                            rmwInfo.Action = RMWAction.CancelOperation;
+                            return false;
+                        }
+
+                        newMetadataValue.CopyTo(newValueAligned);
+                        return dstLogRecord.TrySetContentLengths(srcLogRecord.ValueSpan.Length, in sizeInfo);
                     }
-
-                    ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
-
-                    if (newMetadata.Version < oldMetadata.Version)
+                    else
                     {
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
-                    }
+                        // Doing an InProgressDelete update
+                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                        Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
 
-                    newMetadataValue.CopyTo(newValue);
-                    return dstLogRecord.TrySetContentLengths(newMetadataValue.Length, in sizeInfo);
+                        Span<byte> inProgressDeleteUpdateData;
+                        bool adding;
+
+                        oldValueAligned.CopyTo(newValueAligned);
+
+                        unsafe
+                        {
+                            var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
+                            adding = len > 0;
+                            if (!adding)
+                            {
+                                len = -len;
+                            }
+
+                            inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
+                        }
+
+                        var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref dstLogRecord, in sizeInfo);
+                        Debug.Assert(fits, "Copy update should have allocated enough space for in progress deletes");
+
+                        return true;
+                    }
                 }
                 else
                 {
-                    // Doing an InProgressDelete update
-                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                    Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
+                    Debug.Assert(input.WriteDesiredSize <= newValueAligned.Length, "Insufficient space for copy update, this should never happen");
+                    Debug.Assert(input.WriteDesiredSize <= oldValueAligned.Length, "Insufficient space for copy update, this should never happen");
 
-                    Span<byte> inProgressDeleteUpdateData;
-                    bool adding;
-
-                    oldValue.CopyTo(newValue);
+                    oldValueAligned.CopyTo(newValueAligned);
 
                     unsafe
                     {
-                        var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
-                        adding = len > 0;
-                        if (!adding)
-                        {
-                            len = -len;
-                        }
+                        // Callback takes: dataCallbackContext, dataPtr, dataLength
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
-                        inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValueAligned));
+                        var dataLen = (nuint)input.WriteDesiredSize;
+
+                        callback(input.CallbackContext, dataPtr, dataLen);
                     }
 
-                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref dstLogRecord, in sizeInfo);
-                    Debug.Assert(fits, "Copy update should have allocated enough space for in progress deletes");
-
                     return true;
+
                 }
             }
-            else
+            finally
             {
-                Debug.Assert(input.WriteDesiredSize <= newValue.Length, "Insufficient space for copy update, this should never happen");
-                Debug.Assert(input.WriteDesiredSize <= oldValue.Length, "Insufficient space for copy update, this should never happen");
-
-                oldValue.CopyTo(newValue);
-
-                newValue = Align(newValue);
-
-                unsafe
-                {
-                    // Callback takes: dataCallbackContext, dataPtr, dataLength
-                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
-
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValue));
-                    var dataLen = (nuint)input.WriteDesiredSize;
-
-                    callback(input.CallbackContext, dataPtr, dataLen);
-                }
-
-                return true;
+                srcPin?.Free();
+                dstPin?.Free();
             }
         }
         #endregion CopyUpdater
@@ -393,81 +434,86 @@ namespace Garnet.server
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
             var key = logRecord.Key;
-            var value = logRecord.ValueSpan;
 
-            if (input.Callback == 0)
+            var alignedValue = AlignOrPin(in logRecord, ref input, out var pin);
+            try
             {
-                // We're doing a Metadata or InProgressDelete update
-
-                Debug.Assert(logRecord.NamespaceBytes.Length ==1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
-
-                if (key.Length == 0)
+                if (input.Callback == 0)
                 {
-                    // Doing a Metadata update
-                    Debug.Assert(value.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                    // We're doing a Metadata or InProgressDelete update
 
-                    ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(value)[0];
+                    Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
 
-                    PinnedSpanByte newMetadataValue;
-                    unsafe
+                    if (key.Length == 0)
                     {
-                        newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                        // Doing a Metadata update
+                        Debug.Assert(alignedValue.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+
+                        ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(alignedValue)[0];
+
+                        PinnedSpanByte newMetadataValue;
+                        unsafe
+                        {
+                            newMetadataValue = PinnedSpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                        }
+
+                        ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
+
+                        if (newMetadata.Version < oldMetadata.Version)
+                        {
+                            rmwInfo.Action = RMWAction.CancelOperation;
+                            return false;
+                        }
+
+                        newMetadataValue.CopyTo(alignedValue);
+                        return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
                     }
-
-                    ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.ReadOnlySpan)[0];
-
-                    if (newMetadata.Version < oldMetadata.Version)
+                    else
                     {
-                        rmwInfo.Action = RMWAction.CancelOperation;
-                        return false;
-                    }
+                        // Doing an InProgressDelete update
+                        Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                        Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
 
-                    newMetadataValue.CopyTo(value);
-                    return logRecord.TrySetContentLengths(value.Length, in sizeInfo);
+                        Span<byte> inProgressDeleteUpdateData;
+                        bool adding;
+
+                        unsafe
+                        {
+                            var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
+                            adding = len > 0;
+                            if (!adding)
+                            {
+                                len = -len;
+                            }
+
+                            inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
+                        }
+
+                        return VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
+                    }
                 }
                 else
                 {
-                    // Doing an InProgressDelete update
-                    Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                    Debug.Assert(key.Length == 1 && key[0] == 1, "Should be working on InProgressDeletes");
-
-                    Span<byte> inProgressDeleteUpdateData;
-                    bool adding;
+                    Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for inplace update, this should never happen");
 
                     unsafe
                     {
-                        var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
-                        adding = len > 0;
-                        if (!adding)
-                        {
-                            len = -len;
-                        }
+                        // Callback takes: dataCallbackContext, dataPtr, dataLength
+                        var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
 
-                        inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
+                        var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(alignedValue));
+                        var dataLen = (nuint)input.WriteDesiredSize;
+
+                        callback(input.CallbackContext, dataPtr, dataLen);
                     }
 
-                    return VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
+                    return true;
                 }
             }
-            else
+            finally
             {
-                Debug.Assert(input.WriteDesiredSize <= value.Length, "Insufficient space for inplace update, this should never happen");
-
-                value = Align(value);
-
-                unsafe
-                {
-                    // Callback takes: dataCallbackContext, dataPtr, dataLength
-                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
-
-                    var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
-                    var dataLen = (nuint)input.WriteDesiredSize;
-
-                    callback(input.CallbackContext, dataPtr, dataLen);
-                }
-
-                return true;
+                pin?.Free();
             }
         }
         #endregion InPlaceUpdater
@@ -504,27 +550,63 @@ namespace Garnet.server
         private static TReturn ObjectOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
         => throw new InvalidOperationException($"Object related operations are not expected, was: {callerName} on {lineNum}");
 
-        // TODO: Remove all this alignment hackery
+        // TODO: Remove all this alignment hackery when Tsavorite can enforce it
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe Span<byte> Align(Span<byte> maybeUnaligned)
+        internal static unsafe Span<byte> AlignOrPin<TSourceLogRecord>(in TSourceLogRecord logRecord, ref VectorInput input, out GCHandle? pin)
+            where TSourceLogRecord : ISourceLogRecord
         {
-            Span<byte> ret;
+            var maybeUnaligned = logRecord.ValueSpan;
 
-            var leading = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(maybeUnaligned)) % 4;
-            if (leading == 0)
+            // Alignment is expected if we're passing to DiskANN or Garnet code explicitly requested it
+            var inputRequiresAligment = input.AlignmentExpected || input.Callback != 0;
+
+            if (inputRequiresAligment)
             {
-                ret = maybeUnaligned[..^ValueAlignmentBytes];
+                if (logRecord.IsPinnedValue)
+                {
+                    // LogRecord itself is in POH, but value might not be aligned so we need to do some checking
+
+                    Span<byte> ret;
+
+                    var leading = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(maybeUnaligned)) % 4;
+                    if (leading == 0)
+                    {
+                        ret = maybeUnaligned[..^ValueAlignmentBytes];
+                    }
+                    else
+                    {
+                        var skip = (int)(ValueAlignmentBytes - leading);
+                        var tail = ValueAlignmentBytes - skip;
+                        ret = maybeUnaligned[skip..^tail];
+                    }
+
+                    AssertAlignment(ret);
+
+                    pin = null;
+                    return ret;
+                }
+                else
+                {
+                    // Value isn't in log record, it's on the (presumably unpinned) heap as a byte[]
+                    //
+                    // This guarantees it's aligned, but it might move during any callback so pin
+
+                    pin = logRecord.ValueOverflow.Pin();
+
+                    // We over allocated (we don't know how Tsavorite is going to place the value in advance) so trim the extra allocation off the end.
+                    var ret = maybeUnaligned[..^ValueAlignmentBytes];
+
+                    AssertAlignment(ret);
+
+                    return ret;
+                }
             }
             else
             {
-                var skip = (int)(ValueAlignmentBytes - leading);
-                var tail = ValueAlignmentBytes - skip;
-                ret = maybeUnaligned[skip..^tail];
+                pin = null;
+                return maybeUnaligned;
             }
-
-            AssertAlignment(ret);
-            return ret;
         }
 
         [Conditional("DEBUG")]
@@ -534,7 +616,7 @@ namespace Garnet.server
             Debug.Assert((ptr % ValueAlignmentBytes) == 0, "Must guarantee 4-byte alignment before invoking callback");
         }
 
-#region Post operation callbacks
+        #region Post operation callbacks
         /// <inheritdoc/>
         public readonly void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {

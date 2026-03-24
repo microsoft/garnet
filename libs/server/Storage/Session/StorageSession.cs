@@ -70,6 +70,7 @@ namespace Garnet.server
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            VectorManager vectorManager,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -79,6 +80,7 @@ namespace Garnet.server
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();
+            this.vectorManager = vectorManager;
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 
@@ -102,11 +104,17 @@ namespace Garnet.server
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
             var unifiedStoreSession = db.Store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
 
+            var vectorFunctions = new VectorSessionFunctions(functionsState);
+            var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions);
+
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;
 
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
+
+            vectorBasicContext = vectorSession.BasicContext;
+            vectorTransactionalContext = vectorSession.TransactionalContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
@@ -129,6 +137,7 @@ namespace Garnet.server
             stringBasicContext.Session.Dispose();
             objectBasicContext.Session?.Dispose();
             unifiedBasicContext.Session?.Dispose();
+            vectorBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }

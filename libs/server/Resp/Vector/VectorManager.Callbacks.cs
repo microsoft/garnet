@@ -16,7 +16,7 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
-        public unsafe struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>, IDisposable
+        public unsafe struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
         {
             public int Count { get; }
 
@@ -57,9 +57,6 @@ namespace Garnet.server
                 {
                     return;
                 }
-
-                // Undo namespace mutation
-                *(int*)currentPtr = currentLen;
 
                 // Most likely case, we're going one forward
                 if (i == (currentIndex + 1))
@@ -146,29 +143,12 @@ namespace Garnet.server
                 hasPending |= status.IsPending;
             }
 
-            internal readonly void CompletePending<TContext>(ref TContext objectContext)
-                where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+            internal readonly void CompletePending(ref VectorBasicContext objectContext)
             {
-                // Undo mutations
-                *(int*)currentPtr = currentLen;
-
                 if (hasPending)
                 {
                     _ = objectContext.CompletePending(wait: true);
                 }
-            }
-
-            /// <inheritdoc/>
-            public void Dispose()
-            {
-                if (currentPtr == null)
-                {
-                    return;
-                }
-
-                // Undo mangling of prefix, if any
-                *(int*)currentPtr = currentLen;
-                currentPtr = null;
             }
         }
 
@@ -198,18 +178,12 @@ namespace Garnet.server
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, context, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
-            try
-            {
-                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
-                ctx.ReadWithPrefetch(ref enumerable);
+            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
-                enumerable.CompletePending(ref ctx);
-            }
-            finally
-            {
-                enumerable.Dispose();
-            }
+            ctx.ReadWithPrefetch(ref enumerable);
+
+            enumerable.CompletePending(ref ctx);
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -217,7 +191,8 @@ namespace Garnet.server
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
-            VectorInput input = default;
+            VectorInput input = new();
+            input.AlignmentExpected = true;
             var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             VectorOutput outputSpan = new();
 
@@ -231,7 +206,7 @@ namespace Garnet.server
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
+        private static byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
@@ -244,7 +219,7 @@ namespace Garnet.server
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
+        private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
@@ -266,7 +241,7 @@ namespace Garnet.server
             return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
-        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
+        private static unsafe bool ReadSizeUnknown(ulong context, bool forceAlignment, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
             VectorElementKey keyWithNamespace = new((byte)context, key);
 
@@ -276,6 +251,10 @@ namespace Garnet.server
             {
                 VectorInput input = new();
                 input.ReadDesiredSize = -1;
+
+                // Sometimes we read DiskANN written data from the .NET side
+                // If that's the case, we need to pad for alignment even though .NET doesn't require it
+                input.AlignmentExpected = forceAlignment;
                 fixed (byte* ptr = value.Span)
                 {
                     VectorOutput asSpanByte = new(ptr, value.Length);
@@ -314,8 +293,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe VectorElementKey MakeVectorElementKey(ulong context, nint keyData, nuint keyLength)
         {
-            // DiskANN guarantees we have 4-bytes worth of unused data right before the key
-            ReadOnlySpan<byte> keyBytes = new((byte*)keyData + 4, (int)keyLength);
+            // NOTE: DiskANN guarantees we have 4-bytes worth of unused data right before the key, but we aren't using it currently
+            ReadOnlySpan<byte> keyBytes = new((byte*)keyData, (int)keyLength);
 
             return new((byte)context, keyBytes);
         }
