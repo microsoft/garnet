@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #nullable disable
@@ -10,22 +10,9 @@ using Microsoft.Extensions.Logging;
 namespace Embedded.server
 {
     /// <summary>
-    /// Non-generic interface for EmbeddedRespServer, allowing callers to interact
-    /// without knowing the TServerOptions type parameter.
+    /// Implements an embedded Garnet RESP server
     /// </summary>
-    internal interface IEmbeddedRespServer : IGarnetServerApp
-    {
-        StoreWrapper StoreWrapper { get; }
-        RespServerSession GetRespSession();
-        RespServerSession[] GetRespSessions(int count);
-        EmbeddedNetworkHandler GetNetworkHandler();
-    }
-
-    /// <summary>
-    /// Implements an embedded Garnet RESP server with JIT-optimized configuration.
-    /// </summary>
-    internal sealed class EmbeddedRespServer<TServerOptions> : GarnetServer<TServerOptions>, IEmbeddedRespServer
-        where TServerOptions : struct, IGarnetServerOptions
+    internal sealed class EmbeddedRespServer : GarnetServer
     {
         readonly GarnetServerEmbedded garnetServerEmbedded;
         readonly SubscribeBroker subscribeBroker;
@@ -33,11 +20,13 @@ namespace Embedded.server
         /// <summary>
         /// Creates an EmbeddedRespServer instance
         /// </summary>
-        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null)
-            : base(opts, loggerFactory, server == null ? null : [server])
+        /// <param name="opts">Server options to configure the base GarnetServer instance</param>
+        /// <param name="loggerFactory">Logger factory to configure the base GarnetServer instance</param>
+        /// <param name="server">Server network</param>
+        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null) : base(opts, loggerFactory, server == null ? null : [server])
         {
             this.garnetServerEmbedded = server;
-            this.subscribeBroker = default(TServerOptions).DisablePubSub ? null :
+            this.subscribeBroker = opts.DisablePubSub ? null :
                 new SubscribeBroker(
                     null,
                     opts.PubSubPageSizeBytes(),
@@ -46,16 +35,23 @@ namespace Embedded.server
                     true);
         }
 
+        /// <summary>
+        /// Dispose server
+        /// </summary>
         public new void Dispose() => base.Dispose();
 
         public StoreWrapper StoreWrapper => storeWrapper;
 
-        public RespServerSession GetRespSession()
+        /// <summary>
+        /// Return a direct RESP session to this server
+        /// </summary>
+        /// <returns>A new RESP server session</returns>
+        internal RespServerSession GetRespSession()
         {
             return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
         }
 
-        public RespServerSession[] GetRespSessions(int count)
+        internal RespServerSession[] GetRespSessions(int count)
         {
             var sessions = new RespServerSession[count];
             for (var i = 0; i < count; i++)
@@ -63,25 +59,9 @@ namespace Embedded.server
             return sessions;
         }
 
-        public EmbeddedNetworkHandler GetNetworkHandler()
+        internal EmbeddedNetworkHandler GetNetworkHandler()
         {
             return garnetServerEmbedded.CreateNetworkHandler();
-        }
-    }
-
-    /// <summary>
-    /// Factory that creates EmbeddedRespServer instances with JIT-optimized configuration.
-    /// </summary>
-    internal static class EmbeddedRespServerFactory
-    {
-        /// <summary>
-        /// Creates an EmbeddedRespServer with a dynamically emitted JIT-optimized options struct.
-        /// </summary>
-        public static IEmbeddedRespServer CreateServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null)
-        {
-            var structType = GarnetServerFactory.GetOrCreateOptionsStruct(opts);
-            var serverType = typeof(EmbeddedRespServer<>).MakeGenericType(structType);
-            return (IEmbeddedRespServer)Activator.CreateInstance(serverType, opts, loggerFactory, server);
         }
     }
 }

@@ -99,7 +99,7 @@ namespace Garnet.test
 
         private LimitStringWriter loggerOutput;
         private string aclFile;
-        private IGarnetServerApp server;
+        private GarnetServer server;
 
         public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
@@ -840,12 +840,12 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var expectedVersion = Version.Parse(GarnetServerFactory.RedisProtocolVersion);
+            var expectedVersion = Version.Parse(GarnetServer.RedisProtocolVersion);
 
             var asStr = (string)db.ScriptEvaluate("return redis.REDIS_VERSION");
             var asNum = (int)db.ScriptEvaluate("return redis.REDIS_VERSION_NUM");
 
-            ClassicAssert.AreEqual(GarnetServerFactory.RedisProtocolVersion, asStr);
+            ClassicAssert.AreEqual(GarnetServer.RedisProtocolVersion, asStr);
 
             var expectedNum =
                 ((byte)expectedVersion.Major << 16) |

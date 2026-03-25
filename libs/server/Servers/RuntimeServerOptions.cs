@@ -7,13 +7,17 @@ namespace Garnet.server
 {
     /// <summary>
     /// AOT-compatible fallback struct that delegates to a stored GarnetServerOptions instance at runtime.
-    /// Unlike the dynamically-emitted structs from GarnetServerFactory, property values here are NOT constants,
-    /// so the JIT cannot eliminate branches. However, this struct compiles under NativeAOT where
-    /// Reflection.Emit is unavailable.
-    /// 
+    /// Unlike the dynamically-emitted structs from GarnetOptionsFactory, property values here are NOT
+    /// constants — they read from the Instance field each time — so the JIT cannot eliminate branches.
+    /// However, this struct compiles under NativeAOT where Reflection.Emit is unavailable.
+    ///
     /// Usage:
     ///   RuntimeServerOptions.Instance = opts;
-    ///   using var server = new GarnetServer&lt;RuntimeServerOptions&gt;(opts);
+    ///   var session = new RespServerSession&lt;RuntimeServerOptions&gt;(...);
+    ///
+    /// For full JIT branch elimination, use GarnetOptionsFactory.CreateInstance instead:
+    ///   var session = GarnetOptionsFactory.CreateInstance&lt;ServerSessionBase&gt;(
+    ///       typeof(RespServerSession&lt;&gt;), opts, ...);
     /// </summary>
     public struct RuntimeServerOptions : IGarnetServerOptions
     {

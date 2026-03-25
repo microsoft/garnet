@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.Threading;
@@ -15,7 +15,7 @@ namespace Garnet.test
     [TestFixture]
     public class CacheSizeTrackerTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         TsavoriteKV<StoreFunctions, StoreAllocator> store;
         CacheSizeTracker cacheSizeTracker;
 

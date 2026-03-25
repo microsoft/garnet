@@ -6,11 +6,24 @@ using Garnet.server.Auth.Settings;
 namespace Garnet.server
 {
     /// <summary>
-    /// Interface for Garnet server options with properties.
-    /// When used as a struct type parameter constraint, the JIT specializes code per struct type,
-    /// inlines constant-returning properties, and eliminates dead branches entirely.
-    /// Non-boolean fields used in hot-path comparisons (e.g., MetricsSamplingFrequency > 0)
-    /// also benefit: the JIT constant-folds the comparison and removes the branch.
+    /// Interface for Garnet server configuration properties used for JIT branch elimination.
+    ///
+    /// When a zero-size struct implements this interface with constant-returning property getters
+    /// and is used as a type parameter (e.g., RespServerSession&lt;TServerOptions&gt;), the JIT:
+    ///   1. Creates a separate native code specialization for each struct type
+    ///   2. Inlines the constant-returning getters
+    ///   3. Sees constant branch conditions (e.g., if (false)) and eliminates dead code entirely
+    ///
+    /// This eliminates per-command branch overhead for config checks like EnableCluster,
+    /// LatencyMonitor, MetricsSamplingFrequency > 0, etc. on the hot path.
+    ///
+    /// Two implementations are provided:
+    ///   - RuntimeServerOptions: delegates to a GarnetServerOptions instance (AOT-compatible, no branch elimination)
+    ///   - Dynamically emitted structs via GarnetOptionsFactory: hardcoded constants (full branch elimination)
+    ///
+    /// Instance (not static) properties are used because Reflection.Emit cannot implement
+    /// static abstract interface members. For zero-size structs, default(T) is free and the JIT
+    /// inlines instance getters identically to static ones.
     /// </summary>
     public interface IGarnetServerOptions
     {

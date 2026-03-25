@@ -32,7 +32,7 @@ namespace BDN.benchmark.Network
         /// in order to stress the network layer.
         /// </summary>
         const int batchSize = 1;
-        IEmbeddedRespServer server;
+        EmbeddedRespServer server;
         EmbeddedNetworkHandler networkHandler;
 
         /// <summary>
@@ -47,7 +47,7 @@ namespace BDN.benchmark.Network
                 DisablePubSub = true,
             };
 
-            server = EmbeddedRespServerFactory.CreateServer(opts, null, new GarnetServerEmbedded());
+            server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
             networkHandler = server.GetNetworkHandler();
 
             // Send a PING message to warm up the session

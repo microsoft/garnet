@@ -14,7 +14,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespListGarnetClientTests : AllureTestBase
     {
-        private IGarnetServerApp server;
+        private GarnetServer server;
 
         [OneTimeSetUp]
         public void Setup()

@@ -20,7 +20,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespTlsTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
 
         [SetUp]
         public void Setup()

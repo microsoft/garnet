@@ -137,7 +137,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
         public void ClusterAnyIPAnnounce()
         {
-            context.nodes = new IGarnetServerApp[1];
+            context.nodes = new GarnetServer[1];
             context.nodes[0] = context.CreateInstance(new IPEndPoint(IPAddress.Any, 7000));
             context.nodes[0].Start();
 

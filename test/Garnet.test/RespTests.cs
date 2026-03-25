@@ -24,7 +24,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         Random r;
         private TaskFactory taskFactory = new();
 

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -17,7 +17,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespMetricsTest : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         ILoggerFactory loggerFactory;
         Random r;
 

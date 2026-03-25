@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -14,7 +14,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespAofAzureTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         static readonly SortedSetEntry[] entries =
         [
             new SortedSetEntry("a", 1),

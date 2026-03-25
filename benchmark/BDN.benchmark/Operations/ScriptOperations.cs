@@ -187,7 +187,7 @@ return returnValue
         /// 100 us =  1 Mops/sec
         /// </summary>
         internal const int batchSize = 100;
-        internal IEmbeddedRespServer server;
+        internal EmbeddedRespServer server;
         internal RespServerSession session;
 
         /// <summary>
@@ -203,7 +203,7 @@ return returnValue
                 LuaOptions = Params.CreateOptions(),
             };
 
-            server = EmbeddedRespServerFactory.CreateServer(opts);
+            server = new EmbeddedRespServer(opts);
 
             session = server.GetRespSession();
 

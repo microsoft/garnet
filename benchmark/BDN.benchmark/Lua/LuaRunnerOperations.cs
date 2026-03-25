@@ -147,7 +147,7 @@ return returnValue
             new(LuaMemoryManagementMode.Managed, true),
         ];
 
-        private IEmbeddedRespServer server;
+        private EmbeddedRespServer server;
         private RespServerSession session;
 
         private LuaRunner paramsRunner;
@@ -162,7 +162,7 @@ return returnValue
         {
             opts = Params.CreateOptions();
 
-            server = EmbeddedRespServerFactory.CreateServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = opts });
+            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = opts });
 
             session = server.GetRespSession();
 

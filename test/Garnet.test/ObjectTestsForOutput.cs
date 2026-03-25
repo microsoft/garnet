@@ -13,7 +13,7 @@ namespace Garnet.test
     [TestFixture]
     public class ObjectTestsForOutput : AllureTestBase
     {
-        protected IGarnetServerApp server;
+        protected GarnetServer server;
 
         [SetUp]
         public void Setup()

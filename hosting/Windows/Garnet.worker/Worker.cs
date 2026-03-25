@@ -13,7 +13,7 @@ namespace Garnet
         private bool _isDisposed = false;
         private readonly string[] args;
 
-        private IGarnetServerApp server;
+        private GarnetServer server;
 
         public Worker(string[] args)
         {
@@ -24,7 +24,7 @@ namespace Garnet
         {
             try
             {
-                server = GarnetServerFactory.CreateServer(args);
+                server = new GarnetServer(args);
 
                 // Start the server
                 server.Start();

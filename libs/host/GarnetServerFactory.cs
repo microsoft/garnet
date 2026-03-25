@@ -3,34 +3,59 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Emit;
-using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet
 {
     /// <summary>
-    /// Factory that creates GarnetServer instances with JIT-optimized configuration.
-    /// At runtime, emits a zero-size struct implementing IGarnetServerOptions with hardcoded
-    /// constant-returning instance properties. The JIT specializes GarnetServer&lt;T&gt; per struct,
-    /// inlines the getters as constants, and eliminates dead branches entirely.
+    /// Factory that emits zero-size structs implementing IGarnetServerOptions with hardcoded
+    /// constant-returning instance properties at runtime via Reflection.Emit.
+    ///
+    /// When used as a type parameter for generic types (e.g., RespServerSession&lt;T&gt;,
+    /// GarnetProvider&lt;T&gt;), the JIT specializes per struct, inlines the getters as constants,
+    /// and eliminates dead branches entirely.
+    ///
+    /// Thread-safe. Deduplicates emitted types by value — identical configurations reuse the
+    /// same struct type. Validates at startup that all IGarnetServerOptions properties are covered.
+    ///
+    /// Example usage (once RespServerSession is generic):
+    /// <code>
+    /// // In GarnetProvider.GetSession — called once per connection, not per command:
+    /// return GarnetOptionsFactory.CreateInstance&lt;IMessageConsumer&gt;(
+    ///     typeof(RespServerSession&lt;&gt;),         // open generic type
+    ///     storeWrapper.serverOptions,              // opts to bake into struct
+    ///     sessionId, networkSender, storeWrapper,  // constructor args
+    ///     broker, null, true);
+    ///
+    /// // The factory emits e.g. GarnetOpts_0 with:
+    /// //   bool EnableCluster => false   (constant)
+    /// //   bool LatencyMonitor => false  (constant)
+    /// //   int SlowLogThreshold => 0    (constant)
+    /// //
+    /// // The JIT then compiles RespServerSession&lt;GarnetOpts_0&gt;.ProcessMessages()
+    /// // with all dead branches eliminated:
+    /// //   if (Cfg.LatencyMonitor) opCount++;          → GONE
+    /// //   if (Cfg.SlowLogThreshold &gt; 0) HandleSlowLog(); → GONE
+    /// //   if (Cfg.EnableCluster) clusterSession.X();  → GONE
+    /// </code>
+    ///
+    /// For NativeAOT (where Reflection.Emit is unavailable), use RuntimeServerOptions instead:
+    /// <code>
+    /// RuntimeServerOptions.Instance = opts;
+    /// var session = new RespServerSession&lt;RuntimeServerOptions&gt;(...);
+    /// // Works but the JIT cannot eliminate branches (property values are not constants).
+    /// </code>
     /// </summary>
-    public static class GarnetServerFactory
+    public static class GarnetOptionsFactory
     {
-        /// <summary>
-        /// Resp protocol version
-        /// </summary>
-        public const string RedisProtocolVersion = "7.4.3";
-
         private static readonly ModuleBuilder ModuleBuilder;
         private static readonly object EmitLock = new();
         private static readonly Dictionary<string, Type> EmittedTypes = new();
 
-        static GarnetServerFactory()
+        static GarnetOptionsFactory()
         {
             var assembly = AssemblyBuilder.DefineDynamicAssembly(
                 new AssemblyName("GarnetDynamicOptions"),
@@ -47,14 +72,11 @@ namespace Garnet
             {
                 if (!factoryPropertyNames.Contains(ip.Name))
                     throw new InvalidOperationException(
-                        $"GarnetServerFactory is missing property '{ip.Name}' from IGarnetServerOptions. " +
+                        $"GarnetOptionsFactory is missing property '{ip.Name}' from IGarnetServerOptions. " +
                         $"Add it to the Properties array.");
             }
         }
 
-        /// <summary>
-        /// Interface property metadata for emission.
-        /// </summary>
         private readonly struct PropertyInfo
         {
             public readonly string Name;
@@ -69,9 +91,6 @@ namespace Garnet
             }
         }
 
-        /// <summary>
-        /// All IGarnetServerOptions properties and how to read them from GarnetServerOptions.
-        /// </summary>
         private static readonly PropertyInfo[] Properties =
         [
             // ServerOptions (base class) booleans
@@ -127,106 +146,8 @@ namespace Garnet
         ];
 
         /// <summary>
-        /// Creates a GarnetServer with a JIT-optimized options struct matching the provided configuration.
-        /// The returned server has all config branch checks fully inlined and dead code eliminated.
-        /// </summary>
-        public static IGarnetServerApp CreateServer(
-            GarnetServerOptions opts,
-            ILoggerFactory loggerFactory = null,
-            IGarnetServer[] servers = null,
-            bool cleanupDir = false)
-        {
-            var structType = GetOrCreateOptionsStruct(opts);
-            var serverType = typeof(GarnetServer<>).MakeGenericType(structType);
-            return (IGarnetServerApp)Activator.CreateInstance(serverType, opts, loggerFactory, servers, cleanupDir);
-        }
-
-        /// <summary>
-        /// Creates a GarnetServer from command line arguments, with a JIT-optimized options struct.
-        /// </summary>
-        public static IGarnetServerApp CreateServer(
-            string[] commandLineArgs,
-            ILoggerFactory loggerFactory = null,
-            bool cleanupDir = false,
-            IAuthenticationSettings authenticationSettingsOverride = null)
-        {
-            Trace.Listeners.Add(new ConsoleTraceListener());
-
-            MemoryLogger initLogger;
-            using (var memLogProvider = new MemoryLoggerProvider())
-            {
-                initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
-            }
-
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out _, out var exitGracefully, logger: initLogger))
-            {
-                if (exitGracefully)
-                    Environment.Exit(0);
-
-                FlushMemoryLogger(initLogger, "ArgParser", loggerFactory);
-
-                throw new GarnetException("Encountered an error when initializing Garnet server. Please see log messages above for more details.");
-            }
-
-            var disposeLoggerFactory = false;
-            if (loggerFactory == null)
-            {
-                disposeLoggerFactory = true;
-            }
-            else
-            {
-                initLogger.LogWarning(
-                    $"Received an external ILoggerFactory object. The following configuration options are ignored: {nameof(serverSettings.FileLogger)}, {nameof(serverSettings.LogLevel)}, {nameof(serverSettings.DisableConsoleLogger)}.");
-            }
-
-            loggerFactory ??= LoggerFactory.Create(builder =>
-            {
-                if (!serverSettings.DisableConsoleLogger.GetValueOrDefault())
-                {
-                    builder.AddSimpleConsole(options =>
-                    {
-                        options.SingleLine = true;
-                        options.TimestampFormat = "hh::mm::ss ";
-                    });
-                }
-
-                if (serverSettings.FileLogger != null)
-                    builder.AddFile(serverSettings.FileLogger);
-                builder.SetMinimumLevel(serverSettings.LogLevel);
-            });
-
-            FlushMemoryLogger(initLogger, "ArgParser", loggerFactory);
-
-            var opts = serverSettings.GetServerOptions(loggerFactory.CreateLogger("Options"));
-            opts.AuthSettings = authenticationSettingsOverride ?? opts.AuthSettings;
-
-            var server = CreateServer(opts, loggerFactory, cleanupDir: cleanupDir);
-
-            if (disposeLoggerFactory)
-            {
-                server.DisposeLoggerFactory = true;
-            }
-
-            return server;
-        }
-
-        /// <summary>
-        /// Creates a GarnetServer using RuntimeServerOptions (AOT-compatible, no Reflection.Emit).
-        /// Property values are read from the opts instance at runtime — no branch elimination.
-        /// </summary>
-        public static GarnetServer<RuntimeServerOptions> CreateAotServer(
-            GarnetServerOptions opts,
-            ILoggerFactory loggerFactory = null,
-            IGarnetServer[] servers = null,
-            bool cleanupDir = false)
-        {
-            RuntimeServerOptions.Instance = opts;
-            return new GarnetServer<RuntimeServerOptions>(opts, loggerFactory, servers, cleanupDir);
-        }
-
-        /// <summary>
-        /// Gets or creates a zero-size struct type with hardcoded constant returns for the given configuration.
-        /// Thread-safe. Deduplicates by value — identical configurations reuse the same struct type.
+        /// Gets or creates a zero-size struct type with hardcoded constant returns for the given
+        /// configuration. Thread-safe. Deduplicates by value — identical configs reuse the same type.
         /// </summary>
         public static Type GetOrCreateOptionsStruct(GarnetServerOptions opts)
         {
@@ -255,9 +176,7 @@ namespace Garnet
                     [typeof(IGarnetServerOptions)]);
 
                 foreach (var prop in Properties)
-                {
                     EmitConstantProperty(typeBuilder, prop.Name, prop.Type, values[prop.Name]);
-                }
 
                 var emittedType = typeBuilder.CreateType();
                 EmittedTypes[deduplicationKey] = emittedType;
@@ -266,12 +185,47 @@ namespace Garnet
         }
 
         /// <summary>
-        /// Emits an instance property getter that returns a hardcoded constant.
-        /// The JIT inlines this through the struct, seeing the constant value.
+        /// Creates an instance using a type-safe factory callback. The user subclasses
+        /// TypedOptionsFactory and writes the constructor call with full compile-time type checking.
+        /// The factory handles runtime dispatch to the emitted struct type.
+        ///
+        /// Example (once RespServerSession is generic):
+        /// <code>
+        /// // Define a factory (can be reused, just update captured state):
+        /// class SessionFactory : TypedOptionsFactory&lt;ServerSessionBase&gt;
+        /// {
+        ///     public long Id;
+        ///     public INetworkSender Sender;
+        ///     public StoreWrapper StoreWrapper;
+        ///     public SubscribeBroker Broker;
+        ///
+        ///     // Compiler fully type-checks this constructor call:
+        ///     public override ServerSessionBase Create&lt;TServerOptions&gt;()
+        ///         =&gt; new RespServerSession&lt;TServerOptions&gt;(Id, Sender, StoreWrapper, Broker, null, true);
+        /// }
+        ///
+        /// // In GarnetProvider.GetSession:
+        /// sessionFactory.Id = Interlocked.Increment(ref lastSessionId);
+        /// sessionFactory.Sender = networkSender;
+        /// return GarnetOptionsFactory.Create(storeWrapper.serverOptions, sessionFactory);
+        /// </code>
         /// </summary>
+        /// <typeparam name="TResult">Return type (typically a non-generic base class or interface)</typeparam>
+        /// <param name="opts">Server options to bake into the emitted struct</param>
+        /// <param name="factory">User-provided factory that constructs the generic type</param>
+        public static TResult Create<TResult>(GarnetServerOptions opts, TypedOptionsFactory<TResult> factory)
+        {
+            var structType = GetOrCreateOptionsStruct(opts);
+
+            // Invoke factory.Create<EmittedStruct>() via reflection on the generic method.
+            // This is called once per connection (session creation), not per command — the cost is amortized.
+            var createMethod = factory.GetType().GetMethod(nameof(TypedOptionsFactory<TResult>.Create));
+            var closedMethod = createMethod.MakeGenericMethod(structType);
+            return (TResult)closedMethod.Invoke(factory, null);
+        }
+
         private static void EmitConstantProperty(TypeBuilder tb, string name, Type propertyType, object value)
         {
-            // Instance virtual method — implements the IGarnetServerOptions interface member
             var method = tb.DefineMethod($"get_{name}",
                 MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.HideBySig
                 | MethodAttributes.SpecialName | MethodAttributes.NewSlot | MethodAttributes.Final,
@@ -288,39 +242,46 @@ namespace Garnet
             else if (propertyType.IsEnum)
                 il.Emit(OpCodes.Ldc_I4, Convert.ToInt32(value));
             else
-                throw new NotSupportedException($"Property type {propertyType} is not supported for JIT-inlined options");
+                throw new NotSupportedException($"Property type {propertyType} not supported for JIT-inlined options");
 
             il.Emit(OpCodes.Ret);
 
             var prop = tb.DefineProperty(name, PropertyAttributes.None, propertyType, null);
             prop.SetGetMethod(method);
 
-            // Map the method to the interface method
             var interfaceMethod = typeof(IGarnetServerOptions).GetProperty(name)?.GetGetMethod();
             if (interfaceMethod != null)
                 tb.DefineMethodOverride(method, interfaceMethod);
         }
+    }
 
-        private static void FlushMemoryLogger(MemoryLogger memoryLogger, string categoryName, ILoggerFactory dstLoggerFactory = null)
-        {
-            if (memoryLogger == null) return;
-
-            var disposeDstLoggerFactory = false;
-            if (dstLoggerFactory == null)
-            {
-                dstLoggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConsole(options =>
-                {
-                    options.SingleLine = true;
-                    options.TimestampFormat = "hh::mm::ss ";
-                }).SetMinimumLevel(LogLevel.Information));
-                disposeDstLoggerFactory = true;
-            }
-
-            var dstLogger = dstLoggerFactory.CreateLogger(categoryName);
-            memoryLogger.FlushLogger(dstLogger);
-
-            if (disposeDstLoggerFactory)
-                dstLoggerFactory.Dispose();
-        }
+    /// <summary>
+    /// Abstract base for type-safe factory callbacks used with GarnetOptionsFactory.Create.
+    /// Subclass this and override Create to write the constructor call with full compile-time
+    /// type checking. The factory handles runtime dispatch to the emitted struct type.
+    ///
+    /// Example:
+    /// <code>
+    /// class SessionFactory : TypedOptionsFactory&lt;ServerSessionBase&gt;
+    /// {
+    ///     public long Id;
+    ///     public INetworkSender Sender;
+    ///     public StoreWrapper StoreWrapper;
+    ///     public SubscribeBroker Broker;
+    ///
+    ///     public override ServerSessionBase Create&lt;TServerOptions&gt;()
+    ///         =&gt; new RespServerSession&lt;TServerOptions&gt;(Id, Sender, StoreWrapper, Broker, null, true);
+    /// }
+    /// </code>
+    /// </summary>
+    /// <typeparam name="TResult">Return type (typically a non-generic base class or interface)</typeparam>
+    public abstract class TypedOptionsFactory<TResult>
+    {
+        /// <summary>
+        /// Create an instance of a generic type parameterized by TServerOptions.
+        /// The compiler type-checks the constructor call; the factory provides the actual TServerOptions.
+        /// </summary>
+        public abstract TResult Create<TServerOptions>()
+            where TServerOptions : struct, IGarnetServerOptions;
     }
 }

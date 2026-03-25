@@ -41,7 +41,7 @@ namespace BDN.benchmark.Operations
         /// 100 us =  1 Mops/sec
         /// </summary>
         internal const int batchSize = 100;
-        internal IEmbeddedRespServer server;
+        internal EmbeddedRespServer server;
         internal RespServerSession session;
         internal RespServerSession subscribeSession;
 
@@ -79,7 +79,7 @@ namespace BDN.benchmark.Operations
                     opts.AuthSettings = new AclAuthenticationPasswordSettings(aclFile);
                 }
 
-                server = EmbeddedRespServerFactory.CreateServer(opts, null, new GarnetServerEmbedded());
+                server = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
                 session = server.GetRespSession();
             }
             finally

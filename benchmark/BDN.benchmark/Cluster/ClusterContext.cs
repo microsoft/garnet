@@ -13,7 +13,7 @@ namespace BDN.benchmark.Cluster
 {
     unsafe class ClusterContext
     {
-        IEmbeddedRespServer server;
+        EmbeddedRespServer server;
         RespServerSession session;
         readonly BenchUtils benchUtils = new();
         readonly int port = 7000;
@@ -41,7 +41,7 @@ namespace BDN.benchmark.Cluster
             };
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 opt.CheckpointDir = "/tmp";
-            server = EmbeddedRespServerFactory.CreateServer(opt);
+            server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
             _ = server.Register.NewTransactionProc(CustomTxnSet.CommandName, () => new CustomTxnSet(), new RespCommandsInfo { Arity = CustomTxnSet.Arity });
         }

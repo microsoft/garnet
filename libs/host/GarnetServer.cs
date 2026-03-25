@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -14,68 +14,17 @@ using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet
 {
     /// <summary>
-    /// Public interface for GarnetServer, allowing callers to interact with the server
-    /// without knowing the TServerOptions type parameter used for JIT optimization.
-    /// Use <see cref="GarnetServerFactory"/> to create instances.
+    /// Implementation Garnet server
     /// </summary>
-    public interface IGarnetServerApp : IDisposable
+    public class GarnetServer : IDisposable
     {
-        /// <summary>
-        /// Metrics API
-        /// </summary>
-        MetricsApi Metrics { get; }
-
-        /// <summary>
-        /// Command registration API
-        /// </summary>
-        RegisterApi Register { get; }
-
-        /// <summary>
-        /// Store API
-        /// </summary>
-        StoreApi Store { get; }
-
-        /// <summary>
-        /// Garnet provider
-        /// </summary>
-        GarnetProvider Provider { get; }
-
-        /// <summary>
-        /// Start server instance
-        /// </summary>
-        void Start();
-
-        /// <summary>
-        /// Dispose, optionally deleting logs and checkpoints
-        /// </summary>
-        void Dispose(bool deleteDir);
-
-        /// <summary>
-        /// Whether to dispose the logger factory when the server is disposed.
-        /// Set by the factory when it creates the logger factory on behalf of the caller.
-        /// </summary>
-        bool DisposeLoggerFactory { set; }
-    }
-
-    /// <summary>
-    /// Garnet server with JIT-optimized configuration.
-    /// TServerOptions is a zero-size struct implementing IGarnetServerOptions whose instance properties
-    /// return constants. The JIT specializes this class per struct type, inlining all config checks
-    /// and eliminating dead branches entirely.
-    /// Use <see cref="GarnetServerFactory"/> to create instances from a <see cref="GarnetServerOptions"/>.
-    /// </summary>
-    public class GarnetServer<TServerOptions> : IGarnetServerApp
-        where TServerOptions : struct, IGarnetServerOptions
-    {
-        // Zero-size struct accessor — default(T) is free, JIT inlines property getters as constants
-        static readonly TServerOptions Cfg = default;
-
         /// <summary>
         /// Resp protocol version
         /// </summary>
@@ -88,18 +37,17 @@ namespace Garnet
             return $"{Version.Major}.{Version.Minor}.{Version.Build}";
         }
 
-        /// <inheritdoc />
-        public GarnetProvider Provider { get; private set; }
+        internal GarnetProvider Provider;
 
-        protected internal readonly GarnetServerOptions opts;
+        private readonly GarnetServerOptions opts;
         private IGarnetServer[] servers;
         private SubscribeBroker subscribeBroker;
         private INamedDeviceFactory logFactory;
+        private MemoryLogger initLogger;
         private ILogger logger;
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
-        /// <inheritdoc />
-        public bool DisposeLoggerFactory { private get; set; }
+        private bool disposeLoggerFactory;
         protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
 
         /// <summary>
@@ -107,14 +55,90 @@ namespace Garnet
         /// </summary>
         protected StoreWrapper storeWrapper;
 
-        /// <inheritdoc />
-        public MetricsApi Metrics { get; private set; }
+        /// <summary>
+        /// Metrics API
+        /// </summary>
+        public MetricsApi Metrics;
 
-        /// <inheritdoc />
-        public RegisterApi Register { get; private set; }
+        /// <summary>
+        /// Command registration API
+        /// </summary>
+        public RegisterApi Register;
 
-        /// <inheritdoc />
-        public StoreApi Store { get; private set; }
+        /// <summary>
+        /// Store API
+        /// </summary>
+        public StoreApi Store;
+
+        /// <summary>
+        /// Create Garnet Server instance using specified command line arguments; use Start to start the server.
+        /// </summary>
+        /// <param name="commandLineArgs">Command line arguments</param>
+        /// <param name="loggerFactory">Logger factory</param>
+        /// <param name="cleanupDir">Clean up directory.</param>
+        /// <param name="authenticationSettingsOverride">Override for custom authentication settings.</param>
+        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false, IAuthenticationSettings authenticationSettingsOverride = null)
+        {
+            Trace.Listeners.Add(new ConsoleTraceListener());
+
+            // Set up an initial memory logger to log messages from configuration parser into memory.
+            using (var memLogProvider = new MemoryLoggerProvider())
+            {
+                this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
+            }
+
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out _, out var exitGracefully, logger: this.initLogger))
+            {
+                if (exitGracefully)
+                    Environment.Exit(0);
+
+                // Flush logs from memory logger
+                FlushMemoryLogger(this.initLogger, "ArgParser", loggerFactory);
+
+                throw new GarnetException("Encountered an error when initializing Garnet server. Please see log messages above for more details.");
+            }
+
+            if (loggerFactory == null)
+            {
+                // If the main logger factory is created by GarnetServer, it should be disposed when GarnetServer is disposed
+                disposeLoggerFactory = true;
+            }
+            else
+            {
+                this.initLogger.LogWarning(
+                    $"Received an external ILoggerFactory object. The following configuration options are ignored: {nameof(serverSettings.FileLogger)}, {nameof(serverSettings.LogLevel)}, {nameof(serverSettings.DisableConsoleLogger)}.");
+            }
+
+            // If no logger factory is given, set up main logger factory based on parsed configuration values,
+            // otherwise use given logger factory.
+            this.loggerFactory = loggerFactory ?? LoggerFactory.Create(builder =>
+            {
+                if (!serverSettings.DisableConsoleLogger.GetValueOrDefault())
+                {
+                    builder.AddSimpleConsole(options =>
+                    {
+                        options.SingleLine = true;
+                        options.TimestampFormat = "hh::mm::ss ";
+                    });
+                }
+
+                // Optional: Flush log output to file.
+                if (serverSettings.FileLogger != null)
+                    builder.AddFile(serverSettings.FileLogger);
+                builder.SetMinimumLevel(serverSettings.LogLevel);
+            });
+
+            // Assign values to GarnetServerOptions
+            this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
+            this.cleanupDir = cleanupDir;
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
+            this.InitializeServer();
+        }
 
         /// <summary>
         /// Create Garnet Server instance using GarnetServerOptions instance; use Start to start the server.
@@ -130,9 +154,9 @@ namespace Garnet
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
             this.storeEpoch = new LightEpoch();
-            if (Cfg.EnableAOF)
+            if (this.opts.EnableAOF)
                 this.aofEpoch = new LightEpoch();
-            if (!Cfg.DisablePubSub)
+            if (!this.opts.DisablePubSub)
                 this.pubSubEpoch = new LightEpoch();
             try
             {
@@ -151,7 +175,7 @@ namespace Garnet
         {
             Debug.Assert(opts != null);
 
-            if (!Cfg.QuietMode)
+            if (!opts.QuietMode)
             {
                 var red = "\u001b[31m";
                 var magenta = "\u001b[35m";
@@ -159,7 +183,7 @@ namespace Garnet
 
                 Console.WriteLine($"""
                     {red}    _________
-                       /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(Cfg.EnableCluster ? "cluster" : "standalone")} mode{red}
+                       /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
                        '. \   / .'      {normal}Listening on: {(opts.EndPoints.Length > 1 ? opts.EndPoints[0] + $" and {opts.EndPoints.Length - 1} more" : opts.EndPoints[0])}{red}
                          '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
                            '.'
@@ -167,14 +191,17 @@ namespace Garnet
                     """);
             }
 
-            var clusterFactory = Cfg.EnableCluster ? new ClusterFactory() : null;
+            var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
                 version, IntPtr.Size == 8 ? "64" : "32",
-                Cfg.EnableCluster ? "cluster" : "standalone",
+                opts.EnableCluster ? "cluster" : "standalone",
                 string.Join(',', opts.EndPoints.Select(endpoint => endpoint.ToString())));
             logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
+
+            // Flush initialization logs from memory logger
+            FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
 
             var customCommandManager = new CustomCommandManager();
 
@@ -218,7 +245,7 @@ namespace Garnet
             StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId) =>
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
-            if (!Cfg.DisablePubSub)
+            if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, startFresh: true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
@@ -236,7 +263,7 @@ namespace Garnet
                         // Delete existing unix socket file, if it exists.
                         File.Delete(opts.UnixSocketPath);
                     }
-                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, Cfg.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
                 }
             }
 
@@ -257,13 +284,13 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            var maxDatabases = Cfg.EnableCluster ? 1 : Cfg.MaxDatabases;
+            var maxDatabases = opts.EnableCluster ? 1 : opts.MaxDatabases;
             logger?.LogInformation("Max number of logical databases allowed on server: {maxDatabases}", maxDatabases);
 
             if (opts.ExtensionBinPaths?.Length > 0)
             {
                 logger?.LogTrace("Allowed binary paths for extension loading: {binPaths}", string.Join(",", opts.ExtensionBinPaths));
-                logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", Cfg.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
+                logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", opts.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
             }
 
             // Create session provider for Garnet
@@ -286,7 +313,7 @@ namespace Garnet
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var (aofDevice, aof) = CreateAOF(dbId);
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, Cfg.AdjustedIndexMaxCacheLines == 0);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -303,7 +330,7 @@ namespace Garnet
                 var modulePath = moduleCSData[0];
                 var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
 
-                if (!ModuleUtils.LoadAssemblies([modulePath], null, Cfg.ExtensionAllowUnsignedAssemblies,
+                if (!ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies,
                         out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)
                     || !ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg))
                 {
@@ -327,7 +354,7 @@ namespace Garnet
             var baseName = opts.GetStoreCheckpointDirectory(dbId);
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
-            kvSettings.CheckpointManager = Cfg.EnableCluster ?
+            kvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
@@ -343,33 +370,35 @@ namespace Garnet
 
         private (IDevice, TsavoriteLog) CreateAOF(int dbId)
         {
-            if (!Cfg.EnableAOF)
+            if (!opts.EnableAOF)
             {
-                if (Cfg.CommitFrequencyMs != 0 || Cfg.WaitForCommit)
+                if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
                     throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
                 return (null, null);
             }
 
-            if (Cfg.FastAofTruncate && Cfg.CommitFrequencyMs != -1)
+            if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
             opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
             var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
 
-            if (Cfg.CommitFrequencyMs < 0 && Cfg.WaitForCommit)
+            if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");
             return (aofDevice, appendOnlyFile);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Start server instance
+        /// </summary>
         public void Start()
         {
             Provider.Recover();
             for (var i = 0; i < servers.Length; i++)
                 servers[i].Start();
             Provider.Start();
-            if (!Cfg.QuietMode)
+            if (!opts.QuietMode)
                 Console.WriteLine("* Ready to accept connections");
         }
 
@@ -409,17 +438,43 @@ namespace Garnet
             aofEpoch?.Dispose();
             pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
-            if (DisposeLoggerFactory)
+            if (disposeLoggerFactory)
                 loggerFactory?.Dispose();
+        }
+
+        private static void DeleteDirectory(string path)
+        {
+            if (path == null) return;
+
+            // Exceptions may happen due to a handle briefly remaining held after Dispose().
+            try
+            {
+                foreach (string directory in Directory.GetDirectories(path))
+                    DeleteDirectory(directory);
+                Directory.Delete(path, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                try
+                {
+                    Directory.Delete(path, true);
+                }
+                catch { }
+            }
         }
 
         /// <summary>
         /// Flushes MemoryLogger entries into a destination logger.
+        /// Destination logger is either created from ILoggerFactory parameter or from a default console logger.
         /// </summary>
+        /// <param name="memoryLogger">The memory logger</param>
+        /// <param name="categoryName">The category name of the destination logger</param>
+        /// <param name="dstLoggerFactory">Optional logger factory for creating the destination logger</param>
         private static void FlushMemoryLogger(MemoryLogger memoryLogger, string categoryName, ILoggerFactory dstLoggerFactory = null)
         {
             if (memoryLogger == null) return;
 
+            // If no logger factory supplied, create a default console logger
             var disposeDstLoggerFactory = false;
             if (dstLoggerFactory == null)
             {
@@ -431,9 +486,13 @@ namespace Garnet
                 disposeDstLoggerFactory = true;
             }
 
+            // Create the destination logger
             var dstLogger = dstLoggerFactory.CreateLogger(categoryName);
+
+            // Flush all entries from the memory logger into the destination logger
             memoryLogger.FlushLogger(dstLogger);
 
+            // If a default console logger factory was created, it is no longer needed
             if (disposeDstLoggerFactory)
             {
                 dstLoggerFactory.Dispose();

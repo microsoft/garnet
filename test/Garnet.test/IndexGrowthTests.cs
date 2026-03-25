@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -14,7 +14,7 @@ namespace Garnet.test
     [TestFixture]
     public class IndexGrowthTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         private int indexResizeTaskDelaySeconds = 5;
         private int indexResizeWaitCycles = 2;
 

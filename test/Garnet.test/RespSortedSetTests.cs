@@ -24,7 +24,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespSortedSetTests : AllureTestBase
     {
-        protected IGarnetServerApp server;
+        protected GarnetServer server;
 
         static readonly SortedSetEntry[] entries =
               [

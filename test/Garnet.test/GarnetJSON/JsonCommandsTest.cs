@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.Collections.Generic;
@@ -20,7 +20,7 @@ namespace Garnet.test
     [TestFixture]
     class JsonCommandsTest : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         string binPath;
 
         [SetUp]

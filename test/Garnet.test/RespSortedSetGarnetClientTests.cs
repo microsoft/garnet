@@ -23,7 +23,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespSortedSetGarnetClientTests : AllureTestBase
     {
-        protected IGarnetServerApp server;
+        protected GarnetServer server;
         ManualResetEventSlim waiter;
         const int maxIterations = 3;
 

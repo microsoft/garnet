@@ -38,7 +38,7 @@ namespace Embedded.perftest
             {
                 QuietMode = true
             };
-            using var server = EmbeddedRespServerFactory.CreateServer(opt, loggerFactory);
+            using var server = new EmbeddedRespServer(opt, loggerFactory);
 
             PrintBenchmarkConfig(opts);
 

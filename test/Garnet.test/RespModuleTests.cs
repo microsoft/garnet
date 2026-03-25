@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
@@ -15,7 +15,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespModuleTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         private string testModuleDir;
         string binPath;
 

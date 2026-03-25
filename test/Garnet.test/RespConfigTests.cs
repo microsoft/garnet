@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -23,7 +23,7 @@ namespace Garnet.test
     [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         private readonly string memorySizeStr = "17g";
         private readonly string indexSizeStr = "64m";
         private readonly string pageSizeStr = "32m";
@@ -245,7 +245,7 @@ namespace Garnet.test
     [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigUtilizationTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         private readonly string memorySize = "3m";
         private readonly string indexSize = "1m";
         private readonly string pageSize = "1024";
@@ -546,7 +546,7 @@ namespace Garnet.test
     [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigIndexUtilizationTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         private readonly string memorySize = "3m";
         private readonly string indexSize = "512";
         private readonly string pageSize = "1024";
@@ -651,7 +651,7 @@ namespace Garnet.test
     [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigHeapUtilizationTests : AllureTestBase
     {
-        IGarnetServerApp server;
+        GarnetServer server;
         private readonly string memorySize = "3m";
         private readonly string indexSize = "512";
         private readonly string pageSize = "1024";
