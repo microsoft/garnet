@@ -321,6 +321,7 @@ namespace Garnet.test.cluster
         /// <param name="endpoint"></param>
         /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
+        /// <param name="disableEpochCollision"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
         /// <param name="lowMemory"></param>
@@ -340,8 +341,10 @@ namespace Garnet.test.cluster
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
         /// <param name="asyncReplay"></param>
-        /// <param name="clusterCreds"></param>
+        /// <param name="sublogCount"></param>
+        /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
+        /// <param name="clusterCreds"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -377,6 +380,7 @@ namespace Garnet.test.cluster
                 TestFolder,
                 TestFolder,
                 endpoint,
+                logger: loggerFactory?.CreateLogger("GarnetServer"),
                 enableCluster: enableCluster,
                 disablePubSub: true,
                 disableObjects: disableObjects,
