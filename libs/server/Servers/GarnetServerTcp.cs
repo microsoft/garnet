@@ -191,13 +191,14 @@ namespace Garnet.server
         {
             // Schedules the accept loop to resume after a backoff delay.
             // Use a Timer so we don't block the IOCP thread pool thread.
+            //
+            // No concurrent callback race: ScheduleAcceptRetry is only reachable through
+            // the serialized accept path (single SAEA), so a new timer can't be scheduled
+            // until the previous callback has completed, called AcceptAsync, and that
+            // accept has completed with another Tier 2 error.
             acceptRetryTimer?.Dispose();
             acceptRetryTimer = new Timer(_ =>
             {
-                // Best effort guard against race with Dispose(): Timer.Dispose() does not
-                // guarantee an in-flight callback has finished, so this callback
-                // can fire after the server has started disposing.
-                // if disposed happens after check then try catch handles it.
                 if (Disposed) return;
 
                 try
