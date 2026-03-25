@@ -417,6 +417,7 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETEXNX:
+                    // Note: SETEXNX may or may not actually have an expiration.
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
@@ -504,9 +505,26 @@ namespace Garnet.server
                     // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
                     bool inputHeaderHasEtag = input.header.CheckWithETagFlag();
 
-                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
-                        return IPUResult.Failed;
+                    // If we are not adding an ETag or Expiration we don't need to grow the record size for any reason other than value growth,
+                    // so we can optimize this to just set the length and span. Note: SETEXXX may or may not actually have an expiration.
+                    if (logRecord.Info.RecordIsInline && (!input.header.CheckWithETagFlag() || logRecord.Info.HasETag) && (input.arg1 == 0 || logRecord.Info.HasExpiration))
+                    {
+                        var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
+                        if (!logRecord.TrySetPinnedValueSpan(input.parseState.GetArgSliceByRef(0), valueAddress, ref valueLength))
+                            return IPUResult.Failed;
+
+                        shouldUpdateEtag = false;   // since we know we don't have an ETag
+                        Debug.Assert(!hadETagPreMutation, "hadETagPreMutation should be false if !logRecord.Info.HasOptionalOrObjectFields");
+                        break;
+                    }
+
+                    // Create local sizeInfo
+                    {
+                        var sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(in logRecord, ref input) };
+                        functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
+                        if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0), in sizeInfo2))
+                            return IPUResult.Failed;
+                    }
 
                     // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
                     // update it), else there isn't one and nextUpdate will add it.
@@ -549,7 +567,7 @@ namespace Garnet.server
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
 
-                    setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
                         return IPUResult.Failed;
 
@@ -567,27 +585,27 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCR:
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: 1))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, ref output, ref rmwInfo, input: 1))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.DECR:
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -1))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, ref output, ref rmwInfo, input: -1))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
                     var incrBy = input.arg1;
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: incrBy))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, ref output, ref rmwInfo, input: incrBy))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.DECRBY:
                     var decrBy = input.arg1;
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -decrBy))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, ref output, ref rmwInfo, input: -decrBy))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, incrByFloat))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, ref output, ref rmwInfo, incrByFloat))
                         return IPUResult.Failed;
                     break;
 

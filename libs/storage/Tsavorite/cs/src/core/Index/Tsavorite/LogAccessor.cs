@@ -94,6 +94,10 @@ namespace Tsavorite.core
         /// </summary>
         public int AllocatedPageCount => allocatorBase.AllocatedPageCount;
 
+        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
+        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
+        public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => allocator.PopulateRecordSizeInfo(ref sizeInfo);
+
         /// <summary>
         /// Shift begin address to the provided untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to 
         /// false. Destructive operation if truncateLog is set to true.

@@ -142,7 +142,7 @@ namespace Tsavorite.core
                     }
 
                     var sizeInfo = hlog.GetRMWCopyRecordSize(in srcLogRecord, ref input, sessionFunctions);
-                    // var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
+                    //var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
                     
                     if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
                     {

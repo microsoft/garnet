@@ -341,8 +341,6 @@ namespace Tsavorite.core
             }
         }
 
-        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0) + (info.RecordHasObjects ? ObjectLogPositionSize : 0);
-
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
         /// <inheritdoc/>
@@ -687,6 +685,7 @@ namespace Tsavorite.core
                 return false;
             }
 
+            // If we're not changing value size, there's nothing to do.
             var inlineValueGrowth = newValueSize - valueLength;
             if (inlineValueGrowth == 0)
                 return true;
@@ -724,6 +723,26 @@ namespace Tsavorite.core
             // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // So the only things that change are FillerLength and ValueLength.
             valueLength += inlineValueGrowth;
+            return true;
+        }
+
+        /// <summary>
+        /// Tries to set the length of the value field, including shifting optionals as needed. Does NOT change the presence of optionals,
+        /// and only works on Inline values. Used for in-place updates and preceded by calling <see cref="PinnedValueAddressAndLength"/>
+        /// which is usually necessary to evaluate the current value data, e.g. for INCRBY.
+        /// </summary>
+        /// <param name="newValue">The new value to set into the record.</param>
+        /// <param name="valueAddress">The address of the value, obtained from <see cref="PinnedValueAddressAndLength"/></param>
+        /// <param name="valueLength">The current length of the value; on input obtained from <see cref="PinnedValueAddressAndLength"/>; set on output to newValueSize</param>
+        /// <param name="zeroInit">If true, set any value space "exposed" by increasing <paramref name="valueLength"/></param>
+        /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TrySetPinnedValueSpan(ReadOnlySpan<byte> newValue, long valueAddress, ref int valueLength, bool zeroInit = false)
+        {
+            if (!TrySetPinnedValueLength(newValue.Length, valueAddress, ref valueLength, zeroInit))
+                return false;
+            newValue.CopyTo(new Span<byte>((byte*)valueAddress, newValue.Length));
             return true;
         }
 

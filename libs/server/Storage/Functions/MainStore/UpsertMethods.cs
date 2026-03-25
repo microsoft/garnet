@@ -64,31 +64,45 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ReadOnlySpan<byte> srcValue, ref StringOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
-                return false;
-            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
-            if (ok)
+            // If we are not adding an ETag or Expiration we don't need to grow the record size for any reason other than value growth,
+            // so we can optimize this to just set the length and span. 
+            if (logRecord.Info.RecordIsInline && (!input.header.CheckWithETagFlag() || logRecord.Info.HasETag) && (input.arg1 == 0 || logRecord.Info.HasExpiration))
             {
-                if (input.header.CheckWithETagFlag())
+                var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
+                if (!logRecord.TrySetPinnedValueSpan(srcValue, valueAddress, ref valueLength))
+                    return false;
+            }
+            else
+            {
+                // Create local sizeInfo
+                var sizeInfo2 = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo2);
+
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo2))
+                    return false;
+                var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
+                if (ok)
                 {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
+                    if (input.header.CheckWithETagFlag())
+                    {
+                        var newETag = functionsState.etagState.ETag + 1;
+                        ok = logRecord.TrySetETag(newETag);
+                        if (ok)
+                            functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
+                    }
+                    else
+                        ok = logRecord.RemoveETag();
                 }
-                else
-                    ok = logRecord.RemoveETag();
+                if (!ok)
+                    return false;
+                sizeInfo2.AssertOptionals(logRecord.Info);
             }
-            if (ok)
-            {
-                sizeInfo.AssertOptionals(logRecord.Info);
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                return true;
-            }
-            return false;
+
+            if (!logRecord.Info.Modified)
+                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+            return true;
         }
 
         /// <inheritdoc />

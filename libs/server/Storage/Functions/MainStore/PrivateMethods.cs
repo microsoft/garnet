@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -360,39 +361,7 @@ namespace Garnet.server
             return (0, 0);
         }
 
-        static bool InPlaceUpdateNumber(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, double val, ref StringOutput output, ref RMWInfo rmwInfo)
-        {
-            var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
-
-            // Set the destination value length, including space for the negative sign if present.
-            Span<byte> value;
-            if (logRecord.IsPinnedValue)
-            {
-                // We've verified the current value is a valid number so we are in-place and pinned; this call only fails if the record value space is too small.
-                var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
-                if (!logRecord.TrySetPinnedValueLength(ndigits, valueAddress, ref valueLength))
-                    return false;
-                value = SpanByte.FromPinnedPointer((byte*)valueAddress, valueLength);   // Faster than ValueSpan (which decodes RecordDataHeader lengths)
-
-                // Call the pinned form of the number-writer. ndigits includes space for the negative sign if present.
-                var ptr = (byte*)valueAddress;
-                NumUtils.WriteDouble(val, ndigits, ref ptr);
-            }
-            else
-            {
-                if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
-                    return false;
-                value = logRecord.ValueSpan;
-                _ = NumUtils.WriteDouble(val, value);
-            }
-
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            value.CopyTo(output.SpanByteAndMemory.SpanByte.Span);
-            output.SpanByteAndMemory.SpanByte.Length = value.Length;
-            return true;
-        }
-
-        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringOutput output, ref RMWInfo rmwInfo, long input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, long input)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
@@ -415,7 +384,7 @@ namespace Garnet.server
 
                     // Call the pinned form of the number-writer. Don't include space for the negative sign; that's added in the callee.
                     {
-                        var valuePtr = (byte*)valueAddress; // Use ONLY here; it is updated by WriteInt64
+                        var valuePtr = (byte*)valueAddress; // Use ONLY here; it is updated by WriteInt64, so do not use as the pointer for the subsequent copy
                         NumUtils.WriteInt64(val, ndigits, ref valuePtr);
                     }
 
@@ -424,8 +393,12 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // This is not inline, so LogRecord will probably change it to inline because the update is to a short (# chars in number) length.
+                    // The value is not inline, so LogRecord will probably change it to inline because the update is to a very short (# chars in number) length.
                     var value = logRecord.ValueSpan;
+
+                    // TODO: Create sizeInfo
+                    RecordSizeInfo sizeInfo = default;
+
                     fixed (byte* valuePtr = value)
                     {
                         if (!IsValidNumber(value.Length, valuePtr, ref output, out var val))
@@ -453,35 +426,68 @@ namespace Garnet.server
             return true;
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringOutput output, ref RMWInfo rmwInfo, double input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref StringOutput output, ref RMWInfo rmwInfo, double input)
         {
-            var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
+            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
-            double val;
+            // Check if the current value in the logRecord contains a valid double and if so, add the input to it.
             if (logRecord.IsPinnedValue)
             {
-                if (!IsValidDouble(value.Length, logRecord.PinnedValuePointer, ref output, out val))
+                // Using the pinned pointer directly is faster than pinning 'value'.
+                var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
+                if (!IsValidDouble(valueLength, (byte*)valueAddress, ref output, out var val))
                     return true;
+
+                val += input;
+                if (!double.IsFinite(val))
+                {
+                    output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                    return true;
+                }
+                var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
+
+                if (!logRecord.TrySetPinnedValueLength(ndigits, valueAddress, ref valueLength))
+                    return false;
+
+                // Call the pinned form of the number-writer. ndigits includes space for the negative sign if present.
+                var ptr = (byte*)valueAddress;
+                NumUtils.WriteDouble(val, ndigits, ref ptr);
+
+                new ReadOnlySpan<byte>((byte*)valueAddress, valueLength).CopyTo(output.SpanByteAndMemory.SpanByte.Span);
+                output.SpanByteAndMemory.SpanByte.Length = valueLength;
             }
             else
             {
+                // The value is not inline, so LogRecord will probably change it to inline because the update is to a very short (# chars in number) length.
+
+                // TODO: Create sizeInfo
+                RecordSizeInfo sizeInfo = default;
+
+                var value = logRecord.ValueSpan;
                 fixed (byte* valuePtr = value)
                 {
-                    if (!IsValidDouble(value.Length, valuePtr, ref output, out val))
+                    if (!IsValidDouble(value.Length, valuePtr, ref output, out var val))
                         return true;
+
+                    val += input;
+                    if (!double.IsFinite(val))
+                    {
+                        output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+                        return true;
+                    }
+                    var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
+
+                    // Set the logRecord's length to the length of the new value
+                    if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
+                        return false;
+                    value = logRecord.ValueSpan;
+                    _ = NumUtils.WriteDouble(val, value);
+
+                    value.CopyTo(output.SpanByteAndMemory.SpanByte.Span);
+                    output.SpanByteAndMemory.SpanByte.Length = value.Length;
                 }
             }
-
-
-            val += input;
-
-            if (!double.IsFinite(val))
-            {
-                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
-                return true;
-            }
-
-            return InPlaceUpdateNumber(ref logRecord, in sizeInfo, val, ref output, ref rmwInfo);
+            return true;
         }
 
         static bool TryCopyUpdateNumber(long next, Span<byte> newValue, ref StringOutput output)
@@ -618,16 +624,16 @@ namespace Garnet.server
         /// <param name="output">Output error flag</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static bool IsValidNumber(int length, byte* source, ref StringOutput output, out long val)
         {
             // Check for valid number
-            if (!NumUtils.TryReadInt64(length, source, out val))
-            {
-                // Signal value is not a valid number
-                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
-                return false;
-            }
-            return true;
+            if (NumUtils.TryReadInt64(length, source, out val))
+                return true;
+
+            // Signal value is not a valid number
+            output.OutputFlags |= StringOutputFlags.InvalidTypeError;
+            return false;
         }
 
         static bool IsValidDouble(int length, byte* source, ref StringOutput output, out double val)
