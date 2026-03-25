@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #nullable disable
@@ -37,7 +37,7 @@ namespace Embedded.server
             : base(opts, loggerFactory, server == null ? null : [server])
         {
             this.garnetServerEmbedded = server;
-            this.subscribeBroker = TServerOptions.DisablePubSub ? null :
+            this.subscribeBroker = default(TServerOptions).DisablePubSub ? null :
                 new SubscribeBroker(
                     null,
                     opts.PubSubPageSizeBytes(),
@@ -75,7 +75,7 @@ namespace Embedded.server
     internal static class EmbeddedRespServerFactory
     {
         /// <summary>
-        /// Creates an EmbeddedRespServer with a JIT-optimized options struct.
+        /// Creates an EmbeddedRespServer with a dynamically emitted JIT-optimized options struct.
         /// </summary>
         public static IEmbeddedRespServer CreateServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null)
         {

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -65,7 +65,7 @@ namespace Garnet
 
     /// <summary>
     /// Garnet server with JIT-optimized configuration.
-    /// TServerOptions is a zero-size struct implementing IGarnetServerOptions whose static properties
+    /// TServerOptions is a zero-size struct implementing IGarnetServerOptions whose instance properties
     /// return constants. The JIT specializes this class per struct type, inlining all config checks
     /// and eliminating dead branches entirely.
     /// Use <see cref="GarnetServerFactory"/> to create instances from a <see cref="GarnetServerOptions"/>.
@@ -73,6 +73,9 @@ namespace Garnet
     public class GarnetServer<TServerOptions> : IGarnetServerApp
         where TServerOptions : struct, IGarnetServerOptions
     {
+        // Zero-size struct accessor — default(T) is free, JIT inlines property getters as constants
+        static readonly TServerOptions Cfg = default;
+
         /// <summary>
         /// Resp protocol version
         /// </summary>
@@ -127,9 +130,9 @@ namespace Garnet
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
             this.storeEpoch = new LightEpoch();
-            if (TServerOptions.EnableAOF)
+            if (Cfg.EnableAOF)
                 this.aofEpoch = new LightEpoch();
-            if (!TServerOptions.DisablePubSub)
+            if (!Cfg.DisablePubSub)
                 this.pubSubEpoch = new LightEpoch();
             try
             {
@@ -148,7 +151,7 @@ namespace Garnet
         {
             Debug.Assert(opts != null);
 
-            if (!TServerOptions.QuietMode)
+            if (!Cfg.QuietMode)
             {
                 var red = "\u001b[31m";
                 var magenta = "\u001b[35m";
@@ -156,7 +159,7 @@ namespace Garnet
 
                 Console.WriteLine($"""
                     {red}    _________
-                       /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(TServerOptions.EnableCluster ? "cluster" : "standalone")} mode{red}
+                       /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(Cfg.EnableCluster ? "cluster" : "standalone")} mode{red}
                        '. \   / .'      {normal}Listening on: {(opts.EndPoints.Length > 1 ? opts.EndPoints[0] + $" and {opts.EndPoints.Length - 1} more" : opts.EndPoints[0])}{red}
                          '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
                            '.'
@@ -164,12 +167,12 @@ namespace Garnet
                     """);
             }
 
-            var clusterFactory = TServerOptions.EnableCluster ? new ClusterFactory() : null;
+            var clusterFactory = Cfg.EnableCluster ? new ClusterFactory() : null;
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
                 version, IntPtr.Size == 8 ? "64" : "32",
-                TServerOptions.EnableCluster ? "cluster" : "standalone",
+                Cfg.EnableCluster ? "cluster" : "standalone",
                 string.Join(',', opts.EndPoints.Select(endpoint => endpoint.ToString())));
             logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
 
@@ -215,7 +218,7 @@ namespace Garnet
             StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId) =>
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
-            if (!TServerOptions.DisablePubSub)
+            if (!Cfg.DisablePubSub)
                 subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, startFresh: true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
@@ -233,7 +236,7 @@ namespace Garnet
                         // Delete existing unix socket file, if it exists.
                         File.Delete(opts.UnixSocketPath);
                     }
-                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, TServerOptions.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, Cfg.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
                 }
             }
 
@@ -254,13 +257,13 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            var maxDatabases = TServerOptions.EnableCluster ? 1 : TServerOptions.MaxDatabases;
+            var maxDatabases = Cfg.EnableCluster ? 1 : Cfg.MaxDatabases;
             logger?.LogInformation("Max number of logical databases allowed on server: {maxDatabases}", maxDatabases);
 
             if (opts.ExtensionBinPaths?.Length > 0)
             {
                 logger?.LogTrace("Allowed binary paths for extension loading: {binPaths}", string.Join(",", opts.ExtensionBinPaths));
-                logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", TServerOptions.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
+                logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", Cfg.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
             }
 
             // Create session provider for Garnet
@@ -283,7 +286,7 @@ namespace Garnet
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var (aofDevice, aof) = CreateAOF(dbId);
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, TServerOptions.AdjustedIndexMaxCacheLines == 0);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, Cfg.AdjustedIndexMaxCacheLines == 0);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -300,7 +303,7 @@ namespace Garnet
                 var modulePath = moduleCSData[0];
                 var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
 
-                if (!ModuleUtils.LoadAssemblies([modulePath], null, TServerOptions.ExtensionAllowUnsignedAssemblies,
+                if (!ModuleUtils.LoadAssemblies([modulePath], null, Cfg.ExtensionAllowUnsignedAssemblies,
                         out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)
                     || !ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg))
                 {
@@ -324,7 +327,7 @@ namespace Garnet
             var baseName = opts.GetStoreCheckpointDirectory(dbId);
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
-            kvSettings.CheckpointManager = TServerOptions.EnableCluster ?
+            kvSettings.CheckpointManager = Cfg.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
@@ -340,21 +343,21 @@ namespace Garnet
 
         private (IDevice, TsavoriteLog) CreateAOF(int dbId)
         {
-            if (!TServerOptions.EnableAOF)
+            if (!Cfg.EnableAOF)
             {
-                if (TServerOptions.CommitFrequencyMs != 0 || TServerOptions.WaitForCommit)
+                if (Cfg.CommitFrequencyMs != 0 || Cfg.WaitForCommit)
                     throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
                 return (null, null);
             }
 
-            if (TServerOptions.FastAofTruncate && TServerOptions.CommitFrequencyMs != -1)
+            if (Cfg.FastAofTruncate && Cfg.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
             opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
             var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
 
-            if (TServerOptions.CommitFrequencyMs < 0 && TServerOptions.WaitForCommit)
+            if (Cfg.CommitFrequencyMs < 0 && Cfg.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");
             return (aofDevice, appendOnlyFile);
         }
@@ -366,7 +369,7 @@ namespace Garnet
             for (var i = 0; i < servers.Length; i++)
                 servers[i].Start();
             Provider.Start();
-            if (!TServerOptions.QuietMode)
+            if (!Cfg.QuietMode)
                 Console.WriteLine("* Ready to accept connections");
         }
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Garnet.server.Auth.Settings;
@@ -23,54 +23,54 @@ namespace Garnet.server
         public static GarnetServerOptions Instance;
 
         // ServerOptions booleans
-        public static bool EnableStorageTier => Instance.EnableStorageTier;
-        public static bool CopyReadsToTail => Instance.CopyReadsToTail;
-        public static bool Recover => Instance.Recover;
-        public static bool DisablePubSub => Instance.DisablePubSub;
-        public static bool FailOnRecoveryError => Instance.FailOnRecoveryError;
+        public bool EnableStorageTier => Instance.EnableStorageTier;
+        public bool CopyReadsToTail => Instance.CopyReadsToTail;
+        public bool Recover => Instance.Recover;
+        public bool DisablePubSub => Instance.DisablePubSub;
+        public bool FailOnRecoveryError => Instance.FailOnRecoveryError;
 
         // GarnetServerOptions booleans
-        public static bool DisableObjects => Instance.DisableObjects;
-        public static bool EnableCluster => Instance.EnableCluster;
-        public static bool CleanClusterConfig => Instance.CleanClusterConfig;
-        public static bool FastMigrate => Instance.FastMigrate;
-        public static bool EnableAOF => Instance.EnableAOF;
-        public static bool EnableLua => Instance.EnableLua;
-        public static bool LuaTransactionMode => Instance.LuaTransactionMode;
-        public static bool WaitForCommit => Instance.WaitForCommit;
-        public static bool CompactionForceDelete => Instance.CompactionForceDelete;
-        public static bool LatencyMonitor => Instance.LatencyMonitor;
-        public static bool QuietMode => Instance.QuietMode;
-        public static bool EnableIncrementalSnapshots => Instance.EnableIncrementalSnapshots;
-        public static bool UseFoldOverCheckpoints => Instance.UseFoldOverCheckpoints;
-        public static bool EnableFastCommit => Instance.EnableFastCommit;
-        public static bool EnableScatterGatherGet => Instance.EnableScatterGatherGet;
-        public static bool FastAofTruncate => Instance.FastAofTruncate;
-        public static bool OnDemandCheckpoint => Instance.OnDemandCheckpoint;
-        public static bool ReplicaDisklessSync => Instance.ReplicaDisklessSync;
-        public static bool UseAofNullDevice => Instance.UseAofNullDevice;
-        public static bool UseRevivBinsPowerOf2 => Instance.UseRevivBinsPowerOf2;
-        public static bool RevivInChainOnly => Instance.RevivInChainOnly;
-        public static bool ExtensionAllowUnsignedAssemblies => Instance.ExtensionAllowUnsignedAssemblies;
-        public static bool EnableReadCache => Instance.EnableReadCache;
-        public static bool ClusterReplicaResumeWithData => Instance.ClusterReplicaResumeWithData;
-        public static bool AllowMultiDb => Instance.AllowMultiDb;
+        public bool DisableObjects => Instance.DisableObjects;
+        public bool EnableCluster => Instance.EnableCluster;
+        public bool CleanClusterConfig => Instance.CleanClusterConfig;
+        public bool FastMigrate => Instance.FastMigrate;
+        public bool EnableAOF => Instance.EnableAOF;
+        public bool EnableLua => Instance.EnableLua;
+        public bool LuaTransactionMode => Instance.LuaTransactionMode;
+        public bool WaitForCommit => Instance.WaitForCommit;
+        public bool CompactionForceDelete => Instance.CompactionForceDelete;
+        public bool LatencyMonitor => Instance.LatencyMonitor;
+        public bool QuietMode => Instance.QuietMode;
+        public bool EnableIncrementalSnapshots => Instance.EnableIncrementalSnapshots;
+        public bool UseFoldOverCheckpoints => Instance.UseFoldOverCheckpoints;
+        public bool EnableFastCommit => Instance.EnableFastCommit;
+        public bool EnableScatterGatherGet => Instance.EnableScatterGatherGet;
+        public bool FastAofTruncate => Instance.FastAofTruncate;
+        public bool OnDemandCheckpoint => Instance.OnDemandCheckpoint;
+        public bool ReplicaDisklessSync => Instance.ReplicaDisklessSync;
+        public bool UseAofNullDevice => Instance.UseAofNullDevice;
+        public bool UseRevivBinsPowerOf2 => Instance.UseRevivBinsPowerOf2;
+        public bool RevivInChainOnly => Instance.RevivInChainOnly;
+        public bool ExtensionAllowUnsignedAssemblies => Instance.ExtensionAllowUnsignedAssemblies;
+        public bool EnableReadCache => Instance.EnableReadCache;
+        public bool ClusterReplicaResumeWithData => Instance.ClusterReplicaResumeWithData;
+        public bool AllowMultiDb => Instance.AllowMultiDb;
 
         // Non-boolean hot-path fields
-        public static int MetricsSamplingFrequency => Instance.MetricsSamplingFrequency;
-        public static int SlowLogThreshold => Instance.SlowLogThreshold;
-        public static int SlowLogMaxEntries => Instance.SlowLogMaxEntries;
-        public static int ObjectScanCountLimit => Instance.ObjectScanCountLimit;
-        public static int MaxDatabases => Instance.MaxDatabases;
-        public static ConnectionProtectionOption EnableDebugCommand => Instance.EnableDebugCommand;
-        public static ConnectionProtectionOption EnableModuleCommand => Instance.EnableModuleCommand;
-        public static int CommitFrequencyMs => Instance.CommitFrequencyMs;
-        public static int CompactionFrequencySecs => Instance.CompactionFrequencySecs;
-        public static int IndexResizeFrequencySecs => Instance.IndexResizeFrequencySecs;
-        public static int AdjustedIndexMaxCacheLines => Instance.AdjustedIndexMaxCacheLines;
-        public static int AdjustedObjectStoreIndexMaxCacheLines => Instance.AdjustedObjectStoreIndexMaxCacheLines;
-        public static int ExpiredKeyDeletionScanFrequencySecs => Instance.ExpiredKeyDeletionScanFrequencySecs;
-        public static int ExpiredObjectCollectionFrequencySecs => Instance.ExpiredObjectCollectionFrequencySecs;
-        public static int NetworkSendThrottleMax => Instance.NetworkSendThrottleMax;
+        public int MetricsSamplingFrequency => Instance.MetricsSamplingFrequency;
+        public int SlowLogThreshold => Instance.SlowLogThreshold;
+        public int SlowLogMaxEntries => Instance.SlowLogMaxEntries;
+        public int ObjectScanCountLimit => Instance.ObjectScanCountLimit;
+        public int MaxDatabases => Instance.MaxDatabases;
+        public ConnectionProtectionOption EnableDebugCommand => Instance.EnableDebugCommand;
+        public ConnectionProtectionOption EnableModuleCommand => Instance.EnableModuleCommand;
+        public int CommitFrequencyMs => Instance.CommitFrequencyMs;
+        public int CompactionFrequencySecs => Instance.CompactionFrequencySecs;
+        public int IndexResizeFrequencySecs => Instance.IndexResizeFrequencySecs;
+        public int AdjustedIndexMaxCacheLines => Instance.AdjustedIndexMaxCacheLines;
+        public int AdjustedObjectStoreIndexMaxCacheLines => Instance.AdjustedObjectStoreIndexMaxCacheLines;
+        public int ExpiredKeyDeletionScanFrequencySecs => Instance.ExpiredKeyDeletionScanFrequencySecs;
+        public int ExpiredObjectCollectionFrequencySecs => Instance.ExpiredObjectCollectionFrequencySecs;
+        public int NetworkSendThrottleMax => Instance.NetworkSendThrottleMax;
     }
 }
