@@ -150,20 +150,23 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    var bcStartOffset = 0;
-                    var bcEndOffset = -1;
+                    long bcStartOffset = 0;
+                    long bcEndOffset = -1;
                     byte bcOffsetType = 0x0;
+
+                    if (input.parseState.Count > 0)
+                    {
+                        bcStartOffset = input.parseState.GetLong(0);
+                    }
 
                     if (input.parseState.Count > 1)
                     {
-                        bcStartOffset = input.parseState.GetInt(0);
-                        bcEndOffset = input.parseState.GetInt(1);
+                        bcEndOffset = input.parseState.GetLong(1);
+                    }
 
-                        if (input.parseState.Count > 2)
-                        {
-                            var spanOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
-                            bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
-                        }
+                    if (input.parseState.Count > 2)
+                    {
+                        bcOffsetType = (byte)(input.arg1 & 0x1);
                     }
 
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
@@ -172,15 +175,15 @@ namespace Garnet.server
 
                 case RespCommand.BITPOS:
                     var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(0).ReadOnlySpan[0] - '0');
-                    var bpStartOffset = 0;
-                    var bpEndOffset = -1;
+                    long bpStartOffset = 0;
+                    long bpEndOffset = -1;
                     byte bpOffsetType = 0x0;
                     if (input.parseState.Count > 1)
                     {
-                        bpStartOffset = input.parseState.GetInt(1);
+                        bpStartOffset = input.parseState.GetLong(1);
                         if (input.parseState.Count > 2)
                         {
-                            bpEndOffset = input.parseState.GetInt(2);
+                            bpEndOffset = input.parseState.GetLong(2);
                             if (input.parseState.Count > 3)
                             {
                                 var sbOffsetType = input.parseState.GetArgSliceByRef(3).ReadOnlySpan;
@@ -811,8 +814,8 @@ namespace Garnet.server
             // Calculate number offset from bitCount if offsetArg starts with #
             var offsetParsed = input.parseState.TryGetBitfieldOffset(currTokenIdx++, out var offset, out var multiplyOffset);
             Debug.Assert(offsetParsed);
-            if (multiplyOffset)
-                offset *= bitCount;
+            if (!BitmapManager.TryValidateBitfieldOffset(offset, (byte)bitCount, multiplyOffset, out offset, out _))
+                throw new GarnetException("ERR bit offset is not an integer or out of range");
 
             long value = default;
             if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)

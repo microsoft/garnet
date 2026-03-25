@@ -862,7 +862,7 @@ namespace Garnet.test.cluster
         public override string[] GetSingleSlotRequest()
         {
             var ssk = GetSingleSlotKeys;
-            return [ssk[0], "15"];
+            return [ssk[0], "15", "32"];
         }
 
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
