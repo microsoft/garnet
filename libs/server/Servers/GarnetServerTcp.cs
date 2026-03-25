@@ -135,7 +135,7 @@ namespace Garnet.server
                 do
                 {
                     /*
-                    Wwhen the while condition exits normally(AcceptAsync returned true), an
+                    When the while condition exits normally(AcceptAsync returned true), an
                     accept is already pending on IOCP — the callback will fire on next connection.But when
                     HandleNewConnection returns false, the break skips the while entirely — no AcceptAsync is issued,
                     nothing is pending.
@@ -159,7 +159,10 @@ namespace Garnet.server
                 case SocketError.Shutdown:
                 case SocketError.NotInitialized:
                 case SocketError.VersionNotSupported:
-                    logger?.LogCritical("Fatal accept error, stopping accept loop: {error}", e.SocketError);
+                    if (!Disposed || e.SocketError != SocketError.OperationAborted)
+                    {
+                        logger?.LogCritical("Fatal accept error, stopping accept loop: {error}", e.SocketError);
+                    }
                     e.Dispose();
                     return false;
 
@@ -187,9 +190,15 @@ namespace Garnet.server
             acceptRetryTimer?.Dispose();
             acceptRetryTimer = new Timer(_ =>
             {
-                e.AcceptSocket = null;
+                // Best effort guard against race with Dispose(): Timer.Dispose() does not
+                // guarantee an in-flight callback has finished, so this callback
+                // can fire after the server has started disposing.
+                // if disposed happens after check then try catch handles it.
+                if (Disposed) return;
+
                 try
                 {
+                    e.AcceptSocket = null;
                     if (!listenSocket.AcceptAsync(e))
                         AcceptEventArg_Completed(null, e);
                 }
