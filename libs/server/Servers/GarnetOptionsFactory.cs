@@ -1,14 +1,13 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
-using Garnet.server;
 using Garnet.server.Auth.Settings;
 
-namespace Garnet
+namespace Garnet.server
 {
     /// <summary>
     /// Factory that emits zero-size structs implementing IGarnetServerOptions with hardcoded
