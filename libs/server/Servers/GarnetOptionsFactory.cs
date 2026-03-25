@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
-using Garnet.server.Auth.Settings;
 
 namespace Garnet.server
 {
@@ -18,7 +17,8 @@ namespace Garnet.server
     /// and eliminates dead branches entirely.
     ///
     /// Thread-safe. Deduplicates emitted types by value — identical configurations reuse the
-    /// same struct type. Validates at startup that all IGarnetServerOptions properties are covered.
+    /// same struct type. Properties are discovered from the IGarnetServerOptions interface and
+    /// read from GarnetServerOptions by matching property names via reflection.
     ///
     /// See GarnetOptionsFactory.Samples.cs for usage examples.
     /// </summary>
@@ -28,6 +28,12 @@ namespace Garnet.server
         private static readonly object EmitLock = new();
         private static readonly Dictionary<string, Type> EmittedTypes = new();
 
+        // Interface properties discovered once at startup via reflection
+        private static readonly PropertyInfo[] InterfaceProperties;
+
+        // Matching getters on GarnetServerOptions, indexed by property name
+        private static readonly Dictionary<string, Func<GarnetServerOptions, object>> Getters;
+
         static GarnetOptionsFactory()
         {
             var assembly = AssemblyBuilder.DefineDynamicAssembly(
@@ -35,88 +41,43 @@ namespace Garnet.server
                 AssemblyBuilderAccess.Run);
             ModuleBuilder = assembly.DefineDynamicModule("MainModule");
 
-            // Verify at startup that factory covers all IGarnetServerOptions properties.
-            var interfaceProperties = typeof(IGarnetServerOptions).GetProperties(
+            // Discover all properties from the interface
+            InterfaceProperties = typeof(IGarnetServerOptions).GetProperties(
                 BindingFlags.Public | BindingFlags.Instance);
-            var factoryPropertyNames = new HashSet<string>();
-            foreach (var p in Properties)
-                factoryPropertyNames.Add(p.Name);
-            foreach (var ip in interfaceProperties)
+
+            // Build getters by matching interface property names to GarnetServerOptions members
+            Getters = new Dictionary<string, Func<GarnetServerOptions, object>>();
+            var optsType = typeof(GarnetServerOptions);
+
+            foreach (var ifaceProp in InterfaceProperties)
             {
-                if (!factoryPropertyNames.Contains(ip.Name))
+                // Look for a matching property on GarnetServerOptions (could be inherited from ServerOptions)
+                var optsProp = optsType.GetProperty(ifaceProp.Name,
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+
+                // Fall back to a matching field (GarnetServerOptions uses public fields for most config)
+                var optsField = optsProp == null
+                    ? optsType.GetField(ifaceProp.Name,
+                        BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy)
+                    : null;
+
+                if (optsProp != null)
+                {
+                    var getter = optsProp.GetGetMethod();
+                    Getters[ifaceProp.Name] = opts => getter.Invoke(opts, null);
+                }
+                else if (optsField != null)
+                {
+                    Getters[ifaceProp.Name] = opts => optsField.GetValue(opts);
+                }
+                else
+                {
                     throw new InvalidOperationException(
-                        $"GarnetOptionsFactory is missing property '{ip.Name}' from IGarnetServerOptions. " +
-                        $"Add it to the Properties array.");
+                        $"IGarnetServerOptions property '{ifaceProp.Name}' has no matching property or field " +
+                        $"on GarnetServerOptions. Add it to GarnetServerOptions or remove it from the interface.");
+                }
             }
         }
-
-        private readonly struct PropertyInfo
-        {
-            public readonly string Name;
-            public readonly Type Type;
-            public readonly Func<GarnetServerOptions, object> Getter;
-
-            public PropertyInfo(string name, Type type, Func<GarnetServerOptions, object> getter)
-            {
-                Name = name;
-                Type = type;
-                Getter = getter;
-            }
-        }
-
-        private static readonly PropertyInfo[] Properties =
-        [
-            // ServerOptions (base class) booleans
-            new("EnableStorageTier", typeof(bool), o => o.EnableStorageTier),
-            new("CopyReadsToTail", typeof(bool), o => o.CopyReadsToTail),
-            new("Recover", typeof(bool), o => o.Recover),
-            new("DisablePubSub", typeof(bool), o => o.DisablePubSub),
-            new("FailOnRecoveryError", typeof(bool), o => o.FailOnRecoveryError),
-
-            // GarnetServerOptions booleans
-            new("DisableObjects", typeof(bool), o => o.DisableObjects),
-            new("EnableCluster", typeof(bool), o => o.EnableCluster),
-            new("CleanClusterConfig", typeof(bool), o => o.CleanClusterConfig),
-            new("FastMigrate", typeof(bool), o => o.FastMigrate),
-            new("EnableAOF", typeof(bool), o => o.EnableAOF),
-            new("EnableLua", typeof(bool), o => o.EnableLua),
-            new("LuaTransactionMode", typeof(bool), o => o.LuaTransactionMode),
-            new("WaitForCommit", typeof(bool), o => o.WaitForCommit),
-            new("CompactionForceDelete", typeof(bool), o => o.CompactionForceDelete),
-            new("LatencyMonitor", typeof(bool), o => o.LatencyMonitor),
-            new("QuietMode", typeof(bool), o => o.QuietMode),
-            new("EnableIncrementalSnapshots", typeof(bool), o => o.EnableIncrementalSnapshots),
-            new("UseFoldOverCheckpoints", typeof(bool), o => o.UseFoldOverCheckpoints),
-            new("EnableFastCommit", typeof(bool), o => o.EnableFastCommit),
-            new("EnableScatterGatherGet", typeof(bool), o => o.EnableScatterGatherGet),
-            new("FastAofTruncate", typeof(bool), o => o.FastAofTruncate),
-            new("OnDemandCheckpoint", typeof(bool), o => o.OnDemandCheckpoint),
-            new("ReplicaDisklessSync", typeof(bool), o => o.ReplicaDisklessSync),
-            new("UseAofNullDevice", typeof(bool), o => o.UseAofNullDevice),
-            new("UseRevivBinsPowerOf2", typeof(bool), o => o.UseRevivBinsPowerOf2),
-            new("RevivInChainOnly", typeof(bool), o => o.RevivInChainOnly),
-            new("ExtensionAllowUnsignedAssemblies", typeof(bool), o => o.ExtensionAllowUnsignedAssemblies),
-            new("EnableReadCache", typeof(bool), o => o.EnableReadCache),
-            new("ClusterReplicaResumeWithData", typeof(bool), o => o.ClusterReplicaResumeWithData),
-            new("AllowMultiDb", typeof(bool), o => o.AllowMultiDb),
-
-            // Non-boolean hot-path fields
-            new("MetricsSamplingFrequency", typeof(int), o => o.MetricsSamplingFrequency),
-            new("SlowLogThreshold", typeof(int), o => o.SlowLogThreshold),
-            new("SlowLogMaxEntries", typeof(int), o => o.SlowLogMaxEntries),
-            new("ObjectScanCountLimit", typeof(int), o => o.ObjectScanCountLimit),
-            new("MaxDatabases", typeof(int), o => o.MaxDatabases),
-            new("EnableDebugCommand", typeof(ConnectionProtectionOption), o => o.EnableDebugCommand),
-            new("EnableModuleCommand", typeof(ConnectionProtectionOption), o => o.EnableModuleCommand),
-            new("CommitFrequencyMs", typeof(int), o => o.CommitFrequencyMs),
-            new("CompactionFrequencySecs", typeof(int), o => o.CompactionFrequencySecs),
-            new("IndexResizeFrequencySecs", typeof(int), o => o.IndexResizeFrequencySecs),
-            new("AdjustedIndexMaxCacheLines", typeof(int), o => o.AdjustedIndexMaxCacheLines),
-            new("AdjustedObjectStoreIndexMaxCacheLines", typeof(int), o => o.AdjustedObjectStoreIndexMaxCacheLines),
-            new("ExpiredKeyDeletionScanFrequencySecs", typeof(int), o => o.ExpiredKeyDeletionScanFrequencySecs),
-            new("ExpiredObjectCollectionFrequencySecs", typeof(int), o => o.ExpiredObjectCollectionFrequencySecs),
-            new("NetworkSendThrottleMax", typeof(int), o => o.NetworkSendThrottleMax),
-        ];
 
         /// <summary>
         /// Gets or creates a zero-size struct type with hardcoded constant returns for the given
@@ -127,9 +88,9 @@ namespace Garnet.server
             var values = new Dictionary<string, object>();
             var keyParts = new List<string>();
 
-            foreach (var prop in Properties)
+            foreach (var prop in InterfaceProperties)
             {
-                var value = prop.Getter(opts);
+                var value = Getters[prop.Name](opts);
                 values[prop.Name] = value;
                 keyParts.Add($"{prop.Name}={value}");
             }
@@ -148,8 +109,8 @@ namespace Garnet.server
                     typeof(ValueType),
                     [typeof(IGarnetServerOptions)]);
 
-                foreach (var prop in Properties)
-                    EmitConstantProperty(typeBuilder, prop.Name, prop.Type, values[prop.Name]);
+                foreach (var prop in InterfaceProperties)
+                    EmitConstantProperty(typeBuilder, prop.Name, prop.PropertyType, values[prop.Name]);
 
                 var emittedType = typeBuilder.CreateType();
                 EmittedTypes[deduplicationKey] = emittedType;
