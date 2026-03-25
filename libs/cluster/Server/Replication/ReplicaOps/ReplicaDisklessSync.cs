@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -135,6 +136,9 @@ namespace Garnet.cluster
                         currentAofTailAddress: storeWrapper.appendOnlyFile.Log.TailAddress,
                         currentReplicationOffset: ReplicationOffset,
                         checkpointEntry: checkpointEntry);
+
+                    // Exception injection point for testing cluster reset during diskless replication
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
 
                     var resp = await gcs.ExecuteClusterAttachSync(syncMetadata.ToByteArray()).
                         WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);

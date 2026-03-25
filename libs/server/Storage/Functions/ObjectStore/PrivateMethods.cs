@@ -36,6 +36,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    ref input,
                     epochAccessor,
                     out _);
             }
@@ -57,6 +58,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    ref input,
                     epochAccessor,
                     out _);
             }

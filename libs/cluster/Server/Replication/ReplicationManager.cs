@@ -115,7 +115,7 @@ namespace Garnet.cluster
             this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
 
             networkBufferSettings.Log(logger, nameof(ReplicationManager));
-            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Replication, logger: logger);
             ValidateNetworkBufferSettings();
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, clusterProvider: clusterProvider, logger: logger);
