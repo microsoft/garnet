@@ -62,7 +62,7 @@ namespace BDN.benchmark.Operations
             var dataDir = Path.Combine(Path.GetTempPath(), "bdn-ri-" + Guid.NewGuid().ToString("N")[..8]);
             Directory.CreateDirectory(dataDir);
             var dataFile = Path.Combine(dataDir, "bench.bftree");
-            var createCmd = $"*7\r\n$9\r\nRI.CREATE\r\n$7\r\nmyindex\r\n$4\r\nDISK\r\n${dataFile.Length}\r\n{dataFile}\r\n$9\r\nCACHESIZE\r\n$5\r\n65536\r\n$9\r\nMINRECORD\r\n$1\r\n8\r\n";
+            var createCmd = $"*8\r\n$9\r\nRI.CREATE\r\n$7\r\nmyindex\r\n$4\r\nDISK\r\n${dataFile.Length}\r\n{dataFile}\r\n$9\r\nCACHESIZE\r\n$5\r\n65536\r\n$9\r\nMINRECORD\r\n$1\r\n8\r\n";
             SlowConsumeMessage(System.Text.Encoding.UTF8.GetBytes(createCmd));
 
             // Pre-populate 100 key-value entries (key000..key099 → val000..val099)
