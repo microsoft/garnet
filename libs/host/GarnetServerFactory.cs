@@ -325,7 +325,7 @@ namespace Garnet
         {
             var method = tb.DefineMethod($"get_{name}",
                 MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.HideBySig
-                | MethodAttributes.SpecialName | MethodAttributes.Virtual,
+                | MethodAttributes.SpecialName,
                 propertyType, Type.EmptyTypes);
 
             var il = method.GetILGenerator();
