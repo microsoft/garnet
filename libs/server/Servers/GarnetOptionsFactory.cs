@@ -20,33 +20,7 @@ namespace Garnet.server
     /// Thread-safe. Deduplicates emitted types by value — identical configurations reuse the
     /// same struct type. Validates at startup that all IGarnetServerOptions properties are covered.
     ///
-    /// Example usage (once RespServerSession is generic):
-    /// <code>
-    /// // In GarnetProvider.GetSession — called once per connection, not per command:
-    /// return GarnetOptionsFactory.CreateInstance&lt;IMessageConsumer&gt;(
-    ///     typeof(RespServerSession&lt;&gt;),         // open generic type
-    ///     storeWrapper.serverOptions,              // opts to bake into struct
-    ///     sessionId, networkSender, storeWrapper,  // constructor args
-    ///     broker, null, true);
-    ///
-    /// // The factory emits e.g. GarnetOpts_0 with:
-    /// //   bool EnableCluster => false   (constant)
-    /// //   bool LatencyMonitor => false  (constant)
-    /// //   int SlowLogThreshold => 0    (constant)
-    /// //
-    /// // The JIT then compiles RespServerSession&lt;GarnetOpts_0&gt;.ProcessMessages()
-    /// // with all dead branches eliminated:
-    /// //   if (Cfg.LatencyMonitor) opCount++;          → GONE
-    /// //   if (Cfg.SlowLogThreshold &gt; 0) HandleSlowLog(); → GONE
-    /// //   if (Cfg.EnableCluster) clusterSession.X();  → GONE
-    /// </code>
-    ///
-    /// For NativeAOT (where Reflection.Emit is unavailable), use RuntimeServerOptions instead:
-    /// <code>
-    /// RuntimeServerOptions.Instance = opts;
-    /// var session = new RespServerSession&lt;RuntimeServerOptions&gt;(...);
-    /// // Works but the JIT cannot eliminate branches (property values are not constants).
-    /// </code>
+    /// See GarnetOptionsFactory.Samples.cs for usage examples.
     /// </summary>
     public static class GarnetOptionsFactory
     {
@@ -187,27 +161,7 @@ namespace Garnet.server
         /// Creates an instance using a type-safe factory callback. The user subclasses
         /// TypedOptionsFactory and writes the constructor call with full compile-time type checking.
         /// The factory handles runtime dispatch to the emitted struct type.
-        ///
-        /// Example (once RespServerSession is generic):
-        /// <code>
-        /// // Define a factory (can be reused, just update captured state):
-        /// class SessionFactory : TypedOptionsFactory&lt;ServerSessionBase&gt;
-        /// {
-        ///     public long Id;
-        ///     public INetworkSender Sender;
-        ///     public StoreWrapper StoreWrapper;
-        ///     public SubscribeBroker Broker;
-        ///
-        ///     // Compiler fully type-checks this constructor call:
-        ///     public override ServerSessionBase Create&lt;TServerOptions&gt;()
-        ///         =&gt; new RespServerSession&lt;TServerOptions&gt;(Id, Sender, StoreWrapper, Broker, null, true);
-        /// }
-        ///
-        /// // In GarnetProvider.GetSession:
-        /// sessionFactory.Id = Interlocked.Increment(ref lastSessionId);
-        /// sessionFactory.Sender = networkSender;
-        /// return GarnetOptionsFactory.Create(storeWrapper.serverOptions, sessionFactory);
-        /// </code>
+        /// See GarnetOptionsFactory.Samples.cs for usage examples.
         /// </summary>
         /// <typeparam name="TResult">Return type (typically a non-generic base class or interface)</typeparam>
         /// <param name="opts">Server options to bake into the emitted struct</param>
