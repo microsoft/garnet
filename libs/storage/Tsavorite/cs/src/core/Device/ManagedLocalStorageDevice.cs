@@ -8,6 +8,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
@@ -21,6 +22,7 @@ namespace Tsavorite.core
         private readonly bool disableFileBuffering;
         private readonly bool osReadBuffering;
         private readonly bool readOnly;
+        private readonly ILogger logger;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
 
@@ -42,7 +44,8 @@ namespace Tsavorite.core
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="osReadBuffering">Enable OS read buffering</param>
         /// <param name="readOnly">Open file in readOnly mode</param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false)
+        /// <param name="logger"></param>
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false, ILogger logger = null)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new(1, 1);
@@ -58,6 +61,7 @@ namespace Tsavorite.core
             this.disableFileBuffering = disableFileBuffering;
             this.osReadBuffering = osReadBuffering;
             this.readOnly = readOnly;
+            this.logger = logger;
             logHandles = new();
             if (recoverDevice)
                 RecoverFiles();
@@ -158,8 +162,9 @@ namespace Tsavorite.core
                     readTask = logReadHandle.ReadAsync(umm.Memory).AsTask();
                 }
             }
-            catch
+            catch (Exception e)
             {
+                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
@@ -203,6 +208,7 @@ namespace Tsavorite.core
                 }
                 catch (Exception ex)
                 {
+                    logger?.LogCritical(ex, $"{nameof(ReadAsync)}");
                     if (ex.InnerException != null && ex.InnerException is IOException ioex)
                         errorCode = (uint)(ioex.HResult & 0x0000FFFF);
                     else
@@ -263,8 +269,9 @@ namespace Tsavorite.core
                     writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
                 }
             }
-            catch
+            catch (Exception e)
             {
+                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
                 Interlocked.Decrement(ref numPending);
 
                 // Perform pool returns and disposals
@@ -290,8 +297,9 @@ namespace Tsavorite.core
 
                         writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
                     }
-                    catch
+                    catch (Exception e)
                     {
+                        logger?.LogCritical(e, $"{nameof(WriteAsync)}");
                         Interlocked.Decrement(ref numPending);
 
                         // Perform pool returns and disposals
@@ -309,6 +317,7 @@ namespace Tsavorite.core
                 }
                 catch (Exception ex)
                 {
+                    logger?.LogCritical(ex, $"{nameof(WriteAsync)}");
                     if (ex.InnerException != null && ex.InnerException is IOException ioex)
                         errorCode = (uint)(ioex.HResult & 0x0000FFFF);
                     else
