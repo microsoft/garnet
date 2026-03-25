@@ -212,20 +212,7 @@ namespace Garnet.server
     /// Abstract base for type-safe factory callbacks used with GarnetOptionsFactory.Create.
     /// Subclass this and override Create to write the constructor call with full compile-time
     /// type checking. The factory handles runtime dispatch to the emitted struct type.
-    ///
-    /// Example:
-    /// <code>
-    /// class SessionFactory : TypedOptionsFactory&lt;ServerSessionBase&gt;
-    /// {
-    ///     public long Id;
-    ///     public INetworkSender Sender;
-    ///     public StoreWrapper StoreWrapper;
-    ///     public SubscribeBroker Broker;
-    ///
-    ///     public override ServerSessionBase Create&lt;TServerOptions&gt;()
-    ///         =&gt; new RespServerSession&lt;TServerOptions&gt;(Id, Sender, StoreWrapper, Broker, null, true);
-    /// }
-    /// </code>
+    /// See GarnetOptionsFactory.Samples.cs for usage examples.
     /// </summary>
     /// <typeparam name="TResult">Return type (typically a non-generic base class or interface)</typeparam>
     public abstract class TypedOptionsFactory<TResult>

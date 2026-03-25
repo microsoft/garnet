@@ -11,18 +11,13 @@ namespace Garnet.server
     /// constants — they read from the Instance field each time — so the JIT cannot eliminate branches.
     /// However, this struct compiles under NativeAOT where Reflection.Emit is unavailable.
     ///
-    /// Usage:
-    ///   RuntimeServerOptions.Instance = opts;
-    ///   var session = new RespServerSession&lt;RuntimeServerOptions&gt;(...);
-    ///
-    /// For full JIT branch elimination, use GarnetOptionsFactory.CreateInstance instead:
-    ///   var session = GarnetOptionsFactory.CreateInstance&lt;ServerSessionBase&gt;(
-    ///       typeof(RespServerSession&lt;&gt;), opts, ...);
+    /// For full JIT branch elimination, use GarnetOptionsFactory.Create instead.
+    /// See GarnetOptionsFactory.Samples.cs for usage examples.
     /// </summary>
     public struct RuntimeServerOptions : IGarnetServerOptions
     {
         /// <summary>
-        /// The shared options instance. Must be set before creating a GarnetServer&lt;RuntimeServerOptions&gt;.
+        /// The shared options instance. Must be set before creating types parameterized by RuntimeServerOptions.
         /// </summary>
         public static GarnetServerOptions Instance;
 
