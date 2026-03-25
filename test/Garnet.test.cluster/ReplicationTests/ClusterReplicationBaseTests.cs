@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -732,24 +733,31 @@ namespace Garnet.test.cluster
 
         [Test, Order(13)]
         [Category("REPLICATION")]
+        //[Repeat(20)]
         public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
+
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             var replica_count = 1;//Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, segmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, deviceType: Tsavorite.core.DeviceType.Native);
             context.CreateConnection(useTLS: useTLS);
-            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
-            context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
 
-            var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            // Setup cluster
+            context.SimplePrimaryReplicaSetup();
+
+            var cconfig = context.clusterTestUtils.ClusterNodes(primaryIndex, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(2, shards.Count);
             ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
             ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
             ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
@@ -765,7 +773,7 @@ namespace Garnet.test.cluster
             if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(60)))
                 Assert.Fail("attachReplicaTask timeout");
 
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: 0, secondaryIndex: 1, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
         }
 
         [Test, Order(14)]

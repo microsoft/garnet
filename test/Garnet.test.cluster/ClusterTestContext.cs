@@ -548,6 +548,20 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void SimplePrimaryReplicaSetup()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            // Setup cluster
+            var resp = clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], true, logger);
+            ClassicAssert.AreEqual("OK", resp);
+            clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger);
+            clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger);
+            clusterTestUtils.Meet(primaryIndex, replicaIndex, logger);
+            clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex);
+            clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex);
+        }
+
         public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool performRMW = false)
         {
             //Populate Primary
