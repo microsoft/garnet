@@ -220,7 +220,7 @@ namespace Garnet.test
         /// <summary>
         /// Create GarnetServer
         /// </summary>
-        public static GarnetServer CreateGarnetServer(
+        public static IGarnetServerApp CreateGarnetServer(
             string logCheckpointDir,
             EndPoint[] endpoints = null,
             bool disablePubSub = false,
@@ -434,7 +434,7 @@ namespace Garnet.test
                 opts.RevivInChainOnly = true;
             }
 
-            return new GarnetServer(opts, loggerFactory);
+            return GarnetServerFactory.CreateServer(opts, loggerFactory);
         }
 
         /// <summary>
@@ -457,7 +457,7 @@ namespace Garnet.test
             });
         }
 
-        public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
+        public static (IGarnetServerApp[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
             string checkpointDir,
             EndPointCollection endpoints,
             bool enableCluster = true,
@@ -516,7 +516,7 @@ namespace Garnet.test
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            var nodes = new GarnetServer[endpoints.Count];
+            var nodes = new IGarnetServerApp[endpoints.Count];
             var opts = new GarnetServerOptions[nodes.Length];
             for (var i = 0; i < nodes.Length; i++)
             {
@@ -592,7 +592,7 @@ namespace Garnet.test
                     }
                 }
 
-                nodes[i] = new GarnetServer(opts[i], loggerFactory);
+                nodes[i] = GarnetServerFactory.CreateServer(opts[i], loggerFactory);
             }
             return (nodes, opts);
         }

@@ -18,7 +18,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespBlockingCollectionTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
         private static readonly Random random = Random.Shared;
 
         [SetUp]

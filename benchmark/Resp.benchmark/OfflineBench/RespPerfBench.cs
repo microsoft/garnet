@@ -43,7 +43,7 @@ namespace Resp.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly Options opts;
         readonly IConnectionMultiplexer redis;
-        internal EmbeddedRespServer server;
+        internal IEmbeddedRespServer server;
         internal RespServerSession[] sessions;
 
         KeyValuePair<RedisKey, RedisValue>[] database;
@@ -68,7 +68,7 @@ namespace Resp.benchmark
                     throw new Exception("Use --lset when running InProc and with cluster enabled to load data!");
 
                 var serverOptions = GetServerOptions(opts);
-                server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
+                server = EmbeddedRespServerFactory.CreateServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
 
                 if (opts.EnableCluster)

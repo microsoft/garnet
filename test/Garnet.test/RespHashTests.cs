@@ -18,7 +18,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespHashTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
 
         static readonly HashEntry[] entries = new HashEntry[100];
 

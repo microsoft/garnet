@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -16,7 +16,7 @@ namespace Garnet.test
     [TestFixture]
     class RespPubSubTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
 
         [SetUp]
         public void Setup()

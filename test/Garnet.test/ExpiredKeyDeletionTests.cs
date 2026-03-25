@@ -18,7 +18,7 @@ namespace Garnet.test
 
         private const int TotalNumKeysToCreate = 100;
 
-        private GarnetServer server;
+        private IGarnetServerApp server;
 
         [SetUp]
         public void Setup()

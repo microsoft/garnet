@@ -11,7 +11,7 @@ using Tsavorite.core;
 namespace Garnet.fuzz.Targets
 {
     /// <summary>
-    /// Fuzz target for all of <see cref="GarnetServer"/>, using <see cref="EmbeddedRespServer"/> for hosting.
+    /// Fuzz target for all of Garnet server, using EmbeddedRespServer for hosting.
     /// </summary>
     public sealed class GarnetEndToEnd : IFuzzerTarget
     {
@@ -347,9 +347,9 @@ namespace Garnet.fuzz.Targets
         }
 
         /// <summary>
-        /// Create a <see cref="EmbeddedRespServer"/> with some reasonable default settings.
+        /// Create an embedded RESP server with some reasonable default settings.
         /// </summary>
-        private static EmbeddedRespServer CreateServer()
+        private static IEmbeddedRespServer CreateServer()
         {
             CheckpointDir = MakeTempDir("checkpoint-");
             LogDir = MakeTempDir("log-");
@@ -396,7 +396,7 @@ namespace Garnet.fuzz.Targets
                 ClusterAnnounceEndpoint = null,
             };
 
-            var server = new EmbeddedRespServer(opts);
+            var server = EmbeddedRespServerFactory.CreateServer(opts);
             server.Start();
 
             return server;

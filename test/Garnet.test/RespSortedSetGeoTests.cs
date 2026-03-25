@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -18,7 +18,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespSortedSetGeoTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
 
         readonly string[,] cities = new string[,] { {"-74.0059413", "40.7127837", "New York"},
                 {"-118.2436849", "34.0522342", "Los Angeles"},

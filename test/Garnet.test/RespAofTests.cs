@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -17,7 +17,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespAofTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
         static readonly SortedSetEntry[] entries =
@@ -637,7 +637,7 @@ namespace Garnet.test
         [Test]
         public void AofUpsertCustomObjectRecoverTest()
         {
-            void RegisterCustomCommand(GarnetServer gServer)
+            void RegisterCustomCommand(IGarnetServerApp gServer)
             {
                 var factory = new MyDictFactory();
                 gServer.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"]);

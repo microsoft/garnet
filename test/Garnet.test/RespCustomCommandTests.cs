@@ -225,7 +225,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespCustomCommandTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
         private string _extTestDir1;
         private string _extTestDir2;
 

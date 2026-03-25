@@ -20,7 +20,7 @@ namespace Garnet.test
     [TestFixture]
     public class RespETagTests : AllureTestBase
     {
-        private GarnetServer server;
+        private IGarnetServerApp server;
         private Random r;
 
         [SetUp]

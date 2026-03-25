@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Allure.NUnit;
@@ -12,7 +12,7 @@ namespace Garnet.test
     [TestFixture]
     public class ReadCacheTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
 
         [SetUp]
         public void Setup()

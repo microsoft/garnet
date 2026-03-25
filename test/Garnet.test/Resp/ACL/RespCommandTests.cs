@@ -28,7 +28,7 @@ namespace Garnet.test.Resp.ACL
 
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
-        private GarnetServer server;
+        private IGarnetServerApp server;
 
 
         [SetUp]

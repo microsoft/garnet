@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #if DEBUG
@@ -14,7 +14,7 @@ namespace Garnet.test
     [TestFixture]
     public class NetworkTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
 
         [SetUp]
         public void Setup()

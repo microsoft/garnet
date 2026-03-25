@@ -15,7 +15,7 @@ namespace Garnet.test
     [TestFixture]
     class RespRevivificationTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
         Random r;
 
         // 8 byte metadata + 1 byte value means 9 bytes in value from the below default args

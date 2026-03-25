@@ -29,7 +29,7 @@ return counter";
         [ParamsSource(nameof(LuaParamsProvider))]
         public LuaParams Params { get; set; }
 
-        internal EmbeddedRespServer server;
+        internal IEmbeddedRespServer server;
         internal RespServerSession session;
 
         /// <summary>
@@ -55,7 +55,7 @@ return counter";
                 LuaOptions = Params.CreateOptions(),
             };
 
-            server = new EmbeddedRespServer(opts);
+            server = EmbeddedRespServerFactory.CreateServer(opts);
 
             session = server.GetRespSession();
 

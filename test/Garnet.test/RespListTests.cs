@@ -19,7 +19,7 @@ namespace Garnet.test
     [TestFixture]
     class RespListTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
         Random r;
 
         [SetUp]

@@ -24,7 +24,7 @@ namespace Garnet.test.cluster
     {
         public CredentialManager credManager;
         public string TestFolder;
-        public GarnetServer[] nodes = null;
+        public IGarnetServerApp[] nodes = null;
         public GarnetServerOptions[] nodeOptions = null;
         public EndPointCollection endpoints;
         public TextWriter logTextWriter = TestContext.Progress;
@@ -113,7 +113,7 @@ namespace Garnet.test.cluster
             // We're restarting, leave state unaltered
             nodeOptions[nodeIndex].CleanClusterConfig = false;
 
-            nodes[nodeIndex] = new GarnetServer(nodeOptions[nodeIndex], loggerFactory);
+            nodes[nodeIndex] = GarnetServerFactory.CreateServer(nodeOptions[nodeIndex], loggerFactory);
             nodes[nodeIndex].Start();
         }
 
@@ -339,7 +339,7 @@ namespace Garnet.test.cluster
         /// <param name="clusterCreds"></param>
         /// <param name="certificates"></param>
         /// <returns></returns>
-        public GarnetServer CreateInstance(
+        public IGarnetServerApp CreateInstance(
             EndPoint endpoint,
             bool enableCluster = true,
             bool cleanClusterConfig = true,
@@ -400,7 +400,7 @@ namespace Garnet.test.cluster
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint);
 
-            return new GarnetServer(opts, loggerFactory);
+            return GarnetServerFactory.CreateServer(opts, loggerFactory);
         }
 
         /// <summary>

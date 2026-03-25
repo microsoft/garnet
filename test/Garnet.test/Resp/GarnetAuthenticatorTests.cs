@@ -80,7 +80,7 @@ namespace Garnet.test.Resp
                     return true;
                 };
 
-            using GarnetServer server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, authenticationSettings: authSettings);
+            using IGarnetServerApp server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, authenticationSettings: authSettings);
             server.Start();
 
             using var c = TestUtils.GetGarnetClientSession();

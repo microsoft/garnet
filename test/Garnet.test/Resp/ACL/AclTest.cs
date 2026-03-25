@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IO;
@@ -44,7 +44,7 @@ namespace Garnet.test.Resp.ACL
         /// <summary>
         /// Garnet server instance to use in the tests.
         /// </summary>
-        protected GarnetServer server = null;
+        protected IGarnetServerApp server = null;
 
         /// <summary>
         /// Creates working directory

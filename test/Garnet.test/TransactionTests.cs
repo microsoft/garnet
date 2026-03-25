@@ -16,7 +16,7 @@ namespace Garnet.test
     [TestFixture]
     public class TransactionTests : AllureTestBase
     {
-        GarnetServer server;
+        IGarnetServerApp server;
 
         [SetUp]
         public void Setup()
