@@ -151,6 +151,10 @@ namespace Garnet.server
 
         private bool HandleAcceptError(SocketAsyncEventArgs e)
         {
+            // Dispose any socket the failed accept may have created
+            e.AcceptSocket?.Dispose();
+            e.AcceptSocket = null;
+
             switch (e.SocketError)
             {
                 // Tier 1 — Fatal: listen socket is dead, stop accepting
