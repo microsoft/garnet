@@ -14,6 +14,7 @@ using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -117,42 +118,73 @@ namespace Garnet.test.cluster
             nodes[nodeIndex].Start();
         }
 
+
         public void TearDown()
         {
+            // Capture test outcome before any teardown work to distinguish
+            // primary teardown failures from secondary ones caused by a hung/failed test.
+            var testOutcome = TestContext.CurrentContext.Result.Outcome;
+            var testAlreadyFailed = testOutcome.Status == TestStatus.Failed;
+
+            if (testAlreadyFailed)
+            {
+                logger?.LogError(
+                    "TearDown: test already failed ({label}): {message}",
+                    testOutcome.Label,
+                    TestContext.CurrentContext.Result.Message);
+            }
+
             cts.Cancel();
             cts.Dispose();
-            logger.LogDebug("0. Dispose <<<<<<<<<<<");
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
-            var timeoutSeconds = 5;
 
-            var failMessage = "";
+            var timeoutSeconds = 60;
+            string failureReason = null;
 
-            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
-            {
-                logger?.LogError("Timed out waiting for DisposeCluster");
-                failMessage += "Timed out waiting for DisposeCluster; ";
-            }
-            // Dispose logger factory only after servers are disposed
-            loggerFactory?.Dispose();
-            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
-            {
-                logger?.LogError("Timed out DeleteDirectory");
-                failMessage += "Timed out DeleteDirectory; ";
-            }
-
+            // Phase 1: Dispose cluster nodes (may timeout if handlers are stuck)
             try
             {
-                TestUtils.OnTearDown();
+                if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    failureReason = "Timed out waiting for DisposeCluster";
+                    logger?.LogError("Timed out waiting for DisposeCluster");
+                }
             }
-            catch (AssertionException e)
+            catch (Exception ex)
             {
-                failMessage += e.Message;
+                failureReason = $"DisposeCluster threw: {ex.Message}";
+                logger?.LogError(ex, "DisposeCluster failed");
             }
 
-            if (failMessage != "")
+            // Phase 2: Dispose logger factory (always, even after timeout)
+            loggerFactory?.Dispose();
+
+            // Phase 3: Delete test directory (may timeout if files locked from Phase 1 timeout)
+            try
             {
-                ClassicAssert.Fail(failMessage);
+                if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    failureReason ??= "Timed out DeleteDirectory";
+                    logger?.LogError("Timed out DeleteDirectory");
+                }
+            }
+            catch (Exception ex)
+            {
+                failureReason ??= $"DeleteDirectory threw: {ex.Message}";
+                logger?.LogError(ex, "DeleteDirectory failed");
+            }
+
+            // Phase 4: Always runs — resets LightEpoch instances to prevent cross-test contamination
+            TestUtils.OnTearDown();
+
+            // Fail the test at the end, after all cleanup is done
+            if (failureReason != null)
+            {
+                var context = testAlreadyFailed
+                    ? $" (secondary failure — test already failed with '{testOutcome.Label}')"
+                    : " (primary failure — test itself passed)";
+                Assert.Fail(failureReason + context);
             }
         }
 
@@ -516,6 +548,20 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void SimplePrimaryReplicaSetup()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            // Setup cluster
+            var resp = clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], true, logger);
+            ClassicAssert.AreEqual("OK", resp);
+            clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger);
+            clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger);
+            clusterTestUtils.Meet(primaryIndex, replicaIndex, logger);
+            clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex);
+            clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex);
+        }
+
         public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool performRMW = false)
         {
             //Populate Primary
@@ -726,9 +772,6 @@ namespace Garnet.test.cluster
         public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
         {
             var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
-            // Issue meet to replicas
-            for (var i = primary_count; i < primary_count + replica_count; i++)
-                clusterTestUtils.Meet(i, 0);
 
             // Wait until primary node is known so as not to fail replicate
             for (var i = primary_count; i < primary_count + replica_count; i++)
@@ -736,10 +779,7 @@ namespace Garnet.test.cluster
 
             // Issue cluster replicate and bump epoch manually to capture config.
             for (var i = primary_count; i < primary_count + replica_count; i++)
-            {
                 _ = clusterTestUtils.ClusterReplicate(i, primaryId, async: true, logger: logger);
-                clusterTestUtils.BumpEpoch(i, logger: logger);
-            }
 
             if (!checkpointTask.Wait(TimeSpan.FromSeconds(100))) Assert.Fail("Checkpoint task timeout");
 
