@@ -33,7 +33,6 @@ namespace Garnet.server
         const int InitialAcceptBackoffMs = 100;
         const int MaxAcceptBackoffMs = 5000;
         int acceptBackoffMs = InitialAcceptBackoffMs;
-        Timer acceptRetryTimer;
 
         /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
@@ -106,7 +105,6 @@ namespace Garnet.server
         {
             base.Dispose();
             listenSocket.Dispose();
-            acceptRetryTimer?.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
             networkPool?.Dispose();
@@ -124,6 +122,7 @@ namespace Garnet.server
             }
 
             listenSocket.Listen(512);
+
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
         }
@@ -179,8 +178,11 @@ namespace Garnet.server
                 case SocketError.SystemNotReady:
                 case SocketError.ProcessLimit:
                     logger?.LogWarning("Accept backoff ({backoffMs}ms) due to resource pressure: {error}", acceptBackoffMs, e.SocketError);
-                    ScheduleAcceptRetry(e);
-                    return false;
+                    // This will hold the IOCP thread hostage, but anyway we hold it hostage in the do while accept loop. So this is not really deflecting from design.
+                    // If this is ever a concern in the future we can use a timer to schedule the next attempt instead of blocking the thread.
+                    Thread.Sleep(acceptBackoffMs);
+                    acceptBackoffMs = Math.Min(acceptBackoffMs * 2, MaxAcceptBackoffMs);
+                    return true;
 
                 // Tier 3 — Client-caused transient or irrelevant: log and continue
                 default:
@@ -189,48 +191,10 @@ namespace Garnet.server
             }
         }
 
-        private void ScheduleAcceptRetry(SocketAsyncEventArgs e)
-        {
-            // Schedules the accept loop to resume after a backoff delay.
-            // Use a Timer so we don't block the IOCP thread pool thread.
-            //
-            // No concurrent callback race: ScheduleAcceptRetry is only reachable through
-            // the serialized accept path (single SAEA), so a new timer can't be scheduled
-            // until the previous callback has completed, called AcceptAsync, and that
-            // accept has completed with another Tier 2 error.
-            if (acceptRetryTimer == null)
-            {
-                acceptRetryTimer = new Timer(static state =>
-                {
-                    var (self, args) = ((GarnetServerTcp, SocketAsyncEventArgs))state;
-                    if (self.Disposed) return;
-
-                    try
-                    {
-                        args.AcceptSocket = null;
-                        if (!self.listenSocket.AcceptAsync(args))
-                            self.AcceptEventArg_Completed(null, args);
-                    }
-                    catch (ObjectDisposedException) { }
-                }, (this, e), acceptBackoffMs, Timeout.Infinite);
-            }
-            else
-            {
-                // false only if timer was disposed. We can just swallow the return value here.
-                var _ = acceptRetryTimer.Change(acceptBackoffMs, Timeout.Infinite);
-            }
-
-            // Exponential backoff with cap
-            acceptBackoffMs = Math.Min(acceptBackoffMs * 2, MaxAcceptBackoffMs);
-        }
-
         private unsafe bool HandleNewConnection(SocketAsyncEventArgs e)
         {
             if (e.SocketError != SocketError.Success)
             {
-                // returning false here breaks the accept loop in AcceptEventArg_Completed.
-                // if the accept loop was broken due to backpressure/resource related errors
-                // a timer will reschedule kicking off the loop again.
                 return HandleAcceptError(e);
             }
 
