@@ -154,6 +154,8 @@ namespace Garnet.server
         internal readonly ILogger sessionLogger;
         internal long safeAofAddress = -1;
 
+        private readonly bool enforceConsistentRead;
+
         // Standalone instance node_id
         internal readonly string runId;
 
@@ -208,6 +210,7 @@ namespace Garnet.server
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
                 : null;
+            this.enforceConsistentRead = serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.MultiLogEnabled;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
             this.accessControlList = accessControlList;
@@ -901,7 +904,7 @@ namespace Garnet.server
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool EnforceConsistentRead()
-            => serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.MultiLogEnabled && clusterProvider.IsReplica();
+            => enforceConsistentRead && clusterProvider.IsReplica();
 
         /// <summary>
         /// Dispose
