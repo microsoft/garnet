@@ -643,6 +643,16 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        // Per-session MRU command cache: 2 entries caching the last matched command patterns.
+        // Sits after SIMD patterns but before scalar switch — catches repeated Tier 1b/2 commands
+        // (HSET, LPUSH, ZADD etc.) in 3 ops instead of falling through to the hash table.
+        private Vector128<byte> _cachedPattern0, _cachedMask0;
+        private RespCommand _cachedCmd0;
+        private byte _cachedLen0, _cachedCount0;
+
+        private Vector128<byte> _cachedPattern1, _cachedMask1;
+        private RespCommand _cachedCmd1;
+        private byte _cachedLen1, _cachedCount1;
         // SIMD Vector128 patterns for FastParseCommand.
         // Each encodes the full RESP header + command: *N\r\n$L\r\nCMD\r\n
         // Masks zero out trailing bytes for patterns shorter than 16 bytes.
@@ -779,6 +789,32 @@ namespace Garnet.server
                 if (Vector128.EqualsAll(input, s_ASKING)) { readHead += 16; count = 0; return RespCommand.ASKING; }
                 if (Vector128.EqualsAll(input, s_PSETEX)) { readHead += 16; count = 3; return RespCommand.PSETEX; }
                 if (Vector128.EqualsAll(input, s_SUBSTR)) { readHead += 16; count = 3; return RespCommand.SUBSTR; }
+
+                // MRU cache check: catches repeated commands that aren't in the SIMD pattern table
+                // (e.g., HSET, LPUSH, ZADD, ZRANGEBYSCORE). Same 3-op cost as one SIMD pattern check.
+                if (_cachedCmd0 != RespCommand.NONE)
+                {
+                    if (Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask0), _cachedPattern0))
+                    {
+                        readHead += _cachedLen0;
+                        count = _cachedCount0;
+                        return _cachedCmd0;
+                    }
+
+                    if (_cachedCmd1 != RespCommand.NONE &&
+                        Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask1), _cachedPattern1))
+                    {
+                        readHead += _cachedLen1;
+                        count = _cachedCount1;
+                        // Promote slot 1 → slot 0 (swap)
+                        (_cachedPattern0, _cachedPattern1) = (_cachedPattern1, _cachedPattern0);
+                        (_cachedMask0, _cachedMask1) = (_cachedMask1, _cachedMask0);
+                        (_cachedCmd0, _cachedCmd1) = (_cachedCmd1, _cachedCmd0);
+                        (_cachedLen0, _cachedLen1) = (_cachedLen1, _cachedLen0);
+                        (_cachedCount0, _cachedCount1) = (_cachedCount1, _cachedCount0);
+                        return _cachedCmd0;
+                    }
+                }
             }
 
             // Scalar fallback: handles variable-arg commands, inline commands,
@@ -2831,8 +2867,22 @@ namespace Garnet.server
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
+                var cmdStartOffset = readHead; // Save position before ArrayParseCommand advances it
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
                 if (!success) return cmd;
+
+                // Update MRU cache for commands resolved by scalar switch or hash table.
+                // Only for real command processing (writeErrorOnFailure=true), not synthetic
+                // ParseRespCommandBuffer calls (ACL checks etc.) which use temporary buffers.
+                // Exclude custom commands — they have runtime-registered names that can't be
+                // reliably cached alongside built-in commands.
+                if (writeErrorOnFailure && Vector128.IsHardwareAccelerated &&
+                    cmd != RespCommand.INVALID && cmd != RespCommand.NONE &&
+                    cmd != RespCommand.CustomTxn && cmd != RespCommand.CustomProcedure &&
+                    cmd != RespCommand.CustomRawStringCmd && cmd != RespCommand.CustomObjCmd)
+                {
+                    UpdateCommandCache(cmdStartOffset, cmd, count);
+                }
             }
 
             // Set up parse state
@@ -2852,6 +2902,69 @@ namespace Garnet.server
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        /// <summary>
+        /// Update the MRU command cache with a newly matched command from the scalar switch or hash table.
+        /// Captures the first 16 bytes of the RESP encoding and the appropriate mask so that
+        /// the cache check in FastParseCommand can match it via Vector128.EqualsAll.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void UpdateCommandCache(int cmdStartOffset, RespCommand cmd, int argCount)
+        {
+            var ptr = recvBufferPtr + cmdStartOffset;
+            var availableBytes = bytesRead - cmdStartOffset;
+
+            // Only cache commands where we have at least 16 bytes to load a full Vector128
+            if (availableBytes < 16) return;
+
+            // Determine total encoded command length: *N\r\n$L\r\n + name + \r\n
+            // Parse from the RESP header at cmdStartOffset
+            if (*ptr != '*') return;
+
+            // Need single-digit array length and single-digit string length for cache
+            if (availableBytes < 8) return;
+            if ((*(ulong*)ptr & 0xFFFF00FFFFFF00FF) != MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) return;
+
+            var nameLen = ptr[5] - '0';
+            if (nameLen < 1 || nameLen > 9) return;
+
+            var totalLen = 8 + nameLen + 2; // *N\r\n$L\r\n (8) + name (nameLen) + \r\n (2)
+            if (totalLen > 16) return; // Only cache commands that fit in 16 bytes
+
+            // If readHead advanced past the parent command encoding, subcommand parsing happened
+            // (e.g., CLIENT LIST, CONFIG GET). Don't cache — pattern can't distinguish subcommands.
+            if (readHead > cmdStartOffset + totalLen) return;
+
+            var input = Vector128.LoadUnsafe(ref Unsafe.AsRef<byte>(ptr));
+
+            // Select the appropriate mask based on total encoded length
+            Vector128<byte> mask;
+            if (totalLen == 16)
+                mask = Vector128<byte>.AllBitsSet;
+            else if (totalLen == 15)
+                mask = s_mask15;
+            else if (totalLen == 14)
+                mask = s_mask14;
+            else if (totalLen == 13)
+                mask = s_mask13;
+            else
+                return; // Too short (name < 3 chars) — not worth caching
+
+            var pattern = Vector128.BitwiseAnd(input, mask);
+
+            // Demote slot 0 → slot 1, promote new match → slot 0
+            _cachedPattern1 = _cachedPattern0;
+            _cachedMask1 = _cachedMask0;
+            _cachedCmd1 = _cachedCmd0;
+            _cachedLen1 = _cachedLen0;
+            _cachedCount1 = _cachedCount0;
+
+            _cachedPattern0 = pattern;
+            _cachedMask0 = mask;
+            _cachedCmd0 = cmd;
+            _cachedLen0 = (byte)totalLen;
+            _cachedCount0 = (byte)argCount;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
