@@ -122,7 +122,6 @@ namespace Garnet.server
             }
 
             listenSocket.Listen(512);
-
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
         }
