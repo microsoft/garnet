@@ -64,7 +64,7 @@ fn main() {
     // Memory-only (cache_only) mode
     {
         let mut config = Config::default();
-        config.cb_min_record_size(4);
+        config.cb_min_record_size(8);
         config.cache_only(true);
         let tree = BfTree::with_config(config, None).unwrap();
         run_benchmarks("Memory", &tree);
@@ -75,7 +75,7 @@ fn main() {
         let path = "/tmp/bftree_bench_disk.bftree";
         let _ = std::fs::remove_file(path);
         let mut config = Config::default();
-        config.cb_min_record_size(4);
+        config.cb_min_record_size(8);
         config.storage_backend(StorageBackend::Std);
         config.file_path(path);
         let tree = BfTree::with_config(config, None).unwrap();

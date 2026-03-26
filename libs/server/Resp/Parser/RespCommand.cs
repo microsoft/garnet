@@ -1281,7 +1281,15 @@ namespace Garnet.server
                                         break;
 
                                     case 'R':
-                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPUSHX\r\n"u8))
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RI.GET\r\n"u8))
+                                        {
+                                            return RespCommand.RIGET;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RI.SET\r\n"u8))
+                                        {
+                                            return RespCommand.RISET;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPUSHX\r\n"u8))
                                         {
                                             return RespCommand.RPUSHX;
                                         }
@@ -1444,6 +1452,12 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PFMERGE\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.PFMERGE;
+                                        }
+                                        break;
+                                    case 'R':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RI.SCAN\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.RISCAN;
                                         }
                                         break;
                                     case 'W':

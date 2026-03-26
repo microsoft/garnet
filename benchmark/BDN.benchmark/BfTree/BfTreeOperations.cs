@@ -17,7 +17,7 @@ namespace BDN.benchmark.BfTree
     [MemoryDiagnoser]
     public unsafe class BfTreePointOperations
     {
-        const int ValueSize = 128;
+        const int ValueSize = 8;
 
         BfTreeService tree;
         string treePath;
@@ -45,40 +45,42 @@ namespace BDN.benchmark.BfTree
                 tree = new BfTreeService(
                     storageBackend: StorageBackendType.Disk,
                     filePath: treePath,
-                    cbMinRecordSize: 4);
+                    cbMinRecordSize: 8);
             }
             else
             {
                 tree = new BfTreeService(
                     storageBackend: StorageBackendType.Memory,
-                    cbMinRecordSize: 4);
+                    cbMinRecordSize: 8);
             }
 
             // Allocate pinned arrays — no GCHandle needed
-            key = GC.AllocateArray<byte>("bench:key:00000"u8.Length, pinned: true);
+            key = GC.AllocateArray<byte>("key00000"u8.Length, pinned: true);
             value = GC.AllocateArray<byte>(ValueSize, pinned: true);
-            new Random(42).NextBytes(value);
-            readBuffer = GC.AllocateArray<byte>(ValueSize + 64, pinned: true);
+            readBuffer = GC.AllocateArray<byte>(ValueSize, pinned: true);
 
             pinnedKey = PinnedSpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref key[0]), key.Length);
             pinnedValue = PinnedSpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref value[0]), value.Length);
             pinnedReadBufPtr = (byte*)Unsafe.AsPointer(ref readBuffer[0]);
             pinnedReadBufLen = readBuffer.Length;
 
-            // Insert 64 consecutive keys so the total data exceeds the base page
-            // size (~4 KB default). This ensures reads are served from the circular
-            // buffer cache and disk-backed reads don't hit a cold-page corner case.
-            for (var i = 0; i < 64; i++)
+            // Pre-populate 1000 key-value entries (key00000..key00999 → val00000..val00999)
+            // so the total data exceeds the base page size (~4 KB default). This
+            // ensures reads are served from the cache and disk-backed reads don't
+            // hit a cold-page corner case.
+            for (var i = 0; i < 1000; i++)
             {
-                Encoding.UTF8.GetBytes($"bench:key:{i:D5}", key);
+                Encoding.UTF8.GetBytes($"key{i:D5}", key);
+                Encoding.UTF8.GetBytes($"val{i:D5}", value);
                 tree.Insert(key, value);
             }
 
-            // Set the benchmark key (bench:key:00000)
-            "bench:key:00000"u8.CopyTo(key);
+            // Set the benchmark key-value (key00000)
+            "key00000"u8.CopyTo(key);
+            "val00000"u8.CopyTo(value);
 
             // Validate the read actually returns the correct data
-            var result = tree.Read(key, readBuffer, out int bytesRead);
+            var result = tree.Read(key, readBuffer, out var bytesRead);
             Debug.Assert(result == BfTreeReadResult.Found,
                 $"GlobalSetup validation: expected Found, got {result}");
             Debug.Assert(bytesRead == value.Length,
@@ -133,13 +135,17 @@ namespace BDN.benchmark.BfTree
         public void GlobalSetup()
         {
             treePath = Path.Combine(Path.GetTempPath(), $"bftree_scanbench_{Guid.NewGuid():N}.bftree");
-            tree = new BfTreeService(filePath: treePath, cbMinRecordSize: 4);
+            tree = new BfTreeService(filePath: treePath, cbMinRecordSize: 8);
             scanBuffer = new byte[8192];
 
-            for (int i = 0; i < EntryCount; i++)
+            // Pre-populate 1000 key-value entries (key00000..key00999 → val00000..val00999)
+            // so the total data exceeds the base page size (~4 KB default). This
+            // ensures reads are served from the cache and disk-backed reads don't
+            // hit a cold-page corner case.
+            for (var i = 0; i < 1000; i++)
             {
-                var key = Encoding.UTF8.GetBytes($"key:{i:D6}");
-                var value = Encoding.UTF8.GetBytes($"val:{i:D6}");
+                var key = Encoding.UTF8.GetBytes($"key:{i:D5}");
+                var value = Encoding.UTF8.GetBytes($"val:{i:D5}");
                 tree.Insert(key, value);
             }
         }

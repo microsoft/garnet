@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
@@ -179,72 +180,61 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                // RESP bulk string: $len\r\nvalue\r\n
-                // Header size based on max record size: $<digits(maxRecordSize)>\r\n
+                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
+                
+                var bufLen = output.SpanByteAndMemory.Length;
                 var maxValueSize = (int)stub.MaxRecordSize;
-                var maxHeaderSize = 1 + NumUtils.CountDigits(maxValueSize) + 2; // $N\r\n
-                const int TrailerSize = 2; // \r\n
-                var minBufferNeeded = maxHeaderSize + maxValueSize + TrailerSize;
 
-                if (output.SpanByteAndMemory.IsSpanByte)
+                const int optimisticHeaderSize = 1 + 1 + 2; // $N\r\n
+                const int trailerSize = 2; // \r\n
+                const int maxHeaderSize = 1 + 10 + 2; // $<maxDigits>\r\n
+                var minBufferNeeded = maxHeaderSize + maxValueSize + trailerSize; // $<maxDigits>\r\n + value + \r\n
+
+                if (bufLen >= minBufferNeeded)
                 {
+                    // Read BfTree value directly into output buffer past the header reservation
                     var bufStart = output.SpanByteAndMemory.SpanByte.ToPointer();
-                    var bufLen = output.SpanByteAndMemory.Length;
+                    var valueStart = bufStart + optimisticHeaderSize;
+                    var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueSize, out var bytesWritten);
 
-                    if (bufLen >= minBufferNeeded)
+                    if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
                     {
-                        // Read BfTree value directly into output buffer past the header reservation
-                        var valueStart = bufStart + maxHeaderSize;
-                        var maxValueLen = bufLen - maxHeaderSize - TrailerSize;
-
-                        var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueLen, out var bytesWritten);
-
-                        if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
-                        {
-                            result = RangeIndexResult.NotFound;
-                            return GarnetStatus.OK;
-                        }
-
-                        // Backfill exact header, append trailer, shift to eliminate gap
-                        var numLength = NumUtils.CountDigits(bytesWritten);
-                        var actualHeaderSize = 1 + numLength + 2; // $N\r\n
-                        var headerGap = maxHeaderSize - actualHeaderSize;
-                        var headerStart = bufStart + headerGap;
-
-                        var tmp = headerStart;
-                        *tmp++ = (byte)'$';
-                        NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
-                        *tmp++ = (byte)'\r';
-                        *tmp++ = (byte)'\n';
-
-                        var trailerPtr = valueStart + bytesWritten;
-                        *trailerPtr++ = (byte)'\r';
-                        *trailerPtr = (byte)'\n';
-
-                        var totalLen = actualHeaderSize + bytesWritten + TrailerSize;
-
-                        if (headerGap > 0)
-                            Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
-
-                        output.SpanByteAndMemory.Length = totalLen;
-                        result = RangeIndexResult.OK;
+                        result = RangeIndexResult.NotFound;
                         return GarnetStatus.OK;
                     }
 
+                    // Backfill exact header, append trailer, shift to eliminate gap
+                    var numLength = NumUtils.CountDigits(bytesWritten);
+                    var actualHeaderSize = 1 + numLength + 2; // $N\r\n
+                    var actualValueStart = bufStart + actualHeaderSize;
+                    if (valueStart != actualValueStart)
+                        Buffer.MemoryCopy(valueStart, actualValueStart, bytesWritten, bytesWritten);
+
+                    var tmp = bufStart;
+                    *tmp++ = (byte)'$';
+                    NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
+                    *tmp++ = (byte)'\r';
+                    *tmp = (byte)'\n';
+
+                    var trailerPtr = actualValueStart + bytesWritten;
+                    *trailerPtr++ = (byte)'\r';
+                    *trailerPtr = (byte)'\n';
+
+                    var totalLen = actualHeaderSize + bytesWritten + trailerSize;
+                    output.SpanByteAndMemory.Length = totalLen;
+                    result = RangeIndexResult.OK;
+                    return GarnetStatus.OK;
+                }
+                else
+                {
                     // Not enough space in network buffer — fall through to heap path
                     output.SpanByteAndMemory.ConvertToHeap();
-                }
-
-                // Heap fallback: rent buffer sized for max record, read directly
-                {
                     var heapMemory = functionsState.memoryPool.Rent(minBufferNeeded);
 
                     fixed (byte* bufStart = heapMemory.Memory.Span)
                     {
-                        var valueStart = bufStart + maxHeaderSize;
-                        var maxValueLen = minBufferNeeded - maxHeaderSize - TrailerSize;
-
-                        var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueLen, out var bytesWritten);
+                        var valueStart = bufStart + optimisticHeaderSize;
+                        var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueSize, out var bytesWritten);
 
                         if (readResult != BfTreeReadResult.Found || bytesWritten <= 0)
                         {
@@ -253,32 +243,30 @@ namespace Garnet.server
                             return GarnetStatus.OK;
                         }
 
+                        // Backfill exact header, append trailer, shift to eliminate gap
                         var numLength = NumUtils.CountDigits(bytesWritten);
-                        var actualHeaderSize = 1 + numLength + 2;
-                        var headerGap = maxHeaderSize - actualHeaderSize;
-                        var headerStart = bufStart + headerGap;
+                        var actualHeaderSize = 1 + numLength + 2; // $N\r\n
+                        var actualValueStart = bufStart + actualHeaderSize;
+                        if (valueStart != actualValueStart)
+                            Buffer.MemoryCopy(valueStart, actualValueStart, bytesWritten, bytesWritten);
 
-                        var tmp = headerStart;
+                        var tmp = bufStart;
                         *tmp++ = (byte)'$';
                         NumUtils.WriteInt32(bytesWritten, numLength, ref tmp);
                         *tmp++ = (byte)'\r';
-                        *tmp++ = (byte)'\n';
+                        *tmp = (byte)'\n';
 
-                        var trailerPtr = valueStart + bytesWritten;
+                        var trailerPtr = actualValueStart + bytesWritten;
                         *trailerPtr++ = (byte)'\r';
                         *trailerPtr = (byte)'\n';
 
-                        var totalLen = actualHeaderSize + bytesWritten + TrailerSize;
+                        var totalLen = actualHeaderSize + bytesWritten + trailerSize;
 
-                        if (headerGap > 0)
-                            Buffer.MemoryCopy(headerStart, bufStart, totalLen, totalLen);
-
-                        output.SpanByteAndMemory.Memory = heapMemory;
                         output.SpanByteAndMemory.Length = totalLen;
+                        output.SpanByteAndMemory.Memory = heapMemory;
+                        result = RangeIndexResult.OK;
+                        return GarnetStatus.OK;
                     }
-
-                    result = RangeIndexResult.OK;
-                    return GarnetStatus.OK;
                 }
             }
         }
