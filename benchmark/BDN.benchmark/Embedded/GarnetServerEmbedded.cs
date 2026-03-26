@@ -110,6 +110,11 @@ namespace Embedded.server
         {
         }
 
+        /// <inheritdoc />
+        public override void Close()
+        {
+        }
+
         public bool TryCreateMessageConsumer(Span<byte> bytes, INetworkSender networkSender, out IMessageConsumer session)
         {
             session = null;
