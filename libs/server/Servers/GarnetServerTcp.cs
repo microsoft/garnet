@@ -147,11 +147,6 @@ namespace Garnet.server
             catch (ObjectDisposedException) { }
         }
 
-        /// <summary>
-        /// Handles a non-Success SocketError from AcceptAsync.
-        /// Returns true to continue the accept loop, false to exit it.
-        /// Throws on fatal non-shutdown errors to crash the process.
-        /// </summary>
         private bool HandleAcceptError(SocketAsyncEventArgs e)
         {
             // Dispose any socket the failed accept may have created
