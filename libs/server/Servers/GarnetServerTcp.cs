@@ -132,11 +132,14 @@ namespace Garnet.server
             {
                 do
                 {
-                    // When the while condition exits normally(AcceptAsync returned true), an
-                    // accept is already pending on IOCP — the callback will fire on next connection.But when
-                    // HandleNewConnection returns false, the break skips the while entirely — no AcceptAsync is issued,
-                    // nothing is pending.
-                    // Without ScheduleAcceptRetry calling AcceptAsync after a delay, the accept loop would be permanently dead.
+                    // HandleNewConnection returns true to continue accepting, false to stop.
+                    // When the while condition exits normally (AcceptAsync returned true), an
+                    // accept is already pending on IOCP — the callback fires on next connection.
+                    // When HandleNewConnection returns false, the break skips the while condition
+                    // entirely — no AcceptAsync is issued, and the accept loop exits.
+                    // This only happens during shutdown (Tier 1 fatal errors).
+                    // Tier 2 (resource pressure) uses Thread.Sleep for backoff and returns true
+                    // to continue the loop. Tier 3 (transient) returns true immediately.
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
                 } while (!listenSocket.AcceptAsync(e));
@@ -158,16 +161,16 @@ namespace Garnet.server
                 case SocketError.Shutdown:
                     // Clean shutdown — Dispose() already closed the listen socket,
                     // which triggered this error. Exit the accept loop silently.
-                    e.Dispose();
+                    // Don't dispose e here — GarnetServerTcp.Dispose() owns that cleanup.
                     return false;
 
                 case SocketError.NotSocket:
                 case SocketError.NotInitialized:
                 case SocketError.VersionNotSupported:
                     // Fatal and not a clean shutdown — the listen socket is corrupt.
-                    // Throw to crash the process.
+                    // Throw to crash the process. The OS will free all sockets and
+                    // resources when the process terminates.
                     logger?.LogCritical("Fatal accept error, crashing: {error}", e.SocketError);
-                    e.Dispose();
                     throw new SocketException((int)e.SocketError);
 
                 // Tier 2 — Resource pressure: backoff before retrying
