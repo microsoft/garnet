@@ -2816,13 +2816,8 @@ namespace Garnet.server
             // Move readHead to start of command payload
             readHead = (int)(ptr - recvBufferPtr);
 
-            // Try parsing the most important variable-length commands
-            cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
-
-            if (cmd == RespCommand.NONE)
-            {
-                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
-            }
+            // Extract command name via GetUpperCaseCommand (reads $len\r\n header, uppercases, advances readHead)
+            cmd = HashLookupCommand(ref count, ref specificErrorMessage, out success);
 
             // Parsing for command name was successful, but the command is unknown
             if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
@@ -2840,6 +2835,96 @@ namespace Garnet.server
                 }
             }
             return cmd;
+        }
+
+        /// <summary>
+        /// Hash-based command lookup. Extracts the command name from the RESP buffer,
+        /// looks it up in the static hash table, and handles subcommand dispatch.
+        /// Replaces the former FastParseArrayCommand + SlowParseCommand chain.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand HashLookupCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
+        {
+            // Extract the command name (reads $len\r\n...\r\n, advances readHead, uppercases in-place)
+            var command = GetUpperCaseCommand(out success);
+            if (!success)
+            {
+                return RespCommand.INVALID;
+            }
+
+            // Account for the command name being taken off the read head
+            count -= 1;
+
+            // Check for custom commands first (same order as original code)
+            if (TryParseCustomCommand(command, out var customCmd))
+            {
+                return customCmd;
+            }
+
+            // Hash table lookup for the primary command
+            fixed (byte* namePtr = command)
+            {
+                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length);
+
+                if (cmd == RespCommand.NONE)
+                {
+                    // Fall back to the old slow parser for commands not in the hash table
+                    return SlowParseCommand(command, ref count, ref specificErrorMessage, out success);
+                }
+
+                // BITOP has pseudo-subcommands (AND/OR/XOR/NOT/DIFF) that must be parsed inline
+                if (cmd == RespCommand.BITOP)
+                {
+                    return ParseBitopSubcommand(ref count, ref specificErrorMessage, out success);
+                }
+
+                // Check if this command has subcommands that need a second lookup
+                // Subcommand dispatch uses the existing SlowParseCommand which handles
+                // all edge cases (case-insensitive matching, specific error messages, etc.)
+                // These are admin commands (CLUSTER, CONFIG, ACL) — not the hot path.
+                if (RespCommandHashLookup.HasSubcommands(namePtr, command.Length))
+                {
+                    return SlowParseCommand(command, ref count, ref specificErrorMessage, out success);
+                }
+
+                return cmd;
+            }
+        }
+
+        /// <summary>
+        /// Parse the BITOP pseudo-subcommand (AND/OR/XOR/NOT/DIFF).
+        /// Called after the primary hash lookup identifies BITOP.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand ParseBitopSubcommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
+        {
+            if (count == 0)
+            {
+                specificErrorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                success = true;
+                return RespCommand.INVALID;
+            }
+
+            var subCommand = GetUpperCaseCommand(out success);
+            if (!success)
+            {
+                return RespCommand.NONE;
+            }
+
+            count--;
+
+            fixed (byte* subPtr = subCommand)
+            {
+                var subCmd = RespCommandHashLookup.LookupSubcommand(RespCommand.BITOP, subPtr, subCommand.Length);
+                if (subCmd != RespCommand.NONE)
+                {
+                    return subCmd;
+                }
+            }
+
+            // Unrecognized BITOP operation
+            specificErrorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+            return RespCommand.INVALID;
         }
     }
 }
