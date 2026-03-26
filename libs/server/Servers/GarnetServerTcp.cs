@@ -134,13 +134,11 @@ namespace Garnet.server
             {
                 do
                 {
-                    /*
-                    When the while condition exits normally(AcceptAsync returned true), an
-                    accept is already pending on IOCP — the callback will fire on next connection.But when
-                    HandleNewConnection returns false, the break skips the while entirely — no AcceptAsync is issued,
-                    nothing is pending.
-                    Without ScheduleAcceptRetry calling AcceptAsync after a delay, the accept loop would be permanently dead.
-                    */
+                    // When the while condition exits normally(AcceptAsync returned true), an
+                    // accept is already pending on IOCP — the callback will fire on next connection.But when
+                    // HandleNewConnection returns false, the break skips the while entirely — no AcceptAsync is issued,
+                    // nothing is pending.
+                    // Without ScheduleAcceptRetry calling AcceptAsync after a delay, the accept loop would be permanently dead.
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
                 } while (!listenSocket.AcceptAsync(e));
