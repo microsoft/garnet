@@ -149,6 +149,11 @@ namespace Garnet.server
             catch (ObjectDisposedException) { }
         }
 
+        /// <summary>
+        /// Handles a non-Success SocketError from AcceptAsync.
+        /// Returns true to continue the accept loop, false to exit it.
+        /// Throws on fatal non-shutdown errors to crash the process.
+        /// </summary>
         private bool HandleAcceptError(SocketAsyncEventArgs e)
         {
             // Dispose any socket the failed accept may have created
@@ -159,16 +164,20 @@ namespace Garnet.server
             {
                 // Tier 1 — Fatal: listen socket is dead, stop accepting
                 case SocketError.OperationAborted:
-                case SocketError.NotSocket:
                 case SocketError.Shutdown:
-                case SocketError.NotInitialized:
-                case SocketError.VersionNotSupported:
-                    if (!Disposed || e.SocketError != SocketError.OperationAborted)
-                    {
-                        logger?.LogCritical("Fatal accept error, stopping accept loop: {error}", e.SocketError);
-                    }
+                    // Clean shutdown — Dispose() already closed the listen socket,
+                    // which triggered this error. Exit the accept loop silently.
                     e.Dispose();
                     return false;
+
+                case SocketError.NotSocket:
+                case SocketError.NotInitialized:
+                case SocketError.VersionNotSupported:
+                    // Fatal and not a clean shutdown — the listen socket is corrupt.
+                    // Throw to crash the process.
+                    logger?.LogCritical("Fatal accept error, crashing: {error}", e.SocketError);
+                    e.Dispose();
+                    throw new SocketException((int)e.SocketError);
 
                 // Tier 2 — Resource pressure: backoff before retrying
                 case SocketError.TooManyOpenSockets:
@@ -196,19 +205,27 @@ namespace Garnet.server
             // the serialized accept path (single SAEA), so a new timer can't be scheduled
             // until the previous callback has completed, called AcceptAsync, and that
             // accept has completed with another Tier 2 error.
-            acceptRetryTimer?.Dispose();
-            acceptRetryTimer = new Timer(_ =>
+            if (acceptRetryTimer == null)
             {
-                if (Disposed) return;
-
-                try
+                acceptRetryTimer = new Timer(static state =>
                 {
-                    e.AcceptSocket = null;
-                    if (!listenSocket.AcceptAsync(e))
-                        AcceptEventArg_Completed(null, e);
-                }
-                catch (ObjectDisposedException) { }
-            }, null, acceptBackoffMs, Timeout.Infinite);
+                    var (self, args) = ((GarnetServerTcp, SocketAsyncEventArgs))state;
+                    if (self.Disposed) return;
+
+                    try
+                    {
+                        args.AcceptSocket = null;
+                        if (!self.listenSocket.AcceptAsync(args))
+                            self.AcceptEventArg_Completed(null, args);
+                    }
+                    catch (ObjectDisposedException) { }
+                }, (this, e), acceptBackoffMs, Timeout.Infinite);
+            }
+            else
+            {
+                // false only if timer was disposed. We can just swallow the return value here.
+                var _ = acceptRetryTimer.Change(acceptBackoffMs, Timeout.Infinite);
+            }
 
             // Exponential backoff with cap
             acceptBackoffMs = Math.Min(acceptBackoffMs * 2, MaxAcceptBackoffMs);
