@@ -66,7 +66,7 @@ namespace Garnet.server
         {
             // If we are not adding an ETag or Expiration we don't need to grow the record size for any reason other than value growth,
             // so we can optimize this to just set the length and span. 
-            if (logRecord.Info.RecordIsInline && (!input.header.CheckWithETagFlag() || logRecord.Info.HasETag) && (input.arg1 == 0 || logRecord.Info.HasExpiration))
+            if (logRecord.Info.ValueIsInline && (!input.header.CheckWithETagFlag() || logRecord.Info.HasETag) && (input.arg1 == 0 || logRecord.Info.HasExpiration))
             {
                 var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                 if (!logRecord.TrySetPinnedValueSpan(srcValue, valueAddress, ref valueLength))
@@ -80,23 +80,27 @@ namespace Garnet.server
 
                 if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo2))
                     return false;
-                var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
-                if (ok)
-                {
-                    if (input.header.CheckWithETagFlag())
-                    {
-                        var newETag = functionsState.etagState.ETag + 1;
-                        ok = logRecord.TrySetETag(newETag);
-                        if (ok)
-                            functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                    }
-                    else
-                        ok = logRecord.RemoveETag();
-                }
-                if (!ok)
-                    return false;
-                sizeInfo2.AssertOptionals(logRecord.Info);
             }
+
+            // Update expiration
+            if (input.arg1 != 0)
+            {
+                if (!logRecord.TrySetExpiration(input.arg1))
+                    Debug.Fail("Should have succeeded in setting Expiration as we should have ensured there was space there already");
+            }
+            else if (logRecord.Info.HasExpiration)
+                _ = logRecord.RemoveExpiration();
+
+            if (input.header.CheckWithETagFlag())
+            {
+                var newETag = functionsState.etagState.ETag + 1;
+                if (!logRecord.TrySetETag(newETag))
+                    Debug.Fail("Should have succeeded in setting ETag as we should have ensured there was space there already");
+                functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
+            }
+            else
+                _ = logRecord.RemoveETag();
+            //sizeInfo2.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);

@@ -693,7 +693,13 @@ namespace Tsavorite.core
             // Get the number of bytes in existing key and value lengths.
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
             int oldFillerLen, recordLength;
-            if (Info.HasOptionalOrObjectFields)
+            if (!Info.HasOptionalOrObjectFields)
+            {
+                oldFillerLen = dataHeader.GetFillerLength(Info, out recordLength);
+                if (oldFillerLen < inlineValueGrowth)
+                    return false;
+            }
+            else
             {
                 _ = dataHeader.GetKVLengths(Info, out recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out oldFillerLen);
                 if (oldFillerLen < inlineValueGrowth)
@@ -705,12 +711,6 @@ namespace Tsavorite.core
                 var optionalStartAddress = valueAddress + valueLength;
                 if (oldOptionalSize != 0)
                     Buffer.MemoryCopy((void*)optionalStartAddress, (void*)(optionalStartAddress + inlineValueGrowth), oldOptionalSize, oldOptionalSize);
-            }
-            else
-            {
-                oldFillerLen = dataHeader.GetFillerLength(Info, out recordLength);
-                if (oldFillerLen < inlineValueGrowth)
-                    return false;
             }
 
             // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
