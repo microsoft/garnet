@@ -296,41 +296,7 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-            if (!db.AppendOnlyFile.serverOptions.MultiLogEnabled)
-            {
-                var header = new AofHeader()
-                {
-                    opType = entryType,
-                    storeVersion = version,
-                    sessionID = -1
-                };
-                db.AppendOnlyFile.Log.SingleLog.Enqueue(header, out _);
-            }
-            else
-            {
-                var physicalSublogAccessVector = db.AppendOnlyFile.Log.AllLogsBitmask();
-                var header = new AofTransactionHeader
-                {
-                    shardedHeader = new AofShardedHeader
-                    {
-                        basicHeader = new AofHeader
-                        {
-                            padding = (byte)AofHeaderType.TransactionHeader,
-                            opType = entryType,
-                            storeVersion = version,
-                            sessionID = -1
-                        },
-                        sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
-                    },
-                    participantCount = (short)db.AppendOnlyFile.serverOptions.AofVirtualSublogCount
-                };
-                unsafe
-                {
-                    new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
-                }
-
-                db.AppendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector);
-            }
+            db.AppendOnlyFile.Log.EnqueueDatabaseCommit(entryType, version);
         }
 
         /// <summary>

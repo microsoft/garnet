@@ -352,39 +352,7 @@ namespace Garnet.server
             Debug.Assert(functionsState.StoredProcMode);
 
             if (PerformWrites && appendOnlyFile != null)
-            {
-                if (!appendOnlyFile.serverOptions.MultiLogEnabled)
-                {
-                    var header = new AofHeader
-                    {
-                        opType = AofEntryType.StoredProcedure,
-                        procedureId = id,
-                        storeVersion = txnVersion,
-                        sessionID = stringBasicContext.Session.ID,
-                    };
-                    appendOnlyFile.Log.SingleLog.Enqueue(header, ref procInput, out _);
-                }
-                else
-                {
-                    var header = new AofTransactionHeader
-                    {
-                        shardedHeader = new AofShardedHeader
-                        {
-                            basicHeader = new AofHeader
-                            {
-                                padding = (byte)AofHeaderType.TransactionHeader,
-                                opType = AofEntryType.StoredProcedure,
-                                procedureId = id,
-                                storeVersion = txnVersion,
-                                sessionID = stringBasicContext.Session.ID,
-                            },
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                        },
-                        participantCount = (short)proc.virtualSublogParticipantCount
-                    };
-                    appendOnlyFile.Log.Enqueue(header, ref procInput, proc);
-                }
-            }
+                appendOnlyFile.Log.EnqueueStoredProc(AofEntryType.StoredProcedure, id, txnVersion, stringBasicContext.Session.ID, ref procInput, proc);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -402,38 +370,8 @@ namespace Garnet.server
         {
             if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                if (!appendOnlyFile.serverOptions.MultiLogEnabled)
-                {
-                    var header = new AofHeader
-                    {
-                        opType = AofEntryType.TxnCommit,
-                        storeVersion = txnVersion,
-                        txnID = stringBasicContext.Session.ID,
-                    };
-                    appendOnlyFile.Log.SingleLog.Enqueue(header, out _);
-                }
-                else
-                {
-                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
-
-                    var header = new AofTransactionHeader
-                    {
-                        shardedHeader = new AofShardedHeader
-                        {
-                            basicHeader = new AofHeader
-                            {
-                                padding = (byte)AofHeaderType.TransactionHeader,
-                                opType = AofEntryType.TxnCommit,
-                                storeVersion = txnVersion,
-                                txnID = stringBasicContext.Session.ID,
-                            },
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                        },
-                        participantCount = (short)virtualSublogParticipantCount
-                    };
-
-                    appendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
-                }
+                ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
+                appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -553,38 +491,8 @@ namespace Garnet.server
             // Add TxnStart Marker
             if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                if (!appendOnlyFile.serverOptions.MultiLogEnabled)
-                {
-                    var header = new AofHeader
-                    {
-                        opType = AofEntryType.TxnStart,
-                        storeVersion = txnVersion,
-                        txnID = stringBasicContext.Session.ID
-                    };
-                    appendOnlyFile.Log.SingleLog.Enqueue(header, out _);
-                }
-                else
-                {
-                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
-
-                    var header = new AofTransactionHeader
-                    {
-                        shardedHeader = new AofShardedHeader
-                        {
-                            basicHeader = new AofHeader
-                            {
-                                padding = (byte)AofHeaderType.TransactionHeader,
-                                opType = AofEntryType.TxnStart,
-                                storeVersion = txnVersion,
-                                txnID = stringBasicContext.Session.ID
-                            },
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                        },
-                        participantCount = (short)virtualSublogParticipantCount
-                    };
-
-                    appendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
-                }
+                ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
+                appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnStart, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
             }
 
             state = TxnState.Running;
@@ -633,15 +541,18 @@ namespace Garnet.server
         void ComputeSublogAccessVector(out ulong physicalSublogAccessVector, out BitVector[] virtualSublogAccessVector, out int participantCount)
         {
             physicalSublogAccessVector = 0UL;
-            virtualSublogAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorBytes))];
+            virtualSublogAccessVector = null;
             participantCount = 0;
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
                 return;
 
             // If singleLog no computation is necessary
-            if (appendOnlyFile.Log.Size == 1)
+            if (appendOnlyFile.Log.Size == 1 && appendOnlyFile.Log.ReplayTaskCount == 1)
                 return;
+
+            // Initialize only for multi-log
+            virtualSublogAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorBytes))];
 
             // If sharded log is enabled calculate sublog access bitmap
             for (var i = 0; i < txnKeysParseState.Count; i++)

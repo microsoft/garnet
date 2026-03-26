@@ -387,42 +387,7 @@ namespace Garnet.server
             // Only enqueue operation if this is a primary
             if (StoreWrapper.clusterProvider.IsPrimary())
             {
-                if (!AppendOnlyFile.serverOptions.MultiLogEnabled)
-                {
-                    AofHeader header = new()
-                    {
-                        opType = entryType,
-                        storeVersion = 0,
-                        sessionID = -1,
-                        unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                        databaseId = (byte)defaultDatabase.Id
-                    };
-                    AppendOnlyFile.Log.SingleLog.Enqueue(header, out _);
-                }
-                else
-                {
-                    var physicalSublogAccessVector = AppendOnlyFile.Log.AllLogsBitmask();
-                    var header = new AofTransactionHeader
-                    {
-                        shardedHeader = new AofShardedHeader
-                        {
-                            basicHeader = new AofHeader
-                            {
-                                padding = (byte)AofHeaderType.TransactionHeader,
-                                opType = entryType,
-                                storeVersion = 0,
-                                sessionID = -1,
-                                unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                                databaseId = (byte)defaultDatabase.Id
-                            },
-                            sequenceNumber = StoreWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                        },
-                        participantCount = (short)AppendOnlyFile.serverOptions.AofVirtualSublogCount
-                    };
-                    new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
-
-                    AppendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector);
-                }
+                AppendOnlyFile.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog, defaultDatabase.Id);
             }
         }
 

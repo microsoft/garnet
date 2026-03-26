@@ -63,7 +63,6 @@ namespace Garnet.server
         /// <param name="logger"></param>
         public GarnetAppendOnlyFile(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
         {
-            Log = new(this, serverOptions, logSettings, logger);
             this.serverOptions = serverOptions;
             InvalidAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1);
             MaxAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: long.MaxValue);
@@ -71,6 +70,7 @@ namespace Garnet.server
             if (serverOptions.MultiLogEnabled)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
+            Log = new(this, serverOptions, logSettings, logger);
         }
 
         /// <summary>

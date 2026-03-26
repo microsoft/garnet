@@ -225,20 +225,10 @@ namespace Resp.benchmark
                             }
                             else
                             {
-                                var shardedHeader = new AofShardedHeader()
-                                {
-                                    basicHeader = new AofHeader
-                                    {
-                                        padding = (byte)AofHeaderType.ShardedHeader,
-                                        opType = AofEntryType.StoreUpsert,
-                                        storeVersion = 1,
-                                        sessionID = threadId
-                                    },
-                                    sequenceNumber = aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                                };
-
                                 aofGen.appendOnlyFile.Log.Enqueue(
-                                    shardedHeader,
+                                    AofEntryType.StoreUpsert,
+                                    1,
+                                    threadId,
                                     key,
                                     value,
                                     ref input,
