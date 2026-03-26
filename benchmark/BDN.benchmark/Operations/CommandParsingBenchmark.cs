@@ -15,6 +15,7 @@ namespace BDN.benchmark.Operations
     public unsafe class CommandParsingBenchmark : OperationsBase
     {
         // Tier 1a: SIMD Vector128 fast path (3-6 char commands with fixed arg counts)
+        static ReadOnlySpan<byte> CMD_PING => "*1\r\n$4\r\nPING\r\n"u8;
         static ReadOnlySpan<byte> CMD_GET => "*2\r\n$3\r\nGET\r\n$1\r\na\r\n"u8;
         static ReadOnlySpan<byte> CMD_SET => "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\nb\r\n"u8;
         static ReadOnlySpan<byte> CMD_INCR => "*2\r\n$4\r\nINCR\r\n$1\r\ni\r\n"u8;
@@ -31,7 +32,7 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> CMD_SUBSCRIBE => "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n"u8;
 
         // Pre-allocated buffers (pinned for pointer stability)
-        byte[] bufGet, bufSet, bufIncr, bufExists, bufSetex, bufExpire, bufHset, bufLpush, bufZadd, bufSubscribe;
+        byte[] bufPing, bufGet, bufSet, bufIncr, bufExists, bufSetex, bufExpire, bufHset, bufLpush, bufZadd, bufSubscribe;
 
         public override void GlobalSetup()
         {
@@ -40,6 +41,8 @@ namespace BDN.benchmark.Operations
             // Pre-seed a key so GET/EXISTS don't return NOT_FOUND
             SlowConsumeMessage("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\nb\r\n"u8);
 
+            bufPing = GC.AllocateArray<byte>(CMD_PING.Length, pinned: true);
+            CMD_PING.CopyTo(bufPing);
             bufGet = GC.AllocateArray<byte>(CMD_GET.Length, pinned: true);
             CMD_GET.CopyTo(bufGet);
             bufSet = GC.AllocateArray<byte>(CMD_SET.Length, pinned: true);
@@ -63,6 +66,15 @@ namespace BDN.benchmark.Operations
         }
 
         // === Tier 1a: SIMD Vector128 fast path ===
+
+        [Benchmark]
+        public RespCommand ParsePING()
+        {
+            RespCommand result = default;
+            for (int i = 0; i < batchSize; i++)
+                result = session.ParseRespCommandBuffer(bufPing);
+            return result;
+        }
 
         [Benchmark]
         public RespCommand ParseGET()
