@@ -241,14 +241,6 @@ namespace Garnet.server
                             continue;
                         }
 
-                        // Cleanup incidental additional state
-                        if (!TryDropVectorSetReplicationKey(toDeleteKeySpanByte, ref session.storageSession.stringBasicContext))
-                        {
-                            logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
-                            clearInProgressDeletes = false;
-                            continue;
-                        }
-
                         // Schedule cleanup of element data
                         CleanupDroppedIndex(ref session.storageSession.vectorBasicContext, toDeleteCtx);
 
@@ -289,14 +281,23 @@ namespace Garnet.server
             cleanupTask.Wait();
         }
 
-        private static void CompletePending<TContext>(ref Status status, ref VectorOutput output, ref TContext ctx)
-            where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+        private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
         {
             _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
             output = completedOutputs.Current.Output;
+            Debug.Assert(!completedOutputs.Next());
+            completedOutputs.Dispose();
+        }
+
+        private static void CompletePending(ref Status status, ref StringBasicContext ctx)
+        {
+            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
             Debug.Assert(!completedOutputs.Next());
             completedOutputs.Dispose();
         }
@@ -456,12 +457,6 @@ namespace Garnet.server
                 }
 
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
-
-                // Cleanup incidental additional state
-                if (!TryDropVectorSetReplicationKey(key, ref storageSession.stringBasicContext))
-                {
-                    logger?.LogCritical("Couldn't synthesize Vector Set delete operation for replication, data loss will occur");
-                }
 
                 // Schedule cleanup of element data
                 CleanupDroppedIndex(ref storageSession.vectorBasicContext, context);

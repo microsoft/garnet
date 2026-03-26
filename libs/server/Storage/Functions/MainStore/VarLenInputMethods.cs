@@ -345,6 +345,7 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.VADD:
+                    case RespCommand.VREM:
                         return fieldInfo;
 
                     default:

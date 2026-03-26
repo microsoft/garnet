@@ -130,6 +130,7 @@ namespace Garnet.server
             AofDevice = enableAof ? srcDb.AofDevice : null;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             StoreIndexMaxedOut = srcDb.StoreIndexMaxedOut;
+            VectorManager = srcDb.VectorManager;
 
             if (copyLastSaveData)
             {

@@ -243,8 +243,7 @@ namespace Garnet.server
         /// <summary>
         /// Before we start smashing a <see cref="Index"/> for deletion, records that we started to delete it so we can recover from crashes.
         /// </summary>
-        internal bool TryMarkDeleteInProgress<TContext>(ref TContext ctx, ReadOnlySpan<byte> key, ulong context)
-            where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+        internal bool TryMarkDeleteInProgress(ref VectorBasicContext ctx, ReadOnlySpan<byte> key, ulong context)
         {
             Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
             BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
@@ -334,8 +333,7 @@ namespace Garnet.server
         /// <summary>
         /// After a delete has completed, removes the given key from metadata.
         /// </summary>
-        internal void ClearDeleteInProgress<TContext>(ref TContext ctx, ReadOnlySpan<byte> key, ulong context)
-            where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+        internal void ClearDeleteInProgress(ref VectorBasicContext ctx, ReadOnlySpan<byte> key, ulong context)
         {
             Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
             BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
@@ -369,8 +367,7 @@ namespace Garnet.server
         /// <summary>
         /// After an index is dropped, called to start the process of removing ancillary data (elements, neighbor lists, attributes, etc.).
         /// </summary>
-        internal void CleanupDroppedIndex<TContext>(ref TContext ctx, ulong context)
-            where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+        internal void CleanupDroppedIndex(ref VectorBasicContext ctx, ulong context)
         {
             lock (this)
             {

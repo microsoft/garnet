@@ -2,8 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -89,27 +92,21 @@ namespace Garnet.server
 
             // TODO: Implement
 
-            //var inputCopy = input;
-            //inputCopy.arg1 = VADDAppendLogArg;
+            var inputCopy = input;
+            inputCopy.arg1 = VADDAppendLogArg;
 
-            //Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
-            //var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
-            //keyWithNamespace.MarkNamespace();
-            //keyWithNamespace.SetNamespaceInPayload(0);
-            //key.CopyTo(keyWithNamespace.AsSpan());
+            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
-            //var res = context.RMW(ref keyWithNamespace, ref inputCopy);
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref context);
+            }
 
-            //if (res.IsPending)
-            //{
-            //    CompletePending(ref res, ref context);
-            //}
-
-            //if (!res.IsCompletedSuccessfully)
-            //{
-            //    logger?.LogCritical("Failed to inject replication write for VADD into log, result was {res}", res);
-            //    throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
-            //}
+            if (!res.IsCompletedSuccessfully)
+            {
+                logger?.LogCritical("Failed to inject replication write for VADD into log, result was {res}", res);
+                throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
+            }
         }
 
         /// <summary>
@@ -125,57 +122,23 @@ namespace Garnet.server
         {
             Debug.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
 
-            // TODO: Implement
+            var inputCopy = input;
+            inputCopy.arg1 = VREMAppendLogArg;
 
-            //var inputCopy = input;
-            //inputCopy.arg1 = VREMAppendLogArg;
+            inputCopy.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(element));
 
-            //Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
-            //var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
-            //keyWithNamespace.MarkNamespace();
-            //keyWithNamespace.SetNamespaceInPayload(0);
-            //key.CopyTo(keyWithNamespace.AsSpan());
+            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
 
-            //inputCopy.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(element.AsReadOnlySpan()));
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref context);
+            }
 
-            //var res = context.RMW(ref keyWithNamespace, ref inputCopy);
-
-            //if (res.IsPending)
-            //{
-            //    CompletePending(ref res, ref context);
-            //}
-
-            //if (!res.IsCompletedSuccessfully)
-            //{
-            //    logger?.LogCritical("Failed to inject replication write for VREM into log, result was {res}", res);
-            //    throw new GarnetException("Couldn't synthesize Vector Set remove operation for replication, data loss will occur");
-            //}
-        }
-
-        /// <summary>
-        /// After an index is dropped, called to cleanup state injected by <see cref="ReplicateVectorSetAdd"/>
-        /// 
-        /// Amounts to delete a synthetic key in namespace 0.
-        /// </summary>
-        internal bool TryDropVectorSetReplicationKey(ReadOnlySpan<byte> key, ref StringBasicContext context)
-        {
-            // TODO: Implement
-            return true;
-
-            //Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
-            //var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
-            //keyWithNamespace.MarkNamespace();
-            //keyWithNamespace.SetNamespaceInPayload(0);
-            //key.CopyTo(keyWithNamespace.AsSpan());
-
-            //var res = context.Delete(ref keyWithNamespace);
-
-            //if (res.IsPending)
-            //{
-            //    CompletePending(ref res, ref context);
-            //}
-
-            //return res.IsCompletedSuccessfully;
+            if (!res.IsCompletedSuccessfully)
+            {
+                logger?.LogCritical("Failed to inject replication write for VREM into log, result was {res}", res);
+                throw new GarnetException("Couldn't synthesize Vector Set remove operation for replication, data loss will occur");
+            }
         }
 
         /// <summary>
@@ -183,299 +146,306 @@ namespace Garnet.server
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
         /// </summary>
-        internal void HandleVectorSetAddReplication(StorageSession currentSession, Func<RespServerSession> obtainServerSession, VectorElementKey keyWithNamespace, ref StringInput input)
+        internal void HandleVectorSetAddReplication(
+            /*StorageSession currentSession, */
+            Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            // TODO: Implement
+            // TODO: Restore migration logic
+            if (input.arg1 == MigrateElementKeyLogArg)
+            {
+                throw new NotImplementedException("TODO");
 
-            //if (input.arg1 == MigrateElementKeyLogArg)
-            //{
-            //    // These are special, injecting by a PRIMARY applying migration operations
-            //    // These get replayed on REPLICAs typically, though role changes might still cause these
-            //    // to get replayed on now-primary nodes
+                //// These are special, injecting by a PRIMARY applying migration operations
+                //// These get replayed on REPLICAs typically, though role changes might still cause these
+                //// to get replayed on now-primary nodes
 
-            //    var key = input.parseState.GetArgSliceByRef(0);
-            //    var value = input.parseState.GetArgSliceByRef(1);
+                //var key = input.parseState.GetArgSliceByRef(0);
+                //var value = input.parseState.GetArgSliceByRef(1);
 
-            //    // TODO: Namespace is present, but not actually transmitted
-            //    //       This presumably becomes unnecessary in Store v2
-            //    key.MarkNamespace();
+                //// TODO: Namespace is present, but not actually transmitted
+                ////       This presumably becomes unnecessary in Store v2
+                //key.MarkNamespace();
 
-            //    var ns = key.GetNamespaceInPayload();
+                //var ns = key.GetNamespaceInPayload();
 
-            //    // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
-            //    var ctx = ns & ~(ContextStep - 1);
-            //    if (!contextMetadata.IsMigrating(ctx))
-            //    {
-            //        var needsUpdate = false;
+                //// REPLICAs wouldn't have seen a reservation message, so allocate this on demand
+                //var ctx = ns & ~(ContextStep - 1);
+                //if (!contextMetadata.IsMigrating(ctx))
+                //{
+                //    var needsUpdate = false;
 
-            //        lock (this)
-            //        {
-            //            if (!contextMetadata.IsMigrating(ctx))
-            //            {
-            //                contextMetadata.MarkInUse(ctx, ushort.MaxValue);
-            //                contextMetadata.MarkMigrating(ctx);
+                //    lock (this)
+                //    {
+                //        if (!contextMetadata.IsMigrating(ctx))
+                //        {
+                //            contextMetadata.MarkInUse(ctx, ushort.MaxValue);
+                //            contextMetadata.MarkMigrating(ctx);
 
-            //                needsUpdate = true;
-            //            }
-            //        }
+                //            needsUpdate = true;
+                //        }
+                //    }
 
-            //        if (needsUpdate)
-            //        {
-            //            UpdateContextMetadata(ref currentSession.vectorBasicContext);
-            //        }
-            //    }
+                //    if (needsUpdate)
+                //    {
+                //        UpdateContextMetadata(ref currentSession.vectorBasicContext);
+                //    }
+                //}
 
-            //    HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, ref key, ref value);
-            //    return;
-            //}
-            //else if (input.arg1 == MigrateIndexKeyLogArg)
-            //{
-            //    // These also injected by a PRIMARY applying migration operations
+                //HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, ref key, ref value);
+                //return;
+            }
+            else if (input.arg1 == MigrateIndexKeyLogArg)
+            {
+                throw new NotImplementedException("TODO");
 
-            //    var key = input.parseState.GetArgSliceByRef(0);
-            //    var value = input.parseState.GetArgSliceByRef(1);
-            //    var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
+                //// These also injected by a PRIMARY applying migration operations
 
-            //    // Most of the time a replica will have seen an element moving before now
-            //    // but if you a migrate an EMPTY Vector Set that is not necessarily true
-            //    //
-            //    // So force reservation now
-            //    if (!contextMetadata.IsMigrating(context))
-            //    {
-            //        var needsUpdate = false;
+                //var key = input.parseState.GetArgSliceByRef(0);
+                //var value = input.parseState.GetArgSliceByRef(1);
+                //var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
 
-            //        lock (this)
-            //        {
-            //            if (!contextMetadata.IsMigrating(context))
-            //            {
-            //                contextMetadata.MarkInUse(context, ushort.MaxValue);
-            //                contextMetadata.MarkMigrating(context);
+                //// Most of the time a replica will have seen an element moving before now
+                //// but if you a migrate an EMPTY Vector Set that is not necessarily true
+                ////
+                //// So force reservation now
+                //if (!contextMetadata.IsMigrating(context))
+                //{
+                //    var needsUpdate = false;
 
-            //                needsUpdate = true;
-            //            }
-            //        }
+                //    lock (this)
+                //    {
+                //        if (!contextMetadata.IsMigrating(context))
+                //        {
+                //            contextMetadata.MarkInUse(context, ushort.MaxValue);
+                //            contextMetadata.MarkMigrating(context);
 
-            //        if (needsUpdate)
-            //        {
-            //            UpdateContextMetadata(ref currentSession.vectorBasicContext);
-            //        }
-            //    }
+                //            needsUpdate = true;
+                //        }
+                //    }
 
-            //    ActiveThreadSession = currentSession;
-            //    try
-            //    {
-            //        HandleMigratedIndexKey(null, null, ref key, ref value);
-            //    }
-            //    finally
-            //    {
-            //        ActiveThreadSession = null;
-            //    }
-            //    return;
-            //}
+                //    if (needsUpdate)
+                //    {
+                //        UpdateContextMetadata(ref currentSession.vectorBasicContext);
+                //    }
+                //}
 
-            //Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
+                //ActiveThreadSession = currentSession;
+                //try
+                //{
+                //    HandleMigratedIndexKey(null, null, ref key, ref value);
+                //}
+                //finally
+                //{
+                //    ActiveThreadSession = null;
+                //}
+                //return;
+            }
 
-            //// Undo mangling that got replication going
-            //var inputCopy = input;
-            //inputCopy.arg1 = default;
-            //var keyBytesArr = ArrayPool<byte>.Shared.Rent(keyWithNamespace.Length - 1);
-            //var keyBytes = keyBytesArr.AsMemory()[..(keyWithNamespace.Length - 1)];
+            Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
 
-            //keyWithNamespace.CopyTo(keyBytes.Span);
+            // Undo mangling that got replication going
+            var inputCopy = input;
+            inputCopy.arg1 = default;
 
-            //var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
-            //var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
-            //var valueType = MemoryMarshal.Read<VectorValueType>(input.parseState.GetArgSliceByRef(2).Span);
-            //var values = input.parseState.GetArgSliceByRef(3).Span;
-            //var element = input.parseState.GetArgSliceByRef(4).Span;
-            //var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
-            //var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
-            //var attributes = input.parseState.GetArgSliceByRef(7).Span;
-            //var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
-            //var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
+            // Copy key onto 
+            var keyBytesArr = ArrayPool<byte>.Shared.Rent(key.Length);
+            var keyBytes = keyBytesArr.AsMemory()[..key.Length];
 
-            //// We have to make copies (and they need to be on the heap) to pass to background tasks
-            //var valuesBytes = ArrayPool<byte>.Shared.Rent(values.Length).AsMemory()[..values.Length];
-            //values.CopyTo(valuesBytes.Span);
+            key.CopyTo(keyBytes.Span);
 
-            //var elementBytes = ArrayPool<byte>.Shared.Rent(element.Length).AsMemory()[..element.Length];
-            //element.CopyTo(elementBytes.Span);
+            var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+            var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+            var valueType = MemoryMarshal.Read<VectorValueType>(input.parseState.GetArgSliceByRef(2).Span);
+            var values = input.parseState.GetArgSliceByRef(3).Span;
+            var element = input.parseState.GetArgSliceByRef(4).Span;
+            var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+            var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+            var attributes = input.parseState.GetArgSliceByRef(7).Span;
+            var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+            var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
 
-            //var attributesBytes = ArrayPool<byte>.Shared.Rent(attributes.Length).AsMemory()[..attributes.Length];
-            //attributes.CopyTo(attributesBytes.Span);
+            // We have to make copies (and they need to be on the heap) to pass to background tasks
+            var valuesBytes = ArrayPool<byte>.Shared.Rent(values.Length).AsMemory()[..values.Length];
+            values.CopyTo(valuesBytes.Span);
 
-            //// Spin up replication replay tasks on first use
-            //if (replicationReplayStarted == 0)
-            //{
-            //    if (Interlocked.CompareExchange(ref replicationReplayStarted, 1, 0) == 0)
-            //    {
-            //        StartReplicationReplayTasks(this, obtainServerSession);
-            //    }
-            //}
+            var elementBytes = ArrayPool<byte>.Shared.Rent(element.Length).AsMemory()[..element.Length];
+            element.CopyTo(elementBytes.Span);
 
-            //// We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
+            var attributesBytes = ArrayPool<byte>.Shared.Rent(attributes.Length).AsMemory()[..attributes.Length];
+            attributes.CopyTo(attributesBytes.Span);
 
-            //replicationBlockEvent.Increment();
-            //var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
-            //if (!queued)
-            //{
-            //    replicationBlockEvent.Decrement();
-            //}
+            // Spin up replication replay tasks on first use
+            if (replicationReplayStarted == 0)
+            {
+                if (Interlocked.CompareExchange(ref replicationReplayStarted, 1, 0) == 0)
+                {
+                    StartReplicationReplayTasks(this, obtainServerSession);
+                }
+            }
 
-            //static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
-            //{
-            //    if (self.dbId != 0)
-            //    {
-            //        throw new GarnetException($"Unexpected DB ({self.dbId}) in cluster mode, expected 0");
-            //    }
+            // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
 
-            //    self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
+            replicationBlockEvent.Increment();
+            var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
+            if (!queued)
+            {
+                replicationBlockEvent.Decrement();
+            }
 
-            //    for (var i = 0; i < self.replicationReplayTasks.Length; i++)
-            //    {
-            //        self.replicationReplayTasks[i] = Task.Factory.StartNew(
-            //            async () =>
-            //            {
-            //                try
-            //                {
-            //                    var reader = self.replicationReplayChannel.Reader;
+            static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
+            {
+                if (self.dbId != 0)
+                {
+                    throw new GarnetException($"Unexpected DB ({self.dbId}) in cluster mode, expected 0");
+                }
 
-            //                    SessionParseState reusableParseState = default;
-            //                    reusableParseState.Initialize(11);
+                self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
 
-            //                    while (await reader.WaitToReadAsync(self.replicationReplayCancellation))
-            //                    {
-            //                        // Allocate session for current batch, now so we stay on same managed thread
-            //                        using var allocatedSession = obtainServerSession();
-            //                        if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
-            //                        {
-            //                            throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
-            //                        }
+                for (var i = 0; i < self.replicationReplayTasks.Length; i++)
+                {
+                    self.replicationReplayTasks[i] = Task.Factory.StartNew(
+                        async () =>
+                        {
+                            try
+                            {
+                                var reader = self.replicationReplayChannel.Reader;
 
-            //                        while (reader.TryRead(out var entry))
-            //                        {
-            //                            try
-            //                            {
-            //                                try
-            //                                {
-            //                                    ApplyVectorSetAdd(self, allocatedSession.storageSession, entry, ref reusableParseState);
-            //                                }
-            //                                finally
-            //                                {
-            //                                    self.replicationBlockEvent.Decrement();
-            //                                }
-            //                            }
-            //                            catch
-            //                            {
-            //                                self.logger?.LogCritical(
-            //                                    "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
-            //                                    Encoding.UTF8.GetString(entry.Key.Span),
-            //                                    entry.Dims,
-            //                                    entry.ReduceDims,
-            //                                    entry.ValueType,
-            //                                    Convert.ToBase64String(entry.Values.Span),
-            //                                    Convert.ToBase64String(entry.Values.Span),
-            //                                    entry.Quantizer,
-            //                                    entry.BuildExplorationFactor,
-            //                                    Encoding.UTF8.GetString(entry.Attributes.Span),
-            //                                    entry.NumLinks
-            //                                );
+                                SessionParseState reusableParseState = default;
+                                reusableParseState.Initialize(11);
 
-            //                                throw;
-            //                            }
-            //                        }
-            //                    }
-            //                }
-            //                catch (OperationCanceledException cancelEx)
-            //                {
-            //                    self.logger?.LogInformation(cancelEx, "ReplicationReplayTask cancelled");
-            //                }
-            //                catch (Exception e)
-            //                {
-            //                    self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
-            //                    throw;
-            //                }
-            //            }
-            //        )
-            //        .Unwrap();
-            //    }
-            //}
+                                while (await reader.WaitToReadAsync(self.replicationReplayCancellation))
+                                {
+                                    // Allocate session for current batch, now so we stay on same managed thread
+                                    using var allocatedSession = obtainServerSession();
+                                    if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
+                                    {
+                                        throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
+                                    }
 
-            //// Actually apply a replicated VADD
-            //static unsafe void ApplyVectorSetAdd(VectorManager self, StorageSession storageSession, VADDReplicationState state, ref SessionParseState reusableParseState)
-            //{
-            //    var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric) = state;
-            //    try
-            //    {
-            //        Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+                                    while (reader.TryRead(out var entry))
+                                    {
+                                        try
+                                        {
+                                            try
+                                            {
+                                                ApplyVectorSetAdd(self, allocatedSession.storageSession, entry, ref reusableParseState);
+                                            }
+                                            finally
+                                            {
+                                                self.replicationBlockEvent.Decrement();
+                                            }
+                                        }
+                                        catch
+                                        {
+                                            self.logger?.LogCritical(
+                                                "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
+                                                Encoding.UTF8.GetString(entry.Key.Span),
+                                                entry.Dims,
+                                                entry.ReduceDims,
+                                                entry.ValueType,
+                                                Convert.ToBase64String(entry.Values.Span),
+                                                Convert.ToBase64String(entry.Values.Span),
+                                                entry.Quantizer,
+                                                entry.BuildExplorationFactor,
+                                                Encoding.UTF8.GetString(entry.Attributes.Span),
+                                                entry.NumLinks
+                                            );
 
-            //        fixed (byte* keyPtr = keyBytes.Span)
-            //        fixed (byte* valuesPtr = valuesBytes.Span)
-            //        fixed (byte* elementPtr = elementBytes.Span)
-            //        fixed (byte* attributesPtr = attributesBytes.Span)
-            //        {
-            //            var key = SpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
-            //            var values = SpanByte.FromPinnedPointer(valuesPtr, valuesBytes.Length);
-            //            var element = SpanByte.FromPinnedPointer(elementPtr, elementBytes.Length);
-            //            var attributes = SpanByte.FromPinnedPointer(attributesPtr, attributesBytes.Length);
+                                            throw;
+                                        }
+                                    }
+                                }
+                            }
+                            catch (OperationCanceledException cancelEx)
+                            {
+                                self.logger?.LogInformation(cancelEx, "ReplicationReplayTask cancelled");
+                            }
+                            catch (Exception e)
+                            {
+                                self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
+                                throw;
+                            }
+                        }
+                    )
+                    .Unwrap();
+                }
+            }
 
-            //            var indexBytes = stackalloc byte[IndexSizeBytes];
+            // Actually apply a replicated VADD
+            static unsafe void ApplyVectorSetAdd(VectorManager self, StorageSession storageSession, VADDReplicationState state, ref SessionParseState reusableParseState)
+            {
+                var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric) = state;
+                try
+                {
+                    Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
 
-            //            var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
-            //            var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
-            //            var valueTypeArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
-            //            var valuesArg = PinnedSpanByte.FromPinnedSpan(values);
-            //            var elementArg = PinnedSpanByte.FromPinnedSpan(element);
-            //            var quantizerArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
-            //            var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
-            //            var attributesArg = PinnedSpanByte.FromPinnedSpan(attributes);
-            //            var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
-            //            var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
+                    fixed (byte* keyPtr = keyBytes.Span)
+                    fixed (byte* valuesPtr = valuesBytes.Span)
+                    fixed (byte* elementPtr = elementBytes.Span)
+                    fixed (byte* attributesPtr = attributesBytes.Span)
+                    {
+                        var key = SpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
+                        var values = SpanByte.FromPinnedPointer(valuesPtr, valuesBytes.Length);
+                        var element = SpanByte.FromPinnedPointer(elementPtr, elementBytes.Length);
+                        var attributes = SpanByte.FromPinnedPointer(attributesPtr, attributesBytes.Length);
 
-            //            reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
+                        var indexBytes = stackalloc byte[IndexSizeBytes];
 
-            //            StringInput input = new(RespCommand.VADD, ref reusableParseState);
+                        var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+                        var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+                        var valueTypeArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
+                        var valuesArg = PinnedSpanByte.FromPinnedSpan(values);
+                        var elementArg = PinnedSpanByte.FromPinnedSpan(element);
+                        var quantizerArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+                        var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+                        var attributesArg = PinnedSpanByte.FromPinnedSpan(attributes);
+                        var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+                        var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
-            //            // Equivalent to VectorStoreOps.VectorSetAdd
-            //            //
-            //            // We still need locking here because the replays may proceed in parallel
+                        reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
-            //            using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status))
-            //            {
-            //                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
+                        StringInput input = new(RespCommand.VADD, ref reusableParseState);
 
-            //                var addRes = self.TryAdd(indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
+                        // Equivalent to VectorStoreOps.VectorSetAdd
+                        //
+                        // We still need locking here because the replays may proceed in parallel
 
-            //                if (addRes != VectorManagerResult.OK)
-            //                {
-            //                    throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
-            //                }
-            //            }
-            //        }
-            //    }
-            //    finally
-            //    {
-            //        if (MemoryMarshal.TryGetArray<byte>(keyBytes, out var toFree))
-            //        {
-            //            ArrayPool<byte>.Shared.Return(toFree.Array);
-            //        }
+                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status))
+                        {
+                            Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
 
-            //        if (MemoryMarshal.TryGetArray(valuesBytes, out toFree))
-            //        {
-            //            ArrayPool<byte>.Shared.Return(toFree.Array);
-            //        }
+                            var addRes = self.TryAdd(indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
-            //        if (MemoryMarshal.TryGetArray(elementBytes, out toFree))
-            //        {
-            //            ArrayPool<byte>.Shared.Return(toFree.Array);
-            //        }
+                            if (addRes != VectorManagerResult.OK)
+                            {
+                                throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    if (MemoryMarshal.TryGetArray<byte>(keyBytes, out var toFree))
+                    {
+                        ArrayPool<byte>.Shared.Return(toFree.Array);
+                    }
 
-            //        if (MemoryMarshal.TryGetArray(attributesBytes, out toFree))
-            //        {
-            //            ArrayPool<byte>.Shared.Return(toFree.Array);
-            //        }
-            //    }
-            //}
+                    if (MemoryMarshal.TryGetArray(valuesBytes, out toFree))
+                    {
+                        ArrayPool<byte>.Shared.Return(toFree.Array);
+                    }
+
+                    if (MemoryMarshal.TryGetArray(elementBytes, out toFree))
+                    {
+                        ArrayPool<byte>.Shared.Return(toFree.Array);
+                    }
+
+                    if (MemoryMarshal.TryGetArray(attributesBytes, out toFree))
+                    {
+                        ArrayPool<byte>.Shared.Return(toFree.Array);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -507,30 +477,23 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            throw new NotImplementedException("This can't work as it does in main, rework");
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            var element = input.parseState.GetArgSliceByRef(0);
 
-            //Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
-            //var element = input.parseState.GetArgSliceByRef(0);
+            var inputCopy = input;
+            inputCopy.arg1 = default;
 
-            //// Replication adds a (0) namespace - remove it
-            //Span<byte> keyWithoutNamespaceSpan = stackalloc byte[key.Length - 1];
-            //key.AsReadOnlySpan().CopyTo(keyWithoutNamespaceSpan);
-            //var keyWithoutNamespace = SpanByte.FromPinnedSpan(keyWithoutNamespaceSpan);
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
+            {
+                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
 
-            //var inputCopy = input;
-            //inputCopy.arg1 = default;
+                var addRes = TryRemove(indexSpan, element.ReadOnlySpan);
 
-            //using (ReadVectorIndex(storageSession, ref keyWithoutNamespace, ref inputCopy, indexSpan, out var status))
-            //{
-            //    Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
-
-            //    var addRes = TryRemove(indexSpan, element.ReadOnlySpan);
-
-            //    if (addRes != VectorManagerResult.OK)
-            //    {
-            //        throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
-            //    }
-            //}
+                if (addRes != VectorManagerResult.OK)
+                {
+                    throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                }
+            }
         }
 
         /// <summary>

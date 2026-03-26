@@ -908,6 +908,15 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Suspend background task that may interfere with the primary store.
+        /// </summary>
+        /// <returns></returns>
+        public async Task SuspendReplicaOnlyTasks()
+        {
+            await taskManager.Cancel(TaskPlacementCategory.Replica);
+        }
+
+        /// <summary>
         /// Start background maintenance tasks that should only run when this node is a primary
         /// </summary>
         /// <returns></returns>

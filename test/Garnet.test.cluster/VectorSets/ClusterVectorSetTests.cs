@@ -427,7 +427,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
                 var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", bytes3]);
-                ClassicAssert.IsTrue(querySecondary.Length >= 1);
+                ClassicAssert.IsTrue(querySecondary.Length is (1 or 2));
 
                 for (var j = 0; j < querySecondary.Length; j++)
                 {

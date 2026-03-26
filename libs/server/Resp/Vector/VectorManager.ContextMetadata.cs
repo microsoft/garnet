@@ -11,7 +11,6 @@ using System.Text;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -382,8 +381,7 @@ namespace Garnet.server
         /// 
         /// The return contexts are unavailable for other use, but are not yet "live" for visibility purposes.
         /// </summary>
-        public bool TryReserveContextsForMigration<TContext>(ref TContext ctx, int count, out List<ulong> contexts)
-            where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+        public bool TryReserveContextsForMigration(ref VectorBasicContext ctx, int count, out List<ulong> contexts)
         {
             lock (this)
             {
@@ -402,8 +400,7 @@ namespace Garnet.server
         /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
-        private void UpdateContextMetadata<TContext>(ref TContext ctx)
-            where TContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
+        private void UpdateContextMetadata(ref VectorBasicContext ctx)
         {
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
