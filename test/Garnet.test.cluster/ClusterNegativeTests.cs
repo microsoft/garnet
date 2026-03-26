@@ -312,6 +312,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex, logger: context.logger);
 
             var keyLength = 32;
             var kvpairCount = 32;

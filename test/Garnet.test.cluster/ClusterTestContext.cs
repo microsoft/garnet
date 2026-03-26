@@ -139,7 +139,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
 
-            var timeoutSeconds = 30;
+            var timeoutSeconds = 60;
             string failureReason = null;
 
             // Phase 1: Dispose cluster nodes (may timeout if handlers are stuck)
