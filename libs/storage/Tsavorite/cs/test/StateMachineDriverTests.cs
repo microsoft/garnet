@@ -410,40 +410,48 @@ namespace Tsavorite.test.recovery
     /// orphaning the first semaphore in the waitingList. ProcessWaitingListAsync
     /// then waits on it forever.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
-    public class TrackLastVersionTwoStoreDeadlock
+    public class TrackLastVersionTwoStoreDeadlock : AllureTestBase
     {
         [Test]
         public async Task TrackLastVersionCalledTwiceDoesNotDeadlock()
         {
             var epoch = new LightEpoch();
-            var driver = new StateMachineDriver(epoch);
+            try
+            {
+                var driver = new StateMachineDriver(epoch);
 
-            // Simulate an active transaction (e.g. Lua script touching both stores)
-            var txnVersion = driver.AcquireTransactionVersion();
+                // Simulate an active transaction (e.g. Lua script touching both stores)
+                var txnVersion = driver.AcquireTransactionVersion();
 
-            // GlobalAfterEnteringState calls TrackLastVersion once per store
-            driver.TrackLastVersion(txnVersion);  // MainStore
-            driver.TrackLastVersion(txnVersion);  // ObjectStore
+                // GlobalAfterEnteringState calls TrackLastVersion once per store
+                driver.TrackLastVersion(txnVersion);  // MainStore
+                driver.TrackLastVersion(txnVersion);  // ObjectStore
 
-            // Transaction completes
-            driver.EndTransaction(txnVersion);
+                // Transaction completes
+                driver.EndTransaction(txnVersion);
 
-            // Verify all waitingList semaphores are released (not orphaned)
-            var waitingList = (System.Collections.Generic.List<System.Threading.SemaphoreSlim>)
-                typeof(StateMachineDriver)
-                    .GetField("waitingList", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                    .GetValue(driver);
+                // Verify all waitingList semaphores are released (not orphaned)
+                var waitingList = (System.Collections.Generic.List<System.Threading.SemaphoreSlim>)
+                    typeof(StateMachineDriver)
+                        .GetField("waitingList", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                        .GetValue(driver);
 
-            ClassicAssert.AreEqual(1, waitingList.Count,
-                "Expected 1 semaphore in waitingList, not 2. " +
-                "Two means the second TrackLastVersion call created a new semaphore " +
-                "that overwrote the first, orphaning it.");
+                ClassicAssert.AreEqual(1, waitingList.Count,
+                    "Expected 1 semaphore in waitingList, not 2. " +
+                    "Two means the second TrackLastVersion call created a new semaphore " +
+                    "that overwrote the first, orphaning it.");
 
-            var acquired = await waitingList[0].WaitAsync(System.TimeSpan.FromSeconds(5));
-            ClassicAssert.IsTrue(acquired,
-                "Semaphore was not released after EndTransaction. " +
-                "This causes ProcessWaitingListAsync to deadlock permanently.");
+                var acquired = await waitingList[0].WaitAsync(System.TimeSpan.FromSeconds(5));
+                ClassicAssert.IsTrue(acquired,
+                    "Semaphore was not released after EndTransaction. " +
+                    "This causes ProcessWaitingListAsync to deadlock permanently.");
+            }
+            finally
+            {
+                epoch.Dispose();
+            }
         }
     }
 }
