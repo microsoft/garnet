@@ -56,6 +56,12 @@ namespace Garnet.server
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
 
+        // Info for currently parsed meta-command, if applicable
+        internal MetaCommandInfo metaCommandInfo;
+
+        // Used for storing and outputting post-op record etag for meta-commands that require it
+        private long etag;
+
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -701,10 +707,50 @@ namespace Garnet.server
             return false;
         }
 
+        private bool IsMetaCommandInfoValid()
+        {
+            if (metaCommandInfo.MetaCommand.IsETagCommand() && metaCommandInfo.MetaCommandParseState.Count > 0)
+            {
+                if (!metaCommandInfo.MetaCommandParseState.TryGetLong(0, out var etag))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_ETAG, ref dcurr, dend))
+                        SendAndReset();
+                    return false;
+                }
+
+                metaCommandInfo.Arg1 = etag;
+                metaCommandInfo.MetaCommandParseState = metaCommandInfo.MetaCommandParseState.Slice(1);
+            }
+
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var outputETag = false;
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                if (!IsMetaCommandInfoValid())
+                    return false;
+
+                if (metaCommandInfo.MetaCommand.IsETagCommand())
+                {
+                    if (!cmd.IsDataCommand())
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
+                            SendAndReset();
+                        return false;
+                    }
+
+                    outputETag = true;
+                    etag = -1;
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
             /*
              * WARNING: Do not add any command here classified as @slow!
              * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
@@ -718,9 +764,9 @@ namespace Garnet.server
                 RespCommand.SETNX => NetworkSETNX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
-                RespCommand.DEL => NetworkDEL(ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
+                RespCommand.DEL => NetworkDEL(cmd, ref storageApi),
+                RespCommand.RENAME => NetworkRENAME(cmd, ref storageApi),
+                RespCommand.RENAMENX => NetworkRENAME(cmd, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
@@ -765,6 +811,10 @@ namespace Garnet.server
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
 
+            if (outputETag)
+                while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
+                    SendAndReset();
+
             return true;
         }
 
@@ -780,12 +830,12 @@ namespace Garnet.server
                 RespCommand.MGET => NetworkMGET(ref storageApi),
                 RespCommand.MSET => NetworkMSET(ref storageApi),
                 RespCommand.MSETNX => NetworkMSETNX(ref storageApi),
-                RespCommand.UNLINK => NetworkDEL(ref storageApi),
+                RespCommand.UNLINK => NetworkDEL(cmd, ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
                 RespCommand.SWAPDB => NetworkSWAPDB(),
-                RespCommand.WATCH => NetworkWATCH(),
-                RespCommand.WATCHMS => NetworkWATCH_MS(),
-                RespCommand.WATCHOS => NetworkWATCH_OS(),
+                RespCommand.WATCH => NetworkWATCH(cmd, StoreType.All),
+                RespCommand.WATCHMS => NetworkWATCH(cmd, StoreType.Main),
+                RespCommand.WATCHOS => NetworkWATCH(cmd, StoreType.Object),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(cmd),
                 RespCommand.SSUBSCRIBE => NetworkSUBSCRIBE(cmd),
@@ -934,6 +984,7 @@ namespace Garnet.server
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
+
             return success;
         }
 
@@ -991,12 +1042,8 @@ namespace Garnet.server
                 // Slow commands
                 RespCommand.LCS => NetworkLCS(ref storageApi),
 
-                // Etag related commands
-                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
-                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
-                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
-                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
-                RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
+                // ETag related commands
+                RespCommand.GETETAG => NetworkGETETAG(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

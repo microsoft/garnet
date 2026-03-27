@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using static Garnet.server.SessionFunctionsUtils;
 
@@ -24,6 +25,7 @@ namespace Garnet.server
         {
             return input.header.cmd switch
             {
+                RespCommand.DEL or
                 RespCommand.DELIFEXPIM or
                 RespCommand.PERSIST or
                 RespCommand.EXPIRE => false,
@@ -38,13 +40,31 @@ namespace Garnet.server
             Debug.Assert(logRecord.Info.ValueIsObject || (!logRecord.Info.HasETag && !logRecord.Info.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
 
-            return input.header.cmd switch
+            var result = input.header.cmd switch
             {
                 RespCommand.DELIFEXPIM or
                 RespCommand.PERSIST or
                 RespCommand.EXPIRE => throw new Exception(),
                 _ => true
             };
+
+            // The increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+            if (sizeInfo.FieldInfo.HasETag)
+            {
+                // Conditional execution should pass in the InitUpdater context, calling this method to get the updated ETag
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(LogRecord.NoETag, out var updatedETag, initContext: true);
+                Debug.Assert(execOp);
+
+                if (!logRecord.TrySetETag(updatedETag))
+                {
+                    functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
+                    return false;
+                }
+
+                output.ETag = updatedETag;
+            }
+
+            return result;
         }
 
         /// <inheritdoc />
@@ -73,6 +93,28 @@ namespace Garnet.server
                 return false;
             }
 
+            switch (input.header.cmd)
+            {
+                case RespCommand.DEL:
+                    output.ETag = srcLogRecord.ETag;
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+
+                    // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+                    if ((input.metaCommandInfo.MetaCommand.IsETagCommand() || srcLogRecord.Info.HasETag) &&
+                        !input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out _))
+                    {
+                        // Handle skipped execution based on eTag meta-command and current eTag value
+                        output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                        functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                    }
+
+                    // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
+                    // Setting no Action and returning false for non-delete case will short-circuit the InternalRMW code to not run CU, and return SUCCESS.
+                    // If we want to delete the object setting the Action to ExpireAndStop will add the tombstone in hybrid log for us.
+                    return false;
+            }
+
             return true;
         }
 
@@ -84,13 +126,7 @@ namespace Garnet.server
 
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
-                if (!srcLogRecord.Info.ValueIsObject)
-                {
-                    _ = dstLogRecord.RemoveETag();
-                    // reset etag state that may have been initialized earlier
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
-
+                _ = dstLogRecord.RemoveETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
@@ -104,35 +140,46 @@ namespace Garnet.server
                 return true;
             }
 
-            var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
-            var shouldUpdateEtag = recordHadEtagPreMutation;
-            if (shouldUpdateEtag)
+            var hadETagPreMutation = srcLogRecord.Info.HasETag;
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
+            var shouldUpdateETag = hadETagPreMutation || isETagCmd;
+            var updatedETag = srcLogRecord.ETag;
+
+            if (isETagCmd || hadETagPreMutation)
             {
-                // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
+                // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out updatedETag);
+                Debug.Assert(execOp);
             }
 
             var cmd = input.header.cmd;
-
             var result = cmd switch
             {
-                RespCommand.EXPIRE => HandleExpireCopyUpdate(srcLogRecord, ref dstLogRecord, in sizeInfo, ref shouldUpdateEtag, ref input, ref output),
-                RespCommand.PERSIST => HandlePersistCopyUpdate(srcLogRecord, ref dstLogRecord, in sizeInfo, ref shouldUpdateEtag, ref output),
+                RespCommand.EXPIRE => HandleExpireCopyUpdate(srcLogRecord, ref dstLogRecord, in sizeInfo, ref shouldUpdateETag, ref input, ref output),
+                RespCommand.PERSIST => HandlePersistCopyUpdate(srcLogRecord, ref dstLogRecord, in sizeInfo, ref shouldUpdateETag, ref output),
                 _ => throw new NotImplementedException()
             };
 
             if (!result)
                 return false;
 
-            if (shouldUpdateEtag)
+            // Update the record's eTag, if necessary
+            if (shouldUpdateETag)
             {
-                dstLogRecord.TrySetETag(functionsState.etagState.ETag + 1);
-                ETagState.ResetState(ref functionsState.etagState);
+                // Should always succeed since we checked CanAddETagInPlace
+                if (!dstLogRecord.TrySetETag(updatedETag))
+                    Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(CopyUpdater)}");
+
+                output.ETag = updatedETag;
             }
-            else if (recordHadEtagPreMutation)
+            // Set the existing eTag in the new record if previous record had an eTag and we did not update it
+            else if (hadETagPreMutation)
             {
-                // reset etag state that may have been initialized earlier
-                ETagState.ResetState(ref functionsState.etagState);
+                // Should always succeed since we checked CanAddETagInPlace
+                if (!dstLogRecord.TrySetETag(srcLogRecord.ETag))
+                    Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(CopyUpdater)}");
+
+                output.ETag = srcLogRecord.ETag;
             }
 
             sizeInfo.AssertOptionals(dstLogRecord.Info);
@@ -146,9 +193,11 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            var shouldUpdateEtag = false;
             if (srcLogRecord.Info.ValueIsObject)
             {
+                var hadETagPreMutation = srcLogRecord.Info.HasETag;
+                var shouldUpdateETag = hadETagPreMutation || input.metaCommandInfo.MetaCommand.IsETagCommand();
+
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
@@ -160,17 +209,40 @@ namespace Garnet.server
                 if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
                     return false;
 
+                // Conditional execution should pass in the CU context (otherwise we would have cancelled the operation in IPU)
+                var execOp = input.metaCommandInfo.CheckConditionalExecution(srcLogRecord.ETag, out var updatedETag);
+                Debug.Assert(execOp);
+
                 var cmd = input.header.cmd;
                 switch (cmd)
                 {
                     case RespCommand.EXPIRE:
-                        if (HandleExpireInPlaceUpdate(ref dstLogRecord, hasExpiration, ref input, ref output) == IPUResult.Failed)
+                        if (HandleExpireInPlaceUpdate(ref dstLogRecord, hasExpiration, ref shouldUpdateETag, ref input, ref output) == IPUResult.Failed)
                             return false;
                         break;
 
                     case RespCommand.PERSIST:
-                        HandlePersistInPlaceUpdate(ref dstLogRecord, hasExpiration, ref shouldUpdateEtag, ref output);
+                        HandlePersistInPlaceUpdate(ref dstLogRecord, hasExpiration, ref shouldUpdateETag, ref output);
                         break;
+                }
+
+                // Update the record's eTag, if necessary
+                if (shouldUpdateETag)
+                {
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!dstLogRecord.TrySetETag(updatedETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(CopyUpdater)}");
+
+                    output.ETag = updatedETag;
+                }
+                // Set the existing eTag in the new record if previous record had an eTag and we did not update it
+                else if (hadETagPreMutation)
+                {
+                    // Should always succeed since we checked CanAddETagInPlace
+                    if (!dstLogRecord.TrySetETag(srcLogRecord.ETag))
+                        Debug.Fail($"Unable to set eTag for {nameof(dstLogRecord)} in {nameof(CopyUpdater)}");
+
+                    output.ETag = srcLogRecord.ETag;
                 }
 
                 sizeInfo.AssertOptionals(dstLogRecord.Info);
@@ -233,47 +305,62 @@ namespace Garnet.server
             }
 
             var hadETagPreMutation = logRecord.Info.HasETag;
-            var shouldUpdateEtag = hadETagPreMutation;
-            if (shouldUpdateEtag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
-
+            var isETagCmd = input.metaCommandInfo.MetaCommand.IsETagCommand();
+            var shouldUpdateETag = hadETagPreMutation || isETagCmd;
             var hasExpiration = logRecord.Info.HasExpiration;
+            var updatedETag = logRecord.ETag;
+
+            // Check if we should skip execution of this command based on the eTag meta-command (if exists) and the current etag
+            if ((isETagCmd || hadETagPreMutation) &&
+                !input.metaCommandInfo.CheckConditionalExecution(logRecord.ETag, out updatedETag))
+            {
+                // Handle skipped execution based on eTag meta-command and current eTag value
+                output.ETag = logRecord.ETag;
+                output.OutputFlags |= UnifiedOutputFlags.OperationSkipped;
+                functionsState.HandleSkippedExecution(in input.header, ref output.SpanByteAndMemory);
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return IPUResult.NotUpdated;
+            }
+
+            // If we need to add an ETag and log record has no space for adding it in-place, continue to CU
+            if (!hadETagPreMutation && isETagCmd && !logRecord.CanAddETagInPlace(out _, out _, out _))
+                return IPUResult.Failed;
 
             var ipuResult = IPUResult.Succeeded;
             switch (cmd)
             {
+                case RespCommand.DEL:
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    output.ETag = logRecord.ETag;
+                    return IPUResult.Failed;
                 case RespCommand.EXPIRE:
-                    ipuResult = HandleExpireInPlaceUpdate(ref logRecord, hasExpiration, ref input, ref output);
+                    ipuResult = HandleExpireInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateETag, ref input, ref output);
                     if (ipuResult == IPUResult.Failed)
                         return IPUResult.Failed;
                     break;
                 case RespCommand.PERSIST:
-                    HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateEtag, ref output);
+                    HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateETag, ref output);
                     break;
                 case RespCommand.DELIFEXPIM:
-                    if (!logRecord.Info.ValueIsObject)
-                    {
-                        // this is the case where it isn't expired
-                        shouldUpdateEtag = false;
-                    }
+                    // this is the case where it isn't expired
+                    shouldUpdateETag = false;
                     break;
                 default:
                     throw new NotImplementedException();
             }
 
-            if (!logRecord.Info.ValueIsObject)
+            // Update the record's eTag, if necessary
+            if (shouldUpdateETag)
             {
-                // increment the Etag transparently if in place update happened
-                if (shouldUpdateEtag)
-                {
-                    logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
-                else if (hadETagPreMutation)
-                {
-                    // reset etag state that may have been initialized earlier
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
+                // Should always succeed since we checked CanAddETagInPlace
+                if (!logRecord.TrySetETag(updatedETag))
+                    Debug.Fail($"Unable to set eTag for {nameof(logRecord)} in {nameof(InPlaceUpdaterWorker)}");
+
+                output.ETag = updatedETag;
+            }
+            else if (hadETagPreMutation)
+            {
+                output.ETag = logRecord.ETag;
             }
 
             sizeInfo.AssertOptionals(logRecord.Info);
@@ -281,9 +368,9 @@ namespace Garnet.server
         }
 
         private bool HandleExpireCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
-            in RecordSizeInfo sizeInfo, ref bool shouldUpdateEtag, ref UnifiedInput input, ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
+            in RecordSizeInfo sizeInfo, ref bool shouldUpdateETag, ref UnifiedInput input, ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
         {
-            shouldUpdateEtag = false;
+            shouldUpdateETag = false;
             var expirationWithOption = new ExpirationWithOption(input.arg1);
 
             // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
@@ -294,23 +381,18 @@ namespace Garnet.server
                 expirationWithOption.ExpirationTimeInTicks, dstLogRecord.ValueSpan, ref output);
         }
 
-        private IPUResult HandleExpireInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref UnifiedInput input, ref UnifiedOutput output)
+        private IPUResult HandleExpireInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref bool shouldUpdateETag, ref UnifiedInput input, ref UnifiedOutput output)
         {
+            shouldUpdateETag = false;
             var expirationWithOption = new ExpirationWithOption(input.arg1);
-
-            if (!logRecord.Info.ValueIsObject)   // TODO ETag for unified store
-            {
-                // reset etag state that may have been initialized earlier, but don't update etag because only the expiration was updated
-                ETagState.ResetState(ref functionsState.etagState);
-            }
 
             return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, hasExpiration, ref output);
         }
 
         private bool HandlePersistCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
-            in RecordSizeInfo sizeInfo, ref bool shouldUpdateEtag, ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
+            in RecordSizeInfo sizeInfo, ref bool shouldUpdateETag, ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
         {
-            shouldUpdateEtag = false;
+            shouldUpdateETag = false;
             if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                 return false;
 
@@ -325,8 +407,10 @@ namespace Garnet.server
             return true;
         }
 
-        private void HandlePersistInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref bool shouldUpdateEtag, ref UnifiedOutput output)
+        private void HandlePersistInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref bool shouldUpdateETag, ref UnifiedOutput output)
         {
+            shouldUpdateETag = false;
+
             if (hasExpiration)
             {
                 logRecord.RemoveExpiration();
@@ -334,13 +418,6 @@ namespace Garnet.server
             }
             else
                 functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-
-            if (!logRecord.Info.ValueIsObject)
-            {
-                // reset etag state that may have been initialized earlier, but don't update etag because only the metadata was updated
-                ETagState.ResetState(ref functionsState.etagState);
-                shouldUpdateEtag = false;
-            }
         }
 
 

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -13,9 +14,21 @@ namespace Garnet.server
     public struct UnifiedOutput
     {
         /// <summary>
+        /// Output flags
+        /// </summary>
+        public UnifiedOutputFlags OutputFlags;
+
+        /// <summary>
         /// Span byte and memory
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
+
+        /// <summary>
+        /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
+        /// </summary>
+        public long ETag;
+
+        public readonly bool IsOperationSkipped => (OutputFlags & UnifiedOutputFlags.OperationSkipped) != 0;
 
         public UnifiedOutput() => SpanByteAndMemory = new(null);
 
@@ -33,5 +46,15 @@ namespace Garnet.server
         {
             SpanByteAndMemory.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Output flags for <see cref="UnifiedOutput"/>."/>
+    /// </summary>
+    [Flags]
+    public enum UnifiedOutputFlags : byte
+    {
+        None = 0,
+        OperationSkipped = 1 << 0,
     }
 }

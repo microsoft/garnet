@@ -30,11 +30,12 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            StringInput input = default;
+            var input = new StringInput(RespCommand.NONE, ref metaCommandInfo);
 
             var key = parseState.GetArgSliceByRef(0);
             var output = GetStringOutput();
             var status = storageApi.GET(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -99,10 +100,11 @@ namespace Garnet.server
             }
 
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
-            var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
+            var input = new StringInput(RespCommand.GETEX, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: expiry);
 
             var output = GetStringOutput();
             var status = storageApi.GETEX(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -124,6 +126,13 @@ namespace Garnet.server
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.GET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var key = parseState.GetArgSliceByRef(0);
             // Optimistically ask storage to write output to network buffer
             var output = GetStringOutput();
@@ -160,6 +169,13 @@ namespace Garnet.server
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.GET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             var key = parseState.GetArgSliceByRef(0);
             StringInput input = default;
             var firstPending = -1;
@@ -275,11 +291,19 @@ namespace Garnet.server
         private bool NetworkGETSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.GETSET),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETSET));
+
             var key = parseState.GetArgSliceByRef(0);
 
-            return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false,
-                withEtag: false, ref storageApi);
+            return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false, ref storageApi);
         }
 
         /// <summary>
@@ -301,15 +325,21 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
-            var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.SETRANGE, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            _ = storageApi.SETRANGE(key, ref input, ref output);
+            _ = storageApi.SETRANGE(key, ref input, ref stringOutput);
+            output.Length = stringOutput.SpanByteAndMemory.Length;
+            etag = stringOutput.ETag;
 
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                SendAndReset();
+            if (!stringOutput.IsOperationSkipped)
+                WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
+            else
+                WriteNull();
 
             return true;
         }
@@ -325,11 +355,12 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            var input = new StringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.GETRANGE, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var output = GetStringOutput();
 
             var status = storageApi.GETRANGE(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -366,6 +397,9 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
 
+            if (metaCommandInfo.MetaCommand.IsETagCommand())
+                return NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue: false, highPrecision: highPrecision, ref storageApi);
+
             var valMetadata = DateTimeOffset.UtcNow.Ticks +
                               (highPrecision
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
@@ -373,8 +407,11 @@ namespace Garnet.server
 
             var value = parseState.GetArgSliceByRef(2);
 
-            var input = new StringInput(RespCommand.SETEX, 0, valMetadata);
-            _ = storageApi.SET(key, ref input, value);
+            var output = new StringOutput();
+            var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, arg1: valMetadata, flags: RespInputFlags.SkipRespOutput);
+            _ = storageApi.SET(key, ref input, ref output, value);
+
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -395,8 +432,18 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new StringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
-            var status = storageApi.SET_Conditional(key, ref input);
+            var output = new StringOutput();
+            var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, startIdx: 1,
+                flags: RespInputFlags.SkipRespOutput);
+            var status = storageApi.SET_Conditional(key, ref input, ref output);
+
+            etag = output.ETag;
+
+            if (output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
+            }
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
             var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
@@ -407,7 +454,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SET EX NX [WITHETAG]
+        /// SET EX NX
         /// </summary>
         private bool NetworkSETEXNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -419,7 +466,6 @@ namespace Garnet.server
             ReadOnlySpan<byte> errorMessage = default;
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
-            var etagOption = EtagOption.None;
             var getValue = false;
 
             var tokenIdx = 2;
@@ -483,31 +529,13 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    if (etagOption != EtagOption.None)
+                    if (metaCommandInfo.MetaCommand.IsETagCommand())
                     {
-                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
-                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
+                        errorMessage = CmdStrings.RESP_ERR_ETAG_META_CMD_AND_GETVALUE;
                         break;
                     }
 
                     getValue = true;
-                }
-                else if (nextOpt.SequenceEqual(CmdStrings.WITHETAG))
-                {
-                    if (etagOption != EtagOption.None)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        break;
-                    }
-
-                    if (getValue)
-                    {
-                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
-                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
-                        break;
-                    }
-
-                    etagOption = EtagOption.WithETag;
                 }
                 else
                 {
@@ -532,8 +560,6 @@ namespace Garnet.server
                 return true;
             }
 
-            bool withEtag = etagOption == EtagOption.WithETag;
-
             bool isHighPrecision = expOption == ExpirationOption.PX;
 
             switch (expOption)
@@ -544,13 +570,13 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue || withEtag
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, withEtag, ref storageApi)
+                            return getValue || metaCommandInfo.MetaCommand.IsETagCommand()
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -559,11 +585,11 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, ref storageApi);
                     }
                     break;
             }
@@ -584,16 +610,19 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new StringInput(cmd, 0, valMetadata);
+            var input = new StringInput(cmd, ref metaCommandInfo, arg1: valMetadata, flags: RespInputFlags.SkipRespOutput);
+            var output = new StringOutput();
 
-            storageApi.SET(key, ref input, val);
+            storageApi.SET(key, ref input, ref output, val);
+            etag = output.ETag;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, PinnedSpanByte key, bool getValue, bool highPrecision, bool withEtag, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var inputArg = expiry == 0
@@ -603,14 +632,14 @@ namespace Garnet.server
                       ? TimeSpan.FromMilliseconds(expiry).Ticks
                       : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
+            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (!getValue && !withEtag)
+            if (!getValue && !metaCommandInfo.MetaCommand.IsETagCommand())
             {
-                // the following debug assertion is to catch any edge case leading to SETIFMATCH, or SETIFGREATER skipping the above block
-                Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right output variable");
+                var output = new StringOutput();
+                input.header.flags |= RespInputFlags.SkipRespOutput;
 
-                var status = storageApi.SET_Conditional(key, ref input);
+                var status = storageApi.SET_Conditional(key, ref input, ref output);
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
                 if (cmd == RespCommand.SETKEEPTTL)
@@ -641,27 +670,24 @@ namespace Garnet.server
             }
             else
             {
-                if (withEtag)
-                    input.header.SetWithETagFlag();
-
                 if (getValue)
                     input.header.SetSetGetFlag();
+                else if (!metaCommandInfo.MetaCommand.IsETagCommand())
+                    input.header.flags |= RespInputFlags.SkipRespOutput;
 
-                // anything with getValue or withEtag always writes to the buffer in the happy path
+                // anything with getValue or withETag always writes to the buffer in the happy path
                 var output = GetStringOutput();
-                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
+                var status = storageApi.SET_Conditional(key, ref input, ref output);
 
-                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
-                bool ok = status != GarnetStatus.NOTFOUND || withEtag;
+                etag = output.ETag;
 
-                if (ok)
-                {
-                    ProcessOutput(output.SpanByteAndMemory);
-                }
-                else
-                {
+                // The data will be on the buffer either when we know the response is ok or when the withETag flag is set.
+                var ok = status != GarnetStatus.NOTFOUND;
+
+                if (!ok)
                     WriteNull();
-                }
+                else
+                    ProcessOutput(output.SpanByteAndMemory);
 
                 return true;
             }
@@ -692,14 +718,18 @@ namespace Garnet.server
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            var input = new StringInput(cmd, 0, incrByValue);
+            var input = new StringInput(cmd, ref metaCommandInfo, arg1: incrByValue, flags: RespInputFlags.SkipRespOutput);
             _ = storageApi.Increment(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
+            etag = stringOutput.ETag;
 
-            if (!stringOutput.HasError)
+            if (stringOutput.IsOperationSkipped)
             {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
+            }
+            else if (!stringOutput.HasError)
+            {
+                WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length));
             }
             else
             {
@@ -731,13 +761,20 @@ namespace Garnet.server
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            _ = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
-            output.Length = stringOutput.SpanByteAndMemory.Length;
+            var input = new StringInput(RespCommand.INCRBYFLOAT, ref metaCommandInfo, ref parseState,
+                arg1: BitConverter.DoubleToInt64Bits(dbl), flags: RespInputFlags.SkipRespOutput);
 
-            if (!stringOutput.HasError)
+            _ = storageApi.IncrementByFloat(key, ref input, ref stringOutput);
+            output.Length = stringOutput.SpanByteAndMemory.Length;
+            etag = stringOutput.ETag;
+
+            if (stringOutput.IsOperationSkipped)
             {
-                while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
+            }
+            else if (!stringOutput.HasError)
+            {
+                WriteBulkString(output.ReadOnlySpan);
             }
             else
             {
@@ -766,15 +803,22 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0);
 
-            var input = new StringInput(RespCommand.APPEND, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.APPEND, ref metaCommandInfo, ref parseState, startIdx: 1, flags: RespInputFlags.SkipRespOutput);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = StringOutput.FromPinnedSpan(outputBuffer);
 
             storageApi.APPEND(sbKey, ref input, ref output);
+            etag = output.ETag;
 
-            while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
-                SendAndReset();
+            if (!output.IsOperationSkipped)
+            {
+                WriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length));
+            }
+            else
+            {
+                WriteNull();
+            }
 
             return true;
         }
@@ -905,15 +949,18 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN));
             }
 
-            //STRLEN key
+            // STRLEN key
             var key = parseState.GetArgSliceByRef(0);
-            var status = storageApi.GET(key, out PinnedSpanByte value);
+            var input = new StringInput(RespCommand.STRLEN, ref metaCommandInfo);
+            var output = GetStringOutput();
+
+            var status = storageApi.STRLEN(key, ref output, ref input);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(value.Length, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
@@ -1420,13 +1467,9 @@ namespace Garnet.server
             var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
-            {
                 ProcessOutput(output.SpanByteAndMemory);
-            }
             else
-            {
                 WriteNull();
-            }
 
             return true;
         }

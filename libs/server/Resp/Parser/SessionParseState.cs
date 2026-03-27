@@ -82,7 +82,11 @@ namespace Garnet.server
             rootCount = count;
 
             if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
+            {
+                // Reset buffer pointer to the start of the root buffer (in case it had been moved)
+                bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
                 return;
+            }
 
             rootBuffer = GC.AllocateArray<PinnedSpanByte>(count <= MinParams ? MinParams : count, true);
             bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
@@ -284,7 +288,7 @@ namespace Garnet.server
                 curr += argument.TotalSize;
             }
 
-            return (int)(dest - curr);
+            return (int)(curr - dest);
         }
 
         /// <summary>
@@ -308,7 +312,7 @@ namespace Garnet.server
                 curr += argument.TotalSize;
             }
 
-            return (int)(src - curr);
+            return (int)(curr - src);
         }
 
         /// <summary>

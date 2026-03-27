@@ -330,9 +330,24 @@ namespace Tsavorite.core
         public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0) + (info.RecordHasObjects ? ObjectLogPositionSize : 0);
 
         /// <inheritdoc/>
-        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
+        public readonly long ETag
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
+            }
+        }
+
         /// <inheritdoc/>
-        public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;
+        public readonly long Expiration
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : NoExpiration;
+            }
+        }
 
         /// <inheritdoc/>
         public readonly bool IsMemoryLogRecord => true;
@@ -794,29 +809,39 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Check if there is sufficient space to store an ETag in the log record
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool CanAddETagInPlace(out RecordDataHeader dataHeader, out int recordLength, out int fillerLen)
+        {
+            dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            recordLength = dataHeader.GetRecordLength();
+
+            // We're adding an ETag where there wasn't one before.
+            fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            // We'll keep the original FillerLen address and back up, for speed.
+            return fillerLen - ETagSize >= 0;
+        }
+
+        /// <summary>
         /// Set the ETag, checking for space for optionals.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetETag(long eTag)
         {
-            var optionalStartAddress = GetOptionalStartAddress();
             if (Info.HasETag)
             {
-                *(long*)GetETagAddress(optionalStartAddress) = eTag;
+                *(long*)GetETagAddress(GetOptionalStartAddress()) = eTag;
                 return true;
             }
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            if (!CanAddETagInPlace(out var dataHeader, out var recordLength, out var fillerLen))
+                return false;
 
-            // We're adding an ETag where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
             // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ETagSize;
-            if (fillerLen < 0)
-                return false;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
             if (Info.RecordHasObjects)
@@ -902,6 +927,21 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Check if there is sufficient space to store an expiration value in the log record
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool CanAddExpirationInPlace(out RecordDataHeader dataHeader, out int recordLength, out int fillerLen)
+        {
+            dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            recordLength = dataHeader.GetRecordLength();
+
+            // We're adding an Expiration where there wasn't one before.
+            fillerLen = dataHeader.GetFillerLength(Info, recordLength);
+            // We'll keep the original FillerLen address and back up, for speed.
+            return fillerLen - ExpirationSize >= 0;
+        }
+
+        /// <summary>
         /// Set the Expiration, checking for space for optionals.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
@@ -918,16 +958,11 @@ namespace Tsavorite.core
                 return true;
             }
 
-            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var recordLength = dataHeader.GetRecordLength();
+            if (!CanAddExpirationInPlace(out var dataHeader, out var recordLength, out var fillerLen))
+                return false;
 
-            // We're adding an Expiration where there wasn't one before.
-            var fillerLen = dataHeader.GetFillerLength(Info, recordLength);
-            // We'll keep the original FillerLen address and back up, for speed.
             var address = physicalAddress + recordLength - fillerLen;
             fillerLen -= ExpirationSize;
-            if (fillerLen < 0)
-                return false;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization.
             if (Info.RecordHasObjects)

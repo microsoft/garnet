@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public partial class SetObject : IGarnetObject
     {
-        private void SetAdd(ref ObjectInput input, ref ObjectOutput output)
+        private void SetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -25,43 +25,49 @@ namespace Garnet.server
                 if (Set.Add(member.ToArray()))
 #endif
                 {
-                    output.result1++;
+                    output.Result1++;
                     UpdateSize(member);
                 }
             }
+
+            if (output.Result1 == 0)
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteInt32(output.Result1);
+            }
         }
 
-        private void SetMembers(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SetMembers(ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             writer.WriteSetLength(Set.Count);
 
             foreach (var item in Set)
             {
                 writer.WriteBulkString(item);
-                output.result1++;
+                output.Result1++;
             }
         }
 
         private void SetIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 #if NET9_0_OR_GREATER
             var isMember = setLookup.Contains(member);
 #else
             var isMember = Set.Contains(member.ToArray());
 #endif
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteInt32(isMember ? 1 : 0);
-            output.result1 = 1;
+            output.Result1 = 1;
         }
 
         private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
@@ -75,10 +81,10 @@ namespace Garnet.server
                 writer.WriteInt32(isMember ? 1 : 0);
             }
 
-            output.result1 = input.parseState.Count;
+            output.Result1 = input.parseState.Count;
         }
 
-        private void SetRemove(ref ObjectInput input, ref ObjectOutput output)
+        private void SetRemove(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -90,25 +96,59 @@ namespace Garnet.server
                 if (Set.Remove(field.ToArray()))
 #endif
                 {
-                    output.result1++;
+                    output.Result1++;
                     UpdateSize(field, false);
                 }
             }
+
+            if (output.Result1 == 0)
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteInt32(output.Result1);
+            }
         }
 
-        private void SetLength(ref ObjectOutput output)
+        private void SetLength(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SCARD key
-            output.result1 = Set.Count;
+            output.Result1 = Set.Count;
+
+            if (!input.header.CheckSkipRespOutputFlag())
+            {
+                using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+                writer.WriteInt32(output.Result1);
+            }
         }
 
         private void SetPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SPOP key [count]
             var count = input.arg1;
-            var countDone = 0;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            if (count == 0)
+            {
+                writer.WriteNull();
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                return;
+            }
+
+            if (Set.Count == 0)
+            {
+                if (count != int.MinValue)
+                    writer.WriteEmptyArray();
+                else
+                    writer.WriteNull();
+
+                output.OutputFlags |= ObjectOutputFlags.ValueUnchanged;
+                return;
+            }
+
+            var countDone = 0;
 
             // key [count]
             if (count >= 1)
@@ -135,23 +175,15 @@ namespace Garnet.server
             else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
             {
                 // Write a bulk string value of a random field from the hash value stored at key.
-                if (Set.Count > 0)
-                {
-                    var index = RandomNumberGenerator.GetInt32(0, Set.Count);
-                    var item = Set.ElementAt(index);
-                    Set.Remove(item);
-                    UpdateSize(item, false);
-                    writer.WriteBulkString(item);
-                }
-                else
-                {
-                    // If set empty return nil
-                    writer.WriteNull();
-                }
+                var index = RandomNumberGenerator.GetInt32(0, Set.Count);
+                var item = Set.ElementAt(index);
+                Set.Remove(item);
+                UpdateSize(item, false);
+                writer.WriteBulkString(item);
                 countDone++;
             }
 
-            output.result1 = countDone;
+            output.Result1 = countDone;
         }
 
         private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -162,6 +194,21 @@ namespace Garnet.server
             var countDone = 0;
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            if (count == 0)
+            {
+                writer.WriteNull();
+                return;
+            }
+
+            if (Set.Count == 0)
+            {
+                if (count != int.MinValue)
+                    writer.WriteEmptyArray();
+                else
+                    writer.WriteNull();
+                return;
+            }
 
             if (count > 0)
             {
@@ -188,17 +235,9 @@ namespace Garnet.server
             else if (count == int.MinValue) // no count parameter is present
             {
                 // Return a single random element from the set
-                if (Set.Count > 0)
-                {
-                    var index = RandomUtils.PickRandomIndex(Set.Count, seed);
-                    var item = Set.ElementAt(index);
-                    writer.WriteBulkString(item);
-                }
-                else
-                {
-                    // If set is empty, return nil
-                    writer.WriteNull();
-                }
+                var index = RandomUtils.PickRandomIndex(Set.Count, seed);
+                var item = Set.ElementAt(index);
+                writer.WriteBulkString(item);
                 countDone++;
             }
             else // count < 0
@@ -211,26 +250,18 @@ namespace Garnet.server
 
                 RandomUtils.PickKRandomIndexes(Set.Count, indexes, seed, false);
 
-                if (Set.Count > 0)
-                {
-                    // Write the size of the array reply
-                    writer.WriteArrayLength(countParameter);
+                // Write the size of the array reply
+                writer.WriteArrayLength(countParameter);
 
-                    foreach (var index in indexes)
-                    {
-                        var element = Set.ElementAt(index);
-                        writer.WriteBulkString(element);
-                        countDone++;
-                    }
-                }
-                else
+                foreach (var index in indexes)
                 {
-                    // If set is empty, return nil
-                    writer.WriteNull();
+                    var element = Set.ElementAt(index);
+                    writer.WriteBulkString(element);
+                    countDone++;
                 }
             }
 
-            output.result1 = countDone;
+            output.Result1 = countDone;
         }
     }
 }

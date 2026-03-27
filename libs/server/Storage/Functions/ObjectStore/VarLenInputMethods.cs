@@ -24,7 +24,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand(),
                 // No object commands take an Expiration for InitialUpdater.
             };
         }
@@ -38,7 +38,7 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = false, // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag(),
+                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasETag(srcLogRecord.ETag, ref input.metaCommandInfo),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
         }
@@ -55,7 +55,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -72,7 +72,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -89,7 +89,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
-                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
+                HasETag = input.metaCommandInfo.MetaCommand.IsETagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }

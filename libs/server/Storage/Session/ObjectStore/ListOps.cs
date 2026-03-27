@@ -31,17 +31,18 @@ namespace Garnet.server
             if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            itemsDoneCount = output.result1;
+            itemsDoneCount = output.Result1;
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
@@ -64,16 +65,17 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-            itemsDoneCount = output.result1;
+            itemsDoneCount = output.Result1;
 
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
@@ -112,8 +114,7 @@ namespace Garnet.server
                  where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(GarnetObjectType.List, arg1: count) { ListOp = lop };
 
             var output = new ObjectOutput();
 
@@ -183,13 +184,12 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.List, flags: RespInputFlags.SkipRespOutput) { ListOp = ListOperation.LLEN };
             var output = new ObjectOutput();
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
-            count = output.result1;
+            count = output.Result1;
             return status;
         }
 
@@ -226,7 +226,6 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectTransactionalContext;
-            var unifiedContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -245,15 +244,18 @@ namespace Garnet.server
                     if (srcListObject.LnkList.Count == 0)
                         return GarnetStatus.OK;
 
+                    var newDstList = false;
                     ListObject dstListObject = default;
+                    ObjectOutput destinationList = default;
                     if (!sameKey)
                     {
                         // Read destination key
-                        statusOp = GET(destinationKey, out var destinationList, ref objectContext);
+                        statusOp = GET(destinationKey, out destinationList, ref objectContext);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                         {
                             destinationList.GarnetObject = new ListObject();
+                            newDstList = true;
                         }
 
                         if (destinationList.GarnetObject is not ListObject listObject)
@@ -285,12 +287,17 @@ namespace Garnet.server
                     }
                     srcListObject.UpdateSize(element, false);
 
-                    IGarnetObject newListValue = null;
                     if (!sameKey)
                     {
+                        // Delete object if no elements remaining
                         if (srcListObject.LnkList.Count == 0)
                         {
-                            _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                            DELETE_ObjectStore(sourceKey, ref objectContext);
+                        }
+                        // Upsert to ensure record eTags are updated, if necessary
+                        else if (sourceList.ETag != LogRecord.NoETag)
+                        {
+                            SET(sourceKey, in sourceList, ref objectContext);
                         }
 
                         // Left push (addfirst) to destination
@@ -300,10 +307,17 @@ namespace Garnet.server
                             _ = dstListObject.LnkList.AddLast(element);
 
                         dstListObject.UpdateSize(element);
-                        newListValue = new ListObject(dstListObject.LnkList, dstListObject.HeapMemorySize);
 
-                        // Upsert
-                        _ = SET(destinationKey, newListValue, ref objectContext);
+                        // Set object if did not exist before
+                        if (newDstList)
+                        {
+                            SET(destinationKey, dstListObject, ref objectContext);
+                        }
+                        // Upsert to ensure record eTags are updated, if necessary
+                        else if (sourceList.ETag != LogRecord.NoETag)
+                        {
+                            SET(destinationKey, in destinationList, ref objectContext);
+                        }
                     }
                     else
                     {
@@ -312,8 +326,14 @@ namespace Garnet.server
                             _ = srcListObject.LnkList.AddFirst(element);
                         else if (destinationDirection == OperationDirection.Right)
                             _ = srcListObject.LnkList.AddLast(element);
-                        newListValue = srcListObject;
+                        IGarnetObject newListValue = srcListObject;
                         ((ListObject)newListValue).UpdateSize(element);
+
+                        // Upsert to ensure record eTags are updated, if necessary
+                        if (sourceList.ETag != LogRecord.NoETag)
+                        {
+                            SET(sourceKey, in sourceList, ref objectContext);
+                        }
                     }
                 }
             }
@@ -340,8 +360,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
-            var input = new ObjectInput(header, start, stop);
+            var input = new ObjectInput(GarnetObjectType.List, arg1: start, arg2: stop) { ListOp = ListOperation.LTRIM };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
@@ -388,14 +407,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListTrim<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref TObjectContext objectContext)
+        public GarnetStatus ListTrim<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            var output = new ObjectOutput();
-            return RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
-        }
+            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.

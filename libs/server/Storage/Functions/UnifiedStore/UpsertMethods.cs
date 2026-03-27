@@ -30,7 +30,6 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
             sizeInfo.AssertOptionals(dstLogRecord.Info);
@@ -45,13 +44,24 @@ namespace Garnet.server
             if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
-            if (input.header.CheckWithETagFlag())
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
+
+            // Normally we wouldn't need to update the eTag here, this is for the special case of RENAME when called with EXECWITHETAG,
+            // it attempts to move an existing log record to a new key. In this case, input.arg1 is set to the previous record's eTag.
+            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
-                // If the old record had an ETag, we will replace it. Otherwise, we must have reserved space for it.
-                Debug.Assert(sizeInfo.FieldInfo.HasETag, "CheckWithETagFlag specified but SizeInfo.HasETag is false");
-                var newETag = functionsState.etagState.ETag + 1;
-                dstLogRecord.TrySetETag(newETag);
+                // No reason for the conditional execution to fail here since the meta-command is non-conditional
+                // We run this method to get the updated eTag value.
+                _ = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
+
+                if (!dstLogRecord.TrySetETag(updatedETag))
+                    return false;
+
+                output.ETag = updatedETag;
             }
+            else if (!dstLogRecord.RemoveETag())
+                return false;
+
             return true;
         }
 
@@ -71,7 +81,6 @@ namespace Garnet.server
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             IHeapObject srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            var garnetObject = (IGarnetObject)srcValue;
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -125,17 +134,7 @@ namespace Garnet.server
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
             {
-                if (input.header.CheckWithETagFlag())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                    {
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                    }
-                }
-                else
-                    ok = logRecord.RemoveETag();
+                ok = logRecord.RemoveETag();
             }
             if (ok)
             {
@@ -153,8 +152,6 @@ namespace Garnet.server
         public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            var garnetObject = (IGarnetObject)newValue;
-
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
@@ -182,40 +179,41 @@ namespace Garnet.server
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
-            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+            if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
+                return false;
 
-            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
-            if (ok)
+            Debug.Assert(input.metaCommandInfo.MetaCommand is RespMetaCommand.None or RespMetaCommand.ExecWithETag);
+
+            // Normally we wouldn't need to update the eTag here, this is for the special case of RENAME when called with EXECWITHETAG,
+            // it attempts to move an existing log record to a new key. In this case, input.arg1 is set to the previous record's eTag.
+            if (input.metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithETag)
             {
-                if (input.header.CheckWithETagFlag())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                }
-                else
-                    ok = logRecord.RemoveETag();
+                // No reason for the conditional execution to fail here since the meta-command is non-conditional
+                // We run this method to get the updated eTag value.
+                _ = input.metaCommandInfo.CheckConditionalExecution(input.arg1, out var updatedETag);
+
+                if (!logRecord.TrySetETag(updatedETag))
+                    return false;
+
+                output.ETag = updatedETag;
             }
-            if (ok)
-            {
-                sizeInfo.AssertOptionals(logRecord.Info);
+            else if (!logRecord.RemoveETag())
+                return false;
 
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+            sizeInfo.AssertOptionals(logRecord.Info);
 
-                var newSize = logRecord.Info.ValueIsInline
-                    ? 0
-                    : (!logRecord.Info.ValueIsObject
-                        ? logRecord.ValueSpan.Length
-                        : logRecord.ValueObject.HeapMemorySize);
-                functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
-                return true;
-            }
+            if (!logRecord.Info.Modified)
+                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            return false;
+            var newSize = logRecord.Info.ValueIsInline
+                ? 0
+                : (!logRecord.Info.ValueIsObject
+                    ? logRecord.ValueSpan.Length
+                    : logRecord.ValueObject.HeapMemorySize);
+            functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
+            return true;
         }
 
         /// <inheritdoc />

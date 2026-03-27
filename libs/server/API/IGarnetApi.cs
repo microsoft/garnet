@@ -31,7 +31,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value);
+        GarnetStatus SET(PinnedSpanByte key, ref StringInput input, ref StringOutput output, PinnedSpanByte value);
 
         /// <summary>
         /// SET Conditional
@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// DEL Conditional
         /// </summary>
-        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input);
+        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         /// <summary>
         /// SET Conditional
@@ -66,7 +66,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+        GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
 
         #endregion
 
@@ -99,7 +99,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output">The output of the operation</param>
         /// <returns></returns>
-        GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output);
+        GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
 
         #endregion
@@ -135,24 +135,16 @@ namespace Garnet.server
         #endregion
 
         #region RENAME
+
         /// <summary>
         /// RENAME
         /// </summary>
-        /// <param name="oldKey">The old key to be renamed.</param>
-        /// <param name="newKey">The new key name.</param>
-        /// <param name="withEtag">Whether to include the ETag in the operation</param>
+        /// <param name="key">The key to be renamed.</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false);
+        GarnetStatus RENAME(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
-        /// <summary>
-        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
-        /// </summary>
-        /// <param name="oldKey">The old key to be renamed.</param>
-        /// <param name="newKey">The new key name.</param>
-        /// <param name="result">The result of the operation.</param>
-        /// <param name="withEtag">Whether to include the ETag in the operation</param>
-        /// <returns></returns>
-        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false);
         #endregion
 
         #region EXISTS
@@ -274,10 +266,10 @@ namespace Garnet.server
         /// Increment by float (INCRBYFLOAT)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="val"></param>
+        /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val);
+        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)
@@ -306,13 +298,15 @@ namespace Garnet.server
         #endregion
 
         #region GETDEL
+
         /// <summary>
         /// GETDEL
         /// </summary>
         /// <param name="key"> Key to get and delete </param>
+        /// <param name="input"></param>
         /// <param name="output"> Current value of key </param>
         /// <returns> Operation status </returns>
-        GarnetStatus GETDEL(PinnedSpanByte key, ref StringOutput output);
+        GarnetStatus GETDEL(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
         #endregion
 
         #region TYPE
@@ -541,7 +535,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus GeoSearchStore(PinnedSpanByte key, PinnedSpanByte destinationKey, ref GeoSearchOptions opts,
-                                    ref ObjectInput input, ref SpanByteAndMemory output);
+                                    ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Intersects multiple sorted sets and stores the result in the destination key.
@@ -952,8 +946,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input);
+        GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Inserts a new element in the list stored at key either before or after a value pivot
@@ -1222,6 +1217,15 @@ namespace Garnet.server
         GarnetStatus GET(PinnedSpanByte key, out ObjectOutput value);
 
         /// <summary>
+        ///  Gets the ETag of a specified key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
+
+        /// <summary>
         /// Finds the longest common subsequence (LCS) between two keys.
         /// </summary>
         /// <param name="key1">The first key to compare.</param>
@@ -1233,6 +1237,16 @@ namespace Garnet.server
         /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
         /// <returns>The status of the operation.</returns>
         GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0);
+
+        /// <summary>
+        /// Gets the length of the value stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input);
+
         #endregion
 
         #region GETRANGE
@@ -1494,7 +1508,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts, ref ObjectInput input, ref SpanByteAndMemory output);
+        GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts, ref ObjectInput input, ref ObjectOutput output);
 
         #endregion
 
@@ -1800,12 +1814,10 @@ namespace Garnet.server
         /// Returns the time to live for a hash key.
         /// </summary>
         /// <param name="key">The key of the hash.</param>
-        /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
-        /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output);
+        GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         #endregion
 

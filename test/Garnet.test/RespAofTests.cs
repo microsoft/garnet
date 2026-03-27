@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using Allure.NUnit;
 using Garnet.server;
+using Garnet.test.Resp.ETag;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -231,8 +232,8 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
-                db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
-                db.Execute("SETIFMATCH", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", "1");
+                db.ExecWithETag("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
+                db.ExecIfMatch(1, "SET", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3");
                 db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
                 var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
             }
@@ -249,7 +250,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
-                ExpectedEtagTest(db, "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", 2);
+                ExpectedETagTest(db, "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", 2);
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey4");
                 ClassicAssert.AreEqual("3", recoveredValue.ToString());
             }
@@ -889,9 +890,9 @@ namespace Garnet.test
             }
         }
 
-        private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
+        private static void ExpectedETagTest(IDatabase db, string key, string expectedValue, long expected)
         {
-            RedisResult res = db.Execute("GETWITHETAG", key);
+            RedisResult res = db.ExecWithETag("GET", key);
             if (expectedValue == null)
             {
                 ClassicAssert.IsTrue(res.IsNull);
@@ -899,8 +900,8 @@ namespace Garnet.test
             }
 
             RedisResult[] etagAndVal = (RedisResult[])res;
-            RedisResult etag = etagAndVal[0];
-            RedisResult val = etagAndVal[1];
+            RedisResult val = etagAndVal[0];
+            RedisResult etag = etagAndVal[1];
 
             if (expected == -1)
             {

@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
+using static Garnet.server.SortedSetObject;
 
 namespace Garnet.server
 {
@@ -249,6 +250,86 @@ namespace Garnet.server
                                            out _, out _, allowLeadingZeros: false) &&
                 ((int)bytesRead == len) && (bytesRead > 0L) &&
                 (bitFieldOffset >= 0);
+        }
+
+        /// <summary>
+        /// Parse LPOS commands options from parse state based on command
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="startIdx">The index from which to start reading</param>
+        /// <param name="rank">RANK option value (if specified)</param>
+        /// <param name="count">COUNT option value (if specified)</param>
+        /// <param name="isDefaultCount">True if COUNT option not present</param>
+        /// <param name="maxLen">MAXLEN option value (if specified)</param>
+        /// <param name="error">Error</param>
+        /// <returns>True if successful</returns>
+        public static bool TryGetListPositionOptions(this SessionParseState parseState, int startIdx, out int rank, out int count, out bool isDefaultCount, out int maxLen, out ReadOnlySpan<byte> error)
+        {
+            rank = 1; // By default, LPOS takes first match element
+            count = 1; // By default, LPOS return 1 element
+            isDefaultCount = true;
+            maxLen = 0; // By default, iterate to all the item
+
+            error = default;
+
+            var currTokenIdx = startIdx;
+
+            while (currTokenIdx < parseState.Count)
+            {
+                var sbParam = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
+                if (sbParam.SequenceEqual(CmdStrings.RANK) || sbParam.SequenceEqual(CmdStrings.rank))
+                {
+                    if (!parseState.TryGetInt(currTokenIdx++, out rank))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    if (rank == 0)
+                    {
+                        error = CmdStrings.RESP_ERR_RANK_CANT_BE_ZERO;
+                        return false;
+                    }
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.COUNT) || sbParam.SequenceEqual(CmdStrings.count))
+                {
+                    if (!parseState.TryGetInt(currTokenIdx++, out count))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    if (count < 0)
+                    {
+                        error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCantBeNegative, nameof(CmdStrings.COUNT)));
+                        return false;
+                    }
+
+                    isDefaultCount = false;
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.MAXLEN) || sbParam.SequenceEqual(CmdStrings.maxlen))
+                {
+                    if (!parseState.TryGetInt(currTokenIdx++, out maxLen))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    if (maxLen < 0)
+                    {
+                        error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCantBeNegative, nameof(CmdStrings.MAXLEN)));
+                        return false;
+                    }
+                }
+                else
+                {
+                    error = CmdStrings.RESP_SYNTAX_ERROR;
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -631,9 +712,11 @@ namespace Garnet.server
         /// <param name="parseState">The parse state</param>
         /// <param name="idx">The argument index</param>
         /// <param name="value">Parsed value</param>
+        /// <param name="nextIdxStep">Number of indexes to skip before reading the next element</param>
         /// <returns>True if value parsed successfully</returns>
-        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value)
+        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value, out int nextIdxStep)
         {
+            nextIdxStep = 0;
             value = SortedSetAddOption.None;
             var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
 
@@ -652,6 +735,210 @@ namespace Garnet.server
             else return false;
 
             return true;
+        }
+
+        /// <summary>
+        /// Parse sorted set add option from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetSortedSetRangeOption(this SessionParseState parseState, int idx, out SortedSetRangeOptions value)
+        {
+            value = SortedSetRangeOptions.None;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("BYSCORE"u8))
+                value = SortedSetRangeOptions.ByScore;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("BYLEX"u8))
+                value = SortedSetRangeOptions.ByLex;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("REV"u8))
+                value = SortedSetRangeOptions.Reverse;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
+                value = SortedSetRangeOptions.Limit;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
+                value = SortedSetRangeOptions.WithScores;
+            else return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Parse sorted set add options from parse state starting at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="startIdx">The first argument index</param>
+        /// <param name="nextIdxStep">Number of indexes to skip before reading the next element</param>
+        /// <returns>Parsed options</returns>
+        internal static SortedSetAddOption GetSortedSetAddOptions(this SessionParseState parseState, int startIdx, out int nextIdxStep)
+        {
+            var options = SortedSetAddOption.None;
+
+            var currTokenIdx = startIdx;
+            while (currTokenIdx < parseState.Count)
+            {
+                if (!parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption, out nextIdxStep))
+                    break;
+
+                options |= currOption;
+                currTokenIdx += nextIdxStep + 1;
+            }
+
+            nextIdxStep = currTokenIdx - startIdx;
+            return options;
+        }
+
+        /// <summary>
+        /// Parse sorted set add options from parse state starting at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="startIdx">The first argument index</param>
+        /// <param name="command">RESP command</param>
+        /// <param name="options">Parsed options</param>
+        /// <param name="nextIdxStep">Number of indexes to skip before reading the next element</param>
+        /// <param name="limit">Parsed limit</param>
+        /// <param name="error">Error message</param>
+        /// <returns>Parsed options</returns>
+        internal static bool TryGetSortedSetRangeOptions(this SessionParseState parseState, int startIdx, RespCommand command, out SortedSetRangeOptions options, out int nextIdxStep, out (int offset, int limit) limit, out ReadOnlySpan<byte> error)
+        {
+            options = SortedSetRangeOptions.None;
+            limit = default;
+            error = default;
+            nextIdxStep = 0;
+
+            switch (command)
+            {
+                case RespCommand.ZRANGE:
+                    break;
+                case RespCommand.ZREVRANGE:
+                    options = SortedSetRangeOptions.Reverse;
+                    break;
+                case RespCommand.ZRANGEBYLEX:
+                    options = SortedSetRangeOptions.ByLex;
+                    break;
+                case RespCommand.ZRANGEBYSCORE:
+                    options = SortedSetRangeOptions.ByScore;
+                    break;
+                case RespCommand.ZREVRANGEBYLEX:
+                    options = SortedSetRangeOptions.ByLex | SortedSetRangeOptions.Reverse;
+                    break;
+                case RespCommand.ZREVRANGEBYSCORE:
+                    options = SortedSetRangeOptions.ByScore | SortedSetRangeOptions.Reverse;
+                    break;
+                case RespCommand.ZRANGESTORE:
+                    options = SortedSetRangeOptions.Store;
+                    break;
+            }
+
+            var currTokenIdx = startIdx;
+            while (currTokenIdx < parseState.Count)
+            {
+                if (!parseState.TryGetSortedSetRangeOption(currTokenIdx++, out var currOption))
+                    break;
+
+                options |= currOption;
+
+                if (currOption == SortedSetRangeOptions.Limit)
+                {
+                    if (parseState.Count - currTokenIdx < 2)
+                    {
+                        error = CmdStrings.RESP_SYNTAX_ERROR;
+                        return false;
+                    }
+
+                    if (!parseState.TryGetInt(currTokenIdx++, out var offset) ||
+                        !parseState.TryGetInt(currTokenIdx++, out var count))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    limit = (offset, count);
+                }
+            }
+
+            nextIdxStep = currTokenIdx - startIdx;
+            return true;
+        }
+
+        /// <summary>
+        /// Parse sorted set min or max parameter from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="idx">Argument index</param>
+        /// <param name="value">Parsed min / max value</param>
+        /// <param name="exclusive">True if min / max is exclusive</param>
+        /// <returns>True if parsed successfully</returns>
+        internal static bool TryGetSortedSetMinMaxParameter(this SessionParseState parseState, int idx, out double value, out bool exclusive)
+        {
+            exclusive = false;
+            var paramSpan = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            // adjust for exclusion
+            if (paramSpan[0] == '(')
+            {
+                paramSpan = paramSpan.Slice(1);
+                exclusive = true;
+            }
+
+            if (NumUtils.TryParseWithInfinity(paramSpan, out value))
+            {
+                if (exclusive && double.IsInfinity(value))
+                    exclusive = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Parse sorted set lexicographical min / max parameter from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="idx">Argument index</param>
+        /// <param name="limitChars">Parsed min / max limit characters</param>
+        /// <param name="limitExclusive">True if min / max is exclusive</param>
+        /// <param name="specialRanges">Special ranges enum to indicate infinity values</param>
+        /// <returns>True if parsed successfully</returns>
+        internal static bool TryGetSortedSetLexMinMaxParameter(this SessionParseState parseState, int idx, out ReadOnlySpan<byte> limitChars,
+            out bool limitExclusive, out SpecialRanges specialRanges)
+        {
+            limitChars = default;
+            limitExclusive = false;
+            specialRanges = SpecialRanges.None;
+
+            var paramSpan = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            switch (paramSpan[0])
+            {
+                case (byte)'-':
+                    specialRanges = SpecialRanges.InfiniteMin;
+                    return true;
+                case (byte)'+':
+                    specialRanges = SpecialRanges.InfiniteMax;
+                    return true;
+                case (byte)'[':
+                    limitChars = paramSpan.Slice(1);
+                    limitExclusive = false;
+                    break;
+                case (byte)'(':
+                    limitChars = paramSpan.Slice(1);
+                    limitExclusive = true;
+                    break;
+                default:
+                    return false;
+            }
+
+            if (limitChars.Length == 1 && ((limitChars[0] == '-') || (limitChars[0] == '+')))
+            {
+                // Redis accepts [+ yet in practice seems to treat it as a minimum.
+                specialRanges = SpecialRanges.InfiniteMin;
+                limitChars = default;
+            }
+
+            return true;
+
         }
 
         /// <summary>

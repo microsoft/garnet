@@ -13,7 +13,7 @@ namespace Garnet.server
         KEEPTTL
     }
 
-    internal enum EtagOption : byte
+    internal enum ETagOption : byte
     {
         None,
         WithETag,

@@ -55,6 +55,8 @@ namespace Garnet.server
         Write = 1 << 19,
         [Description("allow_busy")]
         AllowBusy = 1 << 20,
+        [Description("meta")]
+        Meta = 1 << 21,
     }
 
     /// <summary>
