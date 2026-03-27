@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -42,7 +43,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token);
+                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 return client;
             }
@@ -69,7 +70,7 @@ namespace Garnet.cluster
         private async Task<bool> PauseWritesAndWaitForSync()
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
-            var client = await GetConnectionAsync(primaryId);
+            var client = await GetConnectionAsync(primaryId).ConfigureAwait(false);
             try
             {
                 if (client == null)
@@ -84,11 +85,12 @@ namespace Garnet.cluster
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
-                var primaryReplicationOffset = await client.failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token);
+                var resp = await client.ExecuteClusterFailStopWrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var primaryReplicationOffset = AofAddress.FromString(resp);
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                while (primaryReplicationOffset > clusterProvider.replicationManager.ReplicationOffset)
+                while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
@@ -138,21 +140,34 @@ namespace Garnet.cluster
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
-                // Reset replay iterators
-                clusterProvider.replicationManager.ResetReplayIterator();
+                // Cancel active replication tasks
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+
+                // Update sequence number generator for sharded log if needed
+                if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
+                {
+                    clusterProvider.storeWrapper.appendOnlyFile.ResetSequenceNumberGenerator();
+                    clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+                }
 
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
                     logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimary));
+
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
 
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
                 clusterProvider.storeWrapper.StartPrimaryTasks();
             }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimary));
+            }
             finally
             {
                 // Disable recovering as now this node has become a primary or failed in its attempt earlier
-                if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                if (acquiredLock)
+                    clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
 
             return true;
@@ -168,7 +183,7 @@ namespace Garnet.cluster
         {
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId);
+            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId).ConfigureAwait(false);
 
             try
             {
@@ -207,13 +222,13 @@ namespace Garnet.cluster
                     {
                         resp.Dispose();
                     }
-                }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token);
+                }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 var localAddress = oldConfig.LocalNodeIp;
                 var localPort = oldConfig.LocalNodePort;
 
                 // Ask replica to attach and sync
-                var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token);
+                var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 // Check if response for attach succeeded
                 if (!replicaOfResp.Equals("OK"))
@@ -250,7 +265,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    attachReplicaTasks.Add(Task.Run(async () => await BroadcastConfigAndRequestAttach(replicaId, configByteArray)));
+                    attachReplicaTasks.Add(Task.Run(async () => await BroadcastConfigAndRequestAttach(replicaId, configByteArray).ConfigureAwait(false)));
                 }
                 catch (Exception ex)
                 {
@@ -263,7 +278,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    await Task.WhenAll(attachReplicaTasks);
+                    await Task.WhenAll(attachReplicaTasks).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -284,7 +299,7 @@ namespace Garnet.cluster
             try
             {
                 // Issue stop writes and on ack wait for replica to catch up
-                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSync())
+                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSync().ConfigureAwait(false))
                 {
                     return false;
                 }
@@ -300,12 +315,12 @@ namespace Garnet.cluster
                 {
                     // Request primary to be reset to original state only if DEFAULT option was used
                     if (primaryClient != null)
-                        _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                        _ = await primaryClient!.ExecuteClusterFailStopWrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
                     return false;
                 }
 
                 // Attach to old replicas, and old primary if DEFAULT option
-                await IssueAttachReplicas();
+                await IssueAttachReplicas().ConfigureAwait(false);
 
                 return true;
             }

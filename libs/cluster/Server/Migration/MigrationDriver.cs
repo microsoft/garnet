@@ -80,7 +80,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 // Migrate actual data
-                if (!await MigrateSlotsDriverInline())
+                if (!await MigrateSlotsDriverInline().ConfigureAwait(false))
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
@@ -93,7 +93,7 @@ namespace Garnet.cluster
                 // Lock config merge to avoid a background epoch bump
                 clusterProvider.clusterManager.SuspendConfigMerge();
                 configResumed = false;
-                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
 
                 // Change ownership of slots to target node.
                 if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
@@ -114,7 +114,7 @@ namespace Garnet.cluster
                 }
 
                 // Gossip again to ensure that source and target agree on the slot exchange
-                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
                 #endregion
 
                 // Enqueue success log

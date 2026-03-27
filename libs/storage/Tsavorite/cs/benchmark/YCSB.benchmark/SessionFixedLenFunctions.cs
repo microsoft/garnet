@@ -186,6 +186,14 @@ namespace Tsavorite.benchmark
         { }
 
         public readonly void ConvertOutputToHeap(ref Input input, ref Output output) { }
+
+        public void BeforeConsistentReadCallback(long hash) { }
+
+        public void AfterConsistentReadKeyCallback() { }
+
+        public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters) { }
+
+        public bool AfterConsistentReadKeyBatchCallback(int keyCount) => true;
     }
 
     static class StaticUtilities

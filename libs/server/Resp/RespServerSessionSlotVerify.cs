@@ -39,6 +39,7 @@ namespace Garnet.server
             csvi.isSubCommand = cmdInfo.IsSubCommand || cmd == RespCommand.BITOP;
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
+
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }

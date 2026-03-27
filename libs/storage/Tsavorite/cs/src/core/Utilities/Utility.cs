@@ -431,14 +431,14 @@ namespace Tsavorite.core
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             using (token.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs, useSynchronizationContext))
             {
-                if (task != await Task.WhenAny(task, tcs.Task))
+                if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(false))
                 {
                     token.ThrowIfCancellationRequested();
                 }
             }
 
             // make sure any exceptions in the task get unwrapped and exposed to the caller.
-            return await task;
+            return await task.ConfigureAwait(false);
         }
 
         /// <summary>

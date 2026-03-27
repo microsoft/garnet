@@ -230,7 +230,7 @@ namespace Garnet.common
                     var receiveTask = OnNetworkReceiveWithTLSAsync(e.BytesTransferred);
                     if (!receiveTask.IsCompletedSuccessfully)
                     {
-                        await receiveTask;
+                        await receiveTask.ConfigureAwait(false);
                     }
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                 } while (!e.AcceptSocket.ReceiveAsync(e));

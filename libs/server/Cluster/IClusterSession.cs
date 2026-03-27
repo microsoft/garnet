@@ -77,7 +77,7 @@ namespace Garnet.server
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking);
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, bool SessionAsking);
 
         /// <summary>
         /// Write cached slot verification message to output
@@ -111,5 +111,16 @@ namespace Garnet.server
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        void UnsafeSetConfig(string replicaOf);
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        void Dispose();
     }
 }

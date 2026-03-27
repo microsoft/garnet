@@ -62,7 +62,7 @@ namespace Garnet.server
                     RunContinuationsAsynchronously = true
                 };
                 var _storageApi = storageApi;
-                _ = Task.Run(async () => await AsyncGetProcessor(_storageApi));
+                _ = Task.Run(async () => await AsyncGetProcessor(_storageApi).ConfigureAwait(false));
             }
             else
             {
@@ -138,7 +138,7 @@ namespace Garnet.server
 
                 // Wait for next async operation
                 // We do not need to cancel the wait - it should get garbage collected when the session ends
-                await asyncWaiter.WaitAsync();
+                await asyncWaiter.WaitAsync().ConfigureAwait(false);
             }
         }
     }

@@ -14,6 +14,9 @@ namespace Garnet.server
     {
         internal ScratchBufferAllocator scratchBufferAllocator;
         internal TransactionManager txnManager;
+        internal int virtualSublogParticipantCount;
+        internal ulong physicalSublogAccessVector;
+        internal BitVector[] replayTaskAccessVector = null;
 
         /// <summary>
         /// If enabled, transaction fails fast on key locking failure instead of waiting on lock
@@ -42,6 +45,7 @@ namespace Garnet.server
             txnManager.AddTransactionStoreType(storeType);
             txnManager.SaveKeyEntryToLock(key, type);
             txnManager.VerifyKeyOwnership(key, type);
+            txnManager.ComputeCustomProcShardedLogAccess(key, this);
         }
 
         /// <summary>

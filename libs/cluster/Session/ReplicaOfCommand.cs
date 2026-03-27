@@ -43,13 +43,14 @@ namespace Garnet.cluster
 
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
-                    clusterProvider.replicationManager.ResetReplayIterator();
+                    clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
                     UnsafeBumpAndWaitForEpochTransition();
                     clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
                 finally
                 {
-                    if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                    if (acquiredLock)
+                        clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
                 }
             }
             else

@@ -145,7 +145,7 @@ namespace Tsavorite.devices
         public async Task<bool> WaitForTermination(TimeSpan timeout)
         {
             Task timeoutTask = Task.Delay(timeout);
-            var first = await Task.WhenAny(timeoutTask, shutdownComplete.Task);
+            var first = await Task.WhenAny(timeoutTask, shutdownComplete.Task).ConfigureAwait(false);
             return first == shutdownComplete.Task;
         }
     }

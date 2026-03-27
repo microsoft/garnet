@@ -28,7 +28,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog AppendOnlyFile { get; }
+        public GarnetAppendOnlyFile AppendOnlyFile { get; }
 
         /// <summary>
         /// Last save time (of DB 0)
@@ -81,8 +81,7 @@ namespace Garnet.server
         /// Recover checkpoint
         /// </summary>
         /// <param name="replicaRecover"></param>
-        /// <param name="recoverFromToken"></param>
-        /// <param name="metadata"></param>
+        /// <param name="recoverFromToken"></param>        
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
@@ -155,7 +154,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1);
+        public AofAddress ReplayAOF(AofAddress untilAddress);
 
         /// <summary>
         /// Do compaction
