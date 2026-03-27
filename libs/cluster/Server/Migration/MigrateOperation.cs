@@ -2,13 +2,17 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Garnet.client;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         internal sealed partial class MigrateOperation
         {
@@ -16,15 +20,30 @@ namespace Garnet.cluster
             public readonly List<byte[]> keysToDelete;
             public StoreScan storeScan;
 
+            private readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
 
             public GarnetClientSession Client => gcs;
 
+            public IEnumerable<KeyValuePair<byte[], byte[]>> VectorSets => vectorSetsIndexKeysToMigrate;
+
             public void ThrowIfCancelled() => session._cts.Token.ThrowIfCancellationRequested();
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
+
+            public bool ContainsNamespace(ReadOnlySpan<byte> namespaceBytes)
+            {
+                Debug.Assert(namespaceBytes.Length == 1, "Longer namespaces note supported");
+
+                var ns = (ulong)namespaceBytes[0];
+
+                return session._namespaces?.Contains(ns) ?? false;
+            }
+            public void EncounteredVectorSet(byte[] key, byte[] value)
+            => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
@@ -34,6 +53,7 @@ namespace Garnet.cluster
                 this.sketch = sketch ?? new(keyCount: batchSize << 2);
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
+                vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
             public bool Initialize()
@@ -65,16 +85,32 @@ namespace Garnet.cluster
             /// <returns></returns>
             public bool TransmitSlots()
             {
-                var output = new UnifiedOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var output = new UnifiedOutput();       // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var vectorOutput = new VectorOutput();  // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {
                     var input = new UnifiedInput(RespCommand.MIGRATE);
                     input.arg1 = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
-                    foreach (var key in sketch.argSliceVector)
+
+                    VectorInput vectorInput = new();
+                    vectorInput.AlignmentExpected = true; // We're moving DiskANN sourced data, so alignment is expected
+                    vectorInput.MaxMigrationHeapAllocationSize = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
+
+                    foreach (var (ns, key, hasNs) in sketch.argSliceVector)
                     {
-                        if (!session.WriteOrSendRecord(gcs, localServerSession, key, ref input, ref output, out _))
-                            return false;
+                        if (hasNs)
+                        {
+                            // Migrating Vector Set element data
+                            if (!session.WriteOrSendRecord(gcs, localServerSession, ns, key, ref vectorInput, ref vectorOutput, out _))
+                                return false;
+                        }
+                        else
+                        {
+                            // Migrating everything else
+                            if (!session.WriteOrSendRecord(gcs, localServerSession, key, ref input, ref output, out _))
+                                return false;
+                        }
                     }
 
                     // Flush final data in client buffer
@@ -84,6 +120,7 @@ namespace Garnet.cluster
                 finally
                 {
                     output.SpanByteAndMemory.Dispose();
+                    vectorOutput.SpanByteAndMemory.Dispose();
                 }
 
                 return true;
@@ -130,6 +167,54 @@ namespace Garnet.cluster
             }
 
             /// <summary>
+            /// Transmit data in namespaces during a MIGRATE ... KEYS operation.
+            /// 
+            /// Doesn't delete anything, just scans and transmits.
+            /// </summary>
+            public bool TransmitKeysNamespaces(ILogger logger)
+            {
+                var migrateOperation = this;
+
+                if (!migrateOperation.Initialize())
+                    return false;
+
+                var workerStartAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.BeginAddress;
+                var workerEndAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.TailAddress;
+
+                var cursor = workerStartAddress;
+                logger?.LogWarning("<MainStore> migrate keys (namespaces) scan range [{workerStartAddress}, {workerEndAddress}]", workerStartAddress, workerEndAddress);
+                while (true)
+                {
+                    var current = cursor;
+                    // Build Sketch
+                    migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
+                    migrateOperation.Scan(ref current, workerEndAddress);
+
+                    // Stop if no keys have been found
+                    if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
+
+                    logger?.LogWarning("Scan from {cursor} to {current} and discovered {count} keys", cursor, current, migrateOperation.sketch.argSliceVector.Count);
+
+                    // Transition EPSM to MIGRATING
+                    migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
+                    migrateOperation.session.WaitForConfigPropagation();
+
+                    // Transmit all keys gathered
+                    migrateOperation.TransmitSlots();
+
+                    // Transition EPSM to DELETING
+                    migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
+                    migrateOperation.session.WaitForConfigPropagation();
+
+                    // Clear keys from buffer
+                    migrateOperation.sketch.Clear();
+                    cursor = current;
+                }
+
+                return true;
+            }
+
+            /// <summary>
             /// Delete keys after migration if copyOption is not set
             /// </summary>
             public void DeleteKeys()
@@ -138,8 +223,18 @@ namespace Garnet.cluster
                     return;
                 if (session.transferOption == TransferOption.SLOTS)
                 {
-                    foreach (var key in sketch.argSliceVector)
-                        _ = localServerSession.BasicGarnetApi.DELETE(key);
+                    foreach (var (ns, key, hasNs) in sketch.argSliceVector)
+                    {
+                        if (hasNs)
+                        {
+                            // Namespace'd keys are deleted as part after migration completes
+                            continue;
+                        }
+                        else
+                        {
+                            _ = localServerSession.BasicGarnetApi.DELETE(key);
+                        }
+                    }
                 }
                 else
                 {
@@ -151,6 +246,19 @@ namespace Garnet.cluster
                             _ = localServerSession.BasicGarnetApi.DELETE(keys[i].Item1);
                     }
                 }
+            }
+
+            /// <summary>
+            /// Delete a Vector Set after migration if _copyOption is not set.
+            /// </summary>
+            public void DeleteVectorSet(PinnedSpanByte key)
+            {
+                if (session._copyOption)
+                    return;
+
+                var delRes = localServerSession.BasicGarnetApi.DELETE(key);
+
+                session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key), delRes);
             }
         }
     }

@@ -45,9 +45,11 @@ namespace Garnet.server
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
 
-        // Byte stored on log records to distinguish the INDEX key as a Vector Set
-        // Element keys are tracked in separate namespaces and are not marked with a special RecordType
-        internal const byte RecordType = 1;
+        /// <summary>
+        /// Byte stored on log records to distinguish the INDEX key as a Vector Set
+        /// Element keys are tracked in separate namespaces and are not marked with a special RecordType
+        /// </summary>
+        public const byte RecordType = 1;
 
         /// <summary>
         /// Minimum size of an id is assumed to be at least 8 bytes + a length prefix.

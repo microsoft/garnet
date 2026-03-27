@@ -100,7 +100,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn, csvi.waitForStableSlot);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
@@ -124,7 +124,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn, csvi.waitForStableSlot);
 
             return vres.state != SlotVerifiedState.OK;
         }

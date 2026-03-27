@@ -1075,7 +1075,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            const int VectorSetsPerPrimary = 8;
+            const int VectorSetsPerPrimary = 4;
 
             context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize);
             context.CreateConnection(useTLS: true);

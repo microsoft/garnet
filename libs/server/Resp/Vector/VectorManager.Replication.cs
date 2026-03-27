@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -58,13 +59,9 @@ namespace Garnet.server
 
                 replicationReplayCancellation = cancellationToken;
 
-                using var cts = new CancellationTokenSource();
-
-                _ = cancellationToken.Register(() => cts.Cancel());
-
                 try
                 {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 }
                 catch { }
 
@@ -89,8 +86,6 @@ namespace Garnet.server
         internal void ReplicateVectorSetAdd(ReadOnlySpan<byte> key, ref StringInput input, ref StringBasicContext context)
         {
             Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
-
-            // TODO: Implement
 
             var inputCopy = input;
             inputCopy.arg1 = VADDAppendLogArg;
@@ -147,98 +142,98 @@ namespace Garnet.server
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
         /// </summary>
         internal void HandleVectorSetAddReplication(
-            /*StorageSession currentSession, */
+            StorageSession currentSession,
             Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            // TODO: Restore migration logic
             if (input.arg1 == MigrateElementKeyLogArg)
             {
-                throw new NotImplementedException("TODO");
+                // These are special, injecting by a PRIMARY applying migration operations
+                // These get replayed on REPLICAs typically, though role changes might still cause these
+                // to get replayed on now-primary nodes
 
-                //// These are special, injecting by a PRIMARY applying migration operations
-                //// These get replayed on REPLICAs typically, though role changes might still cause these
-                //// to get replayed on now-primary nodes
+                // Serialized len + ns + len + key in ReplicateMigratedElementKey
+                var elementNamespaceAndKey = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-                //var key = input.parseState.GetArgSliceByRef(0);
-                //var value = input.parseState.GetArgSliceByRef(1);
+                var elementNsLen = BinaryPrimitives.ReadInt32LittleEndian(elementNamespaceAndKey);
+                var elementNsBytes = elementNamespaceAndKey.Slice(sizeof(int), elementNsLen);
+                var elementKeyLen = BinaryPrimitives.ReadInt32LittleEndian(elementNamespaceAndKey[(sizeof(int) + elementNsLen)..]);
+                var elementKeyBytes = elementNamespaceAndKey.Slice(sizeof(int) + elementNsLen + sizeof(int), elementKeyLen);
 
-                //// TODO: Namespace is present, but not actually transmitted
-                ////       This presumably becomes unnecessary in Store v2
-                //key.MarkNamespace();
+                var value = input.parseState.GetArgSliceByRef(1);
 
-                //var ns = key.GetNamespaceInPayload();
+                Debug.Assert(elementNsBytes.Length == 1, "Longer length namespaces not supported");
 
-                //// REPLICAs wouldn't have seen a reservation message, so allocate this on demand
-                //var ctx = ns & ~(ContextStep - 1);
-                //if (!contextMetadata.IsMigrating(ctx))
-                //{
-                //    var needsUpdate = false;
+                var ns = (ulong)elementNsBytes[0];
 
-                //    lock (this)
-                //    {
-                //        if (!contextMetadata.IsMigrating(ctx))
-                //        {
-                //            contextMetadata.MarkInUse(ctx, ushort.MaxValue);
-                //            contextMetadata.MarkMigrating(ctx);
+                // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
+                var ctx = ns & ~(ContextStep - 1);
+                if (!contextMetadata.IsMigrating(ctx))
+                {
+                    var needsUpdate = false;
 
-                //            needsUpdate = true;
-                //        }
-                //    }
+                    lock (this)
+                    {
+                        if (!contextMetadata.IsMigrating(ctx))
+                        {
+                            contextMetadata.MarkInUse(ctx, ushort.MaxValue);
+                            contextMetadata.MarkMigrating(ctx);
 
-                //    if (needsUpdate)
-                //    {
-                //        UpdateContextMetadata(ref currentSession.vectorBasicContext);
-                //    }
-                //}
+                            needsUpdate = true;
+                        }
+                    }
 
-                //HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, ref key, ref value);
-                //return;
+                    if (needsUpdate)
+                    {
+                        UpdateContextMetadata(ref currentSession.vectorBasicContext);
+                    }
+                }
+
+                HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, elementNsBytes, elementKeyBytes, value);
+                return;
             }
             else if (input.arg1 == MigrateIndexKeyLogArg)
             {
-                throw new NotImplementedException("TODO");
+                // These also injected by a PRIMARY applying migration operations
 
-                //// These also injected by a PRIMARY applying migration operations
+                var indexKey = input.parseState.GetArgSliceByRef(0);
+                var value = input.parseState.GetArgSliceByRef(1);
+                var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
 
-                //var key = input.parseState.GetArgSliceByRef(0);
-                //var value = input.parseState.GetArgSliceByRef(1);
-                //var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
+                // Most of the time a replica will have seen an element moving before now
+                // but if you a migrate an EMPTY Vector Set that is not necessarily true
+                //
+                // So force reservation now
+                if (!contextMetadata.IsMigrating(context))
+                {
+                    var needsUpdate = false;
 
-                //// Most of the time a replica will have seen an element moving before now
-                //// but if you a migrate an EMPTY Vector Set that is not necessarily true
-                ////
-                //// So force reservation now
-                //if (!contextMetadata.IsMigrating(context))
-                //{
-                //    var needsUpdate = false;
+                    lock (this)
+                    {
+                        if (!contextMetadata.IsMigrating(context))
+                        {
+                            contextMetadata.MarkInUse(context, ushort.MaxValue);
+                            contextMetadata.MarkMigrating(context);
 
-                //    lock (this)
-                //    {
-                //        if (!contextMetadata.IsMigrating(context))
-                //        {
-                //            contextMetadata.MarkInUse(context, ushort.MaxValue);
-                //            contextMetadata.MarkMigrating(context);
+                            needsUpdate = true;
+                        }
+                    }
 
-                //            needsUpdate = true;
-                //        }
-                //    }
+                    if (needsUpdate)
+                    {
+                        UpdateContextMetadata(ref currentSession.vectorBasicContext);
+                    }
+                }
 
-                //    if (needsUpdate)
-                //    {
-                //        UpdateContextMetadata(ref currentSession.vectorBasicContext);
-                //    }
-                //}
-
-                //ActiveThreadSession = currentSession;
-                //try
-                //{
-                //    HandleMigratedIndexKey(null, null, ref key, ref value);
-                //}
-                //finally
-                //{
-                //    ActiveThreadSession = null;
-                //}
-                //return;
+                ActiveThreadSession = currentSession;
+                try
+                {
+                    HandleMigratedIndexKey(null, null, indexKey, value);
+                }
+                finally
+                {
+                    ActiveThreadSession = null;
+                }
+                return;
             }
 
             Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");

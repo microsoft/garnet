@@ -111,12 +111,16 @@ namespace Garnet.server
 
                     PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
 
-                    ref var ctx = ref cleanupSession.storageSession.vectorBasicContext;
+                    // Scan context needs to know how to handle objects and all callbacks, while VectorSessionFunctions is intentionally kept svelte
+                    //
+                    // So we use to different contexts, one to scan (strings) and one to delete (vectors)
+                    ref var scanCtx = ref cleanupSession.storageSession.stringBasicContext;
+                    ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
 
                     // Scan whole keyspace (sigh) and remove any associated data
                     //
                     // We don't really have a choice here, just do it
-                    _ = ctx.Session.Iterate(ref callbacks);
+                    _ = scanCtx.Session.Iterate(ref callbacks);
 
                     // Key is mostly ignored when deleting from InProgressDeletes
                     // So we just need a non-empty one to use with the context
@@ -134,7 +138,7 @@ namespace Garnet.server
                             // and that will dominate.
                             foreach (var cleanedUp in needCleanup)
                             {
-                                ClearDeleteInProgress(ref ctx, basicKey, cleanedUp);
+                                ClearDeleteInProgress(ref delCtx, basicKey, cleanedUp);
                             }
                         }
                     }
@@ -147,7 +151,7 @@ namespace Garnet.server
                         }
                     }
 
-                    UpdateContextMetadata(ref ctx);
+                    UpdateContextMetadata(ref delCtx);
                 }
                 catch (Exception e)
                 {

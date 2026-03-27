@@ -18,6 +18,32 @@ namespace Garnet.client
         SYNC
     }
 
+    /// <summary>
+    /// When writing a RecordSpan, the format of the associated data.
+    /// </summary>
+    public enum MigrationRecordSpanType : byte
+    {
+        /// <summary>
+        /// Invalid
+        /// </summary>
+        Invalid = 0,
+
+        /// <summary>
+        /// Serialized <see cref="LogRecord"/>.
+        /// </summary>
+        LogRecord = 1,
+
+        /// <summary>
+        /// Bespoke encoding for Vector Set elements.
+        /// </summary>
+        VectorSetElement = 2,
+
+        /// <summary>
+        /// Bespoke encoding for Vector Set indexes.
+        /// </summary>
+        VectorSetIndex = 3,
+    }
+
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
         IncrementalSendType ist;
@@ -111,11 +137,12 @@ namespace Garnet.client
         /// <summary>
         /// Try to write the span for the entire record directly to the client buffer
         /// </summary>
-        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, MigrationRecordSpanType type, out Task<string> task)
         {
             // We include space for newline at the end, to be added before sending
             var recordSpanSize = recordSpan.TotalSize();
-            var totalLen = recordSpanSize + 2;
+            
+            var totalLen = recordSpanSize + 2 + 1; // +2 for \r\n, +1 for type
             if (totalLen > (int)(end - curr))
             {
                 // If there is no space left, send outstanding data and return the send-completion task.
@@ -123,6 +150,9 @@ namespace Garnet.client
                 task = SendAndResetIterationBuffer();
                 return false;
             }
+
+            *curr = (byte)type;
+            curr++;
 
             recordSpan.SerializeTo(curr, recordSpanSize);
             curr += recordSpanSize;

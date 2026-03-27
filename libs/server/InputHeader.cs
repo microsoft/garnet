@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -632,6 +633,11 @@ namespace Garnet.server
         public nint Callback { get; set; }
 
         public bool AlignmentExpected { get; set; }
+
+        [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
+        public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
+
+        public int? MaxMigrationHeapAllocationSize { get; set; }
 
         public VectorInput()
         {

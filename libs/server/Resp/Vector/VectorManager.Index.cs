@@ -18,6 +18,8 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
+        public const int IndexSize = Index.Size;
+
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {

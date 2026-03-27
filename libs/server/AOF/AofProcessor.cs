@@ -406,7 +406,7 @@ namespace Garnet.server
             // VADD requires special handling, shove it over to the VectorManager
             if (stringInput.header.cmd == RespCommand.VADD)
             {
-                vectorManager.HandleVectorSetAddReplication(obtainServerSession, key, ref stringInput);
+                vectorManager.HandleVectorSetAddReplication(activeServerSession.storageSession, obtainServerSession, key, ref stringInput);
                 return;
             }
             else
@@ -433,7 +433,7 @@ namespace Garnet.server
 
         static void StoreDelete<TStringContext>(TStringContext stringContext, byte* keyPtr)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        =>  stringContext.Delete((FixedSpanByteKey)PinnedSpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+        => stringContext.Delete((FixedSpanByteKey)PinnedSpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
 
         static void ObjectStoreUpsert<TObjectContext>(TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* keyPtr, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>

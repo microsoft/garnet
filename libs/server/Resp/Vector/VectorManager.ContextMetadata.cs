@@ -116,9 +116,15 @@ namespace Garnet.server
 
             public readonly ulong NextNotInUse()
             {
-                var ignoringZero = inUse | 1;
+                var ignoringUnusuable = inUse;
 
-                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringZero & (ulong)-(long)(~ignoringZero));
+                ignoringUnusuable |= 1; // Context 0 is reserved
+                
+                // We cannot use namespaces > 127
+                // TODO: Once Variable length namespaces work, remove this constraint
+                ignoringUnusuable |= ~((1UL << 15)-1);
+
+                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)(~ignoringUnusuable));
 
                 if (bit == 64)
                 {

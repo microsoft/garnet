@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -36,9 +37,43 @@ namespace Garnet.server
             Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(srcLogRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
+
             var value = AlignOrPin(in srcLogRecord, ref input, out var pin);
             try
             {
+                if (input.IsMigrationRead)
+                {
+                    Debug.Assert(input.Callback == 0, "No callback expected");
+
+                    // We can't ship the log record over because of alignment shenanigans
+                    // TODO: When alignment is handled at the Tsavorite level, we CAN start shipping the log over like everything else
+
+                    var neededSpace =
+                        sizeof(int) + srcLogRecord.NamespaceBytes.Length +
+                        sizeof(int) + srcLogRecord.KeyBytes.Length +
+                        sizeof(int) + value.Length;
+
+                    output.SpanByteAndMemory.EnsureHeapMemorySize(neededSpace);
+
+                    var writeTo = output.SpanByteAndMemory.Span;
+
+                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, srcLogRecord.NamespaceBytes.Length);
+                    writeTo = writeTo[sizeof(int)..];
+                    srcLogRecord.NamespaceBytes.CopyTo(writeTo);
+                    writeTo = writeTo[srcLogRecord.NamespaceBytes.Length..];
+
+                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, srcLogRecord.KeyBytes.Length);
+                    writeTo = writeTo[sizeof(int)..];
+                    srcLogRecord.KeyBytes.CopyTo(writeTo);
+                    writeTo = writeTo[srcLogRecord.KeyBytes.Length..];
+
+                    // Move value over _without_ any padding for alignment
+                    BinaryPrimitives.WriteInt32LittleEndian(writeTo, value.Length);
+                    writeTo = writeTo[sizeof(int)..];
+                    value.CopyTo(writeTo);
+
+                    return true;
+                }
 
                 unsafe
                 {
@@ -97,7 +132,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-        => ObjectOperationsNotExpected<bool>();
+        => LogRecordOperationsNotExpected<bool>();
 
 
         /// <inheritdoc/>
@@ -126,7 +161,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-        => ObjectOperationsNotExpected<bool>();
+        => LogRecordOperationsNotExpected<bool>();
         #endregion Upserts
 
         #region RMWs
@@ -205,7 +240,7 @@ namespace Garnet.server
                 , allows ref struct
 #endif
             where TSourceLogRecord : ISourceLogRecord
-        => ObjectOperationsNotExpected<RecordFieldInfo>();
+        => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length };
         #endregion Variable Length
 
         #region InitialUpdater
@@ -550,6 +585,10 @@ namespace Garnet.server
         private static TReturn ObjectOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
         => throw new InvalidOperationException($"Object related operations are not expected, was: {callerName} on {lineNum}");
 
+        [DoesNotReturn]
+        private static TReturn LogRecordOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
+        => throw new InvalidOperationException($"LogRecord related operations are not expected, was: {callerName} on {lineNum}");
+
         // TODO: Remove all this alignment hackery when Tsavorite can enforce it
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -629,7 +668,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-        => ObjectOperationsNotExpected<bool>();
+        => LogRecordOperationsNotExpected<bool>();
 
         /// <inheritdoc/>
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
@@ -685,5 +724,32 @@ namespace Garnet.server
         {
         }
         #endregion
+
+        /// <summary>
+        /// Update the namespaces stored in <paramref name="readOutput"/> according to <see cref="FrozenDictionary"/>.
+        /// 
+        /// <paramref name="readInput"/> should have been used to populate <paramref name="readOutput"/> with a Tsavorite Read prior to this call.
+        /// </summary>
+        public static void UpdateMigratedElementNamespaces(FrozenDictionary<ulong, ulong> oldToNewNamespaces, ref VectorInput readInput, ref VectorOutput readOutput)
+        {
+            Debug.Assert(readInput.IsMigrationRead, "Unexpected input");
+
+            // This should contain the results from the IsMigrationRead block in Reader
+            var span = readOutput.SpanByteAndMemory.Span;
+
+            var nsLen = BinaryPrimitives.ReadInt32LittleEndian(span);
+            Debug.Assert(nsLen == 1, "Longer namespaces not supported");
+
+            var oldNs = (ulong)span[sizeof(int)];
+
+            if (!oldToNewNamespaces.TryGetValue(oldNs, out var newNs))
+            {
+                return;
+            }
+
+            Debug.Assert(newNs <= byte.MaxValue, "Namespace too large");
+
+            span[sizeof(int)] = (byte)newNs;
+        }
     }
 }

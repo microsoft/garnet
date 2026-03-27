@@ -25,6 +25,11 @@ namespace Garnet.server
         public BasicGarnetApi BasicGarnetApi;
 
         /// <summary>
+        /// Basic Vector Context
+        /// </summary>
+        public VectorBasicContext VectorBasicContext;
+
+        /// <summary>
         /// Create new local server session
         /// </summary>
         public LocalServerSession(StoreWrapper storeWrapper)
@@ -47,6 +52,7 @@ namespace Garnet.server
             this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId: 0, database.VectorManager, logger);
 
             this.BasicGarnetApi = new BasicGarnetApi(storageSession, storageSession.stringBasicContext, storageSession.objectBasicContext, storageSession.unifiedBasicContext);
+            this.VectorBasicContext = storageSession.vectorBasicContext;
         }
 
         /// <inheritdoc />
