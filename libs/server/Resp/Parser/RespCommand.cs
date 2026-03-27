@@ -3071,17 +3071,85 @@ namespace Garnet.server
                     return ParseBitopSubcommand(ref count, ref specificErrorMessage, out success);
                 }
 
-                // Check if this command has subcommands that need a second lookup
-                // Subcommand dispatch uses the existing SlowParseCommand which handles
-                // all edge cases (case-insensitive matching, specific error messages, etc.)
-                // These are admin commands (CLUSTER, CONFIG, ACL) — not the hot path.
+                // Commands with subcommands — dispatch via subcommand hash table
                 if (RespCommandHashLookup.HasSubcommands(namePtr, command.Length))
                 {
-                    return SlowParseCommand(command, ref count, ref specificErrorMessage, out success);
+                    return HandleSubcommandLookup(cmd, ref count, ref specificErrorMessage, out success);
                 }
 
                 return cmd;
             }
+        }
+
+        /// <summary>
+        /// Handles subcommand dispatch for parent commands (CLUSTER, CONFIG, CLIENT, etc.)
+        /// using per-parent hash tables. Replaces the former SlowParseCommand subcommand chains.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand HandleSubcommandLookup(RespCommand parentCmd, ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
+        {
+            success = true;
+
+            // COMMAND with no args returns RespCommand.COMMAND (lists all commands)
+            if (parentCmd == RespCommand.COMMAND && count == 0)
+            {
+                return RespCommand.COMMAND;
+            }
+
+            // Most parent commands require at least one subcommand argument
+            if (count == 0)
+            {
+                specificErrorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    parentCmd.ToString()));
+                return RespCommand.INVALID;
+            }
+
+            // Extract and uppercase the subcommand name
+            var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+            if (!gotSubCommand)
+            {
+                success = false;
+                return RespCommand.NONE;
+            }
+
+            count--;
+
+            // Hash table lookup for the subcommand
+            fixed (byte* subNamePtr = subCommand)
+            {
+                var subCmd = RespCommandHashLookup.LookupSubcommand(parentCmd, subNamePtr, subCommand.Length);
+                if (subCmd != RespCommand.NONE)
+                {
+                    return subCmd;
+                }
+            }
+
+            // Hash miss — try case-insensitive fallbacks for specific commands
+            if (parentCmd == RespCommand.COMMAND)
+            {
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
+                    return RespCommand.COMMAND_GETKEYS;
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
+                    return RespCommand.COMMAND_GETKEYSANDFLAGS;
+            }
+            else if (parentCmd == RespCommand.MEMORY)
+            {
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
+                    return RespCommand.MEMORY_USAGE;
+            }
+
+            // Generate error message for unknown subcommand
+            string errMsg = parentCmd switch
+            {
+                RespCommand.CLUSTER or RespCommand.LATENCY =>
+                    string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                        Encoding.UTF8.GetString(subCommand), parentCmd.ToString()),
+                _ =>
+                    string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                        Encoding.UTF8.GetString(subCommand), parentCmd.ToString()),
+            };
+            specificErrorMessage = Encoding.UTF8.GetBytes(errMsg);
+            return RespCommand.INVALID;
         }
 
         /// <summary>

@@ -716,7 +716,7 @@ namespace Garnet.server
             ("RESET", RespCommand.CLUSTER_RESET),
             ("SEND_CKPT_FILE_SEGMENT", RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT),
             ("SEND_CKPT_METADATA", RespCommand.CLUSTER_SEND_CKPT_METADATA),
-            ("SETCONFIGEPOCH", RespCommand.CLUSTER_SETCONFIGEPOCH),
+            ("SET-CONFIG-EPOCH", RespCommand.CLUSTER_SETCONFIGEPOCH),
             ("SETSLOT", RespCommand.CLUSTER_SETSLOT),
             ("SETSLOTSRANGE", RespCommand.CLUSTER_SETSLOTSRANGE),
             ("SHARDS", RespCommand.CLUSTER_SHARDS),
