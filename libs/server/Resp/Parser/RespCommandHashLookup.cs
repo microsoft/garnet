@@ -121,6 +121,42 @@ namespace Garnet.server
             pubsubSubTable = BuildSubTable(PubsubSubcommands, out pubsubSubTableMask);
             memorySubTable = BuildSubTable(MemorySubcommands, out memorySubTableMask);
             bitopSubTable = BuildSubTable(BitopSubcommands, out bitopSubTableMask);
+
+            // Validate all subcommand tables are round-trip correct
+            ValidateSubTable(RespCommand.CLUSTER, ClusterSubcommands, clusterSubTable, clusterSubTableMask);
+            ValidateSubTable(RespCommand.CLIENT, ClientSubcommands, clientSubTable, clientSubTableMask);
+            ValidateSubTable(RespCommand.ACL, AclSubcommands, aclSubTable, aclSubTableMask);
+            ValidateSubTable(RespCommand.COMMAND, CommandSubcommands, commandSubTable, commandSubTableMask);
+            ValidateSubTable(RespCommand.CONFIG, ConfigSubcommands, configSubTable, configSubTableMask);
+            ValidateSubTable(RespCommand.SCRIPT, ScriptSubcommands, scriptSubTable, scriptSubTableMask);
+            ValidateSubTable(RespCommand.LATENCY, LatencySubcommands, latencySubTable, latencySubTableMask);
+            ValidateSubTable(RespCommand.SLOWLOG, SlowlogSubcommands, slowlogSubTable, slowlogSubTableMask);
+            ValidateSubTable(RespCommand.MODULE, ModuleSubcommands, moduleSubTable, moduleSubTableMask);
+            ValidateSubTable(RespCommand.PUBSUB, PubsubSubcommands, pubsubSubTable, pubsubSubTableMask);
+            ValidateSubTable(RespCommand.MEMORY, MemorySubcommands, memorySubTable, memorySubTableMask);
+            ValidateSubTable(RespCommand.BITOP, BitopSubcommands, bitopSubTable, bitopSubTableMask);
+        }
+
+        /// <summary>
+        /// Validate that every entry in a subcommand definition array can be looked up in the hash table.
+        /// Called once during static init; throws on any mismatch to catch typos early.
+        /// </summary>
+        private static void ValidateSubTable(RespCommand parent, ReadOnlySpan<(string Name, RespCommand Command)> subcommands,
+            CommandEntry[] table, int mask)
+        {
+            foreach (var (name, expectedCmd) in subcommands)
+            {
+                var nameBytes = System.Text.Encoding.ASCII.GetBytes(name);
+                fixed (byte* p = nameBytes)
+                {
+                    var found = LookupInTable(table, mask, p, nameBytes.Length);
+                    if (found != expectedCmd)
+                    {
+                        throw new InvalidOperationException(
+                            $"Hash table validation failed: {parent} subcommand '{name}' expected {expectedCmd} but got {found}");
+                    }
+                }
+            }
         }
 
         #region Public API
@@ -267,6 +303,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool MatchName(ref CommandEntry entry, byte* name, int length)
         {
+            Debug.Assert(length > 0, "MatchName: length must be positive");
+
             if (length <= 8)
             {
                 ulong inputWord = length == 8 ? *(ulong*)name : ReadPartialWord(name, length);
@@ -293,6 +331,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static RespCommand LookupInTable(CommandEntry[] table, int tableMask, byte* name, int length)
         {
+            Debug.Assert(length > 0, "Command name length must be positive");
+            Debug.Assert(table != null, "Hash table must not be null");
+
             uint hash = ComputeHash(name, length);
             int idx = (int)(hash & (uint)tableMask);
 
@@ -337,6 +378,9 @@ namespace Garnet.server
         /// </summary>
         private static void InsertIntoTable(CommandEntry[] table, int tableMask, ReadOnlySpan<byte> name, RespCommand command, byte flags = 0)
         {
+            Debug.Assert(name.Length > 0, "Command name must not be empty");
+            Debug.Assert(name.Length <= 24, $"Command name too long for hash table entry: {System.Text.Encoding.ASCII.GetString(name)}");
+
             uint hash = ComputeHash(name);
             int idx = (int)(hash & (uint)tableMask);
 
@@ -348,11 +392,15 @@ namespace Garnet.server
                     entry.Command = command;
                     entry.NameLength = (byte)name.Length;
                     entry.Flags = flags;
-                    entry.NameWord0 = GetWordFromSpan(name, 0);
-                    entry.NameWord1 = name.Length > 8 ? GetWordFromSpan(name, name.Length - 8) : 0;
-                    entry.NameWord2 = name.Length > 16 ? GetWordFromSpan(name, name.Length - 8) : 0;
 
-                    // For names > 16 bytes, store bytes 8-15 exactly and last 8 bytes in word2
+                    // Store name words to match the layout expected by MatchName:
+                    //   length <= 8:  Word0 = bytes 0..len-1 (zero-padded)
+                    //   length 9-16:  Word0 = bytes 0..7, Word1 = bytes len-8..len-1 (overlapping)
+                    //   length 17-24: Word0 = bytes 0..7, Word1 = bytes 8..15, Word2 = bytes len-8..len-1
+                    entry.NameWord0 = GetWordFromSpan(name, 0);
+                    entry.NameWord1 = 0;
+                    entry.NameWord2 = 0;
+
                     if (name.Length > 16)
                     {
                         entry.NameWord1 = GetWordFromSpan(name, 8);

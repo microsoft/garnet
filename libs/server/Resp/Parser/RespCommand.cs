@@ -646,6 +646,8 @@ namespace Garnet.server
         // Per-session MRU command cache: 2 entries caching the last matched command patterns.
         // Sits after SIMD patterns but before scalar switch — catches repeated Tier 1b/2 commands
         // (HSET, LPUSH, ZADD etc.) in 3 ops instead of falling through to the hash table.
+        // NOTE: All fields default to zero (RespCommand.NONE = 0x00, Vector128 = all zeros),
+        // so the cache starts empty and the _cachedCmd0 != RespCommand.NONE check is safe.
         private Vector128<byte> _cachedPattern0, _cachedMask0;
         private RespCommand _cachedCmd0;
         private byte _cachedLen0, _cachedCount0;
@@ -3036,8 +3038,10 @@ namespace Garnet.server
         private RespCommand HashLookupCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
         {
             // Extract the command name (reads $len\r\n...\r\n, advances readHead).
-            // MakeUpperCase has already uppercased the command name in the buffer,
+            // MakeUpperCase has already uppercased the first command name token in the buffer,
             // so we use GetCommand (no redundant ToUpperInPlace call).
+            // NOTE: MakeUpperCase only uppercases the first token — subcommand names are
+            // uppercased separately via GetUpperCaseCommand in HandleSubcommandLookup.
             var command = GetCommand(out success);
             if (!success)
             {
