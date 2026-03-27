@@ -1,0 +1,10 @@
+GarnetServer
+Copyright (c) Microsoft Corporation
+
+ERROR(S):
+  Option 'cluster-replication-reestablishment-timeout' is defined with a bad
+  format.
+
+Encountered error(s) while parsing command line arguments.
+For detailed usage information run with --help.
+
