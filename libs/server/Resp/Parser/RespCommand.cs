@@ -2872,11 +2872,8 @@ namespace Garnet.server
                 if (!success) return cmd;
 
                 // Update MRU cache for commands resolved by scalar switch or hash table.
-                // Only for real command processing (writeErrorOnFailure=true), not synthetic
-                // ParseRespCommandBuffer calls (ACL checks etc.) which use temporary buffers.
-                // Exclude custom commands — they have runtime-registered names that can't be
-                // reliably cached alongside built-in commands.
-                if (writeErrorOnFailure && Vector128.IsHardwareAccelerated &&
+                // Exclude custom commands — they have runtime-registered names.
+                if (Vector128.IsHardwareAccelerated &&
                     cmd != RespCommand.INVALID && cmd != RespCommand.NONE &&
                     cmd != RespCommand.CustomTxn && cmd != RespCommand.CustomProcedure &&
                     cmd != RespCommand.CustomRawStringCmd && cmd != RespCommand.CustomObjCmd)
@@ -2918,38 +2915,25 @@ namespace Garnet.server
             // Only cache commands where we have at least 16 bytes to load a full Vector128
             if (availableBytes < 16) return;
 
-            // Determine total encoded command length: *N\r\n$L\r\n + name + \r\n
-            // Parse from the RESP header at cmdStartOffset
-            if (*ptr != '*') return;
+            // Compute how many bytes the parse actually consumed (command + subcommand if any)
+            var consumedBytes = readHead - cmdStartOffset;
 
-            // Need single-digit array length and single-digit string length for cache
-            if (availableBytes < 8) return;
-            if ((*(ulong*)ptr & 0xFFFF00FFFFFF00FF) != MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) return;
-
-            var nameLen = ptr[5] - '0';
-            if (nameLen < 1 || nameLen > 9) return;
-
-            var totalLen = 8 + nameLen + 2; // *N\r\n$L\r\n (8) + name (nameLen) + \r\n (2)
-            if (totalLen > 16) return; // Only cache commands that fit in 16 bytes
-
-            // If readHead advanced past the parent command encoding, subcommand parsing happened
-            // (e.g., CLIENT LIST, CONFIG GET). Don't cache — pattern can't distinguish subcommands.
-            if (readHead > cmdStartOffset + totalLen) return;
+            // Only cache if the full parse fits within 16 bytes (one Vector128)
+            if (consumedBytes < 13 || consumedBytes > 16) return;
 
             var input = Vector128.LoadUnsafe(ref Unsafe.AsRef<byte>(ptr));
 
-            // Select the appropriate mask based on total encoded length
-            Vector128<byte> mask;
-            if (totalLen == 16)
-                mask = Vector128<byte>.AllBitsSet;
-            else if (totalLen == 15)
-                mask = s_mask15;
-            else if (totalLen == 14)
-                mask = s_mask14;
-            else if (totalLen == 13)
-                mask = s_mask13;
-            else
-                return; // Too short (name < 3 chars) — not worth caching
+            // Select the appropriate mask — covers exactly the consumed bytes
+            Vector128<byte> mask = consumedBytes switch
+            {
+                16 => Vector128<byte>.AllBitsSet,
+                15 => s_mask15,
+                14 => s_mask14,
+                13 => s_mask13,
+                _ => Vector128<byte>.Zero
+            };
+
+            if (mask == Vector128<byte>.Zero) return;
 
             var pattern = Vector128.BitwiseAnd(input, mask);
 
@@ -2963,7 +2947,7 @@ namespace Garnet.server
             _cachedPattern0 = pattern;
             _cachedMask0 = mask;
             _cachedCmd0 = cmd;
-            _cachedLen0 = (byte)totalLen;
+            _cachedLen0 = (byte)consumedBytes;
             _cachedCount0 = (byte)argCount;
         }
 
