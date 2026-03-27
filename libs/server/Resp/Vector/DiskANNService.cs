@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -34,11 +35,15 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
-            // TODO: actually pass distance metric
-
             unsafe
             {
-                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+                var index = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, (int)distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+                if (index == nint.Zero)
+                {
+                    throw new GarnetException("Failed to create DiskANN index, native create_index returned null");
+                }
+
+                return index;
             }
         }
 
@@ -308,6 +313,7 @@ namespace Garnet.server
             uint dimensions,
             uint reduceDims,
             VectorQuantType quantType,
+            int metricType,
             uint buildExplorationFactor,
             uint numLinks,
             nint readCallback,
