@@ -1253,5 +1253,64 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("test", options.ClusterAnnounceHostname);
             }
         }
+
+        [Test]
+        public void RevivificationFlagOrderingIndependence()
+        {
+            // Specifying --reviv alongside explicit bin sizes and counts should work
+            // regardless of argument ordering, because the explicit bins override the
+            // power-of-2 default from --reviv (as documented in --reviv help text).
+            string[][] argOrderings =
+            [
+                ["--reviv", "--reviv-bin-record-sizes", "64,128,256", "--reviv-bin-record-counts", "100,200,300"],
+                ["--reviv-bin-record-sizes", "64,128,256", "--reviv-bin-record-counts", "100,200,300", "--reviv"],
+                ["--reviv-bin-record-sizes", "64,128,256", "--reviv", "--reviv-bin-record-counts", "100,200,300"],
+                ["--reviv-bin-record-counts", "100,200,300", "--reviv", "--reviv-bin-record-sizes", "64,128,256"],
+                ["--reviv-bin-record-counts", "100,200,300", "--reviv-bin-record-sizes", "64,128,256", "--reviv"],
+            ];
+
+            foreach (var args in argOrderings)
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"Parse failed for args: {string.Join(" ", args)}");
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.UseRevivBinsPowerOf2, $"UseRevivBinsPowerOf2 should be false for args: {string.Join(" ", args)}");
+                CollectionAssert.AreEqual(new[] { 64, 128, 256 }, serverOptions.RevivBinRecordSizes, $"RevivBinRecordSizes mismatch for args: {string.Join(" ", args)}");
+                CollectionAssert.AreEqual(new[] { 100, 200, 300 }, serverOptions.RevivBinRecordCounts, $"RevivBinRecordCounts mismatch for args: {string.Join(" ", args)}");
+            }
+
+            // --reviv with only sizes (no counts) should also work in any order
+            string[][] sizesOnlyOrderings =
+            [
+                ["--reviv", "--reviv-bin-record-sizes", "64,128"],
+                ["--reviv-bin-record-sizes", "64,128", "--reviv"],
+            ];
+
+            foreach (var args in sizesOnlyOrderings)
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"Parse failed for args: {string.Join(" ", args)}");
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.UseRevivBinsPowerOf2, $"UseRevivBinsPowerOf2 should be false for args: {string.Join(" ", args)}");
+                CollectionAssert.AreEqual(new[] { 64, 128 }, serverOptions.RevivBinRecordSizes, $"RevivBinRecordSizes mismatch for args: {string.Join(" ", args)}");
+            }
+
+            // --reviv with only counts (no sizes) should still fail regardless of order
+            string[][] countsOnlyOrderings =
+            [
+                ["--reviv", "--reviv-bin-record-counts", "100,200"],
+                ["--reviv-bin-record-counts", "100,200", "--reviv"],
+            ];
+
+            foreach (var args in countsOnlyOrderings)
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"Parse failed for args: {string.Join(" ", args)}");
+
+                Assert.Throws<Exception>(() => options.GetServerOptions(), $"Should throw for args: {string.Join(" ", args)}");
+            }
+        }
     }
 }

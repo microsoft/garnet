@@ -246,7 +246,7 @@ namespace Tsavorite.core
                     TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                 }
 
-            // Must do this *after* Unlocking.
+                // Must do this *after* Unlocking.
             CheckRetry:
                 if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
                     return status;
