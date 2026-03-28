@@ -215,12 +215,14 @@ namespace Tsavorite.core
             }
             catch (IOException e)
             {
+                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 freeResults.Enqueue(offset);
             }
-            catch
+            catch (Exception e)
             {
+                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 freeResults.Enqueue(offset);
@@ -262,11 +264,13 @@ namespace Tsavorite.core
             }
             catch (IOException e)
             {
+                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
             }
-            catch
+            catch (Exception e)
             {
+                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
             }

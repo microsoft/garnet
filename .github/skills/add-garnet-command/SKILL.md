@@ -21,18 +21,24 @@ Adding a single new command touches **at minimum** these areas:
 | 2 | Command parsing | `libs/server/Resp/Parser/RespCommand.cs` | ✅ Always |
 | 3 | Command dispatch | `libs/server/Resp/RespServerSession.cs` | ✅ Always |
 | 4 | RESP handler | `libs/server/Resp/<Category>/*.cs` | ✅ Always |
-| 5 | API interface | `libs/server/API/IGarnetApi.cs` | ✅ Always |
-| 6 | API delegation | `libs/server/API/GarnetApi.cs` | ✅ Always |
-| 7 | Storage session | `libs/server/Storage/Session/` | ✅ Always |
-| 8 | RMW/Read callbacks | `libs/server/Storage/Functions/MainStore/` | If using RMW/Read |
-| 9 | VarLen methods | `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` | If using RMW |
-| 10 | Command info JSON | `libs/resources/RespCommandsInfo.json` | ✅ Always (generated) |
-| 11 | Command docs JSON | `libs/resources/RespCommandsDocs.json` | ✅ Always (generated) |
-| 12 | Supported commands | `playground/CommandInfoUpdater/SupportedCommand.cs` | ✅ Always |
-| 13 | Garnet command info | `playground/CommandInfoUpdater/GarnetCommandsInfo.json` | If Garnet-only command |
-| 14 | Garnet command docs | `playground/CommandInfoUpdater/GarnetCommandsDocs.json` | If Garnet-only command |
-| 15 | ACL test | `test/Garnet.test/Resp/ACL/RespCommandTests.cs` | ✅ Always |
-| 16 | Integration tests | `test/Garnet.test/Resp*.cs` | ✅ Always |
+| 5 | API interface | `libs/server/API/IGarnetApi.cs` | If key-value command (not blocking/admin) |
+| 6 | API delegation | `libs/server/API/GarnetApi*.cs` | If key-value command (not blocking/admin) |
+| 7 | Storage session | `libs/server/Storage/Session/[Main\|Object\|Unified]Store/*Ops.cs` | If key-value command (not blocking/admin) |
+| 8 | RMW/Read callbacks | `libs/server/Storage/Functions/[Main\|Unified]Store/[RMW\|Read]Methods.cs` | If string/unified command using RMW/Read |
+| 8b | Read response | `libs/server/Storage/Functions/MainStore/PrivateMethods.cs` | If string command using Read (add to `CopyRespToWithInput`) |
+| 9 | VarLen methods | `libs/server/Storage/Functions/[Main\|Unified]Store/VarLenInputMethods.cs` | If string/unified command using RMW |
+| 10 | Object operation enum | `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` | If new object sub-operation |
+| 11 | Object implementation | `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs` | If new object sub-operation |
+| 12 | ItemBroker | `libs/server/Objects/ItemBroker/CollectionItemBroker.cs` | If blocking command |
+| 13 | Command info JSON | `libs/resources/RespCommandsInfo.json` | ✅ Always (generated) |
+| 14 | Command docs JSON | `libs/resources/RespCommandsDocs.json` | ✅ Always (generated) |
+| 15 | Supported commands | `playground/CommandInfoUpdater/SupportedCommand.cs` | ✅ Always |
+| 16 | Garnet command info | `playground/CommandInfoUpdater/GarnetCommandsInfo.json` | If Garnet-only command |
+| 17 | Garnet command docs | `playground/CommandInfoUpdater/GarnetCommandsDocs.json` | If Garnet-only command |
+| 18 | ACL test | `test/Garnet.test/Resp/ACL/RespCommandTests.cs` | ✅ Always |
+| 19 | Integration tests | `test/Garnet.test/Resp*.cs` | ✅ Always |
+| 20 | Website documentation | `website/docs/commands/` | ✅ Always |
+| 21 | Configuration settings | `Options.cs`, `GarnetServerOptions.cs`, `defaults.conf` | If command is optional/gated |
 
 ---
 
@@ -43,8 +49,8 @@ Adding a single new command touches **at minimum** these areas:
 The `RespCommand` enum is divided into sections with **ordering that matters**:
 
 ```
-Read commands:     BITCOUNT ... ZSCORE    (before APPEND)
-Write commands:    APPEND ... BITOP_DIFF  (after APPEND)
+Read commands:     BITCOUNT ... ZUNION     (before APPEND)
+Write commands:    APPEND ... BITOP_DIFF   (after APPEND)
 Script commands:   EVAL, EVALSHA
 Non-key commands:  PING, SUBSCRIBE, etc.
 Admin commands:    AUTH, CONFIG, etc.
@@ -62,11 +68,13 @@ Admin commands:    AUTH, CONFIG, etc.
 
 **Boundary markers to watch (search for these comments):**
 ```csharp
-ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
+ZUNION,  // Note: Last read command is determined by APPEND - 1
 APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
 BITOP_DIFF, // Note: Update LastWriteCommand if adding new write commands after this
 EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 ```
+
+**⚠️ Caveat:** The boundary comments in the source may not be on the actual last/first entry (e.g., `ZSCORE` has the comment but `ZUNION` follows it). The real boundary is determined by code: `LastReadCommand = RespCommand.APPEND - 1`. Always check the actual enum ordering, not just the comments.
 
 ---
 
@@ -77,14 +85,33 @@ EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 Two parsing paths exist:
 
 ### Fast path: `FastParseCommand()` / `FastParseArrayCommand()`
-For commands with short, fixed-length names (≤8 chars, no dots). Uses `ulong` pointer comparisons on `(count << 4) | length` patterns. Only add here if the command name is a simple word.
+Two fast-path methods exist with different constraints:
+- **`FastParseCommand()`**: For commands with a fixed number of arguments and command names up to **9 characters**. Uses `ulong` pointer comparisons on `(count << 4) | length` patterns.
+- **`FastParseArrayCommand()`**: For commands with a variable number of arguments and command names up to **16 characters**. Uses similar `ulong` comparison patterns but accommodates longer names.
+
+Only add here if the command name is a simple word (no dots or special characters).
 
 ### Slow path: `SlowParseCommand()`
 For longer names, dot-prefixed names (like `RI.CREATE`), or names that don't fit the fast-path pattern.
 
+**⚠️ Convention:** Define the command name string in **`libs/server/Resp/CmdStrings.cs`** and reference it from the parser, rather than using inline `"..."u8` literals. This keeps command name strings centralized and reusable (e.g., for error messages).
+
+```csharp
+// In CmdStrings.cs:
+public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
+```
+
+**Pattern for slow-path commands:**
+```csharp
+else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
+{
+    return RespCommand.DELIFGREATER;
+}
+```
+
 **Pattern for dot-prefixed commands (e.g., `RI.CREATE`):**
 ```csharp
-else if (command.SequenceEqual("RI.CREATE"u8))
+else if (command.SequenceEqual(CmdStrings.RICREATE))
 {
     return RespCommand.RICREATE;
 }
@@ -134,23 +161,30 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
     if (parseState.Count != N)
         return AbortWithWrongNumberOfArguments(nameof(RespCommand.MYCMD));
 
-    // 2. Parse arguments
+    // 2. Validate other inputs (short-circuit before going to storage)
     var key = parseState.GetArgSliceByRef(0);
-    var value = parseState.GetArgSliceByRef(1);
+    // e.g., parse and validate optional flags, numeric arguments, etc.
+    if (!parseState.TryGetInt(1, out var _))
+    {
+        WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+        return true;
+    }
 
-    // 3. Call storage API
-    var status = storageApi.MyOperation(key, value, out var result);
+    // 3. Build input/output and call storage API
+    // Note: To avoid double-parsing a parameter, you can pass a pre-parsed
+    // value in the input struct's auxiliary arguments (e.g., input.arg1).
+    var input = new StringInput(RespCommand.MYCMD, ref parseState, startIdx: 1);
+    var output = GetStringOutput();
+    var status = storageApi.MyOperation(key, ref input, ref output);
 
     // 4. Write RESP response
     if (status == GarnetStatus.OK)
     {
-        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-            SendAndReset();
+        ProcessOutput(output);
     }
     else
     {
-        while (!RespWriteUtils.WriteError("ERR message"u8, ref dcurr, dend))
-            SendAndReset();
+        WriteError(CmdStrings.RESP_ERR_MY_MESSAGE);
     }
 
     return true;
@@ -159,11 +193,106 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
 
 **Key patterns:**
 - Arguments: `parseState.GetArgSliceByRef(i)` returns `ref PinnedSpanByte`
-- Response: Use `RespWriteUtils.WriteDirect`, `WriteError`, `TryWriteInt32`, `WriteBulkString`, etc.
-- Always call `SendAndReset()` in the while-not-written loop
-- Return `true` (command handled) or `false` (need more data)
+- Input/Output: Instantiate `StringInput`/`StringOutput` (for string commands), `ObjectInput`/`ObjectOutput` (for object commands), or `UnifiedInput`/`UnifiedOutput` (for unified commands) before calling the storage API
+- Response (happy path): Use `ProcessOutput(output)` in the common case — this handles writing the RESP response from the output struct
+- Response (errors/special cases): Use `RespServerSession` extension methods (e.g., `WriteError(...)`, `WriteDirect(...)`, `WriteInt64(...)`, etc.) — these handle `SendAndReset()` internally
+- Error strings: Store as `u8` literals in `CmdStrings` (e.g., `CmdStrings.RESP_ERR_MY_MESSAGE`) rather than inline
+- Always return `true` — there are no partial executions
+
+### Object command RESP handler pattern
+
+Object commands (Hash, List, Set, SortedSet) follow a similar pattern to string commands. The main difference is that the RESP handler uses `ObjectInput`/`ObjectOutput` with the appropriate operation enum and must handle `WRONGTYPE` errors:
+
+**File:** `libs/server/Resp/Objects/[ObjectName]Commands.cs` (e.g., `SortedSetCommands.cs`)
+
+```csharp
+private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
+    where TGarnetApi : IGarnetApi
+{
+    if (parseState.Count < 3)
+        return AbortWithWrongNumberOfArguments("ZADD");
+
+    var key = parseState.GetArgSliceByRef(0);
+
+    var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
+    var input = new ObjectInput(header, ref parseState, startIdx: 1);
+    var output = GetObjectOutput();
+
+    var status = storageApi.SortedSetAdd(key, ref input, ref output);
+
+    switch (status)
+    {
+        case GarnetStatus.WRONGTYPE:
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                SendAndReset();
+            break;
+        default:
+            ProcessOutput(output.SpanByteAndMemory);
+            break;
+    }
+
+    return true;
+}
+```
+
+**Key differences from string commands:**
+- Uses `ObjectInput` with a `RespInputHeader(GarnetObjectType.XXX)` and an operation enum (e.g., `SortedSetOperation.ZADD`)
+- Must handle `GarnetStatus.WRONGTYPE` — object commands can fail if the key holds a different object type
+- The actual data operation logic lives in `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`, dispatched via the operation enum
+
+**For new object sub-operations:**
+Add a value to the `[ObjectName]Operation` enum in `libs/server/Objects/[ObjectName]/[ObjectName]Object.cs` and handle it in the `Operate` method's switch statement.
+
+### Unified command note
+
+Unified commands (EXISTS, DELETE, TYPE, TTL, EXPIRE, RENAME, etc.) are type-agnostic — they work on both raw string and object values. The RESP handler pattern is the same as string and object commands, but uses `UnifiedInput`/`UnifiedOutput`. The storage session layer uses the unified context (`unifiedBasicContext`), and the callbacks go in `libs/server/Storage/Functions/UnifiedStore/`.
+
+### Blocking command RESP handler pattern
+
+Blocking commands (`BLPOP`, `BRPOP`, `BLMOVE`, `BLMPOP`, `BZPOPMIN`, `BZPOPMAX`, `BZMPOP`) follow a distinct pattern. They do **not** use `ref storageApi` and instead interact with the `CollectionItemBroker` (`libs/server/Objects/ItemBroker/CollectionItemBroker.cs`), which manages blocking/waiting behavior:
+
+```csharp
+private unsafe bool SortedSetBlockingPop(RespCommand command)
+{
+    if (parseState.Count < 2)
+        return AbortWithWrongNumberOfArguments(command.ToString());
+
+    if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
+        return AbortWithErrorMessage(error);
+
+    var keysBytes = new byte[parseState.Count - 1][];
+    for (var i = 0; i < keysBytes.Length; i++)
+        keysBytes[i] = parseState.GetArgSliceByRef(i).ToArray();
+
+    var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+
+    if (!result.Found)
+    {
+        WriteNull();
+    }
+    else
+    {
+        // Write RESP response with result.Key, result.Item, result.Score, etc.
+    }
+
+    return true;
+}
+```
+
+**Key differences from regular commands:**
+- The dispatch in `RespServerSession.cs` does NOT pass `ref storageApi`: `RespCommand.BZMPOP => SortedSetBlockingMPop(),`
+- The handler calls `storeWrapper.itemBroker.GetCollectionItemAsync()` which blocks (with timeout) until data is available
+- No `IGarnetApi` method, no storage session method, and no RMW callbacks are needed for the blocking command itself (Steps 5-7 are skipped)
+- The `CollectionItemBroker` is notified when data is added to a collection (e.g., `ZADD` calls `itemBroker.HandleCollectionUpdate(key)`), which wakes up blocked clients
+- When adding a new blocking command, you must also update the `TryGetResult` method in `CollectionItemBroker.cs` to map your `RespCommand` to the correct `GarnetObjectType` and implement the retrieval logic
 
 ---
+
+## Steps 5–7: Storage Layer (skip for admin/non-key commands)
+
+> **Note:** Steps 5, 6, and 7 apply only to commands that read or write key-value data through the store (e.g., `SET`, `GET`, `DELIFGREATER`). Admin commands like `DEBUG`, `PING`, `CONFIG`, etc. handle their logic entirely in the RESP handler (Step 4) and do **not** need API interface methods, storage session ops, or RMW callbacks. Skip to Step 8 for those. Blocking commands (e.g., `BZMPOP`) also skip Steps 5-7 — see the blocking command pattern in Step 4.
+>
+> **Note on context types:** The unified single-store has three context types: **string context** (for raw string commands like GET/SET), **object context** (for collection commands like ZADD/LPUSH), and **unified context** (for type-agnostic commands like EXISTS/DELETE/TTL/EXPIRE). Most new commands use either the string or object context — the unified context is only for commands that must work across both value types.
 
 ## Step 5: Add API Interface Method
 
@@ -172,51 +301,95 @@ private bool NetworkMYCMD<TGarnetApi>(ref TGarnetApi storageApi)
 Add method signature to `IGarnetApi` (read-write) or `IGarnetReadApi` (read-only):
 
 ```csharp
-GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out MyResult result);
+// String command:
+GarnetStatus MyOperation(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+// Object command:
+GarnetStatus MyOperation(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+// Unified command:
+GarnetStatus MyOperation(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 ```
 
-**File:** `libs/server/API/GarnetApi.cs`
+**File:** `libs/server/API/GarnetApi*.cs`
 
-Add delegation in the `GarnetApi` partial struct:
+Add delegation in the `GarnetApi` partial struct. The implementation goes in the appropriate partial file based on the context type:
+- `GarnetApi.cs` — string commands
+- `GarnetApiObjectCommands.cs` — object commands
+- `GarnetApiUnifiedCommands.cs` — unified commands
 
 ```csharp
-public GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out MyResult result)
-    => storageSession.MyOperation(key, value, out result);
+public GarnetStatus MyOperation(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+    => storageSession.MyOperation(key, ref input, ref output);
 ```
 
-**⚠️ Caveat:** `GarnetApi` is a generic partial struct: `GarnetApi<TStringContext, TObjectContext, TUnifiedContext>`. Method implementations go in the appropriate partial file (`GarnetApi.cs` for string ops, `GarnetApiObjectCommands.cs` for object ops, etc.).
+**⚠️ Caveat:** `GarnetApi` is a generic partial struct: `GarnetApi<TStringContext, TObjectContext, TUnifiedContext>`. Always add your method to the correct partial file for the context type you're using.
+
+**Overloads for programmatic callers:** In addition to the primary signature (used by the network handler), you can add simpler overloads for programmatic/embedded callers that avoid forcing them to create the Input/Output structs. For example:
+
+```csharp
+public GarnetStatus MyOperation(PinnedSpanByte key, double val, out double output)
+```
+
+This overload internally creates the appropriate input/output structs and only returns the desired value to the caller, instead of writing to the output buffer.
 
 ---
 
 ## Step 6: Implement Storage Session Layer
 
-**File:** New or existing file in `libs/server/Storage/Session/MainStore/` (for string-context ops) or `libs/server/Storage/Session/ObjectStore/` (for object-context ops)
+**File:** New or existing file in `libs/server/Storage/Session/MainStore/` (for string-context ops), `libs/server/Storage/Session/ObjectStore/` (for object-context ops), or `libs/server/Storage/Session/UnifiedStore/` (for unified-context ops)
 
-This layer wraps Tsavorite API calls:
+### String command pattern
+
+This layer wraps Tsavorite API calls. The network path uses a generic context parameter:
 
 ```csharp
-public GarnetStatus MyOperation(PinnedSpanByte key, PinnedSpanByte value, out MyResult result)
+public GarnetStatus MyOperation<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+    where TStringContext : ITsavoriteContext<...>
 {
-    // Build input
-    var input = new StringInput(RespCommand.MYCMD, ref parseState);
-    var output = new StringOutput();
-
-    // Call Tsavorite
-    var status = stringBasicContext.RMW((FixedSpanByteKey)key, ref input, ref output);
+    var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
     if (status.IsPending)
-        CompletePendingForSession(ref status, ref output, ref stringBasicContext);
+        CompletePendingForSession(ref status, ref output, ref context);
 
-    // Interpret result
-    result = status.Found ? MyResult.OK : MyResult.NotFound;
     return GarnetStatus.OK;
 }
 ```
+
+Object and unified commands follow the same pattern — just substitute the appropriate context, input, and output types:
+
+| Context type | Input type | Output type | Helper method |
+|-------------|-----------|------------|---------------|
+| String | `StringInput` | `StringOutput` | `context.RMW(...)` / `context.Read(...)` |
+| Object | `ObjectInput` | `GarnetObjectStoreOutput` | `RMWObjectStoreOperation(...)` / `ReadObjectStoreOperation(...)` |
+| Unified | `UnifiedInput` | `UnifiedOutput` | `context.RMW(...)` / `context.Read(...)` |
+
+**Programmatic overloads:** You can also add simpler overloads for programmatic callers (see Step 5 note). These internally create the input/output structs and return only the desired value.
+
+### Object-specific: HandleCollectionUpdate
+
+Object commands use the same pattern as above with `ObjectInput`/`GarnetObjectStoreOutput` and the object context.
+
+**⚠️ Caveat — `HandleCollectionUpdate`:** If your object command modifies a collection (adds/removes elements), call `itemBroker.HandleCollectionUpdate(key)` after the store operation. This wakes up any clients blocked on that key (e.g., via `BZPOPMIN`). The actual data logic is implemented in the object class, not in the storage session.
+
+### Object implementation
+
+**File:** `libs/server/Objects/[ObjectName]/[ObjectName]ObjectImpl.cs`
+
+For object commands, the core logic lives in the object implementation. The `Operate` method in `[ObjectName]Object.cs` dispatches to implementation methods based on the operation enum:
+
+```csharp
+case SortedSetOperation.ZADD:
+    SortedSetAdd(ref input, ref output.SpanByteAndMemory);
+    break;
+```
+
+The implementation methods in `[ObjectName]ObjectImpl.cs` directly manipulate the object's internal data structures (e.g., `sortedSet`, `sortedSetDict` for SortedSet).
 
 ---
 
 ## Step 7: Add RMW/Read Callbacks (if applicable)
 
-**File:** `libs/server/Storage/Functions/MainStore/RMWMethods.cs`
+**File:** `libs/server/Storage/Functions/MainStore/RMWMethods.cs` (string commands) or `libs/server/Storage/Functions/UnifiedStore/RMWMethods.cs` (unified commands)
 
 If your command uses `RMW`, you must handle these callbacks:
 
@@ -230,7 +403,9 @@ If your command uses `RMW`, you must handle these callbacks:
 
 Add a `case RespCommand.MYCMD:` to each relevant switch statement.
 
-**File:** `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs`
+**For Read commands (MainStore):** If your command uses `Read` (not RMW), the read response logic lives in `libs/server/Storage/Functions/MainStore/PrivateMethods.cs` — add a case to the `CopyRespToWithInput` method.
+
+**File:** `libs/server/Storage/Functions/MainStore/VarLenInputMethods.cs` (string commands) or `libs/server/Storage/Functions/UnifiedStore/VarLenInputMethods.cs` (unified commands)
 
 If your command writes a value, you must specify the value length:
 
@@ -257,9 +432,16 @@ This works because `RecordDataHeader.RecordType` has a setter that writes throug
 
 **File:** `playground/CommandInfoUpdater/SupportedCommand.cs`
 
-Add entry in alphabetical order:
+Add entry following the existing ordering/grouping in the file:
 ```csharp
 new("MY.CMD", RespCommand.MYCMD, StoreType.Main),
+```
+
+> **Note:** The file is not strictly alphabetical — entries are grouped by category (e.g., script commands at the end). Follow the existing grouping conventions rather than inserting strictly alphabetically.
+
+For admin/non-key commands (e.g., `DEBUG`, `PING`), omit `StoreType` or use `StoreType.None`:
+```csharp
+new("DEBUG", RespCommand.DEBUG),
 ```
 
 `StoreType` values: `Main` (string store), `Object` (object store), `All` (both), `None` (no keys).
@@ -268,7 +450,9 @@ new("MY.CMD", RespCommand.MYCMD, StoreType.Main),
 
 **File:** `playground/CommandInfoUpdater/GarnetCommandsInfo.json`
 
-Only needed for commands that don't exist in standard Redis. Add a JSON entry:
+Needed for commands that don't exist in standard Redis (e.g., `DELIFGREATER`, `SETIFMATCH`), or standard Redis commands whose info you need to override. Standard Redis commands (e.g., `DEBUG`, `GETDEL`) normally get their metadata from a running RESP server automatically via the CommandInfoUpdater tool — skip this step and Step 8c for those unless you need to override their info.
+
+Add a JSON entry:
 
 ```json
 {
@@ -303,6 +487,8 @@ Only needed for commands that don't exist in standard Redis. Add a JSON entry:
 
 **File:** `playground/CommandInfoUpdater/GarnetCommandsDocs.json`
 
+> **Note:** This step is not necessary for internal commands. The main purpose of command docs is to enable client auto-complete for the command.
+
 Add documentation entry:
 
 ```json
@@ -334,20 +520,23 @@ Do NOT invent new group names — the JSON deserializer will fail.
 **⚠️ CRITICAL: Never edit `libs/resources/RespCommandsInfo.json` or `libs/resources/RespCommandsDocs.json` directly.** These are generated by the CommandInfoUpdater tool.
 
 **Steps:**
-1. Build the server: `dotnet build main/GarnetServer/GarnetServer.csproj -c Debug -f net10.0`
-2. Start a local Garnet server: `dotnet run --project main/GarnetServer/GarnetServer.csproj -c Debug -f net10.0 --no-build -- --port 6399 --logger-level Warning`
-3. Build and run the tool:
+1. Start a local RESP-compatible server (e.g., **Valkey** or Redis) — the tool queries it for standard Redis command metadata:
+   ```bash
+   valkey-server --port 6399
+   ```
+2. Build and run the tool:
    ```bash
    cd playground/CommandInfoUpdater
    dotnet build -f net10.0
    dotnet run -f net10.0 --no-build -- --port 6399 --output ../../libs/resources
    ```
-4. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both.
-5. Kill the local server afterward.
+   (The `--port` must match the port of the local RESP server.)
+3. The tool will prompt `Would you like to continue? (Y/N)` **twice** (once for info, once for docs). Press `Y` for both.
+4. Kill the local RESP server afterward.
 
-**⚠️ Caveat:** The tool uses `Console.ReadKey()` which does NOT work with piped input. You must run it interactively (not via `echo "Y" | dotnet run ...`).
+**⚠️ Caveat:** The tool uses `Console.ReadKey()` which does NOT work with piped input. You must run it interactively (not via `echo "Y" | dotnet run ...`). For AI agents, use an async shell session and send `Y` keystrokes via interactive input (e.g., `write_bash`).
 
-**⚠️ Caveat:** The tool requires a running RESP server to query standard Redis command metadata. For Garnet-only commands, the tool reads from `GarnetCommandsInfo.json` and `GarnetCommandsDocs.json` instead.
+**⚠️ Caveat:** The tool requires a running RESP-compatible server (e.g., Valkey or Redis — **not** Garnet) to query standard command metadata. For Garnet-only commands, the tool reads from `GarnetCommandsInfo.json` and `GarnetCommandsDocs.json` instead.
 
 ---
 
@@ -390,7 +579,10 @@ public async Task MyCommandACLsAsync()
 
 ## Step 10: Add Integration Tests
 
-**New file:** `test/Garnet.test/Resp<Feature>Tests.cs`
+**File:** Add tests to an existing or new file in `test/Garnet.test/`:
+- **String / Unified commands**: Add to `test/Garnet.test/RespTests.cs`
+- **Object commands**: Add to `test/Garnet.test/Resp[ObjectName]Tests.cs` (e.g., `RespSortedSetTests.cs`)
+- **New feature area**: Create `test/Garnet.test/Resp<Feature>Tests.cs` if the command doesn't fit existing test files
 
 **Required structure:**
 ```csharp
@@ -437,7 +629,102 @@ public class RespMyFeatureTests : AllureTestBase
 
 ---
 
-## Step 11: Verify Everything
+## Step 11: Update Website Documentation
+
+**File:** `website/docs/commands/` — choose the appropriate markdown file based on the command category (e.g., `garnet-specific.md` for Garnet-only commands, `api-compatibility.md` to mark a standard Redis command as supported).
+
+Add a section documenting the command syntax, description, and response format:
+
+```markdown
+### **MY.CMD**
+
+#### **Syntax**
+
+```bash
+MY.CMD key value
+```
+
+Description of what the command does.
+
+#### **Response**
+
+- **Type reply**: Description of the response.
+```
+
+Also mark the command as supported in `website/docs/commands/api-compatibility.md` if it corresponds to a standard Redis command.
+
+---
+
+## Step 11b: Add Configuration Settings (if needed)
+
+If the command is optional, gated behind a feature flag, or needs a server-side configuration parameter (e.g., `DEBUG` requires `--enable-debug-command`), you must wire up a configuration option across four files:
+
+### 1. Add property to `Options` class
+
+**File:** `libs/host/Configuration/Options.cs`
+
+Add a property with the `[Option]` attribute (from CommandLineParser):
+
+```csharp
+[OptionValidation]
+[Option("enable-my-feature", Required = false, HelpText = "Enable MY.CMD for 'no', 'local' or 'all' connections")]
+public ConnectionProtectionOption EnableMyFeature { get; set; }
+```
+
+The `[Option]` attribute defines the CLI flag name (kebab-case). Use `Required = false` for optional settings. Common types: `bool`, `int`, `string`, `ConnectionProtectionOption` (for no/local/yes connection gating), or custom enums.
+
+### 2. Map to `GarnetServerOptions`
+
+**File:** `libs/server/Servers/GarnetServerOptions.cs`
+
+Add a matching field:
+
+```csharp
+/// <summary>
+/// Enables MY.CMD
+/// </summary>
+public ConnectionProtectionOption EnableMyFeature;
+```
+
+Then in `Options.GetServerOptions()` (in `Options.cs`), map the property:
+
+```csharp
+EnableMyFeature = EnableMyFeature,
+```
+
+### 3. Add default value
+
+**File:** `libs/host/defaults.conf`
+
+Add the default in the appropriate section:
+
+```json
+/* Enable MY.CMD for clients - no/local/yes */
+"EnableMyFeature": "no",
+```
+
+### 4. Check the setting in your RESP handler
+
+Access the setting via `storeWrapper.serverOptions`:
+
+```csharp
+if (storeWrapper.serverOptions.EnableMyFeature == ConnectionProtectionOption.No)
+{
+    while (!RespWriteUtils.TryWriteError("ERR command not enabled"u8, ref dcurr, dend))
+        SendAndReset();
+    return true;
+}
+```
+
+### 5. Add config tests
+
+**File:** `test/Garnet.test/GarnetServerConfigTests.cs`
+
+Test that the setting is parsed correctly from CLI args and config files.
+
+---
+
+## Step 12: Verify Everything
 
 ### Build
 ```bash

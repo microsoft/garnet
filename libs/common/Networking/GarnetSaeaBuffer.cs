@@ -30,7 +30,7 @@ namespace Garnet.common
         {
             socketEventAsyncArgs = new SocketAsyncEventArgs();
 
-            buffer = networkPool.Get(networkBufferSettings.sendBufferSize);
+            buffer = networkPool.Get(networkBufferSettings.sendBufferSize, PoolEntryBufferType.SaeaSendBuffer);
             socketEventAsyncArgs.SetBuffer(buffer.entry, 0, buffer.entry.Length);
             socketEventAsyncArgs.Completed += eventHandler;
         }
