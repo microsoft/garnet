@@ -1241,6 +1241,7 @@ namespace Garnet.common
 
             // 2. The record starts immediately after the length prefix.
             recordSpan = PinnedSpanByte.FromPinnedPointer(ptr, recordLength);
+
             ptr += recordLength;
             return true;
         }

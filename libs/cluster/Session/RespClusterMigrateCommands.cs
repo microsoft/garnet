@@ -135,14 +135,15 @@ namespace Garnet.cluster
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
                                     return;
 
-                                var payload = payloadRaw.ReadOnlySpan;
-
                                 if (kind == MigrationRecordSpanType.VectorSetElement)
                                 {
                                     // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
                                     // because it's dependent on some other key (the index key) being migrated which itself is in a moving hash slot
 
                                     // Vector Set elements are Namespace + Key + Value
+
+                                    var payload = payloadRaw.ReadOnlySpan;
+
                                     var namespaceLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
                                     var namespaceBytes = payload.Slice(sizeof(int), namespaceLen);
                                     var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload[(sizeof(int) + namespaceBytes.Length)..]);
@@ -161,9 +162,6 @@ namespace Garnet.cluster
                                 }
                                 else if (kind == MigrationRecordSpanType.LogRecord)
                                 {
-                                    if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
-                                        return;
-
                                     // An error has occurred
                                     if (migrateState > 0)
                                     {
@@ -171,7 +169,7 @@ namespace Garnet.cluster
                                         continue;
                                     }
 
-                                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer,
+                                    diskLogRecord = DiskLogRecord.Deserialize(payloadRaw, storeWrapper.GarnetObjectSerializer,
                                         transientObjectIdMap, storeWrapper.storeFunctions);
 
                                     var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);

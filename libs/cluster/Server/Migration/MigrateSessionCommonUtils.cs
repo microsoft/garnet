@@ -89,7 +89,9 @@ namespace Garnet.cluster
             {
                 var serializedRecordLength = new LogRecord((long)ptr).GetSerializedSize();
 
-                return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.LogRecord, new(ptr, serializedRecordLength));
+                ReadOnlySpan<byte> toWrite = new(ptr, serializedRecordLength);
+
+                return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.LogRecord, toWrite);
             }
         }
 

@@ -71,12 +71,6 @@ namespace Garnet.client
         /// </summary>
         public PinnedSpanByte GetAvailableNetworkBufferSpan() => PinnedSpanByte.FromPinnedPointer(curr, (int)(end - curr));
 
-        public void IncrementRecordDirect(int size)
-        {
-            ++recordCount;
-            curr += size;
-        }
-
         /// <summary>
         /// Flush and initialize buffers/parameters used for Migrate and Replica commands
         /// </summary>
