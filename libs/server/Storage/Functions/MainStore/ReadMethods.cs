@@ -22,6 +22,13 @@ namespace Garnet.server
                 return false;
             }
 
+            // RangeIndex type safety – reject non-RI commands on RI keys
+            if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType && !input.header.cmd.IsLegalOnRangeIndex())
+            {
+                readInfo.Action = ReadAction.CancelOperation;
+                return false;
+            }
+
             if (LogRecordUtils.CheckExpiry(in srcLogRecord))
                 return false;
 

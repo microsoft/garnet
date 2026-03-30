@@ -24,6 +24,7 @@ namespace Garnet.server
         public IStoreFunctions storeFunctions;
         public ObjectIdMap transientObjectIdMap;
         public ETagState etagState;
+        public readonly RangeIndexManager rangeIndexManager;
         public readonly ILogger logger;
         public byte respProtocolVersion;
         public bool StoredProcMode;
@@ -44,6 +45,7 @@ namespace Garnet.server
             this.transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;
 
             this.etagState = new ETagState();
+            this.rangeIndexManager = storeWrapper.rangeIndexManager;
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;
         }

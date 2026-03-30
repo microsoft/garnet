@@ -28,6 +28,18 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
+            // Free BfTree if this is a RangeIndex record.
+            // TODO: This only disposes trees in the mutable region.
+            // We need to also dispose any unevicted trees in read-only region of memory
+            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+            {
+                ref readonly var stub = ref RangeIndexManager.ReadIndex(logRecord.ValueSpan);
+                if (stub.TreeHandle != 0 && stub.ProcessInstanceId == functionsState.rangeIndexManager.ProcessInstanceId)
+                {
+                    functionsState.rangeIndexManager.SafeDeleteRangeIndex(stub.TreeHandle);
+                }
+            }
+
             logRecord.ClearOptionals();
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

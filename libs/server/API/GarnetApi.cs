@@ -369,5 +369,40 @@ namespace Garnet.server
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
         #endregion
+
+        #region RangeIndex
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexCreate(PinnedSpanByte key, byte storageBackend, string filePath,
+            ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
+            => storageSession.RangeIndexCreate(key, storageBackend, filePath, cacheSize, minRecordSize, maxRecordSize, maxKeyLen, leafPageSize, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg)
+            => storageSession.RangeIndexSet(key, field, value, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
+            ref StringOutput output, out RangeIndexResult result)
+            => storageSession.RangeIndexGet(key, field, ref output, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
+            out RangeIndexResult result)
+            => storageSession.RangeIndexDel(key, field, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey, int count,
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
+            => storageSession.RangeIndexScan(key, startKey, count, returnField, ref output, out recordCount, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result)
+            => storageSession.RangeIndexRange(key, startKey, endKey, returnField, ref output, out recordCount, out result);
+        #endregion
     }
 }

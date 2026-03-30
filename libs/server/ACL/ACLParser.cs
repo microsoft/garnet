@@ -252,9 +252,15 @@ namespace Garnet.server.ACL
 
                 if (!Enum.TryParse(effectiveName, ignoreCase: true, out command) || !IsValidParse(command, effectiveName))
                 {
+                    // Try replacing dots with empty strings for commands like RI.CREATE -> RICREATE
+                    string dotlessName = effectiveName.Replace(".", "");
+                    if (dotlessName != effectiveName && Enum.TryParse(dotlessName, ignoreCase: true, out command) && IsValidParse(command, dotlessName))
+                    {
+                        // Successfully parsed after removing dots
+                    }
                     // We handle these commands specially because blind replacements would cause
                     // us to be too accepting of different values
-                    if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
+                    else if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
                     {
                         command = RespCommand.SECONDARYOF;
                     }
