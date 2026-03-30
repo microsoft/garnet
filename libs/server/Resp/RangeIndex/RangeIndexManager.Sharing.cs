@@ -17,53 +17,35 @@ namespace Garnet.server
     public sealed partial class RangeIndexManager
     {
         /// <summary>
-        /// RAII holder for a shared lock on a RangeIndex key.
-        /// Disposing releases the shared lock.
+        /// Acquire epoch protection (shared) for range index operations.
+        /// Caller must pair with <see cref="ReleaseShared"/> in a finally block.
         /// </summary>
-        internal readonly struct LightEpochSuspender : IDisposable
-        {
-            private readonly LightEpoch rangeIndexEpoch;
-
-            internal LightEpochSuspender(LightEpoch rangeIndexEpoch)
-            {
-                Debug.Assert(rangeIndexEpoch != null);
-                this.rangeIndexEpoch = rangeIndexEpoch;
-            }
-
-            /// <inheritdoc/>
-            public void Dispose()
-            {
-                rangeIndexEpoch.Suspend();
-            }
-        }
+        internal void AcquireShared() => rangeIndexEpoch.Resume();
 
         /// <summary>
-        /// Read the RangeIndex stub under epoch protection (shared lock).
-        /// Used by RI.SET, RI.GET, RI.DEL (field-level operations).
-        /// Returns disposable epoch holder; caller can safely operate on 
-        /// the BfTree while the epoch is held.
+        /// Release epoch protection (shared) for range index operations.
+        /// Must be called in a finally block after <see cref="AcquireShared"/>.
         /// </summary>
-        internal LightEpochSuspender ReadRangeIndex(
+        internal void ReleaseShared() => rangeIndexEpoch.Suspend();
+
+        /// <summary>
+        /// Read the RangeIndex stub from the main store.
+        /// Must be called under epoch protection (between <see cref="AcquireShared"/> and <see cref="ReleaseShared"/>).
+        /// </summary>
+        internal GarnetStatus ReadRangeIndex(
             StorageSession session,
             PinnedSpanByte key,
             ref StringInput input,
-            scoped Span<byte> indexSpan,
-            out GarnetStatus status)
+            scoped Span<byte> indexSpan)
         {
-            rangeIndexEpoch.Resume();
-
             Debug.Assert(indexSpan.Length >= IndexSizeBytes, "Insufficient space for index");
 
             var output = StringOutput.FromPinnedSpan(indexSpan);
-            GarnetStatus readRes;
 
-            readRes = session.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
+            var readRes = session.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
 
             if (readRes != GarnetStatus.OK)
-            {
-                status = readRes;
-                return new(rangeIndexEpoch);
-            }
+                return readRes;
 
             // Validate that the output is a valid range index stub.
             // The Reader copies the value into output; check the actual written length
@@ -73,13 +55,9 @@ namespace Garnet.server
                 : output.SpanByteAndMemory.MemorySpan;
 
             if (outputSpan.Length < IndexSizeBytes)
-            {
-                status = GarnetStatus.NOTFOUND;
-                return new(rangeIndexEpoch);
-            }
+                return GarnetStatus.NOTFOUND;
 
-            status = GarnetStatus.OK;
-            return new(rangeIndexEpoch);
+            return GarnetStatus.OK;
         }
 
         /// <summary>

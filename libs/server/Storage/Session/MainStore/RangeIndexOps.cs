@@ -122,8 +122,10 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.RISET, ref parseState);
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
 
-            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            functionsState.rangeIndexManager.AcquireShared();
+            try
             {
+                var status = functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan);
                 if (status != GarnetStatus.OK)
                 {
                     result = RangeIndexResult.Error;
@@ -150,6 +152,10 @@ namespace Garnet.server
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
+            finally
+            {
+                functionsState.rangeIndexManager.ReleaseShared();
+            }
         }
 
         /// <summary>
@@ -165,8 +171,10 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.RIGET, ref parseState);
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
 
-            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            functionsState.rangeIndexManager.AcquireShared();
+            try
             {
+                var status = functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan);
                 if (status != GarnetStatus.OK)
                 {
                     result = RangeIndexResult.Error;
@@ -269,6 +277,10 @@ namespace Garnet.server
                     }
                 }
             }
+            finally
+            {
+                functionsState.rangeIndexManager.ReleaseShared();
+            }
         }
 
         /// <summary>
@@ -283,8 +295,10 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.RIDEL, ref parseState);
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
 
-            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            functionsState.rangeIndexManager.AcquireShared();
+            try
             {
+                var status = functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan);
                 if (status != GarnetStatus.OK)
                 {
                     result = RangeIndexResult.Error;
@@ -301,6 +315,10 @@ namespace Garnet.server
                 BfTreeService.DeleteByPtr(treePtr, field);
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
+            }
+            finally
+            {
+                functionsState.rangeIndexManager.ReleaseShared();
             }
         }
 
@@ -319,8 +337,10 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.RISCAN, ref parseState);
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
 
-            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            functionsState.rangeIndexManager.AcquireShared();
+            try
             {
+                var status = functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan);
                 if (status != GarnetStatus.OK)
                 {
                     result = RangeIndexResult.Error;
@@ -340,6 +360,10 @@ namespace Garnet.server
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
             }
+            finally
+            {
+                functionsState.rangeIndexManager.ReleaseShared();
+            }
         }
 
         /// <summary>
@@ -357,8 +381,10 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.RIRANGE, ref parseState);
             Span<byte> stubSpan = stackalloc byte[RangeIndexManager.IndexSizeBytes];
 
-            using (functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan, out var status))
+            functionsState.rangeIndexManager.AcquireShared();
+            try
             {
+                var status = functionsState.rangeIndexManager.ReadRangeIndex(this, key, ref input, stubSpan);
                 if (status != GarnetStatus.OK)
                 {
                     result = RangeIndexResult.Error;
@@ -377,6 +403,10 @@ namespace Garnet.server
                     ref output, out recordCount);
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;
+            }
+            finally
+            {
+                functionsState.rangeIndexManager.ReleaseShared();
             }
         }
 
