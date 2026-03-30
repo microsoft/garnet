@@ -131,9 +131,6 @@ namespace Tsavorite.core
             internalState |= InternalStates.MainLogSrc;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasMainLogSrc() => internalState &= ~InternalStates.MainLogSrc;
-
         /// <summary>
         /// Set by caller to indicate whether the <see cref="LogicalAddress"/> is an in-memory record in the readcache, being used as a copy source and/or a lock.
         /// </summary>
@@ -144,9 +141,6 @@ namespace Tsavorite.core
             Debug.Assert(IsReadCache(LogicalAddress), "LogicalAddress must be a readcache address to set HasReadCacheSrc");
             internalState |= InternalStates.ReadCacheSrc;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SetPhysicalAddress() => PhysicalAddress = AllocatorBase.GetPhysicalAddress(LogicalAddress);
@@ -165,6 +159,9 @@ namespace Tsavorite.core
 
         internal readonly bool HasInMemorySrc => (internalState & (InternalStates.MainLogSrc | InternalStates.ReadCacheSrc)) != 0;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ClearHasInMemorySrc() => internalState &= ~(InternalStates.MainLogSrc | InternalStates.ReadCacheSrc);
+
         /// <summary>
         /// Initialize to the latest logical address from the caller.
         /// </summary>
@@ -174,10 +171,9 @@ namespace Tsavorite.core
             PhysicalAddress = default;
             LowestReadCacheLogicalAddress = default;
             LowestReadCachePhysicalAddress = default;
-            ClearHasMainLogSrc();
-            ClearHasReadCacheSrc();
+            ClearHasInMemorySrc();
 
-            // HasEphemeralLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
+            // DO NOT clear locks; we call SetRecordSourceToHashEntry() after we've acquired the lock.
 
             LatestLogicalAddress = LogicalAddress = latestLogicalAddress;
             SetAllocator(srcAllocatorBase);

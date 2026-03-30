@@ -84,59 +84,65 @@ namespace BenchmarkDotNetTests
             catch { }
         }
 
-        [BenchmarkCategory("Upsert"), Benchmark]
+        [Benchmark]
         public void Insert()
         {
             // Populate with a second batch
             PopulateStore(NumRecords);
         }
 
-        [BenchmarkCategory("Upsert"), Benchmark]
+        [Benchmark]
         public void Upsert()
         {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
             var key = new SpanByteKey(keySpan);
+            ref var keyLongRef = ref MemoryMarshal.Cast<byte, long>(keySpan)[0];
+
             Span<byte> valueSpan = stackalloc byte[sizeof(long)];
+            ref var valueLongRef = ref MemoryMarshal.Cast<byte, long>(valueSpan)[0];
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
-                MemoryMarshal.Cast<byte, long>(valueSpan)[0] = ii + NumRecords * 2;
+                keyLongRef = ii;
+                valueLongRef = ii + NumRecords * 2;
                 _ = bContext.Upsert(key, valueSpan);
             }
         }
 
-        [BenchmarkCategory("RMW"), Benchmark]
+        [Benchmark]
         public void RMW()
         {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
             var key = new SpanByteKey(keySpan);
+            ref var keyLongRef = ref MemoryMarshal.Cast<byte, long>(keySpan)[0];
 
             Span<byte> inputSpan = stackalloc byte[sizeof(long)];
+            ref var inputLongRef = ref MemoryMarshal.Cast<byte, long>(inputSpan)[0];
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(inputSpan);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
-                MemoryMarshal.Cast<byte, long>(inputSpan)[0] = ii + NumRecords * 3;
-                _ = bContext.RMW(new SpanByteKey(keySpan), ref pinnedInputSpan);
+                keyLongRef = ii;
+                inputLongRef = ii + NumRecords * 3;
+                _ = bContext.RMW(key, ref pinnedInputSpan);
             }
 
             _ = bContext.CompletePending();
         }
 
-        [BenchmarkCategory("Read"), Benchmark]
+        [Benchmark]
         public void Read()
         {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
             var key = new SpanByteKey(keySpan);
+            ref var keyLongRef = ref MemoryMarshal.Cast<byte, long>(keySpan)[0];
 
             Span<byte> outputSpan = stackalloc byte[sizeof(long)];
             var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
+                keyLongRef = ii;
                 _ = bContext.Read(key, ref output);
             }
             _ = bContext.CompletePending();
