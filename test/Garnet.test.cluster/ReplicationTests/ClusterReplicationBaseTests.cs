@@ -194,8 +194,7 @@ namespace Garnet.test.cluster
 
             // Shutdown secondary
             context.nodes[1].Dispose(false);
-
-            Thread.Sleep(TimeSpan.FromSeconds(2));
+            context.clusterTestUtils.WaitForAofSyncDriverDipose(primaryIndex);
 
             // New insert
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
@@ -210,11 +209,11 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: false,
                 sublogCount: sublogCount);
-            context.nodes[1].Start();
+            context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
             // Validate synchronization was success
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
             // Validate database
             context.SimpleValidateDB(disableObjects, replicaIndex);
         }
@@ -267,7 +266,7 @@ namespace Garnet.test.cluster
 
             // Shutdown secondary
             context.nodes[1].Dispose(false);
-            Thread.Sleep(TimeSpan.FromSeconds(2));
+            context.clusterTestUtils.WaitForAofSyncDriverDipose(primaryIndex);
 
             // New insert
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
@@ -358,7 +357,7 @@ namespace Garnet.test.cluster
 
             context.logger?.LogTrace("Test disposing node 1");
             context.nodes[1].Dispose(false);
-            Thread.Sleep(TimeSpan.FromSeconds(1));
+            context.clusterTestUtils.WaitForAofSyncDriverDipose(primaryIndex);
 
             // Populate Primary
             if (disableObjects)
@@ -500,9 +499,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             var storeCurrentAofAddress = context.clusterTestUtils.GetStoreCurrentAofAddress(0, logger: context.logger);
-
             context.nodes[0].Dispose(false);
-            Thread.Sleep(TimeSpan.FromSeconds(1));
 
             // Restart Primary
             context.nodes[0] = context.CreateInstance(
@@ -534,7 +531,6 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: useTLS);
 
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
-
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());

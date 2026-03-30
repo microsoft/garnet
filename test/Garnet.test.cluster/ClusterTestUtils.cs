@@ -3003,6 +3003,24 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void WaitForAofSyncDriverDipose(int primaryNodeIndex)
+        {
+            var items = context.clusterTestUtils.GetReplicationInfo(
+                primaryNodeIndex,
+                [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                context.logger);
+            while (!items[0].Item2.Equals("0") || !items[1].Item2.Equals("0"))
+            {
+                items = context.clusterTestUtils.GetReplicationInfo(
+                    primaryNodeIndex,
+                    [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                    context.logger);
+                if (context.cts.Token.IsCancellationRequested)
+                    Assert.Fail($"Failed waiting for primary aof sync cleanup ({items[0]};{items[1]})!");
+                BackOff(cancellationToken: context.cts.Token);
+            }
+        }
+
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
             AofAddress primaryReplicationOffset;
