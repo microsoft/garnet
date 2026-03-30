@@ -108,11 +108,12 @@ namespace Garnet.cluster
 
                 iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
 
-                while (true)
-                {
-                    if (cts.Token.IsCancellationRequested) break;
-                    await iter.BulkConsumeAllAsync(this, clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token);
-                }
+                await iter.BulkConsumeAllAsync(
+                    this,
+                    clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                    maxChunkSize: 1 << 20,
+                    () => garnetClient != null && !garnetClient.IsConnected,
+                    cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

@@ -127,9 +127,10 @@ namespace Tsavorite.core
         /// <param name="consumer"> consumer </param>
         /// <param name="throttleMs">throttle the iteration speed</param>
         /// <param name="maxChunkSize">max size of returned chunk</param>
+        /// <param name="stopConsume"> custom stop consume signal </param>
         /// <param name="token"> cancellation token </param>
         /// <typeparam name="T"> consumer type </typeparam>
-        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, Func<bool> stopConsume = null, CancellationToken token = default) where T : IBulkLogEntryConsumer
         {
             while (!disposed)
             {
@@ -137,6 +138,8 @@ namespace Tsavorite.core
                 while (!TryBulkConsumeNext(consumer, maxChunkSize))
                 {
                     await Task.Delay(throttleMs, token).ConfigureAwait(false);
+                    // If monitoring has signaled
+                    if (stopConsume != null && stopConsume()) return;
                 }
             }
         }

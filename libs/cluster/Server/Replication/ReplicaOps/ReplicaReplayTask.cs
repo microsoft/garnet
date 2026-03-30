@@ -102,6 +102,7 @@ namespace Garnet.cluster
                         this,
                         clusterProvider.serverOptions.ReplicaSyncDelayMs,
                         maxChunkSize: 1 << 20,
+                        stopConsume: null,
                         replicaReplayTaskCts.Token);
                 }
             }
