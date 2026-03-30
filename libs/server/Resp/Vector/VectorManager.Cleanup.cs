@@ -206,7 +206,7 @@ namespace Garnet.server
                     var newSizeInfo = sizeInfo;
                     newSizeInfo.FieldInfo.ValueSize -= sizeof(ulong) + sizeof(int) + curLen;
                     newSizeInfo.CalculateSizes(newSizeInfo.FieldInfo.KeySize, newSizeInfo.FieldInfo.ValueSize);
-                    
+
                     var shrinkRes = recordInfo.TrySetContentLengths(in newSizeInfo);
                     Debug.Assert(shrinkRes, "Should never fail to shrink");
 
@@ -258,7 +258,7 @@ namespace Garnet.server
 
             // 1 is InProgressDeletes
             VectorElementKey inProgressDeletesKey = new(MetadataNamespace, [1]);
-            
+
             VectorInput input = default;
             input.Callback = 0;
 

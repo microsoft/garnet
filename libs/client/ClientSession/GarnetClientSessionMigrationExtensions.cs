@@ -225,7 +225,7 @@ namespace Garnet.client
             {
                 Flush();
                 curr = offset;
-            }           
+            }
             offset = curr;
 
             // 6

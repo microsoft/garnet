@@ -141,7 +141,7 @@ namespace Garnet.client
         {
             // We include space for newline at the end, to be added before sending
             var recordSpanSize = recordSpan.TotalSize();
-            
+
             var totalLen = recordSpanSize + 2 + 1; // +2 for \r\n, +1 for type
             if (totalLen > (int)(end - curr))
             {

@@ -51,7 +51,7 @@ namespace Garnet.cluster
 
         private StringBasicContext stringBasicContext;
         private VectorBasicContext vectorBasicContext;
-        
+
         public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;

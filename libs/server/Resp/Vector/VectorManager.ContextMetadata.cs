@@ -119,10 +119,10 @@ namespace Garnet.server
                 var ignoringUnusuable = inUse;
 
                 ignoringUnusuable |= 1; // Context 0 is reserved
-                
+
                 // We cannot use namespaces > 127
                 // TODO: Once Variable length namespaces work, remove this constraint
-                ignoringUnusuable |= ~((1UL << 15)-1);
+                ignoringUnusuable |= ~((1UL << 15) - 1);
 
                 var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringUnusuable & (ulong)-(long)(~ignoringUnusuable));
 
@@ -417,7 +417,7 @@ namespace Garnet.server
 
             // empty is context metadata
             VectorElementKey key = new(MetadataNamespace, []);
-            
+
             VectorInput input = default;
             input.Callback = 0;
             input.WriteDesiredSize = ContextMetadata.Size;

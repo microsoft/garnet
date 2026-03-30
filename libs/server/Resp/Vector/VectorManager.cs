@@ -254,7 +254,7 @@ namespace Garnet.server
             if (clearInProgressDeletes)
             {
                 // We successfully dealt with all pending deletes, we can delete the metadata key
-                
+
                 // [1] is InProgressDeletes
                 VectorElementKey toDeleteKey = new(MetadataNamespace, [1]);
 
