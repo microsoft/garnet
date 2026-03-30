@@ -294,7 +294,8 @@ namespace Garnet.server
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
             out nint continuation,
-            nint filterCallback
+            nint filterCallback,
+            nint batchFilterCallback
         )
         {
             var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
@@ -375,7 +376,8 @@ namespace Garnet.server
                     (nint)output_distances,
                     (nuint)output_distances_len,
                     continuationAddr,
-                    filterCallback
+                    filterCallback,
+                    batchFilterCallback
                 );
             }
             finally
@@ -396,7 +398,8 @@ namespace Garnet.server
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
             out nint continuation,
-            nint filterCallback
+            nint filterCallback,
+            nint batchFilterCallback
         )
         {
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
@@ -463,7 +466,8 @@ namespace Garnet.server
                     (nint)output_distances,
                     (nuint)output_distances_len,
                     continuationAddr,
-                    filterCallback
+                    filterCallback,
+                    batchFilterCallback
                 );
             }
             finally
@@ -597,7 +601,8 @@ namespace Garnet.server
             nint output_distances,
             nuint output_distances_len,
             nint continuation,
-            nint filter_callback
+            nint filter_callback,
+            nint batch_filter_callback
         );
 
         [LibraryImport(DISKANN_GARNET)]
@@ -616,7 +621,8 @@ namespace Garnet.server
             nint output_distances,
             nuint output_distances_len,
             nint continuation,
-            nint filter_callback
+            nint filter_callback,
+            nint batch_filter_callback
         );
 
         [LibraryImport(DISKANN_GARNET)]

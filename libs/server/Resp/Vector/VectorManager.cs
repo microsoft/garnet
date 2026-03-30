@@ -587,6 +587,7 @@ namespace Garnet.server
                         };
 
                         var callbackPtr = (nint)(delegate* unmanaged[Cdecl]<ulong, uint, byte>)&PostFilterCandidateCallbackImpl;
+                        var batchCallbackPtr = (nint)(delegate* unmanaged[Cdecl]<ulong, uint*, uint, byte*, uint>)&BatchPostFilterCandidateCallbackImpl;
 
                         var found = Service.SearchVectorFiltered(
                             context,
@@ -600,7 +601,8 @@ namespace Garnet.server
                             outputIds,
                             outputDistances,
                             out var continuation,
-                            callbackPtr
+                            callbackPtr,
+                            batchCallbackPtr
                         );
 
                         if (found < 0)
@@ -816,6 +818,7 @@ namespace Garnet.server
                         };
 
                         var callbackPtr = (nint)(delegate* unmanaged[Cdecl]<ulong, uint, byte>)&PostFilterCandidateCallbackImpl;
+                        var batchCallbackPtr = (nint)(delegate* unmanaged[Cdecl]<ulong, uint*, uint, byte*, uint>)&BatchPostFilterCandidateCallbackImpl;
 
                         var found = Service.SearchElementFiltered(
                             context,
@@ -828,7 +831,8 @@ namespace Garnet.server
                             outputIds,
                             outputDistances,
                             out var continuation,
-                            callbackPtr
+                            callbackPtr,
+                            batchCallbackPtr
                         );
 
                         if (found < 0)

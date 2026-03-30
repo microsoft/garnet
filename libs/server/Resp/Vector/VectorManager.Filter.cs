@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -236,6 +238,12 @@ namespace Garnet.server
         [ThreadStatic]
         internal static InplacePostFilterState t_postFilterState;
 
+        // ── Diagnostic timing accumulators (thread-static) ──────────────
+        [ThreadStatic] private static long t_extmapTicks;
+        [ThreadStatic] private static long t_attrTicks;
+        [ThreadStatic] private static long t_evalTicks;
+        [ThreadStatic] private static long t_evalCount;
+
         /// <summary>
         /// Per-query filter state maintained on the C# side.
         /// Populated before calling into Rust; the callback reads it from thread-static storage.
@@ -271,6 +279,100 @@ namespace Garnet.server
             public int FilterBytesLen;
         }
 
+        // ── Batch filter read infrastructure ─────────────────────────────
+        //
+        // BatchPostFilterCandidateCallbackImpl uses ReadWithPrefetch to batch
+        // ExtMap and Attribute reads, amortizing hash table cache miss latency.
+        // Uses the non-callback SingleReader path: provides output SpanByte buffers
+        // that SingleReader copies data into directly.
+
+        /// <summary>
+        /// Batch read adapter for ReadWithPrefetch. Uses fixed-stride keys and
+        /// collects results into pre-allocated output buffer slots.
+        /// </summary>
+        private unsafe struct FilterReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
+        {
+            public int Count { get; }
+
+            private readonly byte* keysBuffer;
+            private readonly int keyStride;
+            private readonly byte* outBuffer;
+            private readonly int outSlotSize;
+            private readonly int* outLengths;
+            private readonly byte* outFound;
+            private bool hasPending;
+
+            public FilterReadBatch(byte* keysBuffer, int keyStride, int count,
+                                   byte* outBuffer, int outSlotSize, int* outLengths, byte* outFound)
+            {
+                this.keysBuffer = keysBuffer;
+                this.keyStride = keyStride;
+                Count = count;
+                this.outBuffer = outBuffer;
+                this.outSlotSize = outSlotSize;
+                this.outLengths = outLengths;
+                this.outFound = outFound;
+                hasPending = false;
+            }
+
+            public void GetKey(int i, out SpanByte key)
+            {
+                var ptr = keysBuffer + i * keyStride;
+                key = SpanByte.FromPinnedPointer(ptr, keyStride);
+                key.MarkNamespace();
+            }
+
+            public readonly void GetInput(int i, out VectorInput input)
+            {
+                input = default;
+                // Callback = 0 → SingleReader uses the copy-to-dst path
+                // ReadDesiredSize = 0 → SingleReader enters else branch, sets
+                // ReadDesiredSize = value.Length and copies if dst has space
+            }
+
+            public void GetOutput(int i, out SpanByte output)
+            {
+                // Provide a SpanByte pointing into the pre-allocated output slot
+                output = SpanByte.FromPinnedPointer(outBuffer + i * outSlotSize, outSlotSize);
+            }
+
+            public void SetOutput(int i, SpanByte output)
+            {
+                // After SingleReader, output.Length is the actual data length
+                // (set by SingleReader when it copies the value)
+                outLengths[i] = output.Length;
+            }
+
+            public void SetStatus(int i, Status status)
+            {
+                hasPending |= status.IsPending;
+                outFound[i] = status.Found ? (byte)1 : (byte)0;
+            }
+
+            internal readonly void CompletePending(
+                ref BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
+                    StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+                    SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>> ctx)
+            {
+                if (hasPending)
+                    _ = ctx.CompletePending(wait: true);
+            }
+        }
+
+        // ── Batch constants ─────────────────────────────────────────────────
+
+        /// <summary>Batch sizes smaller than this use the simple per-candidate path.</summary>
+        private const int BatchThreshold = 4;
+
+        /// <summary>Fixed slot size for ExtMap read output (external IDs, typically &lt; 64 bytes).</summary>
+        private const int EidSlotSize = 128;
+
+        /// <summary>Fixed slot size for Attribute read output (JSON attributes, typically &lt; 256 bytes).</summary>
+        private const int AttrSlotSize = 512;
+
+        /// <summary>ExtMap key stride: 1 namespace byte + 4 bytes for uint internal ID.</summary>
+        private const int EidKeyStride = 1 + sizeof(uint);
+
         /// <summary>
         /// Per-candidate filter callback invoked from Rust during DiskANN inplace post-processing.
         /// Reads the candidate's external ID and attributes from Garnet storage, then evaluates
@@ -280,9 +382,248 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static unsafe byte PostFilterCandidateCallbackImpl(ulong context, uint internalId)
         {
+            return EvaluateCandidateFilter(internalId);
+        }
+
+        /// <summary>
+        /// Batch per-candidate filter callback invoked from Rust during DiskANN filtered search.
+        /// Uses ReadWithPrefetch to batch storage reads, amortizing hash table cache miss latency.
+        /// Falls back to per-candidate path for small batches or overflow cases.
+        /// </summary>
+        /// <returns>The number of candidates that passed the filter.</returns>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static unsafe uint BatchPostFilterCandidateCallbackImpl(
+            ulong context, uint* ids, uint count, byte* results)
+        {
+            // Small batches — per-candidate is faster than batch setup
+            if (count <= BatchThreshold)
+            {
+                uint passed = 0;
+                for (uint i = 0; i < count; i++)
+                {
+                    results[i] = EvaluateCandidateFilter(ids[i]);
+                    if (results[i] != 0) passed++;
+                }
+
+                // Log timing periodically
+                if (t_evalCount >= 5000)
+                    LogAndResetTimingCounters((int)count);
+
+                return passed;
+            }
+
+            var result = BatchFilterEvaluate(ids, (int)count, results);
+
+            // Log timing periodically
+            if (t_evalCount >= 5000)
+                LogAndResetTimingCounters((int)count);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Three-phase batched filter evaluation:
+        /// Phase 1: Batch ExtMap reads (internal_id → external_id) via ReadWithPrefetch
+        /// Phase 2: Batch Attribute reads (external_id → JSON attributes) via ReadWithPrefetch
+        /// Phase 3: Evaluate filter expressions for all candidates with valid attributes
+        /// </summary>
+        private static unsafe uint BatchFilterEvaluate(uint* ids, int count, byte* results)
+        {
+            ref var state = ref t_postFilterState;
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+
+            // ── Allocate working buffers ──────────────────────────────────────
+            var eidKeysSize = count * EidKeyStride;
+            var eidOutSize = count * EidSlotSize;
+            var attrOutSize = count * AttrSlotSize;
+            var metaSize = count * (sizeof(int) + sizeof(byte)); // lengths + found per phase
+
+            var totalSize = eidKeysSize + eidOutSize + attrOutSize + metaSize * 2;
+
+            // Use ArrayPool for all buffers
+            var pool = ArrayPool<byte>.Shared;
+            var buf = pool.Rent(totalSize);
+
+            try
+            {
+                fixed (byte* bufPtr = buf)
+                {
+                    var ptr = bufPtr;
+
+                    // Phase 1 key buffer
+                    var eidKeys = ptr; ptr += eidKeysSize;
+                    // Phase 1 output buffer
+                    var eidOut = ptr; ptr += eidOutSize;
+                    // Phase 1 metadata
+                    var eidLengths = (int*)ptr; ptr += count * sizeof(int);
+                    var eidFound = ptr; ptr += count * sizeof(byte);
+                    // Phase 2 output buffer
+                    var attrOut = ptr; ptr += attrOutSize;
+                    // Phase 2 metadata
+                    var attrLengths = (int*)ptr; ptr += count * sizeof(int);
+                    var attrFound = ptr;
+
+                    // ── Phase 1: Batch ExtMap reads ──────────────────────────────
+                    var eidContext = state.Context | DiskANNService.ExternalIdMap;
+
+                    // Build ExtMap keys: [namespace_byte][uint32 internal_id]
+                    for (var i = 0; i < count; i++)
+                    {
+                        var keySlot = eidKeys + i * EidKeyStride;
+                        keySlot[0] = (byte)eidContext; // namespace byte
+                        BinaryPrimitives.WriteUInt32LittleEndian(
+                            new Span<byte>(keySlot + 1, sizeof(uint)), ids[i]);
+                    }
+
+                    // Clear metadata
+                    new Span<byte>(eidFound, count).Clear();
+                    new Span<byte>((byte*)eidLengths, count * sizeof(int)).Clear();
+
+                    var eidBatch = new FilterReadBatch(
+                        eidKeys, EidKeyStride, count,
+                        eidOut, EidSlotSize, eidLengths, eidFound);
+
+                    ctx.ReadWithPrefetch(ref eidBatch);
+                    eidBatch.CompletePending(ref ctx);
+
+                    // ── Phase 2: Batch Attribute reads ──────────────────────────
+                    var attrContext = state.Context | DiskANNService.Attributes;
+
+                    // Determine max external ID length to compute attribute key stride
+                    var maxEidLen = 0;
+                    var validEidCount = 0;
+                    for (var i = 0; i < count; i++)
+                    {
+                        if (eidFound[i] != 0)
+                        {
+                            if (eidLengths[i] > maxEidLen) maxEidLen = eidLengths[i];
+                            validEidCount++;
+                        }
+                    }
+
+                    uint passed = 0;
+
+                    if (validEidCount == 0)
+                    {
+                        new Span<byte>(results, count).Clear();
+                        return 0;
+                    }
+
+                    // Attribute key stride: 1 namespace + maxEidLen
+                    var attrKeyStride = 1 + maxEidLen;
+                    var attrKeysSize = count * attrKeyStride;
+
+                    var attrKeysBuf = pool.Rent(attrKeysSize);
+                    try
+                    {
+                        fixed (byte* attrKeysPtr = attrKeysBuf)
+                        {
+                            // Clear metadata
+                            new Span<byte>(attrFound, count).Clear();
+                            new Span<byte>((byte*)attrLengths, count * sizeof(int)).Clear();
+
+                            // Build Attribute keys from Phase 1 results
+                            for (var i = 0; i < count; i++)
+                            {
+                                var keySlot = attrKeysPtr + i * attrKeyStride;
+                                keySlot[0] = (byte)attrContext;
+
+                                if (eidFound[i] != 0)
+                                {
+                                    var eidLen = eidLengths[i];
+                                    var eidSrc = eidOut + i * EidSlotSize;
+                                    new Span<byte>(eidSrc, eidLen).CopyTo(
+                                        new Span<byte>(keySlot + 1, maxEidLen));
+                                    if (eidLen < maxEidLen)
+                                        new Span<byte>(keySlot + 1 + eidLen, maxEidLen - eidLen).Clear();
+                                }
+                                else
+                                {
+                                    new Span<byte>(keySlot + 1, maxEidLen).Clear();
+                                }
+                            }
+
+                            var attrBatch = new FilterReadBatch(
+                                attrKeysPtr, attrKeyStride, count,
+                                attrOut, AttrSlotSize, attrLengths, attrFound);
+
+                            ctx.ReadWithPrefetch(ref attrBatch);
+                            attrBatch.CompletePending(ref ctx);
+
+                            // ── Phase 3: Evaluate filters ───────────────────────
+                            var instrSpan = new Span<ExprToken>(state.InstrBufPtr, state.InstrCount);
+                            var tuplePool = new Span<ExprToken>(state.TuplePoolBufPtr, state.TupleCount);
+                            var runtimePool = new Span<ExprToken>(state.RuntimePoolBufPtr, MaxRuntimePool);
+                            var extractedFields = new Span<ExprToken>(state.ExtractedFieldsPtr, Math.Max(state.SelectorCount, 1));
+                            var stackBuf = new Span<ExprToken>(state.StackBufPtr, StackCapacity);
+                            var selectorRanges = new Span<(int, int)>(state.SelectorRangesPtr, state.SelectorCount);
+                            var filterBytes = new ReadOnlySpan<byte>(state.FilterBytesPtr, state.FilterBytesLen);
+
+                            for (var i = 0; i < count; i++)
+                            {
+                                if (eidFound[i] == 0 || attrFound[i] == 0)
+                                {
+                                    // Not found or overflow — fall back to per-candidate
+                                    results[i] = EvaluateCandidateFilter(ids[i]);
+                                    if (results[i] != 0) passed++;
+                                    continue;
+                                }
+
+                                var attrData = new ReadOnlySpan<byte>(
+                                    attrOut + i * AttrSlotSize, attrLengths[i]);
+
+                                var program = new ExprProgram
+                                {
+                                    Instructions = instrSpan,
+                                    Length = state.InstrCount,
+                                    TuplePool = tuplePool,
+                                    TuplePoolLength = state.TupleCount,
+                                    RuntimePool = runtimePool,
+                                    RuntimePoolLength = 0,
+                                };
+
+                                program.ResetRuntimePool();
+                                AttributeExtractor.ExtractFields(attrData, filterBytes, selectorRanges, extractedFields, ref program);
+
+                                var stack = new ExprStack(stackBuf);
+                                if (ExprRunner.Run(ref program, attrData, filterBytes, selectorRanges, extractedFields, ref stack))
+                                {
+                                    results[i] = 1;
+                                    passed++;
+                                }
+                                else
+                                {
+                                    results[i] = 0;
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        pool.Return(attrKeysBuf);
+                    }
+
+                    return passed;
+                }
+            }
+            finally
+            {
+                pool.Return(buf);
+            }
+        }
+
+        /// <summary>
+        /// Shared filter evaluation logic for both single and batch callbacks.
+        /// Reads the candidate's external ID and attributes, then evaluates the compiled filter.
+        /// Accumulates per-component timing in thread-static counters.
+        /// </summary>
+        private static unsafe byte EvaluateCandidateFilter(uint internalId)
+        {
             ref var state = ref t_postFilterState;
 
             // 1. Read external ID for this internal_id via ExtMap
+            var t0 = Stopwatch.GetTimestamp();
+
             Span<byte> iidKey = stackalloc byte[sizeof(uint)];
             BinaryPrimitives.WriteUInt32LittleEndian(iidKey, internalId);
 
@@ -293,6 +634,8 @@ namespace Garnet.server
                 if (!ReadSizeUnknown(state.Context | DiskANNService.ExternalIdMap, iidKey, ref eidMem))
                     return 0; // can't find external ID → exclude
 
+                var t1 = Stopwatch.GetTimestamp();
+
                 // 2. Read attributes by external ID
                 Span<byte> attrBuf = stackalloc byte[256];
                 var attrMem = SpanByteAndMemory.FromPinnedSpan(attrBuf);
@@ -300,6 +643,8 @@ namespace Garnet.server
                 {
                     if (!ReadSizeUnknown(state.Context | DiskANNService.Attributes, eidMem.AsReadOnlySpan(), ref attrMem))
                         return 0; // no attributes → exclude
+
+                    var t2 = Stopwatch.GetTimestamp();
 
                     // 3. Rebuild ExprProgram from thread-static state pointers
                     var instrSpan = new Span<ExprToken>(state.InstrBufPtr, state.InstrCount);
@@ -327,6 +672,14 @@ namespace Garnet.server
                     var stack = new ExprStack(stackBuf);
                     var pass = ExprRunner.Run(ref program, attrMem.AsReadOnlySpan(), filterBytes, selectorRanges, extractedFields, ref stack);
 
+                    var t3 = Stopwatch.GetTimestamp();
+
+                    // Accumulate timing
+                    t_extmapTicks += t1 - t0;
+                    t_attrTicks += t2 - t1;
+                    t_evalTicks += t3 - t2;
+                    t_evalCount++;
+
                     return pass ? (byte)1 : (byte)0;
                 }
                 finally
@@ -338,6 +691,31 @@ namespace Garnet.server
             {
                 eidMem.Memory?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Log accumulated per-component timing and reset counters.
+        /// Called periodically from the batch callback.
+        /// </summary>
+        private static void LogAndResetTimingCounters(int batchSize)
+        {
+            var count = t_evalCount;
+            if (count == 0) return;
+
+            var freq = (double)Stopwatch.Frequency;
+            var extmapNs = t_extmapTicks / freq * 1_000_000_000.0 / count;
+            var attrNs = t_attrTicks / freq * 1_000_000_000.0 / count;
+            var evalNs = t_evalTicks / freq * 1_000_000_000.0 / count;
+            var totalNs = extmapNs + attrNs + evalNs;
+
+            Console.Error.WriteLine(
+                $"[filter-timing] batch={batchSize} candidates={count} " +
+                $"extmap={extmapNs:F0}ns attr={attrNs:F0}ns eval={evalNs:F0}ns total={totalNs:F0}ns");
+
+            t_extmapTicks = 0;
+            t_attrTicks = 0;
+            t_evalTicks = 0;
+            t_evalCount = 0;
         }
     }
 }
