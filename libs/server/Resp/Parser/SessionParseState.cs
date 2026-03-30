@@ -188,7 +188,7 @@ namespace Garnet.server
         /// </summary>
         public void EnsureCapacity(int count)
         {
-            if (count <= Count)
+            if (count <= Capacity)
             {
                 return;
             }

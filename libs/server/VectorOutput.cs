@@ -25,8 +25,5 @@ namespace Garnet.server
         public VectorOutput(Span<byte> span) => SpanByteAndMemory = new(PinnedSpanByte.FromPinnedSpan(span));
 
         public unsafe VectorOutput(byte* ptr, int len) => SpanByteAndMemory = new(PinnedSpanByte.FromPinnedPointer(ptr, len));
-
-        public static StringOutput FromPinnedSpan(ReadOnlySpan<byte> span)
-            => new(SpanByteAndMemory.FromPinnedSpan(span));
     }
 }

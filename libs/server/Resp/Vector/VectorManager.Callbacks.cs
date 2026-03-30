@@ -65,7 +65,7 @@ namespace Garnet.server
 
                     Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointer() + lengthPrefixedKeys.Length, "About to access out of bounds data");
 
-                    currentLen = *currentPtr;
+                    currentLen = *(int*)currentPtr;
 
                     currentIndex = i;
 
