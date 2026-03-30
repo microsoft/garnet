@@ -155,7 +155,7 @@ namespace Tsavorite.test.LogRecordTests
 
                 var dataHeader = new RecordDataHeader((byte*)nativePointer);
                 var recordInfo = RecordInfo.InitialValid;
-                var headerLength = dataHeader.Initialize(ref recordInfo, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out var valueAddress);
+                var headerLength = dataHeader.Initialize(ref recordInfo, in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress);
                 (keyLengthBytes, recordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var deconstructHeaderLength);
                 Assert.That(headerLength, Is.EqualTo(RecordDataHeader.NumIndicatorBytes + keyLengthBytes + recordLengthBytes));
                 Assert.That(deconstructHeaderLength, Is.EqualTo(headerLength));
