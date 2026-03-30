@@ -10,12 +10,12 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.server;
 
 #if DEBUG
 using Garnet.common;
-using Garnet.server;
-
 #endif
+
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
