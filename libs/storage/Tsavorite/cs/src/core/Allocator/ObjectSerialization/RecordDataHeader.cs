@@ -244,8 +244,10 @@ namespace Tsavorite.core
             var keyLength = sizeInfo.InlineKeySize;
             var valueLength = sizeInfo.InlineValueSize;
             var recordLength = sizeInfo.AllocatedInlineRecordSize;
-            var numRecordLengthBytes = GetByteCount(recordLength);
-            var numKeyLengthBytes = GetByteCount(keyLength);
+            var numRecordLengthBytes = sizeInfo.RecordLengthBytes;
+            Debug.Assert(numRecordLengthBytes == GetByteCount(recordLength), "RecordLengthBytes does not match RecordLength");
+            var numKeyLengthBytes = sizeInfo.KeyLengthBytes;
+            Debug.Assert(numKeyLengthBytes == GetByteCount(keyLength), "KeyLengthBytes does not match KeyLength");
 
             // If this was from revivification, we should have <= keyLengthBytes and == recordLengthBytes. Don't change keyLengthBytes, as that would move the RecordLength
             // field in the header and that might not be an atomic update if it crosses a ulong boundary.
@@ -257,21 +259,22 @@ namespace Tsavorite.core
                 numKeyLengthBytes = revivKeyLenBytes;
             }
 
-            *HeaderPtr = (byte)(((numRecordLengthBytes - 1) << kRecordLengthIndicatorShift) | ((numKeyLengthBytes - 1) >> kKeyLengthIndicatorShift));
+            // Fill in the indicator byte.
+            *HeaderPtr = (byte)(((numRecordLengthBytes - 1) << kRecordLengthIndicatorShift) | ((numKeyLengthBytes - 1) << kKeyLengthIndicatorShift));
 
             // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
             // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
-            *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (sizeInfo.FieldInfo.ExtendedNamespaceSize & NamespaceIndicatorMask)) : 0);
+            var extendedNamespaceSize = sizeInfo.FieldInfo.ExtendedNamespaceSize;
             namespaceAddress = (long)HeaderPtr + NamespaceOffsetInHeader;
+            *(byte*)namespaceAddress = (byte)(extendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (extendedNamespaceSize & NamespaceIndicatorMask)) : 0);
             *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
             // If sizeInfo indicates the record is not inline, that won't have been reflected in RecordInfo yet and thus not in optionals, but we need to reserve the
             // ObjectLogPosition space and not let it be part of FillerLength. Do this here after we have initialized the nameSpace byte.
             var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-            var objectLogPositionLength = sizeInfo.RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
-            SetFillerLength(ref recordInfo, recordLength, fillerLength: recordLength - RecordInfo.Size - headerLength - ExtendedNamespaceLength - keyLength - valueLength - objectLogPositionLength);
+            SetFillerLength(ref recordInfo, recordLength, fillerLength: recordLength - RecordInfo.Size - headerLength - extendedNamespaceSize - keyLength - valueLength - sizeInfo.ObjectLogPositionSize);
 
             // Set RecordLength into the header. Header format is (low->high): <Indicator byte><Namespace byte><RecordType byte><RecordLength><KeyLength (may overflow ulong)>.
             // RecordLength will always fit in the header word. Zero out bits before we assign them in case we have non-zeroinitialized space.

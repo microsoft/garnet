@@ -88,12 +88,17 @@ namespace Tsavorite.core
             ActualInlineRecordSize = RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + KeyLengthBytes + initialRecordLengthBytes
                             + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
 
-            // Adjust to the actual record length bytes needed.
-            RecordLengthBytes = RecordDataHeader.GetByteCount(ActualInlineRecordSize);
+            // Adjust to the actual record length bytes needed (must include roundup).
+            var allocatedSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
+            RecordLengthBytes = RecordDataHeader.GetByteCount(allocatedSize);
             ActualInlineRecordSize -= initialRecordLengthBytes - RecordLengthBytes;
 
-            // Finally, calculate allocated size (record-aligned).
+            // Finally, calculate allocated size (record-aligned). Round up again as our subtraction might have knocked us down
+            // by one kRecordAlignment. This may leave us with one extra byte of RecordLengthBytes if for example ActualInlineRecordSize
+            // went down from 257 to 255, so recalculate the size. This cannot reduce RecordLengthBytes by more than 1.
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
+            if (AllocatedInlineRecordSize != allocatedSize)
+                RecordLengthBytes = RecordDataHeader.GetByteCount(AllocatedInlineRecordSize);
         }
 
         /// <summary>

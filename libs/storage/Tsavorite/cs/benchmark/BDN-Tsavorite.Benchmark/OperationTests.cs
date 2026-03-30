@@ -4,7 +4,6 @@
 using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
-using BenchmarkDotNet.Diagnostics.Windows.Configs;
 using Tsavorite.core;
 
 #pragma warning disable 0649 // Field 'field' is never assigned to, and will always have its default value 'value'; happens due to [Params(..)] 
@@ -17,22 +16,22 @@ namespace BenchmarkDotNetTests
 #pragma warning disable IDE0065 // Misplaced using directive
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    //[InProcess]
-    [InliningDiagnoser(logFailuresOnly: true, allowedNamespaces: ["Tsavorite.core"])]
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
-    public class InliningTests
+    public class OperationTests
     {
-        [Params(1_000_000)]
-        public int NumRecords;
+        public int NumRecords => BenchmarkDotNetTestsApp.NumRecords;
 
         TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;
         string logDirectory;
 
+        ClientSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        BasicContext<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+
         void SetupStore()
         {
             logDirectory = BenchmarkDotNetTestsApp.TestDirectory;
-            var logFilename = Path.Combine(logDirectory, $"{nameof(InliningTests)}_{Guid.NewGuid()}.log");
+            var logFilename = Path.Combine(logDirectory, $"{nameof(OperationTests)}_{Guid.NewGuid()}.log");
             logDevice = Devices.CreateLogDevice(logFilename, preallocateFile: true, deleteOnClose: true, useIoCompletionPort: true);
 
             store = new(new()
@@ -42,17 +41,19 @@ namespace BenchmarkDotNetTests
             }, StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordDisposer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
+
+            session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            bContext = session.BasicContext;
         }
 
-        unsafe void PopulateStore()
+        void PopulateStore(int start = 0)
         {
-            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
-            var bContext = session.BasicContext;
-
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
             Span<byte> valueSpan = stackalloc byte[sizeof(long)];
 
-            for (long ii = 0; ii < NumRecords; ++ii)
+            var end = start + NumRecords;
+
+            for (long ii = start; ii < end; ++ii)
             {
                 MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
                 MemoryMarshal.Cast<byte, long>(valueSpan)[0] = ii + NumRecords;
@@ -70,6 +71,8 @@ namespace BenchmarkDotNetTests
         [GlobalCleanup]
         public void TearDown()
         {
+            session?.Dispose();
+            session = null;
             store?.Dispose();
             store = null;
             logDevice?.Dispose();
@@ -82,11 +85,15 @@ namespace BenchmarkDotNetTests
         }
 
         [BenchmarkCategory("Upsert"), Benchmark]
-        public unsafe void Upsert()
+        public void Insert()
         {
-            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
-            var bContext = session.BasicContext;
+            // Populate with a second batch
+            PopulateStore(NumRecords);
+        }
 
+        [BenchmarkCategory("Upsert"), Benchmark]
+        public void Upsert()
+        {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
             Span<byte> valueSpan = stackalloc byte[sizeof(long)];
 
@@ -99,11 +106,8 @@ namespace BenchmarkDotNetTests
         }
 
         [BenchmarkCategory("RMW"), Benchmark]
-        public unsafe void RMW()
+        public void RMW()
         {
-            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
-            var bContext = session.BasicContext;
-
             Span<byte> key = stackalloc byte[sizeof(long)];
             Span<byte> input = stackalloc byte[sizeof(long)];
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
@@ -119,11 +123,8 @@ namespace BenchmarkDotNetTests
         }
 
         [BenchmarkCategory("Read"), Benchmark]
-        public unsafe void Read()
+        public void Read()
         {
-            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
-            var bContext = session.BasicContext;
-
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumRecords; ++ii)
