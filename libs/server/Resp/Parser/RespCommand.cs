@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -660,6 +661,63 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        // Per-session MRU command cache: 2 entries caching the last matched command patterns.
+        // Sits after SIMD patterns but before scalar switch — catches repeated Tier 1b/2 commands
+        // (HSET, LPUSH, ZADD etc.) in 3 ops instead of falling through to the hash table.
+        // NOTE: All fields default to zero (RespCommand.NONE = 0x00, Vector128 = all zeros),
+        // so the cache starts empty and the _cachedCmd0 != RespCommand.NONE check is safe.
+        private Vector128<byte> _cachedPattern0, _cachedMask0;
+        private RespCommand _cachedCmd0;
+        private byte _cachedLen0, _cachedCount0;
+
+        private Vector128<byte> _cachedPattern1, _cachedMask1;
+        private RespCommand _cachedCmd1;
+        private byte _cachedLen1, _cachedCount1;
+        // SIMD Vector128 patterns for FastParseCommand.
+        // Each encodes the full RESP header + command: *N\r\n$L\r\nCMD\r\n
+        // Masks zero out trailing bytes for patterns shorter than 16 bytes.
+        private static readonly Vector128<byte> s_mask13 = Vector128.Create(
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00).AsByte();
+        private static readonly Vector128<byte> s_mask14 = Vector128.Create(
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00).AsByte();
+        private static readonly Vector128<byte> s_mask15 = Vector128.Create(
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00).AsByte();
+
+        // 13-byte: *N\r\n$3\r\nXXX\r\n
+        private static readonly Vector128<byte> s_GET = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'\r', (byte)'\n', 0, 0, 0);
+        private static readonly Vector128<byte> s_SET = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'\r', (byte)'\n', 0, 0, 0);
+        private static readonly Vector128<byte> s_DEL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'D', (byte)'E', (byte)'L', (byte)'\r', (byte)'\n', 0, 0, 0);
+        private static readonly Vector128<byte> s_TTL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'T', (byte)'T', (byte)'L', (byte)'\r', (byte)'\n', 0, 0, 0);
+
+        // 14-byte: *N\r\n$4\r\nXXXX\r\n
+        private static readonly Vector128<byte> s_PING = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'P', (byte)'I', (byte)'N', (byte)'G', (byte)'\r', (byte)'\n', 0, 0);
+        private static readonly Vector128<byte> s_INCR = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'I', (byte)'N', (byte)'C', (byte)'R', (byte)'\r', (byte)'\n', 0, 0);
+        private static readonly Vector128<byte> s_DECR = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'D', (byte)'E', (byte)'C', (byte)'R', (byte)'\r', (byte)'\n', 0, 0);
+        private static readonly Vector128<byte> s_EXEC = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'E', (byte)'X', (byte)'E', (byte)'C', (byte)'\r', (byte)'\n', 0, 0);
+        private static readonly Vector128<byte> s_PTTL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'P', (byte)'T', (byte)'T', (byte)'L', (byte)'\r', (byte)'\n', 0, 0);
+        private static readonly Vector128<byte> s_DUMP = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'D', (byte)'U', (byte)'M', (byte)'P', (byte)'\r', (byte)'\n', 0, 0);
+
+        // 15-byte: *N\r\n$5\r\nXXXXX\r\n
+        private static readonly Vector128<byte> s_MULTI = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'M', (byte)'U', (byte)'L', (byte)'T', (byte)'I', (byte)'\r', (byte)'\n', 0);
+        private static readonly Vector128<byte> s_PFADD = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'P', (byte)'F', (byte)'A', (byte)'D', (byte)'D', (byte)'\r', (byte)'\n', 0);
+        private static readonly Vector128<byte> s_SETNX = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'N', (byte)'X', (byte)'\r', (byte)'\n', 0);
+        private static readonly Vector128<byte> s_SETEX = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'E', (byte)'X', (byte)'\r', (byte)'\n', 0);
+
+        // 16-byte: *N\r\n$6\r\nXXXXXX\r\n (no mask needed)
+        private static readonly Vector128<byte> s_EXISTS = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'E', (byte)'X', (byte)'I', (byte)'S', (byte)'T', (byte)'S', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_GETDEL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'D', (byte)'E', (byte)'L', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_APPEND = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'A', (byte)'P', (byte)'P', (byte)'E', (byte)'N', (byte)'D', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_INCRBY = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'I', (byte)'N', (byte)'C', (byte)'R', (byte)'B', (byte)'Y', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_DECRBY = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'D', (byte)'E', (byte)'C', (byte)'R', (byte)'B', (byte)'Y', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_GETBIT = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'B', (byte)'I', (byte)'T', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_SETBIT = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'B', (byte)'I', (byte)'T', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_GETSET = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'S', (byte)'E', (byte)'T', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_ASKING = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'A', (byte)'S', (byte)'K', (byte)'I', (byte)'N', (byte)'G', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_PSETEX = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'P', (byte)'S', (byte)'E', (byte)'T', (byte)'E', (byte)'X', (byte)'\r', (byte)'\n');
+        private static readonly Vector128<byte> s_SUBSTR = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'S', (byte)'U', (byte)'B', (byte)'S', (byte)'T', (byte)'R', (byte)'\r', (byte)'\n');
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
         /// and advances read head.
@@ -698,8 +756,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Fast-parses for command type, starting at the current read head in the receive buffer
-        /// and advances the read head to the position after the parsed command.
+        /// Fast-parses for command type using SIMD Vector128 matching for the most common commands,
+        /// falling back to scalar ulong matching for the rest.
         /// </summary>
         /// <param name="count">Outputs the number of arguments stored with the command</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
@@ -708,6 +766,79 @@ namespace Garnet.server
         {
             var ptr = recvBufferPtr + readHead;
             var remainingBytes = bytesRead - readHead;
+
+            // SIMD fast path: match the full RESP-encoded pattern (*N\r\n$L\r\nCMD\r\n) in a
+            // single Vector128 comparison. Each check validates the header AND command name
+            // simultaneously: 1 load + 1 AND (mask) + 1 EqualsAll = 3 ops per candidate.
+            if (Vector128.IsHardwareAccelerated && remainingBytes >= 16)
+            {
+                var input = Vector128.LoadUnsafe(ref Unsafe.AsRef<byte>(ptr));
+
+                // 13-byte patterns: 3-char commands (GET, SET, DEL, TTL)
+                var m13 = Vector128.BitwiseAnd(input, s_mask13);
+                if (Vector128.EqualsAll(m13, s_GET)) { readHead += 13; count = 1; return RespCommand.GET; }
+                if (Vector128.EqualsAll(m13, s_SET)) { readHead += 13; count = 2; return RespCommand.SET; }
+                if (Vector128.EqualsAll(m13, s_DEL)) { readHead += 13; count = 1; return RespCommand.DEL; }
+                if (Vector128.EqualsAll(m13, s_TTL)) { readHead += 13; count = 1; return RespCommand.TTL; }
+
+                // 14-byte patterns: 4-char commands (PING, INCR, DECR, EXEC, PTTL, DUMP)
+                var m14 = Vector128.BitwiseAnd(input, s_mask14);
+                if (Vector128.EqualsAll(m14, s_PING)) { readHead += 14; count = 0; return RespCommand.PING; }
+                if (Vector128.EqualsAll(m14, s_INCR)) { readHead += 14; count = 1; return RespCommand.INCR; }
+                if (Vector128.EqualsAll(m14, s_DECR)) { readHead += 14; count = 1; return RespCommand.DECR; }
+                if (Vector128.EqualsAll(m14, s_EXEC)) { readHead += 14; count = 0; return RespCommand.EXEC; }
+                if (Vector128.EqualsAll(m14, s_PTTL)) { readHead += 14; count = 1; return RespCommand.PTTL; }
+                if (Vector128.EqualsAll(m14, s_DUMP)) { readHead += 14; count = 1; return RespCommand.DUMP; }
+
+                // 15-byte patterns: 5-char commands (MULTI, PFADD, SETNX, SETEX)
+                var m15 = Vector128.BitwiseAnd(input, s_mask15);
+                if (Vector128.EqualsAll(m15, s_MULTI)) { readHead += 15; count = 0; return RespCommand.MULTI; }
+                if (Vector128.EqualsAll(m15, s_PFADD)) { readHead += 15; count = 2; return RespCommand.PFADD; }
+                if (Vector128.EqualsAll(m15, s_SETNX)) { readHead += 15; count = 2; return RespCommand.SETNX; }
+                if (Vector128.EqualsAll(m15, s_SETEX)) { readHead += 15; count = 3; return RespCommand.SETEX; }
+
+                // 16-byte patterns: 6-char commands (no mask — exact 16-byte match)
+                if (Vector128.EqualsAll(input, s_EXISTS)) { readHead += 16; count = 1; return RespCommand.EXISTS; }
+                if (Vector128.EqualsAll(input, s_GETDEL)) { readHead += 16; count = 1; return RespCommand.GETDEL; }
+                if (Vector128.EqualsAll(input, s_APPEND)) { readHead += 16; count = 2; return RespCommand.APPEND; }
+                if (Vector128.EqualsAll(input, s_INCRBY)) { readHead += 16; count = 2; return RespCommand.INCRBY; }
+                if (Vector128.EqualsAll(input, s_DECRBY)) { readHead += 16; count = 2; return RespCommand.DECRBY; }
+                if (Vector128.EqualsAll(input, s_GETBIT)) { readHead += 16; count = 2; return RespCommand.GETBIT; }
+                if (Vector128.EqualsAll(input, s_SETBIT)) { readHead += 16; count = 3; return RespCommand.SETBIT; }
+                if (Vector128.EqualsAll(input, s_GETSET)) { readHead += 16; count = 2; return RespCommand.GETSET; }
+                if (Vector128.EqualsAll(input, s_ASKING)) { readHead += 16; count = 0; return RespCommand.ASKING; }
+                if (Vector128.EqualsAll(input, s_PSETEX)) { readHead += 16; count = 3; return RespCommand.PSETEX; }
+                if (Vector128.EqualsAll(input, s_SUBSTR)) { readHead += 16; count = 3; return RespCommand.SUBSTR; }
+
+                // MRU cache check: catches repeated commands that aren't in the SIMD pattern table
+                // (e.g., HSET, LPUSH, ZADD, ZRANGEBYSCORE). Same 3-op cost as one SIMD pattern check.
+                if (_cachedCmd0 != RespCommand.NONE)
+                {
+                    if (Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask0), _cachedPattern0))
+                    {
+                        readHead += _cachedLen0;
+                        count = _cachedCount0;
+                        return _cachedCmd0;
+                    }
+
+                    if (_cachedCmd1 != RespCommand.NONE &&
+                        Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask1), _cachedPattern1))
+                    {
+                        readHead += _cachedLen1;
+                        count = _cachedCount1;
+                        // Promote slot 1 → slot 0 (swap)
+                        (_cachedPattern0, _cachedPattern1) = (_cachedPattern1, _cachedPattern0);
+                        (_cachedMask0, _cachedMask1) = (_cachedMask1, _cachedMask0);
+                        (_cachedCmd0, _cachedCmd1) = (_cachedCmd1, _cachedCmd0);
+                        (_cachedLen0, _cachedLen1) = (_cachedLen1, _cachedLen0);
+                        (_cachedCount0, _cachedCount1) = (_cachedCount1, _cachedCount0);
+                        return _cachedCmd0;
+                    }
+                }
+            }
+
+            // Scalar fallback: handles variable-arg commands, inline commands,
+            // commands with names > 6 chars, and non-SIMD hardware.
 
             // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
             // i.e. an array with a single-digit length and single-digit first string length.
@@ -2794,8 +2925,19 @@ namespace Garnet.server
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
+                var cmdStartOffset = readHead; // Save position before ArrayParseCommand advances it
                 cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
                 if (!success) return cmd;
+
+                // Update MRU cache for commands resolved by scalar switch or hash table.
+                // Exclude custom commands — they have runtime-registered names.
+                if (Vector128.IsHardwareAccelerated &&
+                    cmd != RespCommand.INVALID && cmd != RespCommand.NONE &&
+                    cmd != RespCommand.CustomTxn && cmd != RespCommand.CustomProcedure &&
+                    cmd != RespCommand.CustomRawStringCmd && cmd != RespCommand.CustomObjCmd)
+                {
+                    UpdateCommandCache(cmdStartOffset, cmd, count);
+                }
             }
 
             // Set up parse state
@@ -2815,6 +2957,56 @@ namespace Garnet.server
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        /// <summary>
+        /// Update the MRU command cache with a newly matched command from the scalar switch or hash table.
+        /// Captures the first 16 bytes of the RESP encoding and the appropriate mask so that
+        /// the cache check in FastParseCommand can match it via Vector128.EqualsAll.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void UpdateCommandCache(int cmdStartOffset, RespCommand cmd, int argCount)
+        {
+            var ptr = recvBufferPtr + cmdStartOffset;
+            var availableBytes = bytesRead - cmdStartOffset;
+
+            // Only cache commands where we have at least 16 bytes to load a full Vector128
+            if (availableBytes < 16) return;
+
+            // Compute how many bytes the parse actually consumed (command + subcommand if any)
+            var consumedBytes = readHead - cmdStartOffset;
+
+            // Only cache if the full parse fits within 16 bytes (one Vector128)
+            if (consumedBytes < 13 || consumedBytes > 16) return;
+
+            var input = Vector128.LoadUnsafe(ref Unsafe.AsRef<byte>(ptr));
+
+            // Select the appropriate mask — covers exactly the consumed bytes
+            Vector128<byte> mask = consumedBytes switch
+            {
+                16 => Vector128<byte>.AllBitsSet,
+                15 => s_mask15,
+                14 => s_mask14,
+                13 => s_mask13,
+                _ => Vector128<byte>.Zero
+            };
+
+            if (mask == Vector128<byte>.Zero) return;
+
+            var pattern = Vector128.BitwiseAnd(input, mask);
+
+            // Demote slot 0 → slot 1, promote new match → slot 0
+            _cachedPattern1 = _cachedPattern0;
+            _cachedMask1 = _cachedMask0;
+            _cachedCmd1 = _cachedCmd0;
+            _cachedLen1 = _cachedLen0;
+            _cachedCount1 = _cachedCount0;
+
+            _cachedPattern0 = pattern;
+            _cachedMask0 = mask;
+            _cachedCmd0 = cmd;
+            _cachedLen0 = (byte)consumedBytes;
+            _cachedCount0 = (byte)argCount;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2872,13 +3064,8 @@ namespace Garnet.server
             // Move readHead to start of command payload
             readHead = (int)(ptr - recvBufferPtr);
 
-            // Try parsing the most important variable-length commands
-            cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
-
-            if (cmd == RespCommand.NONE)
-            {
-                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
-            }
+            // Extract command name via GetUpperCaseCommand (reads $len\r\n header, uppercases, advances readHead)
+            cmd = HashLookupCommand(ref count, ref specificErrorMessage, out success);
 
             // Parsing for command name was successful, but the command is unknown
             if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
@@ -2896,6 +3083,169 @@ namespace Garnet.server
                 }
             }
             return cmd;
+        }
+
+        /// <summary>
+        /// Hash-based command lookup. Extracts the command name from the RESP buffer,
+        /// looks it up in the static hash table, and handles subcommand dispatch.
+        /// Replaces the former FastParseArrayCommand + SlowParseCommand chain.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand HashLookupCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
+        {
+            // Extract the command name (reads $len\r\n...\r\n, advances readHead).
+            // MakeUpperCase has already uppercased the first command name token in the buffer,
+            // so we use GetCommand (no redundant ToUpperInPlace call).
+            // NOTE: MakeUpperCase only uppercases the first token — subcommand names are
+            // uppercased separately via GetUpperCaseCommand in HandleSubcommandLookup.
+            var command = GetCommand(out success);
+            if (!success)
+            {
+                return RespCommand.INVALID;
+            }
+
+            // Account for the command name being taken off the read head
+            count -= 1;
+
+            // Hash table lookup for the primary command (checked before custom commands
+            // since built-in commands are far more common)
+            fixed (byte* namePtr = command)
+            {
+                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length);
+
+                if (cmd == RespCommand.NONE)
+                {
+                    // Not a built-in command — check custom commands before falling to slow path
+                    if (TryParseCustomCommand(command, out var customCmd))
+                    {
+                        return customCmd;
+                    }
+
+                    // Fall back to the old slow parser for commands not in the hash table
+                    return SlowParseCommand(command, ref count, ref specificErrorMessage, out success);
+                }
+
+                // BITOP has pseudo-subcommands (AND/OR/XOR/NOT/DIFF) that must be parsed inline
+                if (cmd == RespCommand.BITOP)
+                {
+                    return ParseBitopSubcommand(ref count, ref specificErrorMessage, out success);
+                }
+
+                // Commands with subcommands — dispatch via subcommand hash table
+                if (RespCommandHashLookup.HasSubcommands(namePtr, command.Length))
+                {
+                    return HandleSubcommandLookup(cmd, ref count, ref specificErrorMessage, out success);
+                }
+
+                return cmd;
+            }
+        }
+
+        /// <summary>
+        /// Handles subcommand dispatch for parent commands (CLUSTER, CONFIG, CLIENT, etc.)
+        /// using per-parent hash tables. Replaces the former SlowParseCommand subcommand chains.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand HandleSubcommandLookup(RespCommand parentCmd, ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
+        {
+            success = true;
+
+            // COMMAND with no args returns RespCommand.COMMAND (lists all commands)
+            if (parentCmd == RespCommand.COMMAND && count == 0)
+            {
+                return RespCommand.COMMAND;
+            }
+
+            // Most parent commands require at least one subcommand argument
+            if (count == 0)
+            {
+                specificErrorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    parentCmd.ToString()));
+                return RespCommand.INVALID;
+            }
+
+            // Extract and uppercase the subcommand name
+            var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+            if (!gotSubCommand)
+            {
+                success = false;
+                return RespCommand.NONE;
+            }
+
+            count--;
+
+            // Hash table lookup for the subcommand
+            fixed (byte* subNamePtr = subCommand)
+            {
+                var subCmd = RespCommandHashLookup.LookupSubcommand(parentCmd, subNamePtr, subCommand.Length);
+                if (subCmd != RespCommand.NONE)
+                {
+                    return subCmd;
+                }
+            }
+
+            // Hash miss — try case-insensitive fallbacks for specific commands
+            if (parentCmd == RespCommand.COMMAND)
+            {
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
+                    return RespCommand.COMMAND_GETKEYS;
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
+                    return RespCommand.COMMAND_GETKEYSANDFLAGS;
+            }
+            else if (parentCmd == RespCommand.MEMORY)
+            {
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
+                    return RespCommand.MEMORY_USAGE;
+            }
+
+            // Generate error message for unknown subcommand
+            string errMsg = parentCmd switch
+            {
+                RespCommand.CLUSTER or RespCommand.LATENCY =>
+                    string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                        Encoding.UTF8.GetString(subCommand), parentCmd.ToString()),
+                _ =>
+                    string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                        Encoding.UTF8.GetString(subCommand), parentCmd.ToString()),
+            };
+            specificErrorMessage = Encoding.UTF8.GetBytes(errMsg);
+            return RespCommand.INVALID;
+        }
+
+        /// <summary>
+        /// Parse the BITOP pseudo-subcommand (AND/OR/XOR/NOT/DIFF).
+        /// Called after the primary hash lookup identifies BITOP.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand ParseBitopSubcommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage, out bool success)
+        {
+            if (count == 0)
+            {
+                specificErrorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                success = true;
+                return RespCommand.INVALID;
+            }
+
+            var subCommand = GetUpperCaseCommand(out success);
+            if (!success)
+            {
+                return RespCommand.NONE;
+            }
+
+            count--;
+
+            fixed (byte* subPtr = subCommand)
+            {
+                var subCmd = RespCommandHashLookup.LookupSubcommand(RespCommand.BITOP, subPtr, subCommand.Length);
+                if (subCmd != RespCommand.NONE)
+                {
+                    return subCmd;
+                }
+            }
+
+            // Unrecognized BITOP operation
+            specificErrorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+            return RespCommand.INVALID;
         }
     }
 }
