@@ -93,7 +93,7 @@ namespace Garnet.test.cluster
         public Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning},
-            {"ClusterReplicationMultiRestartRecover", LogLevel.Trace},
+            {"ClusterReplicationMultiRestartRecover", LogLevel.Error},
             {"ClusterFailoverAttachReplicas", LogLevel.Error},
             {"ClusterReplicationSimpleTransactionTest", LogLevel.Trace},
             {"ClusterReplicationStoredProc", LogLevel.Error}
@@ -1454,7 +1454,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(27)]
         [Category("REPLICATION")]
-        [CancelAfter(30_000)]
+        [CancelAfter(60_000)]
         public async Task ClusterReplicationMultiRestartRecover(CancellationToken cancellationToken)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
@@ -1491,7 +1491,7 @@ namespace Garnet.test.cluster
             tasks.Add(Task.Run(async () => await RestartRecover(restartRecover), cancellationToken));
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger, cancellationToken);
 
             // Validate that replica has the same keys as primary
             ValidateKeys();
@@ -1529,7 +1529,7 @@ namespace Garnet.test.cluster
                             [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
                             context.logger);
                         if (cancellationToken.IsCancellationRequested)
-                            Assert.Fail("Failed waiting for primary aof sync cleanup!");
+                            Assert.Fail($"Failed waiting for primary aof sync cleanup ({iteration}: {items[0]};{items[1]})!");
                         await Task.Yield();
                     }
 

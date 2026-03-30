@@ -401,12 +401,12 @@ namespace Garnet.test.cluster
             var slots = new List<ushort>();
 
             // Assign slots to primaries
-            for (int i = 0; i < slotRanges.Length; i++)
+            for (var i = 0; i < slotRanges.Length; i++)
             {
                 foreach (var slotRange in slotRanges[i])
                 {
                     var endpoint = endpoints[i];
-                    AddSlotsRange(endpoint, new List<(int, int)> { slotRange }, logger);
+                    _ = AddSlotsRange(endpoint, new List<(int, int)> { slotRange }, logger);
                     slots.AddRange(Enumerable.Range(slotRange.Item1, slotRange.Item2 - slotRange.Item1 + 1).Select(x => (ushort)x));
                     ShardInfo shardInfo = new()
                     {
@@ -429,12 +429,12 @@ namespace Garnet.test.cluster
             }
 
             //Set-config-epoch
-            for (int i = 0; i < endpoints.Length; i++)
+            for (var i = 0; i < endpoints.Length; i++)
                 SetConfigEpoch(endpoints[i], i + 1, logger);
 
             //Initiate meet
             var _firstEndpoint = endpoints[0];
-            for (int i = 1; i < endpoints.Length; i++)
+            for (var i = 1; i < endpoints.Length; i++)
                 Meet(_firstEndpoint, endpoints[i], logger);
 
             //WaitForClusterJoin(clusterConfig);

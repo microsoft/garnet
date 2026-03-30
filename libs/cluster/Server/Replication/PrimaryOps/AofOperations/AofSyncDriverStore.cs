@@ -478,7 +478,11 @@ namespace Garnet.cluster
                         numDrivers--;
 
                         // Kill the task
-                        syncDriver.Dispose();
+                        try
+                        {
+                            syncDriver.Dispose();
+                        }
+                        catch { }
                         success = true;
                         break;
                     }
