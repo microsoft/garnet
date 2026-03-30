@@ -36,8 +36,7 @@ namespace Garnet.server
                 ref readonly var stub = ref RangeIndexManager.ReadIndex(logRecord.ValueSpan);
                 if (stub.TreeHandle != 0 && stub.ProcessInstanceId == functionsState.rangeIndexManager.ProcessInstanceId)
                 {
-                    using (functionsState.rangeIndexManager.AcquireExclusiveForDelete(deleteInfo.KeyHash))
-                        functionsState.rangeIndexManager.UnregisterIndex(stub.TreeHandle);
+                    functionsState.rangeIndexManager.SafeDeleteRangeIndex(stub.TreeHandle);
                 }
             }
 

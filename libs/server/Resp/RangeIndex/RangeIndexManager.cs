@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Concurrent;
-using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -37,13 +37,15 @@ namespace Garnet.server
 
         private readonly ILogger logger;
 
+        private readonly LightEpoch rangeIndexEpoch;
+
         /// <summary>
         /// Creates a new <see cref="RangeIndexManager"/>.
         /// </summary>
         public RangeIndexManager(ILogger logger = null)
         {
             this.logger = logger;
-            rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
+            this.rangeIndexEpoch = new LightEpoch();
         }
 
         /// <summary>
@@ -137,6 +139,7 @@ namespace Garnet.server
                 }
             }
             liveIndexes.Clear();
+            rangeIndexEpoch.Dispose();
         }
     }
 }
