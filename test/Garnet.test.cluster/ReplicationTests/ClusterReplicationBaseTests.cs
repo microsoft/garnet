@@ -1486,9 +1486,9 @@ namespace Garnet.test.cluster
             var taskCount = 4;
             var tasks = new List<Task>();
             for (var i = 0; i < taskCount; i++)
-                tasks.Add(Task.Run(() => RunWorkload(i * keyCount, (i + 1) * keyCount)));
+                tasks.Add(Task.Run(() => RunWorkload(i * keyCount, (i + 1) * keyCount), cancellationToken));
             var restartRecover = 4;
-            tasks.Add(Task.Run(() => RestartRecover(restartRecover)));
+            tasks.Add(Task.Run(async () => await RestartRecover(restartRecover), cancellationToken));
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
@@ -1532,7 +1532,6 @@ namespace Garnet.test.cluster
                             Assert.Fail("Failed waiting for primary aof sync cleanup!");
                         await Task.Yield();
                     }
-
 
                     context.nodes[replicaNodeIndex] = context.CreateInstance(
                         context.clusterTestUtils.GetEndPoint(replicaNodeIndex),

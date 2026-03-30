@@ -1922,11 +1922,8 @@ namespace Garnet.test.cluster
                     for (var j = from; j <= to; j++)
                     {
                         var node = config.GetBySlot(j);
-                        var ownerId = node.NodeId;
-                        if (!ownerId.Equals(expectedOwnerId))
-                        {
+                        if (node == null || node.NodeId == null || !node.NodeId.Equals(expectedOwnerId))
                             goto retry;
-                        }
                     }
                 }
                 break;
