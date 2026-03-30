@@ -1543,6 +1543,7 @@ namespace Garnet.test.cluster
                         cleanClusterConfig: false,
                         sublogCount: sublogCount);
                     context.nodes[replicaNodeIndex].Start();
+                    context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, cancellation: cancellationToken, logger: context.logger);
 
                     await Task.Yield();
                 }

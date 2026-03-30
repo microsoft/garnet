@@ -182,11 +182,12 @@ namespace Garnet.cluster
                     garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, physicalSublogIdx, -1, -1, -1, -1, 0);
                     garnetClient.CompletePending(false);
 
-                    while (true)
-                    {
-                        if (cts.Token.IsCancellationRequested) break;
-                        await iter.BulkConsumeAllAsync(this, aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token).ConfigureAwait(false);
-                    }
+                    await iter.BulkConsumeAllAsync(
+                        this,
+                        aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                        maxChunkSize: 1 << 20,
+                        () => !garnetClient.IsConnected,
+                        cts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
