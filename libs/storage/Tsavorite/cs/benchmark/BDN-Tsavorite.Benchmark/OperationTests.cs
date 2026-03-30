@@ -25,8 +25,8 @@ namespace BenchmarkDotNetTests
         IDevice logDevice;
         string logDirectory;
 
-        ClientSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        BasicContext<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        ClientSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, BDNSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        BasicContext<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, BDNSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 
         void SetupStore()
         {
@@ -42,7 +42,7 @@ namespace BenchmarkDotNetTests
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, BDNSpanByteFunctions>(new());
             bContext = session.BasicContext;
         }
 
@@ -95,28 +95,31 @@ namespace BenchmarkDotNetTests
         public void Upsert()
         {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
+            var key = new SpanByteKey(keySpan);
             Span<byte> valueSpan = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
                 MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
                 MemoryMarshal.Cast<byte, long>(valueSpan)[0] = ii + NumRecords * 2;
-                _ = bContext.Upsert(new SpanByteKey(keySpan), valueSpan);
+                _ = bContext.Upsert(key, valueSpan);
             }
         }
 
         [BenchmarkCategory("RMW"), Benchmark]
         public void RMW()
         {
-            Span<byte> key = stackalloc byte[sizeof(long)];
-            Span<byte> input = stackalloc byte[sizeof(long)];
-            var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
+            Span<byte> keySpan = stackalloc byte[sizeof(long)];
+            var key = new SpanByteKey(keySpan);
+
+            Span<byte> inputSpan = stackalloc byte[sizeof(long)];
+            var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(inputSpan);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                MemoryMarshal.Cast<byte, long>(key)[0] = ii;
-                MemoryMarshal.Cast<byte, long>(input)[0] = ii + NumRecords * 3;
-                _ = bContext.RMW(new SpanByteKey(key), ref pinnedInputSpan);
+                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
+                MemoryMarshal.Cast<byte, long>(inputSpan)[0] = ii + NumRecords * 3;
+                _ = bContext.RMW(new SpanByteKey(keySpan), ref pinnedInputSpan);
             }
 
             _ = bContext.CompletePending();
@@ -126,13 +129,60 @@ namespace BenchmarkDotNetTests
         public void Read()
         {
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
+            var key = new SpanByteKey(keySpan);
+
+            Span<byte> outputSpan = stackalloc byte[sizeof(long)];
+            var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
                 MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
-                _ = bContext.Read(new SpanByteKey(keySpan));
+                _ = bContext.Read(key, ref output);
             }
             _ = bContext.CompletePending();
+        }
+    }
+
+    public sealed class BDNSpanByteFunctions : SpanByteFunctions<Empty>
+    {
+        /// <inheritdoc />
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        {
+            srcLogRecord.ValueSpan.CopyTo(output.SpanByte.Span);
+            return true;
+        }
+
+        // Note: Currently, only the ReadOnlySpan<byte> form of InPlaceWriter value is used here.
+
+        /// <inheritdoc/>
+        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        {
+            // This does not try to set ETag or Expiration
+            srcValue.CopyTo(logRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        {
+            // This does not try to set ETag or Expiration
+            srcValue.CopyTo(dstLogRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo) => throw new TsavoriteException("InitialUpdater not implemented for BDN");
+
+        /// <inheritdoc/>
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            => throw new TsavoriteException("CopyUpdater not implemented for BDN");
+
+        /// <inheritdoc/>
+        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        {
+            // This does not try to set ETag or Expiration
+            input.CopyTo(logRecord.ValueSpan);
+            return true;
         }
     }
 }
