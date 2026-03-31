@@ -2253,6 +2253,8 @@ namespace Garnet.test.cluster
                     shardInfo.nodes = [];
                     foreach (var node in nodes.Select(v => (RedisResult[])v))
                     {
+                        ClassicAssert.IsTrue(node.Length % 2 == 0, "CLUSTER SHARDS node info must have even number of elements (key-value pairs)");
+
                         // Parse key-value pairs dynamically
                         var nodeInfo = new NodeInfo();
                         for (var j = 0; j < node.Length; j += 2)
@@ -2278,6 +2280,7 @@ namespace Garnet.test.cluster
                                     break;
                                 case "role":
                                     var roleStr = (string)node[j + 1];
+                                    ClassicAssert.IsTrue(roleStr is "master" or "slave", $"Unexpected role value: {roleStr}");
                                     nodeInfo.role = roleStr == "master" ? NodeRole.PRIMARY : NodeRole.REPLICA;
                                     break;
                                 case "replication-offset":

@@ -718,6 +718,7 @@ namespace Garnet.cluster
                 var endpoint = preferredEndpointType switch
                 {
                     ClusterPreferredEndpointType.Hostname => hasHostname ? hostname : "?",
+                    ClusterPreferredEndpointType.Unknown => "?",
                     _ => ip,
                 };
 

@@ -156,6 +156,8 @@ namespace Garnet.test.cluster
         [TestCase(ClusterPreferredEndpointType.Ip, false)]
         [TestCase(ClusterPreferredEndpointType.Ip, true)]
         [TestCase(ClusterPreferredEndpointType.Hostname, true)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, false)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, true)]
         public void ClusterShardsTest(
             ClusterPreferredEndpointType preferredType,
             bool useClusterAnnounceHostname)
@@ -179,10 +181,18 @@ namespace Garnet.test.cluster
                     ClassicAssert.AreEqual(expectedAddress, node.ip);
 
                     // endpoint depends on preferred type
-                    if (preferredType == ClusterPreferredEndpointType.Hostname)
-                        ClassicAssert.AreEqual(useClusterAnnounceHostname ? expectedHostname : node.hostname, node.endpoint);
-                    else
-                        ClassicAssert.AreEqual(expectedAddress, node.endpoint);
+                    switch (preferredType)
+                    {
+                        case ClusterPreferredEndpointType.Hostname:
+                            ClassicAssert.AreEqual(useClusterAnnounceHostname ? expectedHostname : node.hostname, node.endpoint);
+                            break;
+                        case ClusterPreferredEndpointType.Unknown:
+                            ClassicAssert.AreEqual("?", node.endpoint);
+                            break;
+                        default:
+                            ClassicAssert.AreEqual(expectedAddress, node.endpoint);
+                            break;
+                    }
 
                     if (useClusterAnnounceHostname)
                         ClassicAssert.AreEqual(expectedHostname, node.hostname);
@@ -224,11 +234,20 @@ namespace Garnet.test.cluster
                 }
                 else
                 {
-                    // Should still contain comma + system hostname (Garnet default behavior)
+                    // Garnet defaults to system hostname; verify format is valid
                     var commaIdx = afterAt.IndexOf(',');
-                    ClassicAssert.IsTrue(commaIdx > 0, $"Expected system hostname in address part: {addressPart}");
-                    var hostname = afterAt[(commaIdx + 1)..];
-                    ClassicAssert.IsNotEmpty(hostname);
+                    if (commaIdx > 0)
+                    {
+                        // System hostname is present: comma + hostname
+                        var hostname = afterAt[(commaIdx + 1)..];
+                        ClassicAssert.IsNotEmpty(hostname);
+                    }
+                    else
+                    {
+                        // No hostname: address is exactly ip:port@cport with no trailing comma
+                        ClassicAssert.IsTrue(afterAt.All(char.IsDigit),
+                            $"Expected numeric cport with no hostname in address part, but got: {addressPart}");
+                    }
                 }
             }
         }
