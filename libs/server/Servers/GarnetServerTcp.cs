@@ -226,21 +226,24 @@ namespace Garnet.server
             // Reset backoff on successful accept
             acceptBackoffMs = InitialAcceptBackoffMs;
 
-            if (e.AcceptSocket.LocalEndPoint is not UnixDomainSocketEndPoint)
-                e.AcceptSocket.NoDelay = true;
-
-            // Ok to create new event args on accept because we assume a connection to be long-running
-            string remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();
-            logger?.LogDebug("Accepted TCP connection from {remoteEndpoint}", remoteEndpointName);
-
             ServerTcpNetworkHandler handler = null;
             if (activeHandlerCount >= 0)
             {
                 var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
                 if (currentActiveHandlerCount > 0 && (networkConnectionLimit == -1 || currentActiveHandlerCount <= networkConnectionLimit))
                 {
+                    string remoteEndpointName = null;
                     try
                     {
+                        // Configure the accepted socket. These can throw SocketException if the
+                        // peer RST'd between accept completing and here — the socket is "successful"
+                        // from the kernel's perspective but already dead.
+                        if (e.AcceptSocket.LocalEndPoint is not UnixDomainSocketEndPoint)
+                            e.AcceptSocket.NoDelay = true;
+
+                        remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();
+                        logger?.LogDebug("Accepted TCP connection from {remoteEndpoint}", remoteEndpointName);
+
                         handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_GarnetServerTcp_Handler_Created);
                         if (!activeHandlers.TryAdd(handler, default))
@@ -248,14 +251,28 @@ namespace Garnet.server
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Error creating and registering network handler");
-
                         // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary.
                         _ = Interlocked.Decrement(ref activeHandlerCount);
-                        // We did not start the handler, so we need to call DisposeResources() to clean up resources.
-                        handler?.DisposeResources();
-                        // Dispose the handler
-                        handler?.Dispose();
+                        if (handler != null)
+                        {
+                            logger?.LogError(ex, "Error creating and registering network handler");
+                            // We did not start the handler, so we need to call DisposeResources() to clean up resources.
+                            handler.DisposeResources();
+                            handler.Dispose();
+                        }
+                        else
+                        {
+                            if (ex is SocketException se)
+                            {
+                                logger?.LogDebug("Transient socket error during connection setup (SocketErrorCode: {errorCode}), continuing", se.SocketErrorCode);
+                            }
+                            else
+                            {
+                                logger?.LogError(ex, "Unexpected error during connection setup, continuing");
+                            }
+                            // Handler was never created (e.g. dead socket) — dispose the socket directly
+                            e.AcceptSocket?.Dispose();
+                        }
                         return true;
                     }
 
