@@ -249,61 +249,7 @@ namespace Garnet.cluster
             return slotRanges;
         }
 
-        /// <summary>
-        /// Change remote slot state
-        /// </summary>
-        /// <param name="nodeid"></param>
-        /// <param name="state"></param>
-        /// <returns></returns>
-        public bool TrySetSlotRanges(string nodeid, MigrateState state)
-        {
-            var client = migrateOperation[0].Client;
-            try
-            {
-                if (!CheckConnection(client))
-                {
-                    Status = MigrateState.FAIL;
-                    return false;
-                }
 
-                var stateBytes = state switch
-                {
-                    MigrateState.IMPORT => IMPORTING,
-                    MigrateState.STABLE => STABLE,
-                    MigrateState.NODE => NODE,
-                    _ => throw new Exception("Invalid SETSLOT Operation"),
-                };
-
-                logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
-
-                // Get the task and wait for it with timeout
-                var task = client.SetSlotRange(stateBytes, nodeid, _slotRanges);
-                var result = task.WaitAsync(_timeout, _cts.Token).GetAwaiter().GetResult();
-
-                // Check if setslotsrange executed correctly
-                if (!result.Equals("OK", StringComparison.Ordinal))
-                {
-                    logger?.LogError("TrySetSlot error: {error}", result);
-                    Status = MigrateState.FAIL;
-                    return false;
-                }
-
-                logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid ?? "");
-                return true;
-            }
-            catch (TaskCanceledException)
-            {
-                logger?.LogError("SetSlotRange operation timed out or was cancelled after {timeout}ms for slots {slots}", _timeout.TotalMilliseconds, ClusterManager.GetRange([.. _sslots]));
-                Status = MigrateState.FAIL;
-                return false;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error occurred during SetSlotRange for slots {slots}", ClusterManager.GetRange([.. _sslots]));
-                Status = MigrateState.FAIL;
-                return false;
-            }
-        }
 
         /// <summary>
         /// Reset local slot state
@@ -336,29 +282,6 @@ namespace Garnet.cluster
             return true;
         }
 
-        /// <summary>
-        /// Try recover to cluster state before migration task.
-        /// Used only for MIGRATE SLOTS option.
-        /// </summary>
-        public bool TryRecoverFromFailure()
-        {
-            // Set slot at target to stable state when migrate slots fails
-            // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
-            if (!TrySetSlotRanges(null, MigrateState.STABLE))
-            {
-                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
-                return false;
-            }
 
-            // Set slots at source node to their original state when migrate fails
-            // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
-            ResetLocalSlot();
-
-            // TODO: Need to relinquish any migrating Vector Set contexts from target node
-
-            // Log explicit migration failure.
-            Status = MigrateState.FAIL;
-            return true;
-        }
     }
 }

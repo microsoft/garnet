@@ -2373,7 +2373,7 @@ namespace Garnet.test.cluster
             {
                 string value = null;
                 ResponseState responseState = default;
-                EndPoint endPoint;
+                IPEndPoint endPoint = null;
 
                 var success = SpinWait.SpinUntil(() =>
                 {
