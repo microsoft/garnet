@@ -257,12 +257,12 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TrySetSlotRanges(string nodeid, MigrateState state)
         {
-            var status = false;
             var client = migrateOperation[0].Client;
             try
             {
                 if (!CheckConnection(client))
                     return false;
+
                 var stateBytes = state switch
                 {
                     MigrateState.IMPORT => IMPORTING,
@@ -271,27 +271,41 @@ namespace Garnet.cluster
                     _ => throw new Exception("Invalid SETSLOT Operation"),
                 };
 
-                status = client.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
+                logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
+
+                // Get the task and wait for it with timeout
+                var task = client.SetSlotRange(stateBytes, nodeid, _slotRanges);
+                var result = task.WaitAsync(_timeout, _cts.Token).GetAwaiter().GetResult();
+
+                // Check if setslotsrange executed correctly
+                if (!result.Equals("OK", StringComparison.Ordinal))
                 {
-                    // Check if setslotsrange executed correctly
-                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    {
-                        logger?.LogError("TrySetSlot error: {error}", resp);
-                        Status = MigrateState.FAIL;
-                        return false;
-                    }
-                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid ?? "");
-                    return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion)
-                .WaitAsync(_timeout, _cts.Token).Result;
+                    logger?.LogError("TrySetSlot error: {error}", result);
+                    Status = MigrateState.FAIL;
+                    return false;
+                }
+
+                logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid ?? "");
+                return true;
+            }
+            catch (TaskCanceledException)
+            {
+                logger?.LogError("SetSlotRange operation timed out or was cancelled after {timeout}ms for slots {slots}", _timeout.TotalMilliseconds, ClusterManager.GetRange([.. _sslots]));
+                Status = MigrateState.FAIL;
+                return false;
+            }
+            catch (AggregateException aex) when (aex.InnerException is TaskCanceledException)
+            {
+                logger?.LogError("SetSlotRange operation timed out or was cancelled after {timeout}ms for slots {slots}", _timeout.TotalMilliseconds, ClusterManager.GetRange([.. _sslots]));
+                Status = MigrateState.FAIL;
+                return false;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error occurred");
+                logger?.LogError(ex, "An error occurred during SetSlotRange for slots {slots}", ClusterManager.GetRange([.. _sslots]));
+                Status = MigrateState.FAIL;
                 return false;
             }
-
-            return status;
         }
 
         /// <summary>
