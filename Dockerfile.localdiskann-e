@@ -9,10 +9,7 @@ COPY DiskANN/ .
 # Remove any pre-existing build artifacts from the host
 RUN rm -rf target
 
-# Swap dyn_index.rs with the unlimited-effort variant
-RUN cp diskann-garnet/src/dyn_index_unlimited.rs diskann-garnet/src/dyn_index.rs
-
-# Build diskann-garnet in release mode
+# Build diskann-garnet in release mode (uses dyn_index.rs directly)
 RUN cargo build --release -p diskann-garnet
 
 # Stage 2: Build Garnet .NET application
@@ -57,7 +54,7 @@ RUN find /app -name '*.xml' -delete
 # Overwrite the NuGet-provided native library with the locally-built one
 COPY --from=diskann-build /diskann/target/release/libdiskann_garnet.so /tmp/libdiskann_garnet.so
 RUN find /app -name 'libdiskann_garnet.so' -exec cp /tmp/libdiskann_garnet.so {} \; \
-    && echo "Replaced NuGet libdiskann_garnet.so with locally-built release version (Approach E: unlimited-effort)"
+    && echo "Replaced NuGet libdiskann_garnet.so with locally-built release version"
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
