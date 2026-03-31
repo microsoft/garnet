@@ -544,7 +544,12 @@ namespace Garnet.cluster
             _ = nodeInfoStringBuilder
                 .Append(workers[workerId].Nodeid).Append(' ')
                 .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
-                .Append('@').Append(workers[workerId].Port + 10000).Append(',').Append(workers[workerId].hostname).Append(' ')
+                .Append('@').Append(workers[workerId].Port + 10000);
+
+            if (!string.IsNullOrEmpty(workers[workerId].hostname))
+                nodeInfoStringBuilder.Append(',').Append(workers[workerId].hostname);
+
+            _ = nodeInfoStringBuilder.Append(' ')
                 .Append(workerId == 1 ? "myself," : "")
                 .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(' ')
                 .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : '-').Append(' ')
@@ -657,7 +662,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="clusterConnection"></param>
         /// <returns>RESP formatted string</returns>
-        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection)
+        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection, ClusterPreferredEndpointType preferredEndpointType)
         {
             var shardsInfo = "";
             var shardCount = 0;
@@ -705,15 +710,37 @@ namespace Garnet.cluster
 
                 string CreateFormattedNodeInfo(int workerId, bool connected)
                 {
-                    var nodeInfo = "*12\r\n";
+                    var ip = workers[workerId].Address;
+                    var hostname = workers[workerId].hostname;
+                    var hasHostname = !string.IsNullOrEmpty(hostname);
+                    var role = workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave";
+
+                    var endpoint = preferredEndpointType switch
+                    {
+                        ClusterPreferredEndpointType.Hostname => hasHostname ? hostname : "?",
+                        _ => ip,
+                    };
+
+                    // Base fields: id(2) + port(2) + ip(2) + endpoint(2) + role(2) + replication-offset(2) + health(2) = 14
+                    // Optional: hostname(2) = +2
+                    var fieldCount = hasHostname ? 16 : 14;
+
+                    var nodeInfo = $"*{fieldCount}\r\n";
                     nodeInfo += "$2\r\nid\r\n";
                     nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
                     nodeInfo += "$4\r\nport\r\n";
                     nodeInfo += $":{workers[workerId].Port}\r\n";
-                    nodeInfo += "$7\r\naddress\r\n";
-                    nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
+                    nodeInfo += "$2\r\nip\r\n";
+                    nodeInfo += $"${ip.Length}\r\n{ip}\r\n";
+                    nodeInfo += "$8\r\nendpoint\r\n";
+                    nodeInfo += $"${endpoint.Length}\r\n{endpoint}\r\n";
+                    if (hasHostname)
+                    {
+                        nodeInfo += "$8\r\nhostname\r\n";
+                        nodeInfo += $"${hostname.Length}\r\n{hostname}\r\n";
+                    }
                     nodeInfo += "$4\r\nrole\r\n";
-                    nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
+                    nodeInfo += $"${role.Length}\r\n{role}\r\n";
                     nodeInfo += "$18\r\nreplication-offset\r\n";
                     nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
                     nodeInfo += "$6\r\nhealth\r\n";
