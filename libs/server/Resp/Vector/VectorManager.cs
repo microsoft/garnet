@@ -505,9 +505,7 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            var effectiveEF = !filter.IsEmpty
-                ? Math.Max(searchExplorationFactor, maxFilteringEffort)
-                : searchExplorationFactor;
+            var effectiveEF = searchExplorationFactor;
 
             if (!filter.IsEmpty)
             {
@@ -743,9 +741,7 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
-            var effectiveEF = !filter.IsEmpty
-                ? Math.Max(searchExplorationFactor, maxFilteringEffort)
-                : searchExplorationFactor;
+            var effectiveEF = searchExplorationFactor;
 
             if (!filter.IsEmpty)
             {
