@@ -2336,8 +2336,8 @@ namespace Garnet.test.cluster
         public void ClusterMigrateSetSlotRangeResilience()
         {
             context.logger?.LogDebug("0. ClusterMigrateSetSlotRangeResilience started");
-            var Shards = 2;
-            context.CreateInstances(Shards, useTLS: UseTLS);
+            var shards = 2;
+            context.CreateInstances(shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
 
             // Setup: node 0 owns all slots, node 1 owns none
@@ -2347,7 +2347,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.Meet(0, 1, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, logger: context.logger);
 
-            // Create data across multiple slots using the standard helper
+            // Create data in a single slot using the standard helper
             var keyCount = 50;
             var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
             var sourceNodeIndex = 0;
@@ -2371,12 +2371,17 @@ namespace Garnet.test.cluster
             var targetEndPoint = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
             foreach (var entry in data)
             {
-                var value = context.clusterTestUtils.GetKey(targetEndPoint, entry.Key, out _, out var endPoint, out var responseState);
-                while (responseState != ResponseState.OK || value == null)
+                string value = null;
+                ResponseState responseState = default;
+                EndPoint endPoint;
+
+                var success = SpinWait.SpinUntil(() =>
                 {
-                    _ = Thread.Yield();
                     value = context.clusterTestUtils.GetKey(targetEndPoint, entry.Key, out _, out endPoint, out responseState);
-                }
+                    return responseState == ResponseState.OK && value != null;
+                }, TimeSpan.FromSeconds(30));
+
+                ClassicAssert.IsTrue(success, $"Timed out waiting for key {Encoding.ASCII.GetString(entry.Key)} to become available on target");
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(entry.Value), value);
             }

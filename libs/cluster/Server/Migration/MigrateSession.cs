@@ -261,7 +261,10 @@ namespace Garnet.cluster
             try
             {
                 if (!CheckConnection(client))
+                {
+                    Status = MigrateState.FAIL;
                     return false;
+                }
 
                 var stateBytes = state switch
                 {
@@ -289,12 +292,6 @@ namespace Garnet.cluster
                 return true;
             }
             catch (TaskCanceledException)
-            {
-                logger?.LogError("SetSlotRange operation timed out or was cancelled after {timeout}ms for slots {slots}", _timeout.TotalMilliseconds, ClusterManager.GetRange([.. _sslots]));
-                Status = MigrateState.FAIL;
-                return false;
-            }
-            catch (AggregateException aex) when (aex.InnerException is TaskCanceledException)
             {
                 logger?.LogError("SetSlotRange operation timed out or was cancelled after {timeout}ms for slots {slots}", _timeout.TotalMilliseconds, ClusterManager.GetRange([.. _sslots]));
                 Status = MigrateState.FAIL;
