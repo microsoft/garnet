@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using Garnet.client;
 using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.server;
@@ -524,12 +525,24 @@ namespace Garnet.cluster
             {
                 while (i < recordCount)
                 {
-                    if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
-                        return false;
+                    var kind = (MigrationRecordSpanType)(*payloadPtr);
+                    payloadPtr++;
 
-                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
-                    _ = basicGarnetApi.SET(in diskLogRecord);
-                    diskLogRecord.Dispose();
+                    if (kind == MigrationRecordSpanType.LogRecord)
+                    {
+
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord);
+                        diskLogRecord.Dispose();
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");
+                    }
+
                     i++;
                 }
             }
