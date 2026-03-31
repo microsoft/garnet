@@ -46,7 +46,7 @@ namespace Garnet.cluster
                 }
 
                 // Transmit keys from store
-                if (!migrateTask.TransmitKeys())
+                if (!migrateTask.TransmitKeys(indexesToMigrate))
                 {
                     logger?.LogError("Failed transmitting keys from store");
                     return false;

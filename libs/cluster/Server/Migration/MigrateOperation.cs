@@ -126,13 +126,17 @@ namespace Garnet.cluster
                 return true;
             }
 
-            public bool TransmitKeys()
+            public bool TransmitKeys(Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
                 // TODO: initialize 'output' based on gcs curr and end; make sure it has the initial part of the "send" set, and call gcs.IncrementRecordDirect().
                 //       This will still allow SBAM.Memory to be reused.
                 var output = new UnifiedOutput();
+
+#if NET9_0_OR_GREATER
+                var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
                 try
                 {
@@ -146,6 +150,22 @@ namespace Garnet.cluster
                     {
                         if (keys[i].Item2)
                             continue;
+
+                        var spanByte = keys[i].Item1;
+
+                        // Don't transmit if a Vector Set
+                        var isVectorSet =
+                            vectorSetKeysToIgnore.Count > 0 &&
+#if NET9_0_OR_GREATER
+                            ignoreLookup.ContainsKey(spanByte.ReadOnlySpan);
+#else
+                                vectorSetKeysToIgnore.ContainsKey(spanByte.ToArray());
+#endif
+
+                        if (isVectorSet)
+                        {
+                            continue;
+                        }
 
                         if (!session.WriteOrSendRecord(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
                             return false;
