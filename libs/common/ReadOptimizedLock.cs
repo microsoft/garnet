@@ -125,7 +125,7 @@ namespace Garnet.common
         {
             // Throw away half the top half of the hash
             //
-            // This set of locks will be small enough that the extra bits shoulnd't matter
+            // This set of locks will be small enough that the extra bits shouldn't matter
             var hash = (int)hashLong;
 
             // Hint might be out of range, so force it into the space we expect
