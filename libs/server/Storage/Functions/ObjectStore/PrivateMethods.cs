@@ -26,7 +26,7 @@ namespace Garnet.server
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                key, value, epochAccessor, out _);
+                key, value, ref input, epochAccessor, out _);
         }
 
         /// <summary>
