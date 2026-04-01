@@ -14,28 +14,28 @@ namespace BDN.benchmark.Operations
     [MemoryDiagnoser]
     public unsafe class CommandParsingBenchmark : OperationsBase
     {
-        // Tier 1a: SIMD Vector128 fast path (3-6 char commands with fixed arg counts)
+        // Tier 0a: SIMD Vector128 fast path (3-6 char commands with fixed arg counts)
         static ReadOnlySpan<byte> CMD_PING => "*1\r\n$4\r\nPING\r\n"u8;
         static ReadOnlySpan<byte> CMD_GET => "*2\r\n$3\r\nGET\r\n$1\r\na\r\n"u8;
         static ReadOnlySpan<byte> CMD_SET => "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\nb\r\n"u8;
         static ReadOnlySpan<byte> CMD_INCR => "*2\r\n$4\r\nINCR\r\n$1\r\ni\r\n"u8;
         static ReadOnlySpan<byte> CMD_EXISTS => "*2\r\n$6\r\nEXISTS\r\n$1\r\na\r\n"u8;
-
-        // Tier 1b: Scalar ulong switch (variable-arg commands)
         static ReadOnlySpan<byte> CMD_SETEX => "*4\r\n$5\r\nSETEX\r\n$1\r\na\r\n$2\r\n60\r\n$1\r\nb\r\n"u8;
+
+        // Tier 0b: Scalar ulong switch (variable-arg commands, or when remainingBytes < 16)
         static ReadOnlySpan<byte> CMD_EXPIRE => "*3\r\n$6\r\nEXPIRE\r\n$1\r\na\r\n$2\r\n60\r\n"u8;
 
-        // Old Tier 2 (FastParseArrayCommand): near top of switch chains (short names, common first chars)
+        // Tier 1: Hash table lookup via ArrayParseCommand → HashLookupCommand (+ MRU cache on 2nd+ call)
         static ReadOnlySpan<byte> CMD_HSET => "*4\r\n$4\r\nHSET\r\n$1\r\nh\r\n$1\r\nf\r\n$1\r\nv\r\n"u8;
         static ReadOnlySpan<byte> CMD_LPUSH => "*3\r\n$5\r\nLPUSH\r\n$1\r\nl\r\n$1\r\nv\r\n"u8;
         static ReadOnlySpan<byte> CMD_ZADD => "*4\r\n$4\r\nZADD\r\n$1\r\nz\r\n$1\r\n1\r\n$1\r\nm\r\n"u8;
 
-        // Old Tier 2 (FastParseArrayCommand): deep in switch chains (long names, double-digit $ header)
+        // Tier 1: Hash table lookup (long command names, double-digit $ header)
         static ReadOnlySpan<byte> CMD_ZRANGEBYSCORE => "*4\r\n$13\r\nZRANGEBYSCORE\r\n$1\r\nz\r\n$1\r\n0\r\n$2\r\n10\r\n"u8;
         static ReadOnlySpan<byte> CMD_ZREMRANGEBYSCORE => "*4\r\n$16\r\nZREMRANGEBYSCORE\r\n$1\r\nz\r\n$1\r\n0\r\n$2\r\n10\r\n"u8;
         static ReadOnlySpan<byte> CMD_HINCRBYFLOAT => "*4\r\n$12\r\nHINCRBYFLOAT\r\n$1\r\nh\r\n$1\r\nf\r\n$3\r\n1.5\r\n"u8;
 
-        // Old Tier 3 (SlowParseCommand): sequential SequenceEqual scan
+        // Tier 1: Hash table lookup (commands formerly in SlowParseCommand)
         static ReadOnlySpan<byte> CMD_SUBSCRIBE => "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n"u8;
         static ReadOnlySpan<byte> CMD_GEORADIUS => "*6\r\n$9\r\nGEORADIUS\r\n$1\r\ng\r\n$1\r\n0\r\n$1\r\n0\r\n$3\r\n100\r\n$2\r\nkm\r\n"u8;
         static ReadOnlySpan<byte> CMD_SETIFMATCH => "*4\r\n$10\r\nSETIFMATCH\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\n0\r\n"u8;
@@ -85,7 +85,7 @@ namespace BDN.benchmark.Operations
             CMD_SETIFMATCH.CopyTo(bufSetifmatch);
         }
 
-        // === Tier 1a: SIMD Vector128 fast path ===
+        // === Tier 0a: SIMD Vector128 fast path ===
 
         [Benchmark]
         public RespCommand ParsePING()
@@ -132,7 +132,8 @@ namespace BDN.benchmark.Operations
             return result;
         }
 
-        // === Tier 1b: Scalar ulong switch ===
+        // === Tier 0a: SIMD fast path (SETEX is a 15-byte SIMD pattern) ===
+        // === Tier 0b: Scalar ulong switch ===
 
         [Benchmark]
         public RespCommand ParseSETEX()
@@ -152,7 +153,7 @@ namespace BDN.benchmark.Operations
             return result;
         }
 
-        // === Old Tier 2 (FastParseArrayCommand): near top of switch ===
+        // === Tier 1: Hash table lookup (short names, MRU cache on repeat) ===
 
         [Benchmark]
         public RespCommand ParseHSET()
@@ -181,7 +182,7 @@ namespace BDN.benchmark.Operations
             return result;
         }
 
-        // === Old Tier 2 (FastParseArrayCommand): deep in switch (long names) ===
+        // === Tier 1: Hash table lookup (long names) ===
 
         [Benchmark]
         public RespCommand ParseZRANGEBYSCORE()
@@ -210,7 +211,7 @@ namespace BDN.benchmark.Operations
             return result;
         }
 
-        // === Old Tier 3 (SlowParseCommand): sequential SequenceEqual scan ===
+        // === Tier 1: Hash table lookup (formerly in SlowParseCommand) ===
 
         [Benchmark]
         public RespCommand ParseSUBSCRIBE()
