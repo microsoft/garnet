@@ -237,7 +237,6 @@ namespace Garnet.server
                             this,
                             serverOptions.ReplicaSyncDelayMs,
                             maxChunkSize: 1 << 20,
-                            stopConsume: null,
                             cts.Token).ConfigureAwait(false);
 
                         // Replay completed

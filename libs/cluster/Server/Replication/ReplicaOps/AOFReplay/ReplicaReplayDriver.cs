@@ -198,16 +198,12 @@ namespace Garnet.cluster
                 {
                     if (!readLock)
                         throw new GarnetException("Failed to acquire replayLock");
-                    while (true)
-                    {
-                        cts.Token.ThrowIfCancellationRequested();
-                        await replayIterator.BulkConsumeAllAsync(
-                            this,
-                            serverOptions.ReplicaSyncDelayMs,
-                            maxChunkSize: 1 << 20,
-                            stopConsume: null,
-                            cts.Token).ConfigureAwait(false);
-                    }
+
+                    await replayIterator.BulkConsumeAllAsync(
+                        this,
+                        serverOptions.ReplicaSyncDelayMs,
+                        maxChunkSize: 1 << 20,
+                        cts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
