@@ -127,10 +127,9 @@ namespace Tsavorite.core
         /// <param name="consumer"> consumer </param>
         /// <param name="throttleMs">throttle the iteration speed</param>
         /// <param name="maxChunkSize">max size of returned chunk</param>
-        /// <param name="stopConsume"> custom stop consume signal </param>
         /// <param name="token"> cancellation token </param>
         /// <typeparam name="T"> consumer type </typeparam>
-        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, Func<bool> stopConsume = null, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        public async Task BulkConsumeAllAsync<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
         {
             while (!disposed)
             {
@@ -138,8 +137,6 @@ namespace Tsavorite.core
                 while (!TryBulkConsumeNext(consumer, maxChunkSize))
                 {
                     await Task.Delay(throttleMs, token).ConfigureAwait(false);
-                    // If monitoring has signaled
-                    if (stopConsume != null && stopConsume()) return;
                 }
             }
         }
@@ -478,6 +475,9 @@ namespace Tsavorite.core
         /// <returns>whether a next entry is present</returns>
         public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
         {
+            // Throttle and implicitly check for consumer liveness
+            consumer.Throttle();
+
             if (maxChunkSize == 0) maxChunkSize = allocator.PageSize;
 
             if (disposed)
@@ -503,7 +503,7 @@ namespace Tsavorite.core
                         epoch.ProtectAndDrain();
                     }
 
-                    var hasNext = GetNextInternal(out long startPhysicalAddress, out int newEntryLength, out long startLogicalAddress, out long endLogicalAddress, out bool isCommitRecord, out bool onFrame);
+                    var hasNext = GetNextInternal(out long startPhysicalAddress, out var newEntryLength, out var startLogicalAddress, out var endLogicalAddress, out bool isCommitRecord, out bool onFrame);
 
                     if (!hasNext)
                     {
@@ -512,7 +512,7 @@ namespace Tsavorite.core
                     }
 
                     // GetNextInternal returns only the payload length, so adjust the totalLength
-                    int totalLength = headerSize + Align(newEntryLength);
+                    var totalLength = headerSize + Align(newEntryLength);
 
                     // Expand the records in iteration, as long as as they are on the same physical page
                     while (ExpandGetNextInternal(startPhysicalAddress, ref totalLength, out _, out endLogicalAddress, out isCommitRecord))

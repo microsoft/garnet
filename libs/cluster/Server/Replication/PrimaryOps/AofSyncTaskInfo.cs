@@ -90,6 +90,9 @@ namespace Garnet.cluster
 
         public void Throttle()
         {
+            if (!garnetClient.IsConnected)
+                throw new GarnetException("AOF stream client disconnected!");
+
             // Trigger flush while we are out of epoch protection
             garnetClient.CompletePending(false);
             garnetClient.Throttle();
@@ -112,7 +115,6 @@ namespace Garnet.cluster
                     this,
                     clusterProvider.serverOptions.ReplicaSyncDelayMs,
                     maxChunkSize: 1 << 20,
-                    () => garnetClient != null && !garnetClient.IsConnected,
                     cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)

@@ -95,16 +95,12 @@ namespace Garnet.cluster
             try
             {
                 activeReplay.ReadLock();
-                while (true)
-                {
-                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                    await replayIterator.BulkConsumeAllAsync(
-                        this,
-                        clusterProvider.serverOptions.ReplicaSyncDelayMs,
-                        maxChunkSize: 1 << 20,
-                        stopConsume: null,
-                        replicaReplayTaskCts.Token);
-                }
+
+                await replayIterator.BulkConsumeAllAsync(
+                    this,
+                    clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                    maxChunkSize: 1 << 20,
+                    replicaReplayTaskCts.Token);
             }
             catch (Exception ex)
             {
