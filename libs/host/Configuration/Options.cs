@@ -709,7 +709,12 @@ namespace Garnet
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
                 clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
-                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
+                    endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
+                    listenEp.Port == announceEp.Port &&
+                    (listenEp.Address.Equals(announceEp.Address) ||
+                     listenEp.Address.Equals(IPAddress.Any) ||
+                     listenEp.Address.Equals(IPAddress.IPv6Any))))
                     throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
             }
 
