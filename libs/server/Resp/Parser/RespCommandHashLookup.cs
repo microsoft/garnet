@@ -515,7 +515,7 @@ namespace Garnet.server
             Add("BITPOS", RespCommand.BITPOS);
             Add("BITFIELD", RespCommand.BITFIELD);
             Add("BITFIELD_RO", RespCommand.BITFIELD_RO);
-            Add("BITOP", RespCommand.BITOP);
+            Add("BITOP", RespCommand.BITOP, hasSub: true);
 
             // HyperLogLog commands
             Add("PFADD", RespCommand.PFADD);
