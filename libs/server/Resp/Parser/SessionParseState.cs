@@ -178,28 +178,37 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Ensure the argument buffer can hold at least <paramref name="capacity"/> entries,
-        /// preserving existing contents. No-op if already large enough.
+        /// Ensure the argument buffer can hold at least <paramref name="capacity"/> entries
+        /// from the current slice offset, preserving existing contents. No-op if already large enough.
         /// </summary>
         public void EnsureCapacity(int capacity)
         {
-            var oldCount = Count;
-
-            // The old buffer needs to remain rooted for the copy below to be safe
             var oldBuffer = rootBuffer;
 
-            // Never shrink below the current count in an ensure-capacity method.
-            var requiredCapacity = oldCount > capacity ? oldCount : capacity;
+            // Compute slice offset (bufferPtr may point into the middle of rootBuffer)
+            var sliceOffset = oldBuffer != null
+                ? (int)(bufferPtr - (PinnedSpanByte*)Unsafe.AsPointer(ref oldBuffer[0]))
+                : 0;
 
-            if (oldBuffer != null && requiredCapacity <= oldBuffer.Length)
+            // Total buffer size needed = slice offset + requested capacity
+            var requiredLength = sliceOffset + capacity;
+
+            if (oldBuffer != null && requiredLength <= oldBuffer.Length)
                 return;
 
-            Initialize(requiredCapacity);
+            var oldCount = Count;
+            Initialize(requiredLength);
 
-            if (oldBuffer != null && oldCount > 0)
+            if (oldBuffer != null)
             {
-                oldBuffer.AsSpan(0, oldCount).CopyTo(rootBuffer);
+                // Copy all data up to the end of the current slice
+                var copyLength = sliceOffset + oldCount;
+                if (copyLength > 0)
+                    oldBuffer.AsSpan(0, copyLength).CopyTo(rootBuffer);
             }
+
+            // Restore slice offset and count
+            bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]) + sliceOffset;
             Count = oldCount;
         }
 
