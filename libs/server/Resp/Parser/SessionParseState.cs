@@ -27,11 +27,6 @@ namespace Garnet.server
         public int Count;
 
         /// <summary>
-        /// Get the allocated capacity of the argument buffer
-        /// </summary>
-        public int Capacity { get; }
-
-        /// <summary>
         /// Get a Span of the parsed parameters in the form an PinnedSpanByte
         /// </summary>
         public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
@@ -57,7 +52,6 @@ namespace Garnet.server
             this.rootCount = rootCount;
             this.bufferPtr = bufferPtr;
             this.Count = count;
-            this.Capacity = rootBuffer.Length;
         }
 
         /// <summary>
@@ -181,6 +175,22 @@ namespace Garnet.server
             {
                 *(bufferPtr + i) = args[i];
             }
+        }
+
+        /// <summary>
+        /// Ensure the argument buffer can hold at least <paramref name="capacity"/> entries,
+        /// preserving existing contents. No-op if already large enough.
+        /// </summary>
+        public void EnsureCapacity(int capacity)
+        {
+            if (rootBuffer != null && capacity <= rootBuffer.Length)
+                return;
+
+            var oldCount = Count;
+            var oldBuffer = rootBuffer;
+            Initialize(capacity);
+            oldBuffer.AsSpan(0, oldCount).CopyTo(rootBuffer);
+            Count = oldCount;
         }
 
         /// <summary>
