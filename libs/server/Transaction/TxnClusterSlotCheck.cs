@@ -22,13 +22,8 @@ namespace Garnet.server
 
             var count = txnKeysParseState.Count;
 
-            // Double the parse state buffer capacity if needed, and copy existing parameters to the extended buffer
-            if (count >= txnKeysParseState.Capacity)
-            {
-                var oldParams = txnKeysParseState.Parameters;
-                txnKeysParseState.Initialize(count * 2);
-                txnKeysParseState.SetArguments(0, oldParams);
-            }
+            // Grow the buffer if needed (EnsureCapacity handles safe resize with proper GC rooting)
+            txnKeysParseState.EnsureCapacity(count + 1);
 
             txnKeysParseState.Count = count + 1;
             txnKeysParseState.SetArgument(count, keySlice);
