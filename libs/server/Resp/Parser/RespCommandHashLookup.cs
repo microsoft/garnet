@@ -232,7 +232,7 @@ namespace Garnet.server
         public static RespCommand Lookup(byte* name, int length, out bool hasSubcommands)
         {
             hasSubcommands = false;
-            if ((uint)length > 24)
+            if ((uint)length - 1 > 23)
                 return RespCommand.NONE;
 
             uint hash = ComputeHash(name, length);
@@ -390,11 +390,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static RespCommand LookupInTable(CommandEntry[] table, int tableMask, byte* name, int length)
         {
-            Debug.Assert(length > 0, "Command name length must be positive");
-            Debug.Assert(table != null, "Hash table must not be null");
-
-            // CommandEntry stores at most 24 bytes of name; longer names can never match.
-            if ((uint)length > 24) return RespCommand.NONE;
+            // CommandEntry stores at most 24 bytes of name; empty or oversized names can never match.
+            if ((uint)length - 1 > 23) return RespCommand.NONE;
 
             uint hash = ComputeHash(name, length);
             int idx = (int)(hash & (uint)tableMask);

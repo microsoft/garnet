@@ -781,14 +781,13 @@ namespace Garnet.server
 
                 // Extract length of the first string header
                 var length = ptr[5] - '0';
-                Debug.Assert(length is > 0 and <= 9);
 
                 var oldReadHead = readHead;
 
-                // Ensure that the complete command string is contained in the package. Otherwise exit early.
-                // Include 10 bytes to account for array and command string headers, and terminator
+                // Ensure valid command name length (1-9) and that the complete command string
+                // is contained in the package. Otherwise fall through to return NONE.
                 // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
-                if (remainingBytes >= length + 10)
+                if (length is > 0 and <= 9 && remainingBytes >= length + 10)
                 {
                     // Optimistically advance read head to the end of the command name
                     readHead += length + 10;
