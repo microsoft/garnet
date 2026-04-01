@@ -183,13 +183,21 @@ namespace Garnet.server
         /// </summary>
         public void EnsureCapacity(int capacity)
         {
-            if (rootBuffer != null && capacity <= rootBuffer.Length)
-                return;
-
             var oldCount = Count;
             var oldBuffer = rootBuffer;
-            Initialize(capacity);
-            oldBuffer.AsSpan(0, oldCount).CopyTo(rootBuffer);
+
+            // Never shrink below the current count in an ensure-capacity method.
+            var requiredCapacity = oldCount > capacity ? oldCount : capacity;
+
+            if (oldBuffer != null && requiredCapacity <= oldBuffer.Length)
+                return;
+
+            Initialize(requiredCapacity);
+
+            if (oldBuffer != null && oldCount > 0)
+            {
+                oldBuffer.AsSpan(0, oldCount).CopyTo(rootBuffer);
+            }
             Count = oldCount;
         }
 
