@@ -655,51 +655,6 @@ namespace Garnet.server
         private Vector128<byte> _cachedPattern1, _cachedMask1;
         private RespCommand _cachedCmd1;
         private byte _cachedLen1, _cachedCount1;
-        // SIMD Vector128 patterns for FastParseCommand.
-        // Each encodes the full RESP header + command: *N\r\n$L\r\nCMD\r\n
-        // Masks zero out trailing bytes for patterns shorter than 16 bytes.
-        private static readonly Vector128<byte> s_mask13 = Vector128.Create(
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00).AsByte();
-        private static readonly Vector128<byte> s_mask14 = Vector128.Create(
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00).AsByte();
-        private static readonly Vector128<byte> s_mask15 = Vector128.Create(
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00).AsByte();
-
-        // 13-byte: *N\r\n$3\r\nXXX\r\n
-        private static readonly Vector128<byte> s_GET = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'\r', (byte)'\n', 0, 0, 0);
-        private static readonly Vector128<byte> s_SET = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'\r', (byte)'\n', 0, 0, 0);
-        private static readonly Vector128<byte> s_DEL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'D', (byte)'E', (byte)'L', (byte)'\r', (byte)'\n', 0, 0, 0);
-        private static readonly Vector128<byte> s_TTL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'3', (byte)'\r', (byte)'\n', (byte)'T', (byte)'T', (byte)'L', (byte)'\r', (byte)'\n', 0, 0, 0);
-
-        // 14-byte: *N\r\n$4\r\nXXXX\r\n
-        private static readonly Vector128<byte> s_PING = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'P', (byte)'I', (byte)'N', (byte)'G', (byte)'\r', (byte)'\n', 0, 0);
-        private static readonly Vector128<byte> s_INCR = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'I', (byte)'N', (byte)'C', (byte)'R', (byte)'\r', (byte)'\n', 0, 0);
-        private static readonly Vector128<byte> s_DECR = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'D', (byte)'E', (byte)'C', (byte)'R', (byte)'\r', (byte)'\n', 0, 0);
-        private static readonly Vector128<byte> s_EXEC = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'E', (byte)'X', (byte)'E', (byte)'C', (byte)'\r', (byte)'\n', 0, 0);
-        private static readonly Vector128<byte> s_PTTL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'P', (byte)'T', (byte)'T', (byte)'L', (byte)'\r', (byte)'\n', 0, 0);
-        private static readonly Vector128<byte> s_DUMP = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'4', (byte)'\r', (byte)'\n', (byte)'D', (byte)'U', (byte)'M', (byte)'P', (byte)'\r', (byte)'\n', 0, 0);
-
-        // 15-byte: *N\r\n$5\r\nXXXXX\r\n
-        private static readonly Vector128<byte> s_MULTI = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'M', (byte)'U', (byte)'L', (byte)'T', (byte)'I', (byte)'\r', (byte)'\n', 0);
-        private static readonly Vector128<byte> s_PFADD = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'P', (byte)'F', (byte)'A', (byte)'D', (byte)'D', (byte)'\r', (byte)'\n', 0);
-        private static readonly Vector128<byte> s_SETNX = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'N', (byte)'X', (byte)'\r', (byte)'\n', 0);
-        private static readonly Vector128<byte> s_SETEX = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'5', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'E', (byte)'X', (byte)'\r', (byte)'\n', 0);
-
-        // 16-byte: *N\r\n$6\r\nXXXXXX\r\n (no mask needed)
-        private static readonly Vector128<byte> s_EXISTS = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'E', (byte)'X', (byte)'I', (byte)'S', (byte)'T', (byte)'S', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_GETDEL = Vector128.Create((byte)'*', (byte)'2', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'D', (byte)'E', (byte)'L', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_APPEND = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'A', (byte)'P', (byte)'P', (byte)'E', (byte)'N', (byte)'D', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_INCRBY = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'I', (byte)'N', (byte)'C', (byte)'R', (byte)'B', (byte)'Y', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_DECRBY = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'D', (byte)'E', (byte)'C', (byte)'R', (byte)'B', (byte)'Y', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_GETBIT = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'B', (byte)'I', (byte)'T', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_SETBIT = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'S', (byte)'E', (byte)'T', (byte)'B', (byte)'I', (byte)'T', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_GETSET = Vector128.Create((byte)'*', (byte)'3', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'G', (byte)'E', (byte)'T', (byte)'S', (byte)'E', (byte)'T', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_ASKING = Vector128.Create((byte)'*', (byte)'1', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'A', (byte)'S', (byte)'K', (byte)'I', (byte)'N', (byte)'G', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_PSETEX = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'P', (byte)'S', (byte)'E', (byte)'T', (byte)'E', (byte)'X', (byte)'\r', (byte)'\n');
-        private static readonly Vector128<byte> s_SUBSTR = Vector128.Create((byte)'*', (byte)'4', (byte)'\r', (byte)'\n', (byte)'$', (byte)'6', (byte)'\r', (byte)'\n', (byte)'S', (byte)'U', (byte)'B', (byte)'S', (byte)'T', (byte)'R', (byte)'\r', (byte)'\n');
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
         /// and advances read head.
@@ -763,19 +718,17 @@ namespace Garnet.server
                 if (Vector128.EqualsAll(m13, s_DEL)) { readHead += 13; count = 1; return RespCommand.DEL; }
                 if (Vector128.EqualsAll(m13, s_TTL)) { readHead += 13; count = 1; return RespCommand.TTL; }
 
-                // 14-byte patterns: 4-char commands (PING, INCR, DECR, EXEC, PTTL, DUMP)
+                // 14-byte patterns: 4-char commands (PING, INCR, DECR, EXEC, PTTL)
                 var m14 = Vector128.BitwiseAnd(input, s_mask14);
                 if (Vector128.EqualsAll(m14, s_PING)) { readHead += 14; count = 0; return RespCommand.PING; }
                 if (Vector128.EqualsAll(m14, s_INCR)) { readHead += 14; count = 1; return RespCommand.INCR; }
                 if (Vector128.EqualsAll(m14, s_DECR)) { readHead += 14; count = 1; return RespCommand.DECR; }
                 if (Vector128.EqualsAll(m14, s_EXEC)) { readHead += 14; count = 0; return RespCommand.EXEC; }
                 if (Vector128.EqualsAll(m14, s_PTTL)) { readHead += 14; count = 1; return RespCommand.PTTL; }
-                if (Vector128.EqualsAll(m14, s_DUMP)) { readHead += 14; count = 1; return RespCommand.DUMP; }
 
-                // 15-byte patterns: 5-char commands (MULTI, PFADD, SETNX, SETEX)
+                // 15-byte patterns: 5-char commands (MULTI, SETNX, SETEX)
                 var m15 = Vector128.BitwiseAnd(input, s_mask15);
                 if (Vector128.EqualsAll(m15, s_MULTI)) { readHead += 15; count = 0; return RespCommand.MULTI; }
-                if (Vector128.EqualsAll(m15, s_PFADD)) { readHead += 15; count = 2; return RespCommand.PFADD; }
                 if (Vector128.EqualsAll(m15, s_SETNX)) { readHead += 15; count = 2; return RespCommand.SETNX; }
                 if (Vector128.EqualsAll(m15, s_SETEX)) { readHead += 15; count = 3; return RespCommand.SETEX; }
 
@@ -785,12 +738,7 @@ namespace Garnet.server
                 if (Vector128.EqualsAll(input, s_APPEND)) { readHead += 16; count = 2; return RespCommand.APPEND; }
                 if (Vector128.EqualsAll(input, s_INCRBY)) { readHead += 16; count = 2; return RespCommand.INCRBY; }
                 if (Vector128.EqualsAll(input, s_DECRBY)) { readHead += 16; count = 2; return RespCommand.DECRBY; }
-                if (Vector128.EqualsAll(input, s_GETBIT)) { readHead += 16; count = 2; return RespCommand.GETBIT; }
-                if (Vector128.EqualsAll(input, s_SETBIT)) { readHead += 16; count = 3; return RespCommand.SETBIT; }
-                if (Vector128.EqualsAll(input, s_GETSET)) { readHead += 16; count = 2; return RespCommand.GETSET; }
-                if (Vector128.EqualsAll(input, s_ASKING)) { readHead += 16; count = 0; return RespCommand.ASKING; }
                 if (Vector128.EqualsAll(input, s_PSETEX)) { readHead += 16; count = 3; return RespCommand.PSETEX; }
-                if (Vector128.EqualsAll(input, s_SUBSTR)) { readHead += 16; count = 3; return RespCommand.SUBSTR; }
 
                 // MRU cache check: catches repeated commands that aren't in the SIMD pattern table
                 // (e.g., HSET, LPUSH, ZADD, ZRANGEBYSCORE). Same 3-op cost as one SIMD pattern check.
@@ -856,59 +804,39 @@ namespace Garnet.server
 
                     return ((count << 4) | length) switch
                     {
-                        // Commands without arguments
+                        // (1) Same fixed-arg hot commands as SIMD path — fallback when remainingBytes < 16
                         4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8) => RespCommand.PING,
                         4 when lastWord == MemoryMarshal.Read<ulong>("\r\nEXEC\r\n"u8) => RespCommand.EXEC,
                         5 when lastWord == MemoryMarshal.Read<ulong>("\nMULTI\r\n"u8) => RespCommand.MULTI,
-                        6 when lastWord == MemoryMarshal.Read<ulong>("ASKING\r\n"u8) => RespCommand.ASKING,
-                        7 when lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && ptr[8] == 'D' => RespCommand.DISCARD,
-                        7 when lastWord == MemoryMarshal.Read<ulong>("NWATCH\r\n"u8) && ptr[8] == 'U' => RespCommand.UNWATCH,
-                        8 when lastWord == MemoryMarshal.Read<ulong>("ADONLY\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.READONLY,
-                        9 when lastWord == MemoryMarshal.Read<ulong>("DWRITE\r\n"u8) && *(uint*)(ptr + 8) == MemoryMarshal.Read<uint>("READ"u8) => RespCommand.READWRITE,
-
-                        // Commands with fixed number of arguments
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
-                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDUMP\r\n"u8) => RespCommand.DUMP,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8) => RespCommand.EXISTS,
                         (1 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8) => RespCommand.GETDEL,
-                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && ptr[8] == 'P' => RespCommand.PERSIST,
-                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("PFCOUNT\r\n"u8) && ptr[8] == 'P' => RespCommand.PFCOUNT,
                         (2 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SET,
-                        (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
-                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
-                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
-                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
-                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P' => RespCommand.PFMERGE,
-                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SP"u8) => RespCommand.SPUBLISH,
                         (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETNX\r\n"u8) => RespCommand.SETNX,
                         (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
-                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
-                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SUBSTR\r\n"u8) => RespCommand.SUBSTR,
-                        (3 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8) && ptr[8] == 'R' => RespCommand.RESTORE,
+
+                        // (2) Hot commands too long for SIMD (name > 6 chars, exceeds 16-byte Vector128)
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
+                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SP"u8) => RespCommand.SPUBLISH,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
 
+                        // (3) Hot variable-arg commands (arg count varies, cannot be SIMD or MRU cached)
                         _ => ((length << 4) | count) switch
                         {
-                            // Commands with dynamic number of arguments
-                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
-                            >= ((8 << 4) | 2) and <= ((8 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
                             >= ((3 << 4) | 3) and <= ((3 << 4) | 7) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
                             >= ((5 << 4) | 1) and <= ((5 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("\nGETEX\r\n"u8) => RespCommand.GETEX,
-                            >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
-                            >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
                             >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
-                            >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
                             _ => MatchedNone(this, oldReadHead)
                         }
                     };

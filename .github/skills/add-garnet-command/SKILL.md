@@ -85,19 +85,19 @@ EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 Two parsing tiers exist:
 
 ### Hash table path: `RespCommandHashLookup` (primary path for most commands)
-The hash table in `libs/server/Resp/Parser/RespCommandHashLookup.cs` provides O(1) lookup for all built-in commands. This is the **recommended path for all new commands**.
+The hash table in `libs/server/Resp/Parser/RespCommandHashLookupData.cs` provides O(1) lookup for all built-in commands. This is the **recommended path for all new commands**.
 
-**To add a new primary command**, add one line to `PopulatePrimaryTable()`:
+**To add a new primary command**, add one line to `PopulatePrimaryTable()` in `RespCommandHashLookupData.cs`:
 ```csharp
 Add("DELIFGREATER", RespCommand.DELIFGREATER);
 ```
 
 **To add a command with subcommands** (e.g., `MYPARENT SUBCMD`):
-1. Add the parent with `hasSub: true`:
+1. Add the parent with `hasSub: true` in `PopulatePrimaryTable()`:
    ```csharp
    Add("MYPARENT", RespCommand.MYPARENT, hasSub: true);
    ```
-2. Define the subcommand array:
+2. Define the subcommand array in `RespCommandHashLookupData.cs`:
    ```csharp
    private static readonly (string Name, RespCommand Command)[] MyparentSubcommands =
    [
@@ -105,11 +105,11 @@ Add("DELIFGREATER", RespCommand.DELIFGREATER);
        ("SUBCMD2", RespCommand.MYPARENT_SUBCMD2),
    ];
    ```
-3. Build the table in the static constructor:
+3. Build the table in the static constructor in `RespCommandHashLookup.cs`:
    ```csharp
    myparentSubTable = BuildSubTable(MyparentSubcommands, out myparentSubTableMask);
    ```
-4. Wire it into `LookupSubcommand()`:
+4. Wire it into `LookupSubcommand()` in `RespCommandHashLookup.cs`:
    ```csharp
    RespCommand.MYPARENT => (myparentSubTable, myparentSubTableMask),
    ```
@@ -124,10 +124,9 @@ public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
 ```
 
 ### SIMD fast path: `FastParseCommand()` (optional, for hottest commands only)
-Static `Vector128<byte>` patterns that match the full RESP encoding (`*N\r\n$L\r\nCMD\r\n`) in a single 16-byte comparison. Only needed for the most performance-critical commands with:
-- Fixed argument count
-- Command names of 3-6 characters
-- No dots or special characters
+Static `Vector128<byte>` patterns defined in `libs/server/Resp/Parser/RespCommandSimdPatterns.cs` that match the full RESP encoding (`*N\r\n$L\r\nCMD\r\n`) in a single 16-byte comparison. Use the `RespPattern(argCount, "CMD")` helper to create new patterns. Only needed for the most performance-critical commands with:
+- Fixed argument count (single digit)
+- Command names of 3-6 characters (total encoded length must fit in 16 bytes)
 
 Most new commands should **NOT** be added here — the hash table + MRU cache provide excellent performance for all commands. Only add SIMD patterns if benchmarking shows the command is a bottleneck.
 
