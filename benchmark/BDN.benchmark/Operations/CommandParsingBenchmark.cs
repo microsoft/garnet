@@ -22,7 +22,10 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> CMD_EXISTS => "*2\r\n$6\r\nEXISTS\r\n$1\r\na\r\n"u8;
         static ReadOnlySpan<byte> CMD_SETEX => "*4\r\n$5\r\nSETEX\r\n$1\r\na\r\n$2\r\n60\r\n$1\r\nb\r\n"u8;
 
-        // Tier 0b: Scalar ulong switch (variable-arg commands, or when remainingBytes < 16)
+        // Tier 0b: Scalar path — hot commands too long for SIMD (name > 6 chars, exceeds 16-byte Vector128)
+        static ReadOnlySpan<byte> CMD_PUBLISH => "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n"u8;
+
+        // Tier 0c: Scalar path — variable-arg hot commands (arg count varies, cannot be SIMD or MRU cached)
         static ReadOnlySpan<byte> CMD_EXPIRE => "*3\r\n$6\r\nEXPIRE\r\n$1\r\na\r\n$2\r\n60\r\n"u8;
 
         // Tier 1: Hash table lookup via ArrayParseCommand → HashLookupCommand (+ MRU cache on 2nd+ call)
@@ -41,7 +44,7 @@ namespace BDN.benchmark.Operations
         static ReadOnlySpan<byte> CMD_SETIFMATCH => "*4\r\n$10\r\nSETIFMATCH\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\n0\r\n"u8;
 
         // Pre-allocated buffers (pinned for pointer stability)
-        byte[] bufPing, bufGet, bufSet, bufIncr, bufExists, bufSetex, bufExpire, bufHset, bufLpush, bufZadd, bufSubscribe;
+        byte[] bufPing, bufGet, bufSet, bufIncr, bufExists, bufSetex, bufPublish, bufExpire, bufHset, bufLpush, bufZadd, bufSubscribe;
         byte[] bufZrangebyscore, bufZremrangebyscore, bufHincrbyfloat, bufGeoradius, bufSetifmatch;
 
         public override void GlobalSetup()
@@ -63,6 +66,8 @@ namespace BDN.benchmark.Operations
             CMD_EXISTS.CopyTo(bufExists);
             bufSetex = GC.AllocateArray<byte>(CMD_SETEX.Length, pinned: true);
             CMD_SETEX.CopyTo(bufSetex);
+            bufPublish = GC.AllocateArray<byte>(CMD_PUBLISH.Length, pinned: true);
+            CMD_PUBLISH.CopyTo(bufPublish);
             bufExpire = GC.AllocateArray<byte>(CMD_EXPIRE.Length, pinned: true);
             CMD_EXPIRE.CopyTo(bufExpire);
             bufHset = GC.AllocateArray<byte>(CMD_HSET.Length, pinned: true);
@@ -133,7 +138,6 @@ namespace BDN.benchmark.Operations
         }
 
         // === Tier 0a: SIMD fast path (SETEX is a 15-byte SIMD pattern) ===
-        // === Tier 0b: Scalar ulong switch ===
 
         [Benchmark]
         public RespCommand ParseSETEX()
@@ -143,6 +147,19 @@ namespace BDN.benchmark.Operations
                 result = session.ParseRespCommandBuffer(bufSetex);
             return result;
         }
+
+        // === Tier 0b: Scalar path — hot commands too long for SIMD ===
+
+        [Benchmark]
+        public RespCommand ParsePUBLISH()
+        {
+            RespCommand result = default;
+            for (int i = 0; i < batchSize; i++)
+                result = session.ParseRespCommandBuffer(bufPublish);
+            return result;
+        }
+
+        // === Tier 0c: Scalar path — variable-arg hot commands ===
 
         [Benchmark]
         public RespCommand ParseEXPIRE()
