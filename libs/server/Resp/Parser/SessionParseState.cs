@@ -184,6 +184,8 @@ namespace Garnet.server
         public void EnsureCapacity(int capacity)
         {
             var oldCount = Count;
+
+            // The old buffer needs to remain rooted for the copy below to be safe
             var oldBuffer = rootBuffer;
 
             // Never shrink below the current count in an ensure-capacity method.
