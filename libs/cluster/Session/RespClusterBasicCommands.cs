@@ -341,7 +341,8 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore);
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore, preferredType);
             while (!RespWriteUtils.TryWriteAsciiDirect(shardsInfo, ref dcurr, dend))
                 SendAndReset();
 
