@@ -1236,7 +1236,7 @@ namespace Garnet.server
             // Move readHead to start of command payload
             readHead = (int)(ptr - recvBufferPtr);
 
-            // Extract command name via GetUpperCaseCommand (reads $len\r\n header, uppercases, advances readHead)
+            // Extract command name via HashLookupCommand (reads $len\r\n header via GetCommand, relies on prior MakeUpperCase() pass, and advances readHead)
             cmd = HashLookupCommand(ref count, ref specificErrorMessage, out success);
 
             // Parsing for command name was successful, but the command is unknown
@@ -1279,26 +1279,26 @@ namespace Garnet.server
             count -= 1;
 
             // Hash table lookup for the primary command (checked before custom commands
-            // since built-in commands are far more common)
+            // since built-in commands are far more common).
+            // Single probe returns both the command and whether it has subcommands.
             fixed (byte* namePtr = command)
             {
-                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length);
+                var cmd = RespCommandHashLookup.Lookup(namePtr, command.Length, out var hasSubcommands);
 
                 if (cmd == RespCommand.NONE)
                 {
-                    // Not a built-in command — check custom commands before falling to slow path
+                    // Not a built-in command — check custom commands
                     if (TryParseCustomCommand(command, out var customCmd))
                     {
                         return customCmd;
                     }
 
                     // Not a built-in or custom command
-                    Debug.Assert(cmd == RespCommand.NONE, "Hash table lookup returned unexpected value");
                     return RespCommand.INVALID;
                 }
 
                 // Commands with subcommands — dispatch via subcommand hash table
-                if (RespCommandHashLookup.HasSubcommands(namePtr, command.Length))
+                if (hasSubcommands)
                 {
                     return HandleSubcommandLookup(cmd, ref count, ref specificErrorMessage, out success);
                 }

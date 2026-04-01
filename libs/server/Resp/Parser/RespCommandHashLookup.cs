@@ -135,6 +135,60 @@ namespace Garnet.server
             ValidateSubTable(RespCommand.PUBSUB, PubsubSubcommands, pubsubSubTable, pubsubSubTableMask);
             ValidateSubTable(RespCommand.MEMORY, MemorySubcommands, memorySubTable, memorySubTableMask);
             ValidateSubTable(RespCommand.BITOP, BitopSubcommands, bitopSubTable, bitopSubTableMask);
+
+            // Validate primary table: every inserted command must round-trip via Lookup
+            ValidatePrimaryTable();
+        }
+
+        /// <summary>
+        /// Validate that every command inserted into the primary table can be looked up.
+        /// Called once during static init; throws on any mismatch to catch registration bugs early.
+        /// </summary>
+        private static void ValidatePrimaryTable()
+        {
+            // Scan all occupied slots and verify each round-trips via Lookup
+            Span<byte> word0Bytes = stackalloc byte[8];
+            Span<byte> word1Bytes = stackalloc byte[8];
+            Span<byte> word2Bytes = stackalloc byte[8];
+
+            for (int i = 0; i < primaryTable.Length; i++)
+            {
+                ref CommandEntry entry = ref primaryTable[i];
+                if (entry.NameLength == 0) continue;
+
+                // Reconstruct the name from the stored words
+                var nameBytes = new byte[entry.NameLength];
+                MemoryMarshal.Write(word0Bytes, in entry.NameWord0);
+                MemoryMarshal.Write(word1Bytes, in entry.NameWord1);
+                MemoryMarshal.Write(word2Bytes, in entry.NameWord2);
+
+                if (entry.NameLength <= 8)
+                {
+                    word0Bytes.Slice(0, entry.NameLength).CopyTo(nameBytes);
+                }
+                else if (entry.NameLength <= 16)
+                {
+                    word0Bytes.CopyTo(nameBytes);
+                    // Word1 stores last 8 bytes (overlapping for lengths 9-16)
+                    word1Bytes.CopyTo(nameBytes.AsSpan(entry.NameLength - 8));
+                }
+                else
+                {
+                    word0Bytes.CopyTo(nameBytes);
+                    word1Bytes.CopyTo(nameBytes.AsSpan(8));
+                    word2Bytes.CopyTo(nameBytes.AsSpan(entry.NameLength - 8));
+                }
+
+                fixed (byte* p = nameBytes)
+                {
+                    var found = Lookup(p, nameBytes.Length);
+                    if (found != entry.Command)
+                    {
+                        throw new InvalidOperationException(
+                            $"Primary hash table validation failed: '{System.Text.Encoding.ASCII.GetString(nameBytes)}' expected {entry.Command} but Lookup returned {found}");
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -171,6 +225,33 @@ namespace Garnet.server
         public static RespCommand Lookup(byte* name, int length)
         {
             return LookupInTable(primaryTable, PrimaryTableMask, name, length);
+        }
+
+        /// <summary>
+        /// Look up a primary command name and return whether it has subcommands, in a single probe.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static RespCommand Lookup(byte* name, int length, out bool hasSubcommands)
+        {
+            hasSubcommands = false;
+            if ((uint)length > 24)
+                return RespCommand.NONE;
+
+            uint hash = ComputeHash(name, length);
+            int idx = (int)(hash & (uint)PrimaryTableMask);
+
+            for (int probe = 0; probe < MaxProbes; probe++)
+            {
+                ref CommandEntry entry = ref primaryTable[idx];
+                if (entry.NameLength == 0) return RespCommand.NONE;
+                if (entry.NameLength == (byte)length && MatchName(ref entry, name, length))
+                {
+                    hasSubcommands = (entry.Flags & FlagHasSubcommands) != 0;
+                    return entry.Command;
+                }
+                idx = (idx + 1) & PrimaryTableMask;
+            }
+            return RespCommand.NONE;
         }
 
         /// <summary>
@@ -334,6 +415,9 @@ namespace Garnet.server
             Debug.Assert(length > 0, "Command name length must be positive");
             Debug.Assert(table != null, "Hash table must not be null");
 
+            // CommandEntry stores at most 24 bytes of name; longer names can never match.
+            if ((uint)length > 24) return RespCommand.NONE;
+
             uint hash = ComputeHash(name, length);
             int idx = (int)(hash & (uint)tableMask);
 
@@ -378,8 +462,8 @@ namespace Garnet.server
         /// </summary>
         private static void InsertIntoTable(CommandEntry[] table, int tableMask, ReadOnlySpan<byte> name, RespCommand command, byte flags = 0)
         {
-            Debug.Assert(name.Length > 0, "Command name must not be empty");
-            Debug.Assert(name.Length <= 24, $"Command name too long for hash table entry: {System.Text.Encoding.ASCII.GetString(name)}");
+            if (name.Length == 0 || name.Length > 24)
+                throw new ArgumentException($"Command name must be 1-24 bytes, got {name.Length}: {System.Text.Encoding.ASCII.GetString(name)}");
 
             uint hash = ComputeHash(name);
             int idx = (int)(hash & (uint)tableMask);
