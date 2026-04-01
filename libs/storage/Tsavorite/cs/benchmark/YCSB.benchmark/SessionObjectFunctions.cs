@@ -24,7 +24,7 @@ namespace Tsavorite.benchmark
         // Note: Currently, only the ReadOnlySpan<byte> form of InPlaceWriter value is used here.
 
         /// <inheritdoc/>
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
             if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
@@ -59,10 +59,10 @@ namespace Tsavorite.benchmark
 
         /// <inheritdoc/>
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
-            => InPlaceUpdater(ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            => InPlaceUpdater(ref dstLogRecord, ref input, ref output, ref rmwInfo);
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // This does not try to set ETag or Expiration
             if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient

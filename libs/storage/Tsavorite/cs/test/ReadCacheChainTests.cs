@@ -969,9 +969,9 @@ namespace Tsavorite.test.ReadCacheTests
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+                if (!base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                     return false;
                 srcValue.CopyTo(ref output, memoryPool);
                 return true;
@@ -996,8 +996,10 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 if (!logRecord.TrySetValueSpanAndPrepareOptionals(input, in sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);

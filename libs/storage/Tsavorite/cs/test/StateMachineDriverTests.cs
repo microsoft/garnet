@@ -235,10 +235,10 @@ namespace Tsavorite.test.recovery
                 if (useTimingFuzzing) fuzzer = new Random(thread_id);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Fuzz();
-                var ret = base.InPlaceUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                var ret = base.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
                 Fuzz();
                 return ret;
             }

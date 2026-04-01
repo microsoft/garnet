@@ -161,7 +161,7 @@ namespace BenchmarkDotNetTests
         // Note: Currently, only the ReadOnlySpan<byte> form of InPlaceWriter value is used here.
 
         /// <inheritdoc/>
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
             srcValue.CopyTo(logRecord.ValueSpan);
@@ -185,7 +185,7 @@ namespace BenchmarkDotNetTests
             => throw new TsavoriteException("CopyUpdater not implemented for BDN");
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // This does not try to set ETag or Expiration
             input.CopyTo(logRecord.ValueSpan);

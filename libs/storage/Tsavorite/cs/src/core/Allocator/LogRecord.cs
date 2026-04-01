@@ -547,12 +547,11 @@ namespace Tsavorite.core
         {
             // Get the number of bytes in existing key and value lengths.
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (_ /*keyLength*/, oldInlineValueSize) = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen);
+            var (_ /*keyLength*/, oldInlineValueSize) = dataHeader.GetKVLengths(Info, out var recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out var oldFillerLen, out valueAddress);
             var oldOptionalSize = oldETagLen + oldExpirationLen + oldObjectLogPositionLen;
 
             // Key does not change, so its size and size byte count remain the same. valueAddress does not change either, as everything before it is immutable.
             // optionalStartAddress will change if inline value size changes.
-            valueAddress = physicalAddress + recordLength - oldFillerLen - oldOptionalSize - oldInlineValueSize;
             var optionalStartAddress = valueAddress + oldInlineValueSize;
 
             // It is OK if the record is shrinking but we cannot grow past the old RecordLength. (If we are converting from inline to overflow that will
@@ -701,7 +700,7 @@ namespace Tsavorite.core
             }
             else
             {
-                _ = dataHeader.GetKVLengths(Info, out recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out oldFillerLen);
+                _ = dataHeader.GetKVLengths(Info, out recordLength, out var oldETagLen, out var oldExpirationLen, out var oldObjectLogPositionLen, out oldFillerLen, out _ /*valueAddress*/);
                 if (oldFillerLen < inlineValueGrowth)
                     return false;
 
@@ -814,9 +813,9 @@ namespace Tsavorite.core
             return true;
         }
 
-        private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
-        private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
-        private readonly int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
+        public readonly int ETagLen => Info.HasETag ? ETagSize : 0;
+        public readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
+        internal readonly int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetOptionalStartAddress()
@@ -1105,6 +1104,67 @@ namespace Tsavorite.core
                 }
             }
             return TryCopyOptionals(in srcLogRecord, in sizeInfo);
+        }
+
+        /// <summary>
+        /// Check if there is sufficient space to store an ETag in the log record
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void PopulateRecordSizeInfoForIPU(ref RecordSizeInfo sizeInfo)
+        {
+            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var (keyLength, existingValueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out _ /*valueAddress*/);
+
+            // The sizeInfo's FieldInfo has already been populated. Key size won't change in IPU.
+            sizeInfo.KeyIsInline = Info.KeyIsInline;
+
+            // Because this is IPU we are limited in inline value size by the record length less any optional length growth in the sizeInfo.
+            // We don't allow non-inline if we have a null objectIdMap. TODO: Need better awareness of actual inline value max length.
+            var existingOptionalSize = eTagLen + expirationLen + objectLogPositionLen;
+            sizeInfo.MaxInlineValueSize = existingValueLength + fillerLen - (sizeInfo.OptionalSize - existingOptionalSize);
+            sizeInfo.ValueIsInline = objectIdMap is null ? true : !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
+
+            // Record
+            sizeInfo.CalculateSizes(keyLength, valueSize);
+        }
+
+        /// <summary>
+        /// Check if there is sufficient space to store an ETag in the log record
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly long GetValueHeapMemorySize()
+        {
+            if (Info.ValueIsInline)
+                return 0;
+
+            if (Info.ValueIsObject)
+                return ValueObject.HeapMemorySize;
+
+            var (_ /*length*/, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+            return objectIdMap.GetOverflowByteArray(*(int*)dataAddress).TotalSize;
+        }
+
+        /// <summary>
+        /// Check if there is sufficient space to grow by the additional space, both the value and whether we want to have optionals when done.
+        /// </summary>
+        /// <param name="newValueLength">The inline length of the new value</param>
+        /// <param name="newETagLen">If we are going to set the ETag this is <see cref="ETagSize"/>; if we are removing the ETag this is 0; if we're not changing the ETag it's <see cref="ETagLen"/></param>
+        /// <param name="newExpirationLen">If we are going to set the Expiration this is <see cref="ExpirationSize"/>; if we are removing the Expiration this is 0; if we're not changing the Expiration it's <see cref="ExpirationLen"/></param>
+        /// <param name="valueAddress">The address of the pinned value</param>
+        /// <param name="valueLength">The current length of the value</param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool CanGrowPinnedValue(int newValueLength, int newETagLen, int newExpirationLen, out long valueAddress, out int valueLength)
+        {
+            if (!Info.ValueIsInline)
+                ThrowTsavoriteException("Cannot call CanGrowInline when !ValueIsInline");
+
+            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            (var keyLength, valueLength) = dataHeader.GetKVLengths(Info, out _ /*recordLength*/, out var eTagLen, out var expirationLen, out var objectLogPositionLen, out var fillerLen, out valueAddress);
+
+            var growth = (newValueLength - valueLength) + (newETagLen - eTagLen) + (newExpirationLen - expirationLen);
+            return growth <= fillerLen;
         }
 
         /// <summary>
@@ -1439,5 +1499,7 @@ namespace Tsavorite.core
             var expirStr = Info.HasExpiration ? Expiration.ToString() : "na";
             return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | OIDs k:{keyOid} v:{valOid} | ETag {eTagStr} Expir {expirStr}";
         }
+
+        public bool TrySetValueObjectAndPrepareOptionals(IHeapObject srcValue, in object sizeInfo) => throw new NotImplementedException();
     }
 }

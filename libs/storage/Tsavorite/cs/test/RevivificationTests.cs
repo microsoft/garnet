@@ -579,10 +579,12 @@ namespace Tsavorite.test.Revivification
                 return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, upsertInfo.Address, isIPU: true);
-                return base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -610,7 +612,7 @@ namespace Tsavorite.test.Revivification
                 return dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 AssertInfoValid(ref rmwInfo);
 
@@ -625,6 +627,8 @@ namespace Tsavorite.test.Revivification
 
                 ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, rmwInfo.Address, isIPU: true);
                 VerifyKeyAndValue(logRecord.Key, logRecord.ValueSpan);
 
@@ -1813,10 +1817,10 @@ namespace Tsavorite.test.Revivification
                 return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 VerifyKeyAndValue(logRecord, srcValue);
-                return base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -1831,9 +1835,11 @@ namespace Tsavorite.test.Revivification
                 return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKeyAndValue(logRecord, logRecord.ValueSpan);
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 

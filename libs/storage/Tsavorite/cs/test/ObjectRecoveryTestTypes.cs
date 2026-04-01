@@ -58,7 +58,7 @@ namespace Tsavorite.test.recovery.objects
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObject(input.numClicks);
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref Input input, ref Output output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Add(ref ((NumClicksObj)logRecord.ValueObject).numClicks, input.numClicks.numClicks);
             return true;

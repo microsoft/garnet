@@ -131,7 +131,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 += input.ifield1;
@@ -207,7 +207,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 += input.ifield1;
@@ -274,7 +274,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
             _ = Interlocked.Increment(ref inPlaceWriterCallCount);
             return false;
@@ -289,7 +289,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Increment(ref inPlaceUpdaterCallCount);
             return false;
@@ -358,9 +358,9 @@ namespace Tsavorite.test
             return result;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ReadOnlySpan<byte> srcValue, ref TInteger output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TInteger input, ReadOnlySpan<byte> srcValue, ref TInteger output, ref UpsertInfo upsertInfo)
         {
-            var result = base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+            var result = base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
             if (result)
                 output = srcValue.AsRef<TInteger>();
             return result;
@@ -384,9 +384,11 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInteger input, ref TInteger output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref TInteger input, ref TInteger output, ref RMWInfo rmwInfo)
         {
             var result = output = merger(input, logRecord.ValueSpan.AsRef<TInteger>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
             return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
         }
 

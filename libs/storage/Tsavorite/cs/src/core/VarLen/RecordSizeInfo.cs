@@ -113,8 +113,10 @@ namespace Tsavorite.core
 
         /// <summary>Called from Upsert or RMW methods with the final record info; ensures consistency between the Get*FieldInfo methods and the actual update methods./// </summary>
         [Conditional("DEBUG")]
-        public void AssertOptionals(RecordInfo recordInfo, bool checkETag = true, bool checkExpiration = true)
+        public void AssertOptionalsIfSet(RecordInfo recordInfo, bool checkETag = true, bool checkExpiration = true)
         {
+            if (!IsSet)
+                return;
             if (checkETag)
                 Debug.Assert(FieldInfo.HasETag == recordInfo.HasETag, $"Mismatch between expected HasETag {FieldInfo.HasETag} and actual ETag {recordInfo.HasETag}");
             if (checkExpiration)

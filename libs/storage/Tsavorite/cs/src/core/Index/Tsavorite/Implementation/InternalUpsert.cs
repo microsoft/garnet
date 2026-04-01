@@ -134,8 +134,7 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
-                    //var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
+                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
 
                     // Type arg specification is needed because we don't pass TContext
                     if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(

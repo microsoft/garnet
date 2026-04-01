@@ -1096,12 +1096,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Throw Tsavorite exception with message. We use a method wrapper so the caller method can execute inlined.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void ThrowTsavoriteException(string message) => throw new TsavoriteException(message);
-
-        /// <summary>
         /// If the page we are trying to allocate is past the last page with an unflushed address region, we have to wait for the flushEvent.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

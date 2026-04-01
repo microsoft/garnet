@@ -420,10 +420,10 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo)
-            => GetKVLengths(recordInfo, out _ /* recordLength */, out _ /* eTagLen */, out _ /* expirationLen */, out _ /* objectLogPositionLen */, out _ /* fillerLen */);
+            => GetKVLengths(recordInfo, out _ /* recordLength */, out _ /* eTagLen */, out _ /* expirationLen */, out _ /* objectLogPositionLen */, out _ /* fillerLen */, out _ /*valueAddress*/);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo, out int recordLength, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen)
+        internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo, out int recordLength, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen, out long valueAddress)
         {
             var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
 
@@ -439,8 +439,10 @@ namespace Tsavorite.core
             recordLength = GetRecordLength(numRecordLengthBytes);
             fillerLen = GetFillerLength(recordInfo, recordLength);
 
-            // The value length is the recordLength minus everything other than the value.
-            return (keyLength, recordLength - RecordInfo.Size - headerLength - ExtendedNamespaceLength - keyLength - recordInfo.GetOptionalSize() - fillerLen);
+            // The value length is the recordLength minus everything other than the value. To get valueAddress, back up the HeaderPtr to the start of the RecordInfo then add key offset and size.
+            var keyOffset = RecordInfo.Size + headerLength + ExtendedNamespaceLength;
+            valueAddress = (long)HeaderPtr - RecordInfo.Size + keyOffset + keyLength;
+            return (keyLength, recordLength - keyOffset - keyLength - recordInfo.GetOptionalSize() - fillerLen);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
