@@ -478,7 +478,7 @@ namespace Garnet.server
                     if (logRecord.Info.ValueIsInline)
                     {
                         // We are going to set ETag and possibly Expiration--but we won't remove either. Precheck adequate length before making any changes.
-                        if (!logRecord.CanGrowPinnedValue(inputValue.Length, newETagLen: LogRecord.ETagSize, 
+                        if (!logRecord.CanGrowPinnedValue(inputValue.Length, newETagLen: LogRecord.ETagSize,
                                 newExpirationLen: input.arg1 != 0 ? LogRecord.ExpirationSize : logRecord.ExpirationLen, out var valueAddress, out var valueLength))
                             return IPUResult.Failed;
                         if (!logRecord.TrySetPinnedValueSpan(inputValue, valueAddress, ref valueLength))

@@ -43,7 +43,7 @@ namespace Garnet.server
             this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
             this.storeFunctions = storeWrapper.storeFunctions;
             this.transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;
-            
+
             // Hang onto this for access to storeWrapper.store.Log
             this.storeWrapper = storeWrapper;
 
