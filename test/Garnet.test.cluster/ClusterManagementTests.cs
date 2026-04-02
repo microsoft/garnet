@@ -153,6 +153,106 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(3)]
+        [TestCase(ClusterPreferredEndpointType.Ip, false)]
+        [TestCase(ClusterPreferredEndpointType.Ip, true)]
+        [TestCase(ClusterPreferredEndpointType.Hostname, true)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, false)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, true)]
+        public void ClusterShardsTest(
+            ClusterPreferredEndpointType preferredType,
+            bool useClusterAnnounceHostname)
+        {
+            context.CreateInstances(defaultShards, clusterPreferredEndpointType: preferredType, useClusterAnnounceHostname: useClusterAnnounceHostname);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.IsNotNull(shards);
+            ClassicAssert.AreEqual(defaultShards, shards.Count);
+
+            var expectedAddress = context.clusterTestUtils.GetEndPoint(0).Address.ToString();
+            var expectedHostname = useClusterAnnounceHostname ? context.nodeOptions[0].ClusterAnnounceHostname : null;
+
+            foreach (var shard in shards)
+            {
+                foreach (var node in shard.nodes)
+                {
+                    // ip is always the address
+                    ClassicAssert.AreEqual(expectedAddress, node.ip);
+
+                    // endpoint depends on preferred type
+                    switch (preferredType)
+                    {
+                        case ClusterPreferredEndpointType.Hostname:
+                            ClassicAssert.AreEqual(useClusterAnnounceHostname ? expectedHostname : node.hostname, node.endpoint);
+                            break;
+                        case ClusterPreferredEndpointType.Unknown:
+                            ClassicAssert.AreEqual("?", node.endpoint);
+                            break;
+                        default:
+                            ClassicAssert.AreEqual(expectedAddress, node.endpoint);
+                            break;
+                    }
+
+                    if (useClusterAnnounceHostname)
+                        ClassicAssert.AreEqual(expectedHostname, node.hostname);
+                    else
+                        ClassicAssert.IsNotNull(node.hostname);
+                }
+            }
+        }
+
+        [Test, Order(4)]
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ClusterNodesHostnameTest(bool useClusterAnnounceHostname)
+        {
+            context.CreateInstances(defaultShards, useClusterAnnounceHostname: useClusterAnnounceHostname);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var result = (string)context.clusterTestUtils.Execute(
+                context.clusterTestUtils.GetEndPoint(0), "cluster", ["nodes"]);
+
+            var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var parts = line.Split(' ');
+                var addressPart = parts[1];
+
+                // Address format: ip:port@cport[,hostname]
+                var atIdx = addressPart.IndexOf('@');
+                var afterAt = addressPart[(atIdx + 1)..];
+
+                if (useClusterAnnounceHostname)
+                {
+                    // Should contain comma + configured hostname
+                    var commaIdx = afterAt.IndexOf(',');
+                    ClassicAssert.IsTrue(commaIdx > 0, $"Expected hostname in address part: {addressPart}");
+                    var hostname = afterAt[(commaIdx + 1)..];
+                    ClassicAssert.AreEqual(context.nodeOptions[0].ClusterAnnounceHostname, hostname);
+                }
+                else
+                {
+                    // Garnet defaults to system hostname; verify format is valid
+                    var commaIdx = afterAt.IndexOf(',');
+                    if (commaIdx > 0)
+                    {
+                        // System hostname is present: comma + hostname
+                        var hostname = afterAt[(commaIdx + 1)..];
+                        ClassicAssert.IsNotEmpty(hostname);
+                    }
+                    else
+                    {
+                        // No hostname: address is exactly ip:port@cport with no trailing comma
+                        ClassicAssert.IsTrue(afterAt.All(char.IsDigit),
+                            $"Expected numeric cport with no hostname in address part, but got: {addressPart}");
+                    }
+                }
+            }
+        }
+
+        [Test, Order(5)]
         public void ClusterForgetTest()
         {
             var node_count = 4;
