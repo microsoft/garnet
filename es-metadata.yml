@@ -1,0 +1,10 @@
+schemaVersion: 1.0.0
+providers:
+- provider: InventoryAsCode
+  version: 1.0.0
+  metadata:
+    isProduction: true
+    accountableOwners:
+      service: abe5cd10-3463-4151-bc5c-05a461c4b14e
+    routing:
+      defaultAreaPath: {}
