@@ -1940,7 +1940,7 @@ namespace Tsavorite.core
                             _ = asyncResult.Release();
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     logger?.LogError(ex, $"nameof(AsyncFlushPagesForSnapshot)");
                     _completedSemaphore.Release();
