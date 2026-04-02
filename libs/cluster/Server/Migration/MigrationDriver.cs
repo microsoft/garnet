@@ -54,7 +54,7 @@ namespace Garnet.cluster
             var configResumed = true;
             try
             {
-                clusterProvider.storeWrapper.store.PauseRevivification();
+                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
 
                 // Set target node to import state
                 if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
