@@ -162,11 +162,11 @@ namespace Garnet.cluster
 
             public async Task RunAofSyncTask(AofSyncDriver aofSyncDriver)
             {
-                var acquireReadLock = false;
+                var enteredMonitor = false;
                 try
                 {
-                    acquireReadLock = aofSyncDriver.ResumeAofStreaming();
-                    if (!acquireReadLock)
+                    enteredMonitor = aofSyncDriver.activeWorkerMonitor.TryEnter();
+                    if (!enteredMonitor)
                         throw new GarnetException($"[{physicalSublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}");
 
                     logger?.LogInformation(
@@ -197,8 +197,8 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    if (acquireReadLock)
-                        aofSyncDriver.SuspendAofStreaming();
+                    if (enteredMonitor)
+                        _ = aofSyncDriver.activeWorkerMonitor.Exit();
                     garnetClient?.Dispose();
                 }
             }

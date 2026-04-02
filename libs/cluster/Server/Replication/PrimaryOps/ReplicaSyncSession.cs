@@ -117,6 +117,7 @@ namespace Garnet.cluster
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion}",
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion);
 
+
                 logger?.LogInformation("Attempting to acquire checkpoint");
                 (localEntry, aofSyncDriver) = await AcquireCheckpointEntry().ConfigureAwait(false);
                 logger?.LogInformation("Checkpoint search completed");
@@ -254,6 +255,7 @@ namespace Garnet.cluster
             var iteration = 0;
             var numOdcAttempts = 0;
             const int maxOdcAttempts = 2;
+
             while (true)
             {
                 cts.Token.ThrowIfCancellationRequested();
@@ -312,6 +314,9 @@ namespace Garnet.cluster
                         continue;
                     }
                 }
+
+                // Validate that AofSyncDriver has been terminated
+                clusterProvider.replicationManager.AofSyncDriverStore.AssertDoesNotExist(replicaNodeId);
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask

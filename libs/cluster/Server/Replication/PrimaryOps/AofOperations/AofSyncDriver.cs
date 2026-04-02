@@ -36,13 +36,7 @@ namespace Garnet.cluster
         /// </summary>
         public string RemoteNodeId => remoteNodeId;
 
-        SingleWriterMultiReaderLock activeAofSync = new();
-
-        public bool ResumeAofStreaming()
-            => activeAofSync.TryReadLock();
-
-        public void SuspendAofStreaming()
-            => activeAofSync.ReadUnlock();
+        readonly ActiveWorkerMonitor activeWorkerMonitor = new();
 
         /// <summary>
         /// Return start address for underlying AofSyncTask
@@ -112,7 +106,7 @@ namespace Garnet.cluster
                 aofSyncTask?.Dispose();
 
             // Wait for tasks to exit
-            activeAofSync.WriteLock();
+            activeWorkerMonitor.Dispose();
 
             // Finally, dispose the cts
             cts?.Dispose();
@@ -176,7 +170,7 @@ namespace Garnet.cluster
         /// <seealso cref="T:Garnet.cluster.ReplicationManager.AdvanceTime"/>
         async Task AdvancePhysicalSublogTime()
         {
-            var acquireReadLock = false;
+            var enteredMonitor = false;
             var client = new GarnetClientSession(
                         endPoint,
                         clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
@@ -188,8 +182,8 @@ namespace Garnet.cluster
 
             try
             {
-                acquireReadLock = ResumeAofStreaming();
-                if (!acquireReadLock)
+                enteredMonitor = activeWorkerMonitor.TryEnter();
+                if (!enteredMonitor)
                     throw new GarnetException($"Failed to acquire read lock at {nameof(AdvancePhysicalSublogTime)}");
 
                 // Connect to replica
@@ -216,8 +210,8 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (acquireReadLock)
-                    SuspendAofStreaming();
+                if (enteredMonitor)
+                    _ = activeWorkerMonitor.Exit();
                 client?.Dispose();
             }
         }

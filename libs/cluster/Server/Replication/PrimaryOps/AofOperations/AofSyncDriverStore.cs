@@ -564,5 +564,26 @@ namespace Garnet.cluster
                 _lock.WriteUnlock();
             }
         }
+
+        [Conditional("DEBUG")]
+        public void AssertDoesNotExist(string remoteNodeId)
+        {
+            _lock.ReadLock();
+            try
+            {
+                if (_disposed) return;
+
+                for (var i = 0; i < numDrivers; i++)
+                {
+                    var syncDriver = syncDrivers[i];
+                    if (syncDriver.RemoteNodeId == remoteNodeId)
+                        Debug.Fail($"syncDriver with {remoteNodeId} should not exist!");
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
     }
 }
