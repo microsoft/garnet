@@ -281,7 +281,7 @@ namespace Garnet.server
         public void Dispose()
         {
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
-            replicationReplayChannel.Writer.Complete();
+            _ = replicationReplayChannel.Writer.TryComplete();
             replicationReplayChannel.Reader.Completion.Wait();
 
             Task.WhenAll(replicationReplayTasks).Wait();

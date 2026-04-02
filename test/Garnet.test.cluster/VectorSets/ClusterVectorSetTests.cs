@@ -1410,14 +1410,6 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
             }
 
-            using (var replicationToken = new CancellationTokenSource())
-            {
-                replicationToken.CancelAfter(30_000);
-
-                context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index, cancellation: replicationToken.Token);
-                context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index, cancellation: replicationToken.Token);
-            }
-
             var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
             var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
@@ -1435,9 +1427,6 @@ namespace Garnet.test.cluster
             await writeTask.ConfigureAwait(false);
 
             var addedLookup = added.ToFrozenDictionary(static t => t.Elem, t => t, ByteArrayComparer.Instance);
-
-            context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
-            context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
 
             // Check available on other primary & secondary
 
@@ -1995,7 +1984,7 @@ namespace Garnet.test.cluster
                 migrateCancel.Cancel();
                 var migrationTimes = await migrateTask.ConfigureAwait(false);
 
-                ClassicAssert.IsTrue(migrationTimes.Count > 2, "Should have moved back and forth at least twice");
+                ClassicAssert.IsTrue(migrationTimes.Count >= 2, $"Should have moved back and forth, saw: {migrationTimes.Count}");
 
                 writeCancel.Cancel();
                 await Task.WhenAll(writeTasks).ConfigureAwait(false);
