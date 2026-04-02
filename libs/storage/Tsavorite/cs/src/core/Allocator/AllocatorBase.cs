@@ -1944,6 +1944,7 @@ namespace Tsavorite.core
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
                     _completedSemaphore.Release();
+                    throw;
                 }
             }
         }
