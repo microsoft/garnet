@@ -54,19 +54,9 @@ namespace Tsavorite.core
 
         internal void AddIndexCheckpointWaitingList(StateMachineDriver stateMachineDriver)
         {
-            stateMachineDriver.AddToWaitingList(mainIndexCheckpointSemaphore);
-            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointSemaphore());
+            stateMachineDriver.AddToWaitingList(mainIndexCheckpointSemaphore, StateMachineSemaphoreType.IndexCheckpointSMTaskMainIndexCheckpoint);
+            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointSemaphore(), StateMachineSemaphoreType.IndexCheckpointSMTaskOverflowBucketsCheckpoint);
         }
-
-        internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
-        {
-            // Get tasks first to ensure we have captured the semaphore instances synchronously
-            var t1 = IsMainIndexCheckpointCompletedAsync(token);
-            var t2 = overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
-            await t1.ConfigureAwait(false);
-            await t2.ConfigureAwait(false);
-        }
-
 
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of Tsavorite
@@ -160,7 +150,7 @@ namespace Tsavorite.core
             s.Release();
         }
 
-        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
         {
             // Set the page status to flushed
             var mem = ((HashIndexPageAsyncFlushResult)context).mem;

@@ -17,7 +17,7 @@ namespace Tsavorite.core
     {
         SystemState systemState;
         IStateMachine stateMachine;
-        readonly List<SemaphoreSlim> waitingList;
+        readonly List<SemaphoreWaiterMonitor> waitingList;
         TaskCompletionSource<bool> stateMachineCompleted;
         // All threads have entered the given state
         SemaphoreSlim waitForTransitionIn;
@@ -66,6 +66,12 @@ namespace Tsavorite.core
 
         internal void TrackLastVersion(long version)
         {
+            // Only create and enqueue one semaphore per version, if we create a
+            // new one on each call, the earlier semaphore is orphaned in the waitingList
+            // and never released, and we permanently block ProcessWaitingListAsync.
+            if (lastVersion == version)
+                return;
+
             if (GetNumActiveTransactions(version) > 0)
             {
                 // Set version number first, then create semaphore
@@ -75,7 +81,7 @@ namespace Tsavorite.core
 
             // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
             if (GetNumActiveTransactions(version) > 0)
-                AddToWaitingList(lastVersionTransactionsDone);
+                AddToWaitingList(lastVersionTransactionsDone, StateMachineSemaphoreType.LastVersionTransactionsDone);
         }
 
         internal void ResetLastVersion()
@@ -155,10 +161,10 @@ namespace Tsavorite.core
         public void EndTransaction(long txnVersion)
             => DecrementActiveTransactions(txnVersion);
 
-        internal void AddToWaitingList(SemaphoreSlim waiter)
+        internal void AddToWaitingList(SemaphoreSlim waiter, StateMachineSemaphoreType type)
         {
             if (waiter != null)
-                waitingList.Add(waiter);
+                waitingList.Add(new SemaphoreWaiterMonitor(waiter, type));
         }
 
         public bool Register(IStateMachine stateMachine, CancellationToken token = default)
@@ -311,7 +317,9 @@ namespace Tsavorite.core
             }
             foreach (var waiter in waitingList)
             {
-                await waiter.WaitAsync(token);
+                logger?.LogTrace("SMD: Waiting on semaphore {0}", waiter.Type);
+                await waiter.Semaphore.WaitAsync(token);
+                logger?.LogTrace("SMD: Semaphore {0} signaled", waiter.Type);
             }
             waitingList.Clear();
         }
