@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Threading;
 using Allure.NUnit;
 using Garnet.server;
@@ -438,9 +437,6 @@ namespace Garnet.test
         //[Repeat(10000)]
         public void TransactionProcMGetIfPMTest()
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
             server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM());
 

@@ -364,7 +364,7 @@ namespace Tsavorite.test.Expiration
                 return true;
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 int key1 = logRecord.Key.AsRef<int>();
                 ref int newField1 = ref logRecord.ValueSpan.AsRef<int>();
@@ -497,8 +497,12 @@ namespace Tsavorite.test.Expiration
             public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ReadOnlySpan<byte> srcValue, ref ExpirationOutput output, ref UpsertInfo upsertInfo)
                 => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
 
-            public override bool InPlaceWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ReadOnlySpan<byte> srcValue, ref ExpirationOutput output, ref UpsertInfo upsertInfo)
-                => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
+            public override bool InPlaceWriter(ref LogRecord dstLogRecord, ref ExpirationInput input, ReadOnlySpan<byte> srcValue, ref ExpirationOutput output, ref UpsertInfo upsertInfo)
+            {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(dstLogRecord, srcValue, ref input) };
+                dstLogRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+                return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
+            }
         }
 
         IDevice log;

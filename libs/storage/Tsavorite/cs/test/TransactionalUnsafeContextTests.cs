@@ -1415,9 +1415,6 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         //[Repeat(100)]
         public void LockNewRecordThenUnlockThenUpdateTest([Values] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             const int numNewRecords = 50;
 
             using var lockSession = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());

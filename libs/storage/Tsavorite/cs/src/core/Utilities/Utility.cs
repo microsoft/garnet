@@ -246,6 +246,8 @@ namespace Tsavorite.core
                 fixed (byte* pbString = byteSpan)
                 {
                     const long magicno = 40343;
+
+                    // Convert to char for faster enumeration (two bytes per iteration)
                     char* pwString = (char*)pbString;
                     int len = byteSpan.Length;
                     int cbBuf = len / 2;
@@ -254,6 +256,7 @@ namespace Tsavorite.core
                     for (int i = 0; i < cbBuf; i++, pwString++)
                         hashState = magicno * hashState + *pwString;
 
+                    // If we had an odd number of bytes, get the last byte
                     if ((len & 1) > 0)
                     {
                         byte* pC = (byte*)pwString;

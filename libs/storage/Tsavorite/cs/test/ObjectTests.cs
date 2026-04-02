@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -230,9 +229,6 @@ namespace Tsavorite.test.Objects
         //[Repeat(300)]
         public void LargeObjectDiskWriteReadSmallKeyBigValue([Values] SerializeKeyValueSize serializeValueSize)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
@@ -280,9 +276,6 @@ namespace Tsavorite.test.Objects
         [Explicit("Temporary while I figure out why FlushedUntilAddress is not as expected")]
         public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             // Ensure our size calculations are correct by validating the test parameters are what we expect
             Assert.That(LogMemorySize, Is.EqualTo(1L << 15));
             Assert.That(PageSize, Is.EqualTo(1L << 10));
@@ -377,9 +370,6 @@ namespace Tsavorite.test.Objects
         // Note: This test name keys the mutableFraction
         public async Task LargeObjectLinearizeFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             // Ensure our size calculations are correct by validating the test parameters are what we expect
             Assert.That(LogMemorySize, Is.EqualTo(1L << 15));
             Assert.That(PageSize, Is.EqualTo(1L << 10));
@@ -525,9 +515,6 @@ namespace Tsavorite.test.Objects
         //[Repeat(300)]
         public void LargeObjectDiskWriteReadBigKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeKeyValueSize serializeValueSize)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             using var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 

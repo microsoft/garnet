@@ -1096,12 +1096,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Throw Tsavorite exception with message. We use a method wrapper so the caller method can execute inlined.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void ThrowTsavoriteException(string message) => throw new TsavoriteException(message);
-
-        /// <summary>
         /// If the page we are trying to allocate is past the last page with an unflushed address region, we have to wait for the flushEvent.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1290,7 +1284,7 @@ namespace Tsavorite.core
 
                 // If HeadAddress hasn't moved, currentReadOnlyAddress is either HeadAddress or at a page boundary, unless we have the case where
                 // we've gone beyond size budget on a single page; in that case we must remain at headAddress.
-                if ((headAddress == PageHeader.Size) || GetPage(tailAddress) == headPage)
+                if ((GetOffsetOnPage(headAddress) <= PageHeader.Size) || GetPage(tailAddress) == headPage)
                     readOnlyAddress = headAddress;
                 else
                 {
