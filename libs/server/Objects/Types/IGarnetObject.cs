@@ -21,6 +21,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
+        /// <param name="respProtocolVersion"></param>
         /// <param name="sizeChange"></param>
         /// <returns></returns>
         bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long sizeChange);

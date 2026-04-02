@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
+using Garnet.test.Resp.ETag;
 using GarnetJSON;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -204,7 +205,7 @@ namespace Garnet.test
             StringInput input = new StringInput(RespCommand.SET);
             input.header.cmd = RespCommand.SET;
             // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetWithETagFlag();
+            input.metaCommandInfo.MetaCommand = RespMetaCommand.ExecWithETag;
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
@@ -1431,7 +1432,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CustomTxnEtagInteractionTest()
+        public void CustomTxnETagInteractionTest()
         {
             server.Register.NewTransactionProc("RANDOPS", () => new RandomSubstituteOrExpandValForKeyTxn());
 
@@ -1446,21 +1447,21 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.ExecWithETag("SET", key1, value1);
+                db.ExecWithETag("SET", key2, value2);
 
                 RedisResult result = db.Execute("RANDOPS", key1, key2);
 
                 ClassicAssert.AreEqual("OK", result.ToString());
 
                 // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.IsTrue(res[1].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
+                RedisResult[] res = (RedisResult[])db.ExecWithETag("GET", key1);
+                ClassicAssert.IsTrue(res[0].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
+                ClassicAssert.AreEqual("2", res[1].ToString());
 
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.AreEqual("18", res[1].ToString());
+                res = (RedisResult[])db.ExecWithETag("GET", key2);
+                ClassicAssert.AreEqual("18", res[0].ToString());
+                ClassicAssert.AreEqual("2", res[1].ToString());
             }
             catch (RedisServerException rse)
             {
@@ -1469,7 +1470,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CustomProcEtagInteractionTest()
+        public void CustomProcETagInteractionTest()
         {
             server.Register.NewProcedure("INCRGET", () => new CustomIncrProc());
 
@@ -1484,8 +1485,8 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.ExecWithETag("SET", key1, value1);
+                db.ExecWithETag("SET", key2, value2);
 
                 // incr key2, and just get key1
                 RedisResult result = db.Execute("INCRGET", key2, key1);
@@ -1493,15 +1494,15 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(value1, result.ToString());
 
                 // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
+                RedisResult[] res = (RedisResult[])db.ExecWithETag("GET", key1);
                 // etag not updated for this
-                ClassicAssert.AreEqual("1", res[0].ToString());
-                ClassicAssert.AreEqual(value1, res[1].ToString());
+                ClassicAssert.AreEqual(value1, res[0].ToString());
+                ClassicAssert.AreEqual("1", res[1].ToString());
 
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
+                res = (RedisResult[])db.ExecWithETag("GET", key2);
                 // etag updated for this
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.AreEqual("257", res[1].ToString());
+                ClassicAssert.AreEqual("257", res[0].ToString());
+                ClassicAssert.AreEqual("2", res[1].ToString());
             }
             catch (RedisServerException rse)
             {

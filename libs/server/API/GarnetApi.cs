@@ -68,6 +68,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
             => storageSession.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+
+        /// <inheritdoc />
+        public GarnetStatus STRLEN(PinnedSpanByte key, ref StringOutput output, ref StringInput input)
+            => storageSession.STRLEN(key, ref output, ref input, ref stringContext);
         #endregion
 
         #region GETEX
@@ -90,16 +94,12 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value)
-            => storageSession.SET(key, ref input, value, ref stringContext);
+        public GarnetStatus SET(PinnedSpanByte key, ref StringInput input, ref StringOutput output, PinnedSpanByte value)
+            => storageSession.SET(key, ref input, ref output, value, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input)
             => storageSession.SET_Conditional(key, ref input, ref stringContext);
-
-        /// <inheritdoc />
-        public GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input)
-            => storageSession.DEL_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
@@ -119,9 +119,9 @@ namespace Garnet.server
             => storageSession.SET(in srcLogRecord, ref unifiedContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, in TSourceLogRecord srcLogRecord)
+        public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(key, ref input, in srcLogRecord, ref unifiedContext);
+            => storageSession.SET(key, ref input, ref output, in srcLogRecord, ref unifiedContext);
 
         #endregion
 
@@ -139,7 +139,7 @@ namespace Garnet.server
         #region SETRANGE
 
         /// <inheritdoc />
-        public GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output)
+        public GarnetStatus SETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.SETRANGE(key, ref input, ref output, ref stringContext);
 
         #endregion
@@ -162,16 +162,6 @@ namespace Garnet.server
 
         #endregion
 
-        #region RENAME
-        /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
-            => storageSession.RENAME(oldKey, newKey, withEtag);
-
-        /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
-            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
-        #endregion
-
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
         public GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
@@ -186,14 +176,8 @@ namespace Garnet.server
             => Increment(key, out output, -decrementCount);
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val)
-        {
-            SessionParseState parseState = default;
-
-            var input = new StringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
-            _ = Increment(key, ref input, ref output);
-            return GarnetStatus.OK;
-        }
+        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => Increment(key, ref input, ref output);
 
         /// <inheritdoc />
         public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val)
@@ -201,16 +185,15 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
 
-            _ = IncrementByFloat(key, ref stringOutput, val);
+            var input = new StringInput(RespCommand.INCRBYFLOAT,
+                arg1: BitConverter.DoubleToInt64Bits(val), flags: RespInputFlags.SkipRespOutput);
 
-            if (!stringOutput.HasError)
-            {
+            _ = Increment(key, ref input, ref stringOutput);
+
+            if (!stringOutput.HasError && !stringOutput.IsOperationSkipped)
                 _ = NumUtils.TryReadDouble(stringOutput.SpanByteAndMemory.Span, out output);
-            }
             else
-            {
                 output = (stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0 ? double.NaN : 0;
-            }
 
             return GarnetStatus.OK;
         }
@@ -218,8 +201,8 @@ namespace Garnet.server
 
         #region GETDEL
         /// <inheritdoc />
-        public GarnetStatus GETDEL(PinnedSpanByte key, ref StringOutput output)
-            => storageSession.GETDEL(key, ref output, ref stringContext);
+        public GarnetStatus GETDEL(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.GETDEL(key, ref input, ref output, ref stringContext);
         #endregion
 
         #region Advanced ops

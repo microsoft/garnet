@@ -23,17 +23,24 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            var input = new StringInput(RespCommand.PFADD);
+            var input = new StringInput(RespCommand.PFADD, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0);
+            var stringOutput = StringOutput.FromPinnedPointer(output, 1);
 
             for (var i = 1; i < parseState.Count; i++)
             {
                 input.parseState = parseState.Slice(i, 1);
-                var o = StringOutput.FromPinnedPointer(output, 1);
-                storageApi.HyperLogLogAdd(key, ref input, ref o);
+                storageApi.HyperLogLogAdd(key, ref input, ref stringOutput);
+                etag = stringOutput.ETag;
+
+                if (stringOutput.IsOperationSkipped)
+                {
+                    WriteNull();
+                    return true;
+                }
 
                 // Invalid HLL Type
                 if (*output == 0xFF)
@@ -70,12 +77,19 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.PFCOUNT),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            var input = new StringInput(RespCommand.PFCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.PFCOUNT, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput);
 
             storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
@@ -99,12 +113,19 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.PFMERGE),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
-            var input = new StringInput(RespCommand.PFMERGE, ref parseState);
+            var input = new StringInput(RespCommand.PFMERGE, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput);
 
             var status = storageApi.HyperLogLogMerge(ref input, out var error);
 

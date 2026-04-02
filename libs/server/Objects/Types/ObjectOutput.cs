@@ -26,6 +26,16 @@ namespace Garnet.server
         /// Wrong type of value
         /// </summary>
         WrongType = 1 << 1,
+
+        /// <summary>
+        /// Indicates that the value has not changed
+        /// </summary>
+        ValueUnchanged = 1 << 2,
+
+        /// <summary>
+        /// Indicates that the operation was skipped
+        /// </summary>
+        OperationSkipped = 1 << 3,
     }
 
     /// <summary>
@@ -48,7 +58,12 @@ namespace Garnet.server
         /// <summary>
         /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
-        public int result1;
+        public int Result1;
+
+        /// <summary>
+        /// The updated etag of the key operated on (if single key, not set: -1, no etag: 0)
+        /// </summary>
+        public long ETag;
 
         /// <summary>
         /// Output flags
@@ -67,6 +82,11 @@ namespace Garnet.server
         public readonly bool HasRemoveKey =>
             (OutputFlags & ObjectOutputFlags.RemoveKey) == ObjectOutputFlags.RemoveKey;
 
+        /// <summary>
+        /// True if output flag OperationSkipped is set
+        /// </summary>
+        public readonly bool IsOperationSkipped => (OutputFlags & ObjectOutputFlags.OperationSkipped) != 0;
+
         public ObjectOutput() => SpanByteAndMemory = new(null);
 
         public ObjectOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
@@ -77,6 +97,11 @@ namespace Garnet.server
         public void ConvertToHeap()
         {
             // Does not convert to heap when going pending, because we complete all pending operations before releasing the pinned source bytes.
+        }
+
+        public void Dispose()
+        {
+            SpanByteAndMemory.Dispose();
         }
     }
 }

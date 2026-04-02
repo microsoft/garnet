@@ -98,18 +98,19 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(valArgSlice);
 
-            StringInput input;
-            if (expiry > 0)
-            {
-                var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
-            }
-            else
-            {
-                input = new StringInput(RespCommand.SETEXNX, ref parseState);
-            }
+            var inputArg = expiry > 0 ? DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks : 0;
+            var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, arg1: inputArg,
+                flags: RespInputFlags.SkipRespOutput);
 
-            var status = storageApi.SET_Conditional(key, ref input);
+            var output = new StringOutput();
+            var status = storageApi.SET_Conditional(key, ref input, ref output);
+            etag = output.ETag;
+
+            if (output.IsOperationSkipped)
+            {
+                WriteNull();
+                return true;
+            }
 
             if (status is GarnetStatus.NOTFOUND)
             {
@@ -118,7 +119,7 @@ namespace Garnet.server
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSYKEY, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -137,16 +138,30 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var status = storageApi.GET(key, out PinnedSpanByte value);
+            var input = new StringInput(RespCommand.GET, ref metaCommandInfo, flags: RespInputFlags.SkipRespOutput);
+            var output = StringOutput.FromPinnedSpan(scratchBufferBuilder.ViewRemainingArgSlice());
 
-            if (status is GarnetStatus.NOTFOUND)
+            var status = storageApi.GET(key, ref input, ref output);
+            etag = output.ETag;
+
+            if (status is GarnetStatus.NOTFOUND || output.IsOperationSkipped)
             {
                 WriteNull();
                 return true;
             }
 
-            Span<byte> encodedLength = stackalloc byte[5];
+            PinnedSpanByte value;
+            if (!output.SpanByteAndMemory.IsSpanByte)
+            {
+                value = scratchBufferBuilder.FormatScratch(0, output.SpanByteAndMemory.ReadOnlySpan);
+                output.SpanByteAndMemory.Memory.Dispose();
+            }
+            else
+            {
+                value = scratchBufferBuilder.CreateArgSlice(output.SpanByteAndMemory.Length);
+            }
 
+            Span<byte> encodedLength = stackalloc byte[5];
             if (!RespLengthEncodingUtils.TryWriteLength(value.ReadOnlySpan.Length, encodedLength, out var bytesWritten))
             {
                 while (!RespWriteUtils.TryWriteError("ERR DUMP payload length is invalid", ref dcurr, dend))
@@ -221,76 +236,47 @@ namespace Garnet.server
         /// <summary>
         /// TryRENAME
         /// </summary>
-        private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkRENAME<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
+            Debug.Assert(cmd == RespCommand.RENAME || cmd == RespCommand.RENAMENX);
 
-            var oldKeySlice = parseState.GetArgSliceByRef(0);
-            var newKeySlice = parseState.GetArgSliceByRef(1);
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
 
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None &&
+                metaCommandInfo.MetaCommand != RespMetaCommand.ExecWithETag)
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_ETAG_META_CMD_RENAME_UNSUPPORTED);
 
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice, withEtag);
+            var key = parseState.GetArgSliceByRef(0);
+
+            var input = new UnifiedInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1);
+
+            var isNx = cmd == RespCommand.RENAMENX;
+            if (!isNx)
+                input.header.SetSkipRespOutputFlag();
+
+            var output = isNx ? GetUnifiedOutput() : default;
+
+            var status = storageApi.RENAME(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    if (isNx)
+                        ProcessOutput(output.SpanByteAndMemory);
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
-            return true;
-        }
-
-        /// <summary>
-        /// TryRENAMENX
-        /// </summary>
-        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
-
-            var oldKeySlice = parseState.GetArgSliceByRef(0);
-            var newKeySlice = parseState.GetArgSliceByRef(1);
-
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
-
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result, withEtag);
-
-            if (status == GarnetStatus.OK)
-            {
-                // Integer reply: 1 if key was renamed to newkey.
-                // Integer reply: 0 if newkey already exists.
-                while (!RespWriteUtils.TryWriteInt32(result, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
-                    SendAndReset();
-            }
-
             return true;
         }
 
@@ -309,8 +295,11 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
+
+            var input = new StringInput(RespCommand.GETDEL, ref metaCommandInfo);
             var output = GetStringOutput();
-            var status = garnetApi.GETDEL(sbKey, ref output);
+            var status = garnetApi.GETDEL(sbKey, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -341,10 +330,18 @@ namespace Garnet.server
             }
 
             var exists = 0;
+            var keyCount = parseState.Count;
+
+            // Command currently does not support execution with any meta-commands when more than one key is specified
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None && keyCount > 1)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.EXISTS),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.EXISTS);
-
+            var input = new UnifiedInput(RespCommand.EXISTS, ref metaCommandInfo, ref parseState,
+                flags: RespInputFlags.SkipRespOutput);
             var output = new UnifiedOutput();
 
             for (var i = 0; i < parseState.Count; i++)
@@ -352,7 +349,21 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(i);
                 var status = storageApi.EXISTS(key, ref input, ref output);
                 if (status == GarnetStatus.OK)
+                {
+                    if (i == 0)
+                    {
+                        if (metaCommandInfo.MetaCommand.IsETagCommand())
+                            etag = output.ETag;
+
+                        if (output.IsOperationSkipped)
+                        {
+                            WriteNull();
+                            return true;
+                        }
+                    }
+
                     exists++;
+                }
             }
 
             while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
@@ -443,12 +454,13 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
+            var input = new UnifiedInput(RespCommand.EXPIRE, ref metaCommandInfo, ref parseState, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -480,12 +492,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.PERSIST);
+            var input = new UnifiedInput(RespCommand.PERSIST, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
             {
@@ -517,22 +530,19 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(command);
+            var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.TTL(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
-            {
                 ProcessOutput(output.SpanByteAndMemory);
-            }
             else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_N2);
+
             return true;
         }
 
@@ -554,22 +564,19 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(command);
+            var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
+            etag = output.ETag;
 
             if (status == GarnetStatus.OK)
-            {
                 ProcessOutput(output.SpanByteAndMemory);
-            }
             else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteDirect(CmdStrings.RESP_RETURN_VAL_N2);
+
             return true;
         }
     }

@@ -122,7 +122,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+            byte respProtocolVersion, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -138,10 +138,10 @@ namespace Garnet.server
             switch (input.header.SetOp)
             {
                 case SetOperation.SADD:
-                    SetAdd(ref input, ref output);
+                    SetAdd(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SMEMBERS:
-                    SetMembers(ref input, ref output, respProtocolVersion);
+                    SetMembers(ref output, respProtocolVersion);
                     break;
                 case SetOperation.SISMEMBER:
                     SetIsMember(ref input, ref output, respProtocolVersion);
@@ -150,10 +150,10 @@ namespace Garnet.server
                     SetMultiIsMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SREM:
-                    SetRemove(ref input, ref output);
+                    SetRemove(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SCARD:
-                    SetLength(ref output);
+                    SetLength(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SPOP:
                     SetPop(ref input, ref output, respProtocolVersion);

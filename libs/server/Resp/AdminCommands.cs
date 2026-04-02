@@ -639,6 +639,13 @@ namespace Garnet.server
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.HCOLLECT),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.HCOLLECT));
@@ -646,8 +653,7 @@ namespace Garnet.server
 
             var keys = parseState.Parameters;
 
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo) { HashOp = HashOperation.HCOLLECT };
 
             var status = storageApi.HashCollect(keys, ref input);
 
@@ -669,6 +675,13 @@ namespace Garnet.server
         private bool NetworkZCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Command currently does not support execution with any meta-commands
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                return AbortWithCommandUnsupportedWithMetaCommand(nameof(RespCommand.ZCOLLECT),
+                    metaCommandInfo.MetaCommand.ToString());
+            }
+
             if (parseState.Count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZCOLLECT));
@@ -676,8 +689,7 @@ namespace Garnet.server
 
             var keys = parseState.Parameters;
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo) { SortedSetOp = SortedSetOperation.ZCOLLECT };
 
             var status = storageApi.SortedSetCollect(keys, ref input);
 

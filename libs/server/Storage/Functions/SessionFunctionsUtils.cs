@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -39,14 +40,16 @@ namespace Garnet.server
                         return true;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        _ = logRecord.TrySetExpiration(newExpiry);
+                        if (!logRecord.TrySetExpiration(newExpiry))
+                            Debug.Fail($"Unable to set expiry for {nameof(logRecord)} in {nameof(EvaluateExpire)}");
                         expirationChanged = true;
                         return true;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                         if (newExpiry > logRecord.Expiration)
                         {
-                            _ = logRecord.TrySetExpiration(newExpiry);
+                            if (!logRecord.TrySetExpiration(newExpiry))
+                                Debug.Fail($"Unable to set expiry for {nameof(logRecord)} in {nameof(EvaluateExpire)}");
                             expirationChanged = true;
                         }
                         return true;
@@ -54,7 +57,8 @@ namespace Garnet.server
                     case ExpireOption.XXLT:
                         if (newExpiry < logRecord.Expiration)
                         {
-                            _ = logRecord.TrySetExpiration(newExpiry);
+                            if (!logRecord.TrySetExpiration(newExpiry))
+                                Debug.Fail($"Unable to set expiry for {nameof(logRecord)} in {nameof(EvaluateExpire)}");
                             expirationChanged = true;
                         }
                         return true;
@@ -85,6 +89,33 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"{nameof(EvaluateExpire)} exception when HasExpiration is false. optionType: {optionType}");
             }
+        }
+
+        /// <summary>
+        /// Determine whether a modified log record should have an etag
+        /// </summary>
+        /// <param name="currETag">Source record etag</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
+        /// <returns>True if destination record should have an etag</returns>
+        internal static bool CheckModifiedRecordHasETag(long currETag, ref MetaCommandInfo metaCommandInfo)
+        {
+            var metaCmd = metaCommandInfo.MetaCommand;
+            var isEtagCmd = metaCmd.IsETagCommand();
+            var isEtagCondExecCmd = metaCmd.IsETagCondExecCommand();
+
+            // Source record has an etag or meta command is not a conditional execution etag command - destination record will have an etag
+            if (currETag != LogRecord.NoETag || (isEtagCmd && !isEtagCondExecCmd))
+                return true;
+
+            // Source record does not have an etag and the current meta command is not an etag command - the destination record will not have an etag
+            if (!isEtagCmd)
+                return false;
+
+            // Current meta command is a conditional execution etag command - check the condition to determine etag addition to the destination record
+            Debug.Assert(isEtagCondExecCmd);
+            var inputETag = metaCommandInfo.Arg1;
+
+            return metaCmd.CheckConditionalExecution(currETag, inputETag);
         }
     }
 }

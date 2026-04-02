@@ -14,6 +14,7 @@ using Allure.NUnit;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
+using Garnet.test.Resp.ETag;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -1945,6 +1946,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameWithExpiryAndNewKeyAlreadyExists()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            var origValue2 = "test2";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+            db.StringSet("key2", origValue2);
+
+            db.KeyRename("key1", "key2");
+            string retValue = db.StringGet("key2");
+
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
         public void SingleRenameKeyEdgeCase([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
@@ -2018,6 +2041,39 @@ namespace Garnet.test
             ClassicAssert.IsTrue(expirySet);
 
             var key2 = "lkey2";
+            var rb = db.KeyRename(key1, key2);
+            ClassicAssert.IsTrue(rb);
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive("lkey2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
+        public void SingleRenameObjectStoreWithExpiryAndNewKeyAlreadyExists()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var origList2 = new RedisValue[] { "x", "y", "z" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+            db.ListRightPush(key1, origList);
+            db.ListRightPush(key2, origList2);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            ClassicAssert.IsTrue(expirySet);
+
             var rb = db.KeyRename(key1, key2);
             ClassicAssert.IsTrue(rb);
             result = db.ListRange(key1);
@@ -2270,7 +2326,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SingleRenameNXWithEtagSetOldAndNewKey()
+        public void SingleRenameNXWithETagSetOldAndNewKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2278,15 +2334,15 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.Execute("SET", key, origValue, "WITHETAG");
-            db.Execute("SET", newKey, "foo", "WITHETAG");
+            db.ExecWithETag("SET", key, origValue);
+            db.ExecWithETag("SET", newKey, "foo");
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsFalse(result);
         }
 
         [Test]
-        public void SingleRenameNXWithEtagSetOldKey()
+        public void SingleRenameNXWithETagSetOldKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2294,7 +2350,7 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.Execute("SET", key, origValue, "WITHETAG");
+            db.ExecWithETag("SET", key, origValue);
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsTrue(result);
@@ -2306,9 +2362,9 @@ namespace Garnet.test
             ClassicAssert.IsTrue(oldKeyRes.IsNull);
 
             // Since the original key was set with etag, the new key should have an etag attached to it
-            var etagRes = (RedisResult[])db.Execute("GETWITHETAG", newKey);
-            ClassicAssert.AreEqual(0, (long)etagRes[0]);
-            ClassicAssert.AreEqual(origValue, etagRes[1].ToString());
+            var etagRes = (RedisResult[])db.ExecWithETag("GET", newKey);
+            ClassicAssert.AreEqual(origValue, etagRes[0].ToString());
+            ClassicAssert.AreEqual(0, (long)etagRes[1]);
         }
 
         #endregion
@@ -2449,7 +2505,6 @@ namespace Garnet.test
             var key = "expireKey";
             var val = "expireValue";
             var expire = 2;
-
             var ttl = db.Execute("TTL", key);
             ClassicAssert.AreEqual(-2, (long)ttl);
 
@@ -4787,7 +4842,7 @@ namespace Garnet.test
 
             mainDB.StringSet(key, val);
 
-            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can chnage the underlying command to nondeprecated one anytime
+            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can change the underlying command to nondeprecated one anytime
 
             ClassicAssert.AreEqual(val, result);
 
@@ -4805,7 +4860,7 @@ namespace Garnet.test
             var key = "myKey";
             var newValue = "myNewValue";
 
-            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can chnage the underlying command to nondeprecated one anytime
+            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can change the underlying command to nondeprecated one anytime
 
             ClassicAssert.IsNull(result);
 

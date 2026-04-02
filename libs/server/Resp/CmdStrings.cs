@@ -116,7 +116,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
-        public static ReadOnlySpan<byte> WITHETAG => "WITHETAG"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
         public static ReadOnlySpan<byte> RANK => "RANK"u8;
@@ -153,18 +152,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> IDX => "IDX"u8;
         public static ReadOnlySpan<byte> MINMATCHLEN => "MINMATCHLEN"u8;
         public static ReadOnlySpan<byte> WITHMATCHLEN => "WITHMATCHLEN"u8;
-        public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
-        public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
-        public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
-        public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
-        public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
+        public static ReadOnlySpan<byte> GETETAG => "GETETAG"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> MEMBERS => "MEMBERS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
         public static ReadOnlySpan<byte> LOG => "LOG"u8;
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
-        public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
         public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
 
         /// <summary>
@@ -192,7 +186,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE_HLL => "WRONGTYPE Key is not a valid HyperLogLog string value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_ETAG_ON_CUSTOM_PROC => "WRONGTYPE Key with etag cannot be used for custom procedure."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_ON_CUSTOM_PROC => "ERR Key with etag cannot be used for custom procedure."u8;
 
         public static ReadOnlySpan<byte> RESP_ERR_NOSCRIPT => "ERR This Redis command is not allowed from script"u8;
 
@@ -211,7 +205,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_WITHETAG_AND_GETVALUE => "ERR WITHETAG option not allowed with GET inside of SET"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_META_CMD_AND_GETVALUE => "ERR eTag meta-command not allowed with GET inside of SET"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY => "ERR value is NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY_INCR => "ERR increment would produce NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SCORE_NAN => "ERR resulting score is not a number (NaN)"u8;
@@ -241,6 +235,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_DB_INDEX_OUT_OF_RANGE => "ERR DB index is out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_FIRST_DB_INDEX => "ERR invalid first DB index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_SECOND_DB_INDEX => "ERR invalid second DB index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_RANK_CANT_BE_ZERO => "ERR RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SELECT_IN_TXN_UNSUPPORTED => "ERR SELECT is currently unsupported inside a transaction."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SWAPDB_IN_TXN_UNSUPPORTED => "ERR SWAPDB is currently unsupported inside a transaction."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SWAPDB_UNSUPPORTED => "ERR SWAPDB is currently unsupported when multiple clients are connected."u8;
@@ -290,7 +285,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_OVERFLOW_TYPE => "ERR Invalid OVERFLOW type specified"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BUSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_EXPIRE_TIME => "ERR invalid expire time, must be >= 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;
@@ -299,7 +294,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ETAG must be a numerical value greater than or equal to 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ERR etag must be a numerical value greater than or equal to 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD => "ERR eTag meta-commands can only precede data commands"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_META_CMD_MULTI_KEY_UNSUPPORTED => "ERR eTag meta-commands do not support multi-key commands"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_META_CMD_RENAME_UNSUPPORTED => "ERR only eTag meta-command supported with RENAME is EXECWITHETAG"u8;
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
@@ -317,6 +315,7 @@ namespace Garnet.server
         public const string GenericErrUnknownSubCommandOrWrongNumberOfArguments = "ERR unknown subcommand or wrong number of arguments for '{0}'. Try {1} HELP";
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
+        public const string GenericErrCmdUnsupportedWithMetaCommand = "ERR command '{0}' is currently unsupported with meta-command '{1}'";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR Parameter `{0}` should be greater than 0";
         public const string GenericErrNotAFloat = "ERR {0} value is not a valid float";

@@ -42,9 +42,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
-            var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, ref parseState, startIdx: 1,
-                arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
+            var input = new ObjectInput(objectType, ref metaCommandInfo, ref parseState, startIdx: 1, arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)
             {
@@ -65,6 +63,7 @@ namespace Garnet.server
             // Prepare output
             var output = GetObjectOutput();
             var status = storageApi.ObjectScan(key, ref input, ref output);
+            etag = output.ETag;
 
             switch (status)
             {
@@ -72,7 +71,7 @@ namespace Garnet.server
                     // Process output
                     ProcessOutput(output.SpanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (output.result1 == int.MinValue)
+                    if (output.Result1 == int.MinValue)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
