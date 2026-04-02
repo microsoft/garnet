@@ -764,7 +764,7 @@ namespace Garnet.test.cluster
             var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primary_count, replica_count, disableObjects));
 
             var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
-            if(!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
                 Assert.Fail($"checkpointTask timeout checkpointTask: {context.checkpointTask.Status}, attachReplicaTask:{attachReplicaTask.Status}");
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
