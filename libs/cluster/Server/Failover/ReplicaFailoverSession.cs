@@ -156,6 +156,10 @@ namespace Garnet.cluster
 
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
 
+                // Stop advance time task when reconfiguring node to be replica
+                if (clusterProvider.storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
+                    clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
                 clusterProvider.storeWrapper.StartPrimaryTasks();
             }
