@@ -1071,16 +1071,23 @@ namespace Tsavorite.core
             // First check whether we need to shift HeadAddress. If we are not forcing for flush and have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (needSHA || logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
+            var headPage = GetPage(desiredHeadAddress);
+
+            // Always advance HeadAddress when at or beyond MaxAllocatedPageCount (hard page limit).
+            // Without this, when the size tracker is over budget (IsBeyondSizeLimit is true), the condition
+            // below would skip HeadAddress advancement entirely, causing TryAllocateRetryNow to livelock
+            // because no thread advances HeadAddress and the resizer task may not run frequently enough.
+            if (pageIndex - headPage >= MaxAllocatedPageCount)
             {
-                var headPage = GetPage(desiredHeadAddress);
-                if (pageIndex - headPage >= MaxAllocatedPageCount)
-                {
-                    // Snapping to start of page rather than PageHeader.Size means that HA being middle-of-page implies a partial page.
-                    desiredHeadAddress = GetLogicalAddressOfStartOfPage(headPage + 1);
-                    if (desiredHeadAddress > tailAddress)
-                        desiredHeadAddress = tailAddress;
-                }
+                // Snapping to start of page rather than PageHeader.Size means that HA being middle-of-page implies a partial page.
+                desiredHeadAddress = GetLogicalAddressOfStartOfPage(headPage + 1);
+                if (desiredHeadAddress > tailAddress)
+                    desiredHeadAddress = tailAddress;
+            }
+            else if (needSHA || logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
+            {
+                // For non-hard-limit shifts when the size tracker is not over budget, advance HeadAddress
+                // as needed. When IsBeyondSizeLimit is true, the resizer task manages HeadAddress advancement.
             }
 
             // Check whether we need to shift ROA based on desiredHeadAddress.
@@ -1126,10 +1133,23 @@ namespace Tsavorite.core
             }
 
             needSHA = false;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
+            if (logSizeTracker is null)
                 return false;
-            logSizeTracker.Signal();
-            return true;
+
+            // Check the hard page limit: if we're at MaxAllocatedPageCount, we must wait for eviction.
+            if (logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
+            {
+                logSizeTracker.Signal();
+                return true;
+            }
+
+            // For soft limit violations (e.g. heap objects exceed target but page count is within range),
+            // signal the resizer to evict asynchronously but allow the allocation to proceed. Blocking here
+            // would cause a livelock when heap memory dominates the budget, because evicting pages cannot
+            // free heap objects that are immediately cloned back via CopyUpdate.
+            if (logSizeTracker.IsBeyondSizeLimit)
+                logSizeTracker.Signal();
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1249,12 +1269,20 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
+            var spinCount = 0;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
                 // -1: RETRY_NOW
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
-                _ = Thread.Yield();
+
+                // Use progressive backoff to prevent livelock under extreme memory pressure.
+                // Initial spins use Thread.Yield() for low latency. After many spins, use Thread.Sleep(1)
+                // to release the CPU and give the resizer task and flush IO time to complete.
+                if (++spinCount <= 10)
+                    _ = Thread.Yield();
+                else
+                    Thread.Sleep(1);
             }
 
             // 0: RETRY_LATER
