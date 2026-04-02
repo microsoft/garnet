@@ -87,7 +87,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Add(ref logRecord.ValueSpan.AsRef<NumClicks>().numClicks, input.numClicks.numClicks);
             return true;

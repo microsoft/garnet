@@ -50,7 +50,7 @@ namespace Tsavorite.test
             public override void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int value, ref int output, ref RMWInfo rmwInfo)
                 => piuAddress = rmwInfo.Address;
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
                 => false; // For this test, we want this to fail and lead to InitialUpdater
 
             /// <inheritdoc/>

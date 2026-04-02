@@ -18,10 +18,26 @@ namespace BenchmarkDotNetTests
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
     public class IterationTests
     {
-        const int NumRecords = 1_000_000;
+        public int NumRecords => BenchmarkDotNetTestsApp.NumRecords;
 
-        [Params(true, false)]
-        public bool FlushAndEvict;
+        public static bool? FlushAndEvictConfig;
+
+        [ParamsSource(nameof(FlushAndEvictProvider))]
+        public bool FlushAndEvict { get; set; }
+
+        /// <summary>
+        /// Operation parameters provider
+        /// </summary>
+        public IEnumerable<bool> FlushAndEvictProvider()
+        {
+            if (FlushAndEvictConfig.HasValue)
+            {
+                yield return FlushAndEvictConfig.Value;
+                yield break;
+            }
+            yield return false;
+            yield return true;
+        }
 
         TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;

@@ -31,12 +31,12 @@ namespace Tsavorite.test.LockTests
                 return true;
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
             {
                 return Increment(logRecord.ValueSpan);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 return Increment(logRecord.ValueSpan);
             }

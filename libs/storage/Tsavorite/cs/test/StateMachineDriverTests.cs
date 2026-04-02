@@ -50,9 +50,6 @@ namespace Tsavorite.test.recovery
 
         public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, long indexSize, bool useTimingFuzzing)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                System.Diagnostics.Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             // Create the original store
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
@@ -238,10 +235,10 @@ namespace Tsavorite.test.recovery
                 if (useTimingFuzzing) fuzzer = new Random(thread_id);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Fuzz();
-                var ret = base.InPlaceUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                var ret = base.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
                 Fuzz();
                 return ret;
             }

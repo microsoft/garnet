@@ -9,7 +9,6 @@ namespace Tsavorite.core
     /// Interface for variable length Inputs to RMW.
     /// </summary>
     public interface IVariableLengthInput<TInput>
-
     {
         /// <summary>Length of resulting value object when performing RMW modification of value using given input</summary>
         RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input)

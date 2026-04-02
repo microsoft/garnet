@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -338,9 +337,6 @@ namespace Garnet.test
         //[Repeat(3000)]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             static string sizeToString(int size) => size + "k";
 
             server.Dispose();
