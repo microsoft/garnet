@@ -70,7 +70,7 @@ namespace Tsavorite.core
                         out store._hybridLogCheckpoint.flushedSemaphore,
                         store.ThrottleCheckpointFlushDelayMs);
                     if (store._hybridLogCheckpoint.flushedSemaphore != null)
-                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
+                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore, StateMachineSemaphoreType.SnapshotCheckpointSMTaskHybridLogFlushed);
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:

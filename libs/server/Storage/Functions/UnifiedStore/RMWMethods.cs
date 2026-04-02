@@ -135,7 +135,7 @@ namespace Garnet.server
                 ETagState.ResetState(ref functionsState.etagState);
             }
 
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
             return true;
         }
 
@@ -173,7 +173,7 @@ namespace Garnet.server
                         break;
                 }
 
-                sizeInfo.AssertOptionals(dstLogRecord.Info);
+                sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
                 // If oldValue has been set to null, subtract its size from the tracked heap size
                 var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
@@ -187,10 +187,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
-            ref UnifiedOutput output, ref RMWInfo rmwInfo)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            var ipuResult = InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out var sizeChange);
+            var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out var sizeChange);
             switch (ipuResult)
             {
                 case IPUResult.Failed:
@@ -209,7 +208,7 @@ namespace Garnet.server
             }
         }
 
-        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
             var cmd = input.header.cmd;
@@ -226,7 +225,7 @@ namespace Garnet.server
                     logRecord.ClearValueIfHeap(_ => { });
                 }
                 else
-                    logRecord.RemoveETag();
+                    _ = logRecord.RemoveETag();
 
                 rmwInfo.Action = cmd == RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return IPUResult.Failed;
@@ -276,7 +275,6 @@ namespace Garnet.server
                 }
             }
 
-            sizeInfo.AssertOptionals(logRecord.Info);
             return ipuResult;
         }
 

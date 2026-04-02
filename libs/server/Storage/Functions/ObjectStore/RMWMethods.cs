@@ -64,7 +64,7 @@ namespace Garnet.server
                 var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref writer, ref rmwInfo);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 if (result)
-                    sizeInfo.AssertOptionals(logRecord.Info);
+                    sizeInfo.AssertOptionalsIfSet(logRecord.Info);
                 return result;
             }
             finally
@@ -87,7 +87,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
             if (!logRecord.Info.ValueIsObject)
             {
@@ -96,7 +96,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out long sizeChange))
+            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out long sizeChange))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -108,7 +108,7 @@ namespace Garnet.server
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -140,7 +140,6 @@ namespace Garnet.server
                     return false;
                 }
 
-                sizeInfo.AssertOptionals(logRecord.Info);
                 return operateSuccessful;
             }
 
@@ -164,7 +163,6 @@ namespace Garnet.server
                 writer.Dispose();
             }
 
-            sizeInfo.AssertOptionals(logRecord.Info);
             return true;
         }
 
@@ -239,7 +237,7 @@ namespace Garnet.server
                 }
             }
 
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
             var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;

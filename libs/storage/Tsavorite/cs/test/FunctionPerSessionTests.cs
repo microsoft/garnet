@@ -43,7 +43,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref Empty output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref long input, ref Empty output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Increment(ref InPlaceCount);
 
@@ -88,7 +88,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Empty input, ref Empty output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref Empty input, ref Empty output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Increment(ref InPlaceCount);
 

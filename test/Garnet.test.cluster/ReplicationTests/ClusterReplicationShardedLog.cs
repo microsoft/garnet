@@ -360,7 +360,7 @@ namespace Garnet.test.cluster
             var sourcePort = context.clusterTestUtils.GetEndPoint(sourceIndex);
             var targetPort = context.clusterTestUtils.GetEndPoint(targetIndex);
             context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, [0, 16383], range: true, logger: context.logger);
-            context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, logger: context.logger);
             context.clusterTestUtils.WaitForSlotOwnership(replicaIndex, context.clusterTestUtils.GetNodeIdFromNode(targetIndex, context.logger), [0, 16383], context.logger);
 
             // Validate migrated keys

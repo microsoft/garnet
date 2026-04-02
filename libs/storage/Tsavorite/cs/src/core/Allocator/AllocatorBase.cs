@@ -1096,12 +1096,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Throw Tsavorite exception with message. We use a method wrapper so the caller method can execute inlined.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void ThrowTsavoriteException(string message) => throw new TsavoriteException(message);
-
-        /// <summary>
         /// If the page we are trying to allocate is past the last page with an unflushed address region, we have to wait for the flushEvent.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1290,7 +1284,7 @@ namespace Tsavorite.core
 
                 // If HeadAddress hasn't moved, currentReadOnlyAddress is either HeadAddress or at a page boundary, unless we have the case where
                 // we've gone beyond size budget on a single page; in that case we must remain at headAddress.
-                if ((headAddress == PageHeader.Size) || GetPage(tailAddress) == headPage)
+                if ((GetOffsetOnPage(headAddress) <= PageHeader.Size) || GetPage(tailAddress) == headPage)
                     readOnlyAddress = headAddress;
                 else
                 {
@@ -1868,8 +1862,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
+        /// <param name="flushBuffers"></param>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
+        /// <param name="startLogicalAddress"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
@@ -1887,7 +1883,7 @@ namespace Tsavorite.core
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+                _ = Task.Run(() => FlushRunner());
             else
                 FlushRunner();
 
@@ -1897,47 +1893,58 @@ namespace Tsavorite.core
 
                 var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
 
-                // Flush each page in sequence
-                for (long flushPage = startPage; flushPage < endPage; flushPage++)
+                try
                 {
-                    // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
-                    // for middle pages, we flush the entire page.
-                    var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
-                    if (startLogicalAddress > flushStartAddress)
-                        flushStartAddress = startLogicalAddress;
-                    var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
-                    if (endLogicalAddress < flushEndAddress)
-                        flushEndAddress = endLogicalAddress;
-                    var flushSize = flushEndAddress - flushStartAddress;
-                    if (flushSize <= 0)
-                        continue;
 
-                    var asyncResult = new PageAsyncFlushResult<Empty>
+                    // Flush each page in sequence
+                    for (var flushPage = startPage; flushPage < endPage; flushPage++)
                     {
-                        flushCompletionTracker = flushCompletionTracker,
-                        page = flushPage,
-                        fromAddress = flushStartAddress,
-                        untilAddress = flushEndAddress,
-                        count = 1,
-                        flushRequestState = FlushRequestState.Snapshot,
-                        flushBuffers = flushBuffers
-                    };
+                        // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
+                        // for middle pages, we flush the entire page.
+                        var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                        if (startLogicalAddress > flushStartAddress)
+                            flushStartAddress = startLogicalAddress;
+                        var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
+                        if (endLogicalAddress < flushEndAddress)
+                            flushEndAddress = endLogicalAddress;
+                        var flushSize = flushEndAddress - flushStartAddress;
+                        // TODO: Should we release completedSemaphore also if the flushSize <=0
+                        if (flushSize <= 0)
+                            continue;
 
-                    // Intended destination is flushPage
-                    WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
-
-                    // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
-                    // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                    if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
-                    {
-                        if (throttleCheckpointFlushDelayMs >= 0)
+                        var asyncResult = new PageAsyncFlushResult<Empty>
                         {
-                            flushCompletionTracker.WaitOneFlush();
-                            Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            flushCompletionTracker = flushCompletionTracker,
+                            page = flushPage,
+                            fromAddress = flushStartAddress,
+                            untilAddress = flushEndAddress,
+                            count = 1,
+                            flushRequestState = FlushRequestState.Snapshot,
+                            flushBuffers = flushBuffers
+                        };
+
+                        // Intended destination is flushPage
+                        WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+
+                        // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
+                        // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
+                        if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
+                        {
+                            if (throttleCheckpointFlushDelayMs >= 0)
+                            {
+                                flushCompletionTracker.WaitOneFlush();
+                                Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            }
                         }
+                        else
+                            _ = asyncResult.Release();
                     }
-                    else
-                        _ = asyncResult.Release();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
+                    _completedSemaphore.Release();
+                    throw;
                 }
             }
         }
@@ -2261,9 +2268,8 @@ namespace Tsavorite.core
                 {
                     if (epochTaken)
                         epoch.Suspend();
+                    _ = result.Release();
                 }
-
-                _ = result.Release();
             }
             catch when (disposed) { }
         }

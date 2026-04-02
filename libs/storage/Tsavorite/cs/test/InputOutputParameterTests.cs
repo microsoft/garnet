@@ -41,8 +41,11 @@ namespace Tsavorite.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
-                => InitialWriter(ref logRecord, in sizeInfo, ref input, src, ref output, ref upsertInfo);
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+            {
+                RecordSizeInfo sizeInfo = new();    // unused by InitialWriter
+                return InitialWriter(ref logRecord, in sizeInfo, ref input, src, ref output, ref upsertInfo);
+            }
 
             /// <inheritdoc/>
             public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
@@ -61,8 +64,11 @@ namespace Tsavorite.test.InputOutputParameterTests
                 ClassicAssert.AreEqual(value, output);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
-                => InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                RecordSizeInfo sizeInfo = new();    // unused by InitialUpdater
+                return InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            }
 
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
@@ -71,6 +77,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                 value = output = logRecord.Key.AsRef<int>() * input;
                 return true;
             }
+
             /// <inheritdoc/>
             public override void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {

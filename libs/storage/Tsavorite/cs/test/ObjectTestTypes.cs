@@ -107,7 +107,7 @@ namespace Tsavorite.test
             return logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = input.value }, in sizeInfo);
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
             ((TestObjectValue)logRecord.ValueObject).value += input.value;
             return true;
@@ -118,8 +118,10 @@ namespace Tsavorite.test
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
             if (!logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             output.value = (TestObjectValue)logRecord.ValueObject;
@@ -164,7 +166,7 @@ namespace Tsavorite.test
         public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             => logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = input.value }, in sizeInfo);
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
             ((TestObjectValue)logRecord.ValueObject).value += input.value;
             return true;
@@ -175,8 +177,12 @@ namespace Tsavorite.test
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+            logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
+            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        }
 
         public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -310,7 +316,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestLargeObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestLargeObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
             Assert.That(expectedRecordLength < 0 || logRecord.AllocatedSize == expectedRecordLength);
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
@@ -448,7 +454,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestMultiListObjectInput input, IHeapObject srcValue, ref TestMultiListObjectOutput output, ref UpsertInfo updateInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref TestMultiListObjectInput input, IHeapObject srcValue, ref TestMultiListObjectOutput output, ref UpsertInfo updateInfo)
         {
             output.valueObject = (TestMultiListObjectValue)logRecord.ValueObject;
             output.oldValue = output.valueObject.lists[input.listIndex][input.itemIndex];

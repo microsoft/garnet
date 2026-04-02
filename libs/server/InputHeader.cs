@@ -332,6 +332,7 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public StringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
             this.header = new RespInputHeader(cmd, flags);
@@ -344,9 +345,9 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0)
+            : this((RespCommand)cmd, (RespInputFlags)flags, arg1)
         {
         }
 
@@ -357,7 +358,9 @@ namespace Garnet.server
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
         }
@@ -370,7 +373,9 @@ namespace Garnet.server
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }

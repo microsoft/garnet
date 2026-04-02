@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -49,9 +50,6 @@ namespace Tsavorite.core
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
         public readonly bool RecordIsInline => KeyIsInline && ValueIsInline;
 
-        /// <summary>Returns the whether there are optionals specified for the new record.</summary>
-        public readonly bool HasOptionalFields => FieldInfo.HasETag || FieldInfo.HasExpiration;
-
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSize { readonly get; internal set; }
 
@@ -62,17 +60,12 @@ namespace Tsavorite.core
         /// <summary>The inline size of the record rounded up to <see cref="RecordInfo"/> alignment.</summary>
         public int AllocatedInlineRecordSize { readonly get; internal set; }
 
-        /// <summary>Size to allocate for ETag if it will be included, else 0.</summary>
-        public readonly int ETagSize => FieldInfo.HasETag ? LogRecord.ETagSize : 0;
-
         /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
-        public readonly int ExpirationSize => FieldInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
-
-        /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
-        public readonly int ObjectLogPositionSize => (KeyIsInline && ValueIsInline) ? 0 : LogRecord.ObjectLogPositionSize;
+        public readonly int ObjectLogPositionSize => objectLogPositionSize;
+        byte objectLogPositionSize;
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
-        public readonly int OptionalSize => ETagSize + ExpirationSize + ObjectLogPositionSize;
+        public readonly int OptionalSize => FieldInfo.eTagSize + FieldInfo.expirationSize + ObjectLogPositionSize;
 
         /// <summary>Whether these values are set (default instances are used for Delete internally, for example).</summary>
         public readonly bool IsSet => AllocatedInlineRecordSize != 0;
@@ -80,25 +73,32 @@ namespace Tsavorite.core
         /// <summary>
         /// Calculate the Record sizes based on the given <paramref name="keySize"/> and <paramref name="valueSize"/> sizes, which are adjusted for inline vs. overflow/object.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void CalculateSizes(int keySize, int valueSize)
         {
             if (FieldInfo.ExtendedNamespaceSize > sbyte.MaxValue)
                 ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");
 
+            objectLogPositionSize = (byte)((KeyIsInline && ValueIsInline) ? 0 : LogRecord.ObjectLogPositionSize);
+
             // Calculate full used record size. Use the full possible RecordLengthBytes initially to reserve space in the record for it;
-            // later we'll replace it with the exact size needed.
+            // then replace it with the exact size needed and update ActualInlineRecordSize.
             KeyLengthBytes = RecordDataHeader.GetByteCount(keySize);
-            RecordLengthBytes = sizeof(int);
-            var headerLength = RecordDataHeader.NumIndicatorBytes + KeyLengthBytes + RecordLengthBytes;
-            ActualInlineRecordSize = RecordInfo.Size + headerLength + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
+            const int initialRecordLengthBytes = sizeof(int);
+            ActualInlineRecordSize = RecordInfo.Size + RecordDataHeader.NumIndicatorBytes + KeyLengthBytes + initialRecordLengthBytes
+                            + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
 
-            // Adjust to the actual record length bytes needed.
-            var actualRecordLengthBytes = RecordDataHeader.GetByteCount(ActualInlineRecordSize);
-            ActualInlineRecordSize -= RecordLengthBytes - actualRecordLengthBytes;
-            RecordLengthBytes = actualRecordLengthBytes;
+            // Adjust to the actual record length bytes needed (must include roundup).
+            var allocatedSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
+            RecordLengthBytes = RecordDataHeader.GetByteCount(allocatedSize);
+            ActualInlineRecordSize -= initialRecordLengthBytes - RecordLengthBytes;
 
-            // Finally, calculate allocated size (record-aligned).
+            // Finally, calculate allocated size (record-aligned). Round up again as our subtraction might have knocked us down
+            // by one kRecordAlignment. This may leave us with one extra byte of RecordLengthBytes if for example ActualInlineRecordSize
+            // went down from 257 to 255, so recalculate the size. This cannot reduce RecordLengthBytes by more than 1.
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
+            if (AllocatedInlineRecordSize != allocatedSize)
+                RecordLengthBytes = RecordDataHeader.GetByteCount(AllocatedInlineRecordSize);
         }
 
         /// <summary>
@@ -113,8 +113,10 @@ namespace Tsavorite.core
 
         /// <summary>Called from Upsert or RMW methods with the final record info; ensures consistency between the Get*FieldInfo methods and the actual update methods./// </summary>
         [Conditional("DEBUG")]
-        public void AssertOptionals(RecordInfo recordInfo, bool checkETag = true, bool checkExpiration = true)
+        public void AssertOptionalsIfSet(RecordInfo recordInfo, bool checkETag = true, bool checkExpiration = true)
         {
+            if (!IsSet)
+                return;
             if (checkETag)
                 Debug.Assert(FieldInfo.HasETag == recordInfo.HasETag, $"Mismatch between expected HasETag {FieldInfo.HasETag} and actual ETag {recordInfo.HasETag}");
             if (checkExpiration)

@@ -3,8 +3,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.test;
@@ -209,12 +209,9 @@ namespace Tsavorite.test
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
         //[Repeat(3000)]
-        [Explicit("Temporary: accessing a disposed object")]
+        //[Explicit("Temporary: accessing a disposed object")]
         public void ObjectIterationPushLockTest([Values(1, 2, 4, 8)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode, [Values] bool largeMemory)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             InternalSetup(largeMemory);
 
             const int totalRecords = 2000;
@@ -249,10 +246,7 @@ namespace Tsavorite.test
                     var key1 = new TestObjectKey { key = i + keyTag };
                     var value = new TestObjectValue { value = (tid + 1) * i };
                     var status = bContext.Upsert(key1, value);
-                    if (status.IsPending)
-                    {
-                        _ = bContext.CompletePending(wait: true);
-                    }
+                    Assert.That(status.IsPending, Is.False, "Upsert should not go pending");
                 }
             }
 
@@ -262,10 +256,7 @@ namespace Tsavorite.test
                     var key1 = new TestObjectKey { key = i + keyTag };
                     var value = new TestObjectValue { value = i + 340000 };
                     var status = bContext.Upsert(key1, value);
-                    if (status.IsPending)
-                    {
-                        _ = bContext.CompletePending(wait: true);
-                    }
+                    Assert.That(status.IsPending, Is.False, "Upsert should not go pending");
                 }
             }
 
@@ -280,6 +271,143 @@ namespace Tsavorite.test
                     tasks.Add(Task.Factory.StartNew(() => LocalUpdate(tid)));
             }
             Task.WaitAll([.. tasks]);
+        }
+    }
+
+    [AllureNUnit]
+    [TestFixture]
+    internal class ObjectIterationTests2 : AllureTestBase
+    {
+        // Per issue #1630, handle 4 pages worth of records with an InsertAll-DeleteAll-ReInsertAll pattern.
+        public class InsDelIns_ScanIteratorFunctions : IScanIteratorFunctions
+        {
+            public const int MaxCount = 64;
+            public readonly (int Key, int Value)[] ExpectedItems = new (int Key, int Value)[MaxCount];
+            public readonly List<(int Key, int Value)> UnexpectedItems = [];
+            public int Count;
+
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord sourceLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                ref readonly var key = ref sourceLogRecord.Key.AsRef<int>();
+                ref readonly var value = ref sourceLogRecord.ValueSpan.AsRef<int>();
+                if (Count < ExpectedItems.Length)
+                    ExpectedItems[Count] = (key, value);
+                else
+                    UnexpectedItems.Add((key, value));
+
+                Count++;
+                if (Count == MaxCount)
+                {
+                    cursorRecordResult = CursorRecordResult.Accept | CursorRecordResult.EndBatch;
+                    WriteLine($"EndBatch {key},{value}");
+                }
+                else
+                {
+                    // If this happens, it is likely because we had to go to pending IO and had some pending when we triggered the EndBatch at MaxCount;
+                    // the pending operations are completed which call back to here.
+                    cursorRecordResult = CursorRecordResult.Accept;
+                    WriteLine($"Accept {key},{value}");
+                }
+                return true;
+            }
+            public bool OnStart(long beginAddress, long endAddress)
+            {
+                Count = 0;
+                WriteLine("OnStart");
+                return true;
+            }
+            public void OnException(Exception exception, long numberOfRecords) => WriteLine($"{exception.GetType().Name}: {exception.Message}; numRec {numberOfRecords}");
+            public void OnStop(bool completed, long numberOfRecords) => WriteLine("OnStop");
+
+            // For debugging only
+            internal static void WriteLine(string s) { } // => Debug.WriteLine(s);
+        }
+
+        private const int Count = 249;  // In the Issue this is 253, but in V2 the presence of PageHeader uses some space and that causes 253 to require another page.
+        private const long PageSize = 1L << 12;
+        private const long SegmentSize = PageSize;
+
+        private static void RunTest(IDevice LogDevice)
+        {
+            var Settings = new KVSettings
+            {
+                IndexSize = 1L << 6,
+                LogMemorySize = 1L << 13,
+                PageSize = PageSize,
+                SegmentSize = SegmentSize,
+                MutableFraction = 1,
+                LogDevice = LogDevice,
+            };
+            var StoreFunctions = new StoreFunctions<SpanByteComparer, DefaultRecordDisposer>(new SpanByteComparer(), () => null, new DefaultRecordDisposer());
+            using var Store = new TsavoriteKV<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>, ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>(
+                Settings, StoreFunctions,
+                static (AllocSettings, StoreFuncs) => new ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>(AllocSettings, StoreFuncs));
+            using var ReadAddSession = Store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>(System.Buffers.MemoryPool<byte>.Shared));
+
+            Span<int> keySpan = stackalloc int[1];
+            Span<int> valueSpan = stackalloc int[1];
+            var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.AsBytes(keySpan));
+            var value = MemoryMarshal.AsBytes(valueSpan);
+
+            // Insert all
+            for (var Key = 0; Key < Count; Key++)
+            {
+                keySpan[0] = Key;
+                valueSpan[0] = Key;
+                _ = ReadAddSession.BasicContext.Upsert(key, value);
+            }
+
+            // Delete all
+            for (var Key = 0; Key < Count; Key++)
+            {
+                keySpan[0] = Key;
+                var Status = ReadAddSession.BasicContext.Delete(key, default);
+            }
+
+            // ReInsert all
+            for (var Key = 0; Key < Count; Key++)
+            {
+                keySpan[0] = Key;
+                valueSpan[0] = Key;
+                _ = ReadAddSession.BasicContext.Upsert(key, value);
+            }
+
+            var ScanIteratorFunctions = new InsDelIns_ScanIteratorFunctions();
+            long TotalCount = 0, Cursor = 0;
+            while (true)
+            {
+                _ = ReadAddSession.IterateLookup(ref ScanIteratorFunctions, ref Cursor, resetCursor: false);
+                TotalCount += ScanIteratorFunctions.Count;
+                InsDelIns_ScanIteratorFunctions.WriteLine($"while: {TotalCount}");
+
+                // If we did not get a full batch, we're done
+                if (ScanIteratorFunctions.Count < InsDelIns_ScanIteratorFunctions.MaxCount)
+                    break;
+            }
+            Assert.That(TotalCount, Is.EqualTo(Count));
+            Assert.That(ScanIteratorFunctions.UnexpectedItems, Is.Empty, "Unexpected items were sent to Reader(), probably pending items that were in-flight when EndBatch was received");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void InsDelIns_LocalMemory()
+        {
+            using var LogDevice = new LocalMemoryDevice(capacity: SegmentSize, sz_segment: SegmentSize, parallelism: 1, sector_size: 64U, latencyMs: 0, fileName: Path.Combine(MethodTestDir, "test.log"));
+            RunTest(LogDevice);
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(SmokeTestCategory)]
+        public void InsDelIns_MLSD()
+        {
+            using var LogDevice = new ManagedLocalStorageDevice(filename: Path.Combine(MethodTestDir, "test.log"),
+                capacity: SegmentSize,
+                deleteOnClose: true
+            );
+            RunTest(LogDevice);
         }
     }
 }

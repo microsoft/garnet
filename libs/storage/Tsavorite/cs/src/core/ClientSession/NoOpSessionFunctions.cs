@@ -14,7 +14,7 @@ namespace Tsavorite.core
     /// <remarks>
     /// Because this is used for copy operations, the <see cref="GetUpsertFieldInfo{TKey, TSourceLogRecord}(TKey, in TSourceLogRecord, ref TInput)"/>,
     /// <see cref="InitialWriter{TSourceLogRecord}(ref LogRecord, in RecordSizeInfo, ref TInput, in TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
-    /// <see cref="InPlaceWriter{TSourceLogRecord}(ref LogRecord, in RecordSizeInfo, ref TInput, in TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
+    /// <see cref="InPlaceWriter{TSourceLogRecord}(ref LogRecord, ref TInput, in TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
     /// methods are implemented to allow for copy of log records via Upsert, but no other methods are implemented.
     /// </remarks>
     /// <typeparam name="TInput"></typeparam>
@@ -28,16 +28,18 @@ namespace Tsavorite.core
 
         public readonly bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
             => throw new NotImplementedException("InPlaceWriter(ReadOnlySpan<byte> value) is not supported in this ISessionFunctions implementation");
 
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
             => throw new NotImplementedException("InPlaceWriter(IHeapObject value) is not supported in this ISessionFunctions implementation");
 
-        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // This includes ETag and Expiration
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(key: dstLogRecord, inputLogRecord, ref input) };
+            dstLogRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
             return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
         }
 
@@ -52,7 +54,7 @@ namespace Tsavorite.core
         public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) { }
 
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+        public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
         public readonly bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TKey : IKey

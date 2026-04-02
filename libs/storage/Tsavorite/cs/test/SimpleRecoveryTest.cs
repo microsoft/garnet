@@ -451,7 +451,7 @@ namespace Tsavorite.test.recovery.sumstore
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
                 ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
