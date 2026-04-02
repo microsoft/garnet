@@ -501,6 +501,19 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Shuts down replication tasks in a way where they _cannot_ be resumed in the future.
+        /// 
+        /// Intended for general Garnet shutdown.
+        /// </summary>
+        public void ShutdownReplayTasks()
+        {
+            _ = replicationReplayChannel.Writer.TryComplete();
+            Task.WaitAll(replicationReplayTasks);
+
+            _ = Interlocked.Exchange(ref replicationReplayStarted, -1);
+        }
+
+        /// <summary>
         /// Vector Set removes are phrased as reads (once the index is created), so they require special handling.
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetRemove"/> running on the Primary get diverted here on a Replica.
