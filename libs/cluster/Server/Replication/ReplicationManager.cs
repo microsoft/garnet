@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -580,16 +581,15 @@ namespace Garnet.cluster
             }
         }
 
-        object advanceTimeSignalLock = new();
-        TaskCompletionSource<bool> advanceTimeSignal;
-        ManualResetEventSlim advanceTimeConsumerStarted = new(false);
-        AdvanceTimeEvent latestAdvanceTimeEvent;
-
         struct AdvanceTimeEvent
         {
             public long sequenceNumber;
             public AofAddress tailAddress;
         }
+
+        ConcurrentStack<AdvanceTimeEvent> advanceTimeWorkQueue;
+        SingleWaiterAutoResetEvent onAdvanceTimeSignal;
+        SingleWaiterAutoResetEvent onAdvanceTimeWorkerStart;
 
         /// <summary>
         /// Process message from primary related to observing a specific tail address snapshot at a given sequence number (timestamp).
@@ -600,22 +600,8 @@ namespace Garnet.cluster
         /// <returns></returns>
         public void SignalAdvanceTime(long sequenceNumber, AofAddress tailAddress)
         {
-            // Wait for background cosumer to start
-            _ = advanceTimeConsumerStarted.Wait(clusterProvider.serverOptions.ReplicaSyncTimeout);
-
-            // Assert that advanceTimeSignal has been initialized
-            Debug.Assert(advanceTimeSignal != null);
-
-            // Store the latest event and signal the consumer
-            TaskCompletionSource<bool> release;
-            lock (advanceTimeSignalLock)
-            {
-                latestAdvanceTimeEvent = new() { sequenceNumber = sequenceNumber, tailAddress = tailAddress };
-                release = advanceTimeSignal;
-                advanceTimeSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            }
-            if (!release.TrySetResult(true))
-                throw new GarnetException("Failed to signal consumer!");
+            advanceTimeWorkQueue?.Push(new() { sequenceNumber = sequenceNumber, tailAddress = tailAddress });
+            onAdvanceTimeSignal?.Signal();
         }
 
         /// <summary>
@@ -624,53 +610,50 @@ namespace Garnet.cluster
         /// <exception cref="GarnetException"></exception>
         public void StartAdvanceTimeBackgroundTask()
         {
+            // NOTE: At this point the AdvanceTimeReplicaTask should not be running. This applies to both Single and MultiLog cases.
+            // In SingleLog the task should not be spawned and for multi-log it should have been disposed at the beginning of sync.
+            Debug.Assert(!storeWrapper.TaskManager.IsRunning(TaskType.AdvanceTimeReplicaTask), "AdvanceTimeReplicaTask should be not running at this stage!");
+            onAdvanceTimeWorkerStart = new();
             if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1 &&
-                !clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeBackgroundTask(token)))
+                !clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeWorker(token)))
             {
                 logger?.LogError("Failed to register AdvanceTime task at the replica");
                 throw new GarnetException("Failed to register AdvanceTime task at the replica");
             }
 
-            async Task AdvanceTimeBackgroundTask(CancellationToken token)
+            _ = onAdvanceTimeWorkerStart?.WaitAsync().AsTask().WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout);
+
+            async Task AdvanceTimeWorker(CancellationToken token)
             {
                 var appendOnlyFile = storeWrapper.appendOnlyFile;
+                advanceTimeWorkQueue = new();
+                onAdvanceTimeSignal = new() { RunContinuationsAsynchronously = true };
+                onAdvanceTimeWorkerStart.Signal();
                 try
                 {
-                    TaskCompletionSource<bool> signal;
-                    lock (advanceTimeSignalLock)
+                    while (!token.IsCancellationRequested)
                     {
-                        signal = advanceTimeSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                    }
+                        var advanceTimeSignalTask = onAdvanceTimeSignal.WaitAsync().AsTask();
+                        await advanceTimeSignalTask.WaitAsync(token).ConfigureAwait(false);
 
-                    // Signal that consumer has started
-                    advanceTimeConsumerStarted.Set();
-
-                    while (true)
-                    {
-                        _ = await signal.Task.WaitAsync(token).ConfigureAwait(false);
-
-                        // Read the latest event and grab the next signal atomically
-                        AdvanceTimeEvent result;
-                        lock (advanceTimeSignalLock)
+                        while (advanceTimeWorkQueue.TryPop(out var result))
                         {
-                            result = latestAdvanceTimeEvent;
-                            signal = advanceTimeSignal;
-                        }
-                        var observationSequenceNumber = result.sequenceNumber;
-                        var observedTailAddress = result.tailAddress;
-                        var converged = false;
-                        while (!converged)
-                        {
-                            converged = true;
-                            for (var i = 0; i < observedTailAddress.Length; i++)
+                            var observationSequenceNumber = result.sequenceNumber;
+                            var observedTailAddress = result.tailAddress;
+                            var converged = false;
+                            while (!converged)
                             {
-                                // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
-                                if (observedTailAddress[i] <= replicationOffset[i])
-                                    appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
-                                else
-                                    converged = false;
+                                converged = true;
+                                for (var i = 0; i < observedTailAddress.Length; i++)
+                                {
+                                    // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
+                                    if (observedTailAddress[i] <= replicationOffset[i])
+                                        appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
+                                    else
+                                        converged = false;
+                                }
+                                await Task.Delay(storeWrapper.serverOptions.AofReplicationRefreshFrequencyMs, token).ConfigureAwait(false);
                             }
-                            await Task.Delay(storeWrapper.serverOptions.AofReplicationRefreshFrequencyMs, token).ConfigureAwait(false);
                         }
                     }
                 }
@@ -680,15 +663,14 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "Failed at {method}", nameof(AdvanceTimeBackgroundTask));
+                    logger?.LogError(ex, "Failed at {method}", nameof(AdvanceTimeWorker));
                 }
                 finally
                 {
-                    lock (advanceTimeSignalLock)
-                    {
-                        advanceTimeConsumerStarted.Reset();
-                        advanceTimeSignal = null;
-                    }
+                    advanceTimeWorkQueue.Clear();
+                    advanceTimeWorkQueue = null;
+                    onAdvanceTimeWorkerStart = null;
+                    onAdvanceTimeSignal = null;
                 }
             }
         }
