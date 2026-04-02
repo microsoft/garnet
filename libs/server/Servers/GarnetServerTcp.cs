@@ -113,10 +113,15 @@ namespace Garnet.server
         /// <summary>
         /// Stop listening for new connections. Frees the listening port
         /// without waiting for active connections to drain.
+        /// Safe to call multiple times (idempotent).
         /// </summary>
         public override void Close()
         {
-            listenSocket.Close();
+            try
+            {
+                listenSocket.Close();
+            }
+            catch (ObjectDisposedException) { }
         }
 
         /// <summary>
@@ -124,7 +129,7 @@ namespace Garnet.server
         /// </summary>
         public override void Dispose()
         {
-            // Close listening socket to free the port and stop accepting new connections.
+            // Dispose listening socket (may already be closed by StopListening/Close during graceful shutdown).
             // This also prevents new connections from arriving while DisposeActiveHandlers drains existing ones.
             listenSocket.Dispose();
             base.Dispose();
@@ -154,9 +159,10 @@ namespace Garnet.server
         {
             try
             {
-                // Close the listen socket to stop accepting new connections
-                // This will cause any pending AcceptAsync to complete with an error
-                listenSocket.Close();
+                // Delegates to Close() which closes the listen socket.
+                // This will cause any pending AcceptAsync to complete with OperationAborted,
+                // handled as a Tier 1 (clean shutdown) error in HandleAcceptError.
+                Close();
                 logger?.LogDebug("Stopped accepting new connections on {endpoint}", EndPoint);
             }
             catch (Exception ex)
