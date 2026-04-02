@@ -2353,7 +2353,7 @@ namespace Garnet.test.cluster
             var sourceNodeIndex = 0;
             var targetNodeIndex = 1;
 
-            context.logger?.LogDebug("1. Verifying data insertion in slot {slot}", slot);
+            context.logger?.LogDebug("1. Verifying data insertion into slot {slot}", slot);
             var actualKeyCount = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, slot, logger: context.logger);
             ClassicAssert.AreEqual(keyCount, actualKeyCount, "Keys should be present in source slot before migration");
 
