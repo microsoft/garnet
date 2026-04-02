@@ -579,10 +579,12 @@ namespace Tsavorite.test.Revivification
                 return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, upsertInfo.Address, isIPU: true);
-                return base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -610,7 +612,7 @@ namespace Tsavorite.test.Revivification
                 return dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 AssertInfoValid(ref rmwInfo);
 
@@ -625,6 +627,8 @@ namespace Tsavorite.test.Revivification
 
                 ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, rmwInfo.Address, isIPU: true);
                 VerifyKeyAndValue(logRecord.Key, logRecord.ValueSpan);
 
@@ -1140,9 +1144,6 @@ namespace Tsavorite.test.Revivification
         public void SpanByteUpdateRevivifyTest([Values] DeleteDest deleteDest, [Values] UpdateKey updateKey,
                                           [Values] CollisionRange collisionRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             bool stayInChain = deleteDest == DeleteDest.InChain || collisionRange != CollisionRange.None;   // Collisions make the ii inelidable
 
             byte delAboveRO = (byte)(NumRecords - (stayInChain
@@ -1444,9 +1445,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(3000)]
         public void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] WaitMode waitMode, [Values] DeleteDest deleteDest)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             Populate();
 
             // Note: this test assumes no collisions (every delete goes to the FreeList)
@@ -1819,10 +1817,10 @@ namespace Tsavorite.test.Revivification
                 return base.InitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 VerifyKeyAndValue(logRecord, srcValue);
-                return base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -1837,9 +1835,11 @@ namespace Tsavorite.test.Revivification
                 return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKeyAndValue(logRecord, logRecord.ValueSpan);
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
@@ -2040,8 +2040,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(100)]
         public void ArtificialFreeBinThreadStressTest(int numIterations, int numAddThreads, int numTakeThreads)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
             const int numRecordsPerThread = 1000;
 
             // Set up the fake sizeInfo and logRecord; they only have to return lengths.
@@ -2367,9 +2365,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(3000)]
         public void LiveThreadContentionOnOneRecordTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             const int numIterations = 2000;
             const int numDeleteThreads = 5, numUpdateThreads = 5;
             const int keyRange = numDeleteThreads;
@@ -2449,9 +2444,6 @@ namespace Tsavorite.test.Revivification
         public void LiveFreeListThreadStressTest([Values] CollisionRange collisionRange,
                                              [Values] ThreadingPattern threadingPattern, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             int numIterations = 100;
             const int numDeleteThreads = 5, numUpdateThreads = 5;
 
@@ -2526,9 +2518,6 @@ namespace Tsavorite.test.Revivification
         //[Repeat(30)]
         public void LiveInChainThreadStressTest([Values(CollisionRange.Ten)] CollisionRange collisionRange, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
-
             // Turn off freelist.
             _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 

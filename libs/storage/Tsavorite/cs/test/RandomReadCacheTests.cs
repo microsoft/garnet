@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -117,8 +116,6 @@ namespace Tsavorite.test.ReadCacheTests
                 Assert.Ignore("Skipped because 1 thread cannot have contention");
             if (numThreads > 2 && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
 
             const int PendingMod = 16;
 

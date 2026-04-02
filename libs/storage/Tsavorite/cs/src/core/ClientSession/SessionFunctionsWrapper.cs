@@ -79,7 +79,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!_clientSession.functions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
@@ -88,7 +88,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!_clientSession.functions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
@@ -98,7 +98,7 @@ namespace Tsavorite.core
         public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!_clientSession.functions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, in inputLogRecord, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
@@ -170,7 +170,7 @@ namespace Tsavorite.core
         public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
         {
             // This wraps the ISessionFunctions call to provide expiration logic.
-            if (_clientSession.functions.InPlaceUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
+            if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
                 logRecord.InfoRef.SetDirtyAndModified();

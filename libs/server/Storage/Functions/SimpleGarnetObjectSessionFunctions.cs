@@ -29,9 +29,9 @@ namespace Garnet.server
             return result;
         }
 
-        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, IHeapObject srcValue, ref IGarnetObject output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref IGarnetObject input, IHeapObject srcValue, ref IGarnetObject output, ref UpsertInfo upsertInfo)
         {
-            var result = base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+            var result = base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo);
             if (result)
                 output = (IGarnetObject)srcValue;
             return result;
@@ -53,11 +53,11 @@ namespace Garnet.server
             return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, in srcLogRecord, ref output, ref upsertInfo);
         }
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
         {
             // Simple base implementation does not use upsertInfo
             var upsertInfo = new UpsertInfo();
-            return InPlaceWriter(ref logRecord, in sizeInfo, ref input, input, ref output, ref upsertInfo);
+            return InPlaceWriter(ref logRecord, ref input, input, ref output, ref upsertInfo);
         }
     }
 }
