@@ -6,10 +6,21 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// Non-generic interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
     /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
     /// </summary>
-    public interface IAllocator<TStoreFunctions> : IAllocatorCallbacks<TStoreFunctions>
+    public interface IAllocator
+    {
+        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
+        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
+        void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
+    }
+
+    /// <summary>
+    /// Genric interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// </summary>
+    public interface IAllocator<TStoreFunctions> : IAllocator, IAllocatorCallbacks<TStoreFunctions>
         where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The base class instance of the allocator implementation</summary>
@@ -76,10 +87,6 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
             ;
-
-        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
-        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
-        void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);

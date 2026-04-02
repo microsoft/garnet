@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -31,9 +30,6 @@ namespace Tsavorite.test
         //[Repeat(3000)]
         public async ValueTask FlakyLogTestCleanFailure([Values] bool isAsync)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             var errorOptions = new ErrorSimulationOptions
             {
                 readTransientErrorRate = 0,

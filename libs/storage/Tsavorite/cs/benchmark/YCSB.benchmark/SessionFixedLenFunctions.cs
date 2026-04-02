@@ -52,20 +52,26 @@ namespace Tsavorite.benchmark
             => true; // not used
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
         {
             srcValue.CopyTo(logRecord.ValueSpan);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
+        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(dstLogRecord, inputLogRecord, ref input) };
+            return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        }
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -76,7 +82,7 @@ namespace Tsavorite.benchmark
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfoo)
+        public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref Input input, ref Output output, ref RMWInfo rmwInfoo)
         {
             logRecord.ValueSpan.AsRef<FixedLengthValue>().value = input.value;
             return true;
@@ -128,7 +134,7 @@ namespace Tsavorite.benchmark
             => GetFieldInfo();
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref Input input)
+        public readonly unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref Input input)
             where TKey : IKey
 #if NET9_0_OR_GREATER
                 , allows ref struct

@@ -27,9 +27,16 @@ namespace BDN.benchmark.Operations
         public IEnumerable<OperationParams> OperationParamsProvider()
         {
             yield return new(false, false);
+            if (ParamsNoneOnly)
+                yield break;
             yield return new(true, false);
             yield return new(false, true);
         }
+
+        /// <summary>
+        /// Set by environment variable BDNRUN_OP_PARAM - determines if running with only "None" parameters (no ACLs, no AOF) or with all combinations of parameters
+        /// </summary>
+        internal static bool ParamsNoneOnly;
 
         /// <summary>
         /// Batch size per method invocation

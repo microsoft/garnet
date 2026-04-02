@@ -3,7 +3,9 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -20,7 +22,7 @@ namespace Garnet.server
                 return false;
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
             return true;
         }
 
@@ -33,7 +35,7 @@ namespace Garnet.server
             // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
             return true;
         }
 
@@ -94,128 +96,37 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
-            ReadOnlySpan<byte> newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, ReadOnlySpan<byte> newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (logRecord.Info.ValueIsObject)
-            {
-                var oldSize = logRecord.Info.ValueIsInline
-                    ? 0
-                    : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-
-                _ = logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo);
-                if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                    return false;
-                sizeInfo.AssertOptionals(logRecord.Info);
-
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-
-                // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-                if (logRecord.Info.ValueIsOverflow)
-                    functionsState.cacheSizeTracker?.AddHeapSize(newValue.Length - oldSize);
-                return true;
-            }
-
-            if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
+            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
                 return false;
-            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
-            if (ok)
-            {
-                if (input.header.CheckWithETagFlag())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                    {
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                    }
-                }
-                else
-                    ok = logRecord.RemoveETag();
-            }
-            if (ok)
-            {
-                sizeInfo.AssertOptionals(logRecord.Info);
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                return true;
-            }
-            return false;
-        }
-
-        /// <inheritdoc />
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
-            IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
-        {
-            var garnetObject = (IGarnetObject)newValue;
-
-            var oldSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-
-            _ = logRecord.TrySetValueObjectAndPrepareOptionals(newValue, in sizeInfo);
-            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
-
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-
-            functionsState.cacheSizeTracker?.AddHeapSize(newValue.HeapMemorySize - oldSize);
             return true;
         }
 
         /// <inheritdoc />
-        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo,
-            ref UnifiedInput input, in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
+        {
+            if (!InPlaceWriterForHeapObjectValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
+                return false;
+            if (functionsState.appendOnlyFile != null)
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+            return true;
+        }
+
+        /// <inheritdoc />
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref UnifiedInput input,
+            in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var oldSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-
-            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-
-            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
-            if (ok)
-            {
-                if (input.header.CheckWithETagFlag())
-                {
-                    var newETag = functionsState.etagState.ETag + 1;
-                    ok = logRecord.TrySetETag(newETag);
-                    if (ok)
-                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
-                }
-                else
-                    ok = logRecord.RemoveETag();
-            }
-            if (ok)
-            {
-                sizeInfo.AssertOptionals(logRecord.Info);
-
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-
-                var newSize = logRecord.Info.ValueIsInline
-                    ? 0
-                    : (!logRecord.Info.ValueIsObject
-                        ? logRecord.ValueSpan.Length
-                        : logRecord.ValueObject.HeapMemorySize);
-                functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
-                return true;
-            }
-
-            return false;
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
+                return false;
+            if (functionsState.appendOnlyFile != null)
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+            return true;
         }
 
         /// <inheritdoc />
