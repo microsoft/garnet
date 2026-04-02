@@ -2331,12 +2331,6 @@ namespace Garnet.test.cluster
             }
         }
 
-        /// <summary>
-        /// Verifies that slot migration via SETSLOTRANGE is resilient end-to-end:
-        /// all keys in the migrated slot are fully transferred to the target node,
-        /// their values are intact, and slot ownership is correctly updated on both
-        /// the source and target nodes.
-        /// </summary>
         [Test, Order(27)]
         [Category("CLUSTER")]
         public void ClusterMigrateSetSlotRangeResilience()
