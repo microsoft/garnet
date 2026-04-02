@@ -222,7 +222,7 @@ namespace Tsavorite.core
                 heapSize.Increment(size);
                 if (size > 0 && IsBeyondSizeLimitAndCanEvict())
                     resizeTaskEvent.Set();
-                Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
+                Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} after IncrementSize({size})");
             }
         }
 
@@ -402,9 +402,10 @@ namespace Tsavorite.core
             // ShiftHeadAddress caps the new HeadAddress at FlushedUntilAddress. Wait until the SHA eviction is complete to avoid going further over budget.
             logAccessor.ShiftAddresses(readOnlyAddress, headAddress, waitForEviction: true);
 
-            // Now subtract what we were able to trim from heapSize. Inline page total size is tracked separately in logAccessor.MemorySizeBytes.
-            heapSize.Increment(-heapTrimmedSize);
-            Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
+            // Heap size subtraction is handled by the OnNext eviction callback (called during ShiftAddresses → OnPagesClosed → MemoryPageScan),
+            // which subtracts each record's CURRENT HeapMemorySize at eviction time. This avoids double-counting with concurrent CopyUpdate
+            // operations that may have already cleared the source record and decremented heapSize via AddHeapSize(sizeAdjustment).
+            // Note: heapTrimmedSize from DetermineEvictionRange is used only for the eviction range calculation, not for the actual subtraction.
 
             // Calculate the number of trimmed pages and report the new expected AllocatedPageCount here, since our last iteration (which may have been the only one)
             // would have returned isComplete and thus we didn't wait for the actual eviction.
