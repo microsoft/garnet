@@ -317,9 +317,7 @@ namespace Tsavorite.core
             }
             foreach (var waiter in waitingList)
             {
-                logger?.LogTrace("SMD: Waiting on semaphore {0}", waiter.Type);
                 await waiter.Semaphore.WaitAsync(token);
-                logger?.LogTrace("SMD: Semaphore {0} signaled", waiter.Type);
             }
             waitingList.Clear();
         }
