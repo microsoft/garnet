@@ -55,6 +55,10 @@ namespace Garnet.common
             drainEvent.Dispose();
         }
 
+        /// <summary>
+        /// Attempts to register a new active worker.
+        /// Returns <c>false</c> if the monitor has been closed.
+        /// </summary>
         public bool TryEnter()
             => TryEnter(out _);
 

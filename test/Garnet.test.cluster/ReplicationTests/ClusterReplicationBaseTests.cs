@@ -188,20 +188,20 @@ namespace Garnet.test.cluster
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
             // Wait for replication offsets to synchronize
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
             // Validate database
             context.SimpleValidateDB(disableObjects, replicaIndex);
 
             // Shutdown secondary
-            context.nodes[1].Dispose(false);
+            context.nodes[replicaIndex].Dispose(false);
             context.clusterTestUtils.WaitForAofSyncDriverDipose(primaryIndex);
 
             // New insert
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
             // Restart secondary
-            context.nodes[1] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(1),
+            context.nodes[replicaIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(replicaIndex),
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,

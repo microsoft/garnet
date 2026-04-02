@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading;
@@ -36,6 +35,9 @@ namespace Garnet.cluster
         /// </summary>
         public string RemoteNodeId => remoteNodeId;
 
+        /// <summary>
+        /// Active worker monitor for AofSyncDriver tasks
+        /// </summary>
         readonly ActiveWorkerMonitor activeWorkerMonitor = new();
 
         /// <summary>
@@ -136,16 +138,12 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    var tasks = new List<Task>
-                    {
-                        // Create advance physical sublog time task when the instance is configured to use more than one physical sublogs.
-                        AdvancePhysicalSublogTime()
-                    };
-
+                    var tasks = new Task[aofSyncTasks.Length + 1];
+                    tasks[0] = AdvancePhysicalSublogTime();
                     for (var i = 0; i < aofSyncTasks.Length; i++)
-                        tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
+                        tasks[i + 1] = aofSyncTasks[i].RunAofSyncTask(this);
 
-                    _ = await Task.WhenAny([.. tasks]).ConfigureAwait(false);
+                    _ = await Task.WhenAny(tasks).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -155,7 +153,7 @@ namespace Garnet.cluster
             finally
             {
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
-                logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, PreviousAddress);
+                logger?.LogWarning("AofSync task terminated; client disposed replicaId:{remoteNodeId} [{address}:{port}] previousAddress:{previousAddress}", remoteNodeId, address, port, PreviousAddress);
 
                 if (!aofSyncDriverStore.TryRemove(this))
                     logger?.LogError("Unable to remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);

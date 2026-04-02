@@ -27,10 +27,15 @@ namespace Garnet.cluster
         readonly INetworkSender respSessionNetworkSender;
         readonly ILogger logger;
         TsavoriteLogScanSingleIterator replayIterator;
-        SingleWriterMultiReaderLock activeReplay;
+
+        readonly ActiveWorkerMonitor activeWorkerMonitor;
         internal readonly ReplayBatchContext replayBatchContext;
         readonly ReplicaReplayTask[] replayTasks;
         readonly TsavoriteLog physicalSublog;
+
+        public bool ResumeReplay() => activeWorkerMonitor.TryEnter();
+
+        public void SuspendReplay() => _ = activeWorkerMonitor.Exit();
 
         /// <summary>
         /// Initializes a new instance of the ReplicaReplayDriver class, setting up replay tasks for a specific physical
@@ -49,8 +54,8 @@ namespace Garnet.cluster
             appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;
+            activeWorkerMonitor = new();
             physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
-            activeReplay = new SingleWriterMultiReaderLock();
             this.cts = cts;
             this.logger = logger;
 
@@ -65,13 +70,9 @@ namespace Garnet.cluster
             }
         }
 
-        public bool ResumeReplay() => activeReplay.TryReadLock();
-
-        public void SuspendReplay() => activeReplay.ReadUnlock();
-
         public void Dispose()
         {
-            activeReplay.WriteLock();
+            activeWorkerMonitor.Dispose();
             replayIterator?.Dispose();
             respSessionNetworkSender?.Dispose();
         }
@@ -188,7 +189,7 @@ namespace Garnet.cluster
             if (replayIterator == null)
             {
                 replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                _ = Task.Run(BackgroundReplayTask);
+                _ = Task.Run(async () => await BackgroundReplayTask());
             }
 
             async Task BackgroundReplayTask()
