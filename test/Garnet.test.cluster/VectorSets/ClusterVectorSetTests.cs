@@ -1984,7 +1984,7 @@ namespace Garnet.test.cluster
                 migrateCancel.Cancel();
                 var migrationTimes = await migrateTask.ConfigureAwait(false);
 
-                ClassicAssert.IsTrue(migrationTimes.Count > 2, "Should have moved back and forth at least twice");
+                ClassicAssert.IsTrue(migrationTimes.Count >= 2, $"Should have moved back and forth, saw: {migrationTimes.Count}");
 
                 writeCancel.Cancel();
                 await Task.WhenAll(writeTasks).ConfigureAwait(false);
