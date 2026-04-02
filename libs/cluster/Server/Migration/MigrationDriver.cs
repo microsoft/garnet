@@ -42,7 +42,7 @@ namespace Garnet.cluster
                 // Check if setslotsrange executed correctly
                 if (!result.Equals("OK", StringComparison.Ordinal))
                 {
-                    logger?.LogError("TrySetSlot error: {error}", result);
+                    logger?.LogError("SetSlotRange error: {error}", result);
                     Status = MigrateState.FAIL;
                     return false;
                 }
