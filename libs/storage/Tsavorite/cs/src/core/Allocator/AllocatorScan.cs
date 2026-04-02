@@ -247,10 +247,11 @@ namespace Tsavorite.core
 
             // Drain any pending pushes. We have ended the iteration; we know there are no more matching records, so drop through to end it and return false.
             if (numPending > 0)
-                bContext.CompletePending(wait: true);
+                _ = bContext.CompletePending(wait: true);
 
-            IterationComplete:
-            if (resetCursor) cursor = 0;
+        IterationComplete:
+            if (resetCursor)
+                cursor = 0;
             scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }

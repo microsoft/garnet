@@ -674,7 +674,14 @@ namespace Garnet
 
         private void InternalDispose()
         {
+            // Phase 1: Stop listening on all servers to free ports immediately.
+            for (var i = 0; i < servers.Length; i++)
+                servers[i]?.Close();
+
+            // Phase 2: Dispose the provider (storage engine shutdown — may take time).
             Provider?.Dispose();
+
+            // Phase 3: Drain active handlers and clean up remaining resources.
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Dispose();
             subscribeBroker?.Dispose();

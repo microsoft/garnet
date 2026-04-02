@@ -161,6 +161,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public abstract void Close();
+
+        /// <inheritdoc />
         public virtual void Dispose()
         {
             Disposed = true;

@@ -52,5 +52,11 @@ namespace Garnet.server
         /// Existing connections remain active until they complete or are disposed.
         /// </summary>
         public void StopListening();
+
+        /// <summary>
+        /// Stop listening for new connections. Frees the listening port
+        /// without waiting for active connections to drain.
+        /// </summary>
+        public void Close();
     }
 }
