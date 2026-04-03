@@ -177,18 +177,10 @@ namespace Tsavorite.core
             while (true)
             {
                 var bufferFilePosition = buffer.GetCurrentFilePosition();
-
-                // Compare using CurrentAddress (segment + offset only) rather than the full word, because the word includes
-                // the piggybacked ObjectSizeHighByte which differs between records and is unrelated to file position.
-                Debug.Assert(recordFilePosition.CurrentAddress >= bufferFilePosition.CurrentAddress,
-                    $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
+                Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
                 Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
-
-                // Use saturating subtraction via CurrentAddress to avoid underflow when ObjectSizeHighByte differs.
-                var recordAddr = recordFilePosition.CurrentAddress;
-                var bufferAddr = bufferFilePosition.CurrentAddress;
-                var increment = recordAddr >= bufferAddr ? recordAddr - bufferAddr : 0;
-                Debug.Assert(increment < (ulong)objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
+                var increment = recordFilePosition - bufferFilePosition;
+                Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
 
                 // We might cleanly align to the start of the next buffer, if there was a flush that ended on a buffer boundary.
                 // Otherwise, we should always be within the current buffer. We should only do this "continue" once.

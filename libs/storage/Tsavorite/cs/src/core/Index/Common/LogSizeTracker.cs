@@ -92,8 +92,7 @@ namespace Tsavorite.core
         public bool IsBeyondSizeLimit => TotalSize > highTargetSize;
 
         /// <summary>Return true if the total size is outside the target plus delta *and* we have pages we can (partially or completely) evict</summary>
-        /// <param name="addingPage">If true, we are allocating a new page and only the hard page limit (MaxAllocatedPageCount) is checked.
-        /// Otherwise, we are called when adding or growing a new <see cref="IHeapObject"/>, and both the total size and page count are checked.</param>
+        /// <param name="addingPage">If true, we are allocating a new page. Otherwise, we are called when adding or growing a new <see cref="IHeapObject"/></param>
         /// <remarks>This should be used only for non-Recovery, because Recovery does not set up HeadAddress and TailAddress before this is called.</remarks>
         public bool IsBeyondSizeLimitAndCanEvict(bool addingPage = false)
         {
@@ -105,13 +104,6 @@ namespace Tsavorite.core
             var numPages = (int)(tailPage - headPage + 1);
             if (addingPage && numPages == logAccessor.allocatorBase.MaxAllocatedPageCount)
                 return true;
-
-            // When addingPage is true, don't block based on the soft memory limit (TotalSize > highTargetSize).
-            // Blocking page allocations when the over-budget is from heap objects causes a livelock: evicting pages
-            // cannot free heap objects that are cloned back via CopyUpdate. The resizer task handles soft-limit
-            // eviction asynchronously; the caller (NeedToWaitForClose) signals it separately.
-            if (addingPage)
-                return false;
 
             // Otherwise, we need at least MinResizeTargetPageCount to be able to evict anything.
             return (TotalSize > highTargetSize) && numPages > MinResizeTargetPageCount;
@@ -222,7 +214,7 @@ namespace Tsavorite.core
                 heapSize.Increment(size);
                 if (size > 0 && IsBeyondSizeLimitAndCanEvict())
                     resizeTaskEvent.Set();
-                Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} after IncrementSize({size})");
+                Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
             }
         }
 
@@ -402,10 +394,9 @@ namespace Tsavorite.core
             // ShiftHeadAddress caps the new HeadAddress at FlushedUntilAddress. Wait until the SHA eviction is complete to avoid going further over budget.
             logAccessor.ShiftAddresses(readOnlyAddress, headAddress, waitForEviction: true);
 
-            // Heap size subtraction is handled by the OnNext eviction callback (called during ShiftAddresses → OnPagesClosed → MemoryPageScan),
-            // which subtracts each record's CURRENT HeapMemorySize at eviction time. This avoids double-counting with concurrent CopyUpdate
-            // operations that may have already cleared the source record and decremented heapSize via AddHeapSize(sizeAdjustment).
-            // Note: heapTrimmedSize from DetermineEvictionRange is used only for the eviction range calculation, not for the actual subtraction.
+            // Heap size subtraction is handled by the OnNext eviction callback (called during ShiftAddresses),
+            // which subtracts each record's CURRENT HeapMemorySize at eviction time.
+            Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
 
             // Calculate the number of trimmed pages and report the new expected AllocatedPageCount here, since our last iteration (which may have been the only one)
             // would have returned isComplete and thus we didn't wait for the actual eviction.
