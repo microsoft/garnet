@@ -250,7 +250,7 @@ namespace Tsavorite.core
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+                _ = Task.Run(() => FlushRunner());
             else
                 FlushRunner();
 
@@ -261,16 +261,16 @@ namespace Tsavorite.core
                 if (endAddress > GetLogicalAddressOfStartOfPage(endPage))
                     endPage++;
 
-                long prevEndPage = GetPage(prevEndAddress);
-                deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
-                int destOffset = 0;
+                var prevEndPage = GetPage(prevEndAddress);
+                deltaLog.Allocate(out var entryLength, out var destPhysicalAddress);
+                var destOffset = 0;
 
                 // We perform delta capture under epoch protection with page-wise refresh for latency reasons
-                bool epochTaken = epoch.ResumeIfNotProtected();
+                var epochTaken = epoch.ResumeIfNotProtected();
 
                 try
                 {
-                    for (long p = startPage; p < endPage; p++)
+                    for (var p = startPage; p < endPage; p++)
                     {
                         // Check if we have the entire page safely available to process in memory
                         if (HeadAddress >= GetLogicalAddressOfStartOfPage(p) + PageSize)
@@ -305,7 +305,7 @@ namespace Tsavorite.core
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
-                                int size = sizeof(long) + sizeof(int) + alignedRecordSize;
+                                var size = sizeof(long) + sizeof(int) + alignedRecordSize;
                                 if (destOffset + size > entryLength)
                                 {
                                     deltaLog.Seal(destOffset);
@@ -338,9 +338,15 @@ namespace Tsavorite.core
                         epoch.Suspend();
                 }
 
-                if (destOffset > 0)
-                    deltaLog.Seal(destOffset);
-                _completedSemaphore.Release();
+                try
+                {
+                    if (destOffset > 0)
+                        deltaLog.Seal(destOffset);
+                }
+                finally
+                {
+                    _completedSemaphore.Release();
+                }
             }
         }
 
