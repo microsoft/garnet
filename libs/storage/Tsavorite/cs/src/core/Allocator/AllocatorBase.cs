@@ -250,7 +250,7 @@ namespace Tsavorite.core
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(() => FlushRunner());
+                _ = Task.Run(FlushRunner);
             else
                 FlushRunner();
 
@@ -1889,7 +1889,7 @@ namespace Tsavorite.core
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(() => FlushRunner());
+                _ = Task.Run(FlushRunner);
             else
                 FlushRunner();
 
