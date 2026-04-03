@@ -27,11 +27,6 @@ namespace Garnet.server
         public int Count;
 
         /// <summary>
-        /// Get the allocated capacity of the argument buffer
-        /// </summary>
-        public int Capacity { get; }
-
-        /// <summary>
         /// Get a Span of the parsed parameters in the form an PinnedSpanByte
         /// </summary>
         public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
@@ -57,7 +52,6 @@ namespace Garnet.server
             this.rootCount = rootCount;
             this.bufferPtr = bufferPtr;
             this.Count = count;
-            this.Capacity = rootBuffer.Length;
         }
 
         /// <summary>
@@ -184,19 +178,38 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Expand (if necessary) capacity of <see cref="SessionParseState"/>, preserving contents.
+        /// Ensure the argument buffer can hold at least <paramref name="capacity"/> entries
+        /// from the current slice offset, preserving existing contents. No-op if already large enough.
         /// </summary>
-        public void EnsureCapacity(int count)
+        public void EnsureCapacity(int capacity)
         {
-            if (count <= Capacity)
-            {
+            var oldBuffer = rootBuffer;
+
+            // Compute slice offset (bufferPtr may point into the middle of rootBuffer)
+            var sliceOffset = oldBuffer != null
+                ? (int)(bufferPtr - (PinnedSpanByte*)Unsafe.AsPointer(ref oldBuffer[0]))
+                : 0;
+
+            // Total buffer size needed = slice offset + requested capacity
+            var requiredLength = sliceOffset + capacity;
+
+            if (oldBuffer != null && requiredLength <= oldBuffer.Length)
                 return;
+
+            var oldCount = Count;
+            Initialize(requiredLength);
+
+            if (oldBuffer != null)
+            {
+                // Copy all data up to the end of the current slice
+                var copyLength = sliceOffset + oldCount;
+                if (copyLength > 0)
+                    oldBuffer.AsSpan(0, copyLength).CopyTo(rootBuffer);
             }
 
-            var oldBuffer = rootBuffer;
-            Initialize(count);
-
-            oldBuffer?.AsSpan().CopyTo(rootBuffer);
+            // Restore slice offset and count
+            bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]) + sliceOffset;
+            Count = oldCount;
         }
 
         /// <summary>
@@ -248,8 +261,13 @@ namespace Garnet.server
         /// <param name="arg">Argument to set</param>
         public void SetArgument(int i, PinnedSpanByte arg)
         {
-            Debug.Assert(i < Count);
+            Debug.Assert(i < rootBuffer.Length);
             *(bufferPtr + i) = arg;
+
+            if (i >= Count)
+            {
+                Count = i + 1;
+            }
         }
 
         /// <summary>

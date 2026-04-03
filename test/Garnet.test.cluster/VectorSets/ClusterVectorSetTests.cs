@@ -1049,7 +1049,7 @@ namespace Garnet.test.cluster
             }
 
             // Finish migration
-            context.clusterTestUtils.WaitForMigrationCleanup(NullLogger.Instance);
+            context.clusterTestUtils.WaitForMigrationCleanup();
 
             // Validate vector sets coherent
             for (var i = 0; i < keys.Count; i++)

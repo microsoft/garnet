@@ -85,7 +85,7 @@ namespace Tsavorite.test.Cancellation
                 return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InPlaceUpdater;
                 if (cancelLocation == CancelLocation.InPlaceUpdater)
@@ -93,6 +93,7 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
                 return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
@@ -108,7 +109,7 @@ namespace Tsavorite.test.Cancellation
                 return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.InPlaceWriter;
                 if (cancelLocation == CancelLocation.InPlaceWriter)
@@ -116,6 +117,8 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             }
 

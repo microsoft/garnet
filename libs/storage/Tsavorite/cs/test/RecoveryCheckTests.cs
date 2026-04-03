@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -227,9 +226,6 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
-
             const long pageSize = 1L << 10;
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {

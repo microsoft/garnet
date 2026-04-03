@@ -226,12 +226,10 @@ namespace Garnet.server
                         var value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
                                                  // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
-                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out var curr) : IsValidNumber(value, out curr))
                         {
-                            // TODO Consider adding a way to cache curr for the IPU call
-                            var curr = NumUtils.ReadInt64(value);
+                            // TODO Consider adding a way to cache curr/next for the IPU call
                             var next = curr + incrByValue;
-
                             fieldInfo.ValueSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
                         }
                         return fieldInfo;
@@ -242,11 +240,10 @@ namespace Garnet.server
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead).
-                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out curr) : IsValidNumber(value, out curr))
                         {
-                            var curr = NumUtils.ReadInt64(value);
+                            // TODO Consider adding a way to cache curr/next for the IPU call
                             var next = curr - decrByValue;
-
                             fieldInfo.ValueSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
                         }
                         return fieldInfo;
@@ -255,11 +252,10 @@ namespace Garnet.server
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
-                        if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidDouble(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out var currVal) : IsValidDouble(value, out currVal))
                         {
-                            _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan, out var currVal);
+                            // TODO Consider adding a way to cache currVal/nextVal for the IPU call
                             var nextVal = currVal + incrByFloat;
-
                             fieldInfo.ValueSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
                         }
                         return fieldInfo;

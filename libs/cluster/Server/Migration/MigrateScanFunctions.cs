@@ -33,7 +33,7 @@ namespace Garnet.cluster
                 migrateOperation.ThrowIfCancelled();
 
                 // Do not send key if it is expired
-                if (ClusterSession.Expired(in srcLogRecord))
+                if (!srcLogRecord.Info.Tombstone && ClusterSession.Expired(in srcLogRecord))
                     return true;
 
                 if (srcLogRecord.HasNamespace)

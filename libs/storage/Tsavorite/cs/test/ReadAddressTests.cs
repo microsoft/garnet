@@ -100,9 +100,9 @@ namespace Tsavorite.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo) => false;
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo) => false;
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo) => false;
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
             public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo)

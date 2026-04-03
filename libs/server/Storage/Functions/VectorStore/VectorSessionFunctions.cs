@@ -122,20 +122,6 @@ namespace Garnet.server
         #region Upserts
         /// <inheritdoc/>
         public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
-        => InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
-
-        /// <inheritdoc/>
-        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, IHeapObject srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
-        => ObjectOperationsNotExpected<bool>();
-
-        /// <inheritdoc/>
-        public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        => LogRecordOperationsNotExpected<bool>();
-
-
-        /// <inheritdoc/>
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
@@ -143,7 +129,7 @@ namespace Garnet.server
             var value = AlignOrPin(in logRecord, ref input, out var pin);
             try
             {
-                newValue.CopyTo(value);
+                srcValue.CopyTo(value);
 
                 return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
             }
@@ -154,11 +140,39 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, IHeapObject newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, IHeapObject srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         => ObjectOperationsNotExpected<bool>();
 
         /// <inheritdoc/>
-        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        => LogRecordOperationsNotExpected<bool>();
+
+        /// <inheritdoc/>
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, ReadOnlySpan<byte> newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        {
+            Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
+
+            var value = AlignOrPin(in logRecord, ref input, out var pin);
+            try
+            {
+                newValue.CopyTo(value);
+
+                return true;
+            }
+            finally
+            {
+                pin?.Free();
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, IHeapObject newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
+        => ObjectOperationsNotExpected<bool>();
+
+        /// <inheritdoc/>
+        public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref VectorInput input, in TSourceLogRecord inputLogRecord, ref VectorOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         => LogRecordOperationsNotExpected<bool>();
         #endregion Upserts
@@ -462,7 +476,7 @@ namespace Garnet.server
 
         #region InPlaceUpdater
         /// <inheritdoc/>
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
+        public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(logRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
@@ -501,7 +515,7 @@ namespace Garnet.server
                         }
 
                         newMetadataValue.CopyTo(alignedValue);
-                        return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+                        return true;
                     }
                     else
                     {
@@ -524,7 +538,7 @@ namespace Garnet.server
                             inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
                         }
 
-                        return VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
+                        return true;
                     }
                 }
                 else
