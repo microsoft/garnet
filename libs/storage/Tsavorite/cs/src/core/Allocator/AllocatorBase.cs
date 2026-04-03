@@ -332,6 +332,12 @@ namespace Tsavorite.core
                         epoch.ProtectAndDrain();
                     }
                 }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushDeltaToDevice), startPage, endPage);
+                    _ = _completedSemaphore.Release();
+                    throw;
+                }
                 finally
                 {
                     if (epochTaken)
