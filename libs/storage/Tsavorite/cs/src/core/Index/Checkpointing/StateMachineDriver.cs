@@ -66,12 +66,6 @@ namespace Tsavorite.core
 
         internal void TrackLastVersion(long version)
         {
-            // Only create and enqueue one semaphore per version, if we create a
-            // new one on each call, the earlier semaphore is orphaned in the waitingList
-            // and never released, and we permanently block ProcessWaitingListAsync.
-            if (lastVersion == version)
-                return;
-
             if (GetNumActiveTransactions(version) > 0)
             {
                 // Set version number first, then create semaphore
