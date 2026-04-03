@@ -37,7 +37,6 @@ namespace Garnet.server
             Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(srcLogRecord.NamespaceBytes.Length == 1, "Variable length namespaces not supported");
 
-
             var value = AlignOrPin(in srcLogRecord, ref input, out var pin);
             try
             {
