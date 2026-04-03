@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -21,9 +20,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
+            // When a session publishes to a channel it is itself subscribed to, the Broadcast
+            // callback is invoked on the same thread that already holds the network sender lock
+            // via TryConsumeMessages. Detect this reentrant case and write directly to the
+            // existing output buffer instead of re-entering the lock.
+            var reentrant = commandProcessingThreadId == Environment.CurrentManagedThreadId;
             try
             {
-                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                if (!reentrant)
+                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
                 WritePushLength(3);
 
@@ -35,7 +40,7 @@ namespace Garnet.server
                 WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 // Flush the publish message for this subscriber
-                if (dcurr > networkSender.GetResponseObjectHead())
+                if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
             catch
@@ -44,16 +49,19 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
+                if (!reentrant)
+                    networkSender.ExitAndReturnResponseObject();
             }
         }
 
         /// <inheritdoc />
         public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
         {
+            var reentrant = commandProcessingThreadId == Environment.CurrentManagedThreadId;
             try
             {
-                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                if (!reentrant)
+                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
                 WritePushLength(4);
 
@@ -65,7 +73,7 @@ namespace Garnet.server
                 WriteDirectLargeRespString(key.ReadOnlySpan);
                 WriteDirectLargeRespString(value.ReadOnlySpan);
 
-                if (dcurr > networkSender.GetResponseObjectHead())
+                if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
             catch
@@ -74,7 +82,8 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
+                if (!reentrant)
+                    networkSender.ExitAndReturnResponseObject();
             }
         }
 
@@ -100,7 +109,6 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
-            Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
             var key = parseState.GetArgSliceByRef(0);
