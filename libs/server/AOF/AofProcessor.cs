@@ -43,6 +43,7 @@ namespace Garnet.server
         readonly StoreWrapper replayAofStoreWrapper;
         readonly IClusterProvider clusterProvider;
         readonly ILogger logger;
+        readonly bool usingShardedLog;
 
         /// <summary>
         /// Create new AOF processor
@@ -60,6 +61,7 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.respServerSessions = [.. Enumerable.Range(0, storeWrapper.serverOptions.AofVirtualSublogCount).Select(_ => ObtainServerSession())];
+            this.usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1 || storeWrapper.serverOptions.AofReplayTaskCount > 1;
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -125,7 +127,6 @@ namespace Garnet.server
             var shardedHeader = default(AofShardedHeader);
             var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
-            var shardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
 
             // Handle transactions
             if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, ptr, length, asReplica))
@@ -147,7 +148,7 @@ namespace Garnet.server
                         replayContext.inFuzzyRegion = true;
                     }
 
-                    if (shardedLog)
+                    if (usingShardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
                         storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
@@ -167,7 +168,7 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                if (!shardedLog)
+                                if (!usingShardedLog)
                                 {
                                     _ = storeWrapper.TakeCheckpoint(background: false, logger);
                                 }
@@ -192,7 +193,7 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                     {
-                        if (!shardedLog)
+                        if (!usingShardedLog)
                         {
                             storeWrapper.store.SetVersion(header.storeVersion);
                         }
@@ -209,14 +210,14 @@ namespace Garnet.server
                 case AofEntryType.MainStoreStreamingCheckpointEndCommit:
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
-                    if (shardedLog)
+                    if (usingShardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
                         storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
-                    if (!shardedLog)
+                    if (!usingShardedLog)
                     {
                         storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
                     }
@@ -230,7 +231,7 @@ namespace Garnet.server
                     }
                     break;
                 case AofEntryType.FlushDb:
-                    if (!shardedLog)
+                    if (!usingShardedLog)
                     {
                         storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
                     }
@@ -266,48 +267,46 @@ namespace Garnet.server
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
-
-            var isSharded = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreUpsert(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreRMW:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreRMW(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreDelete:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreDelete(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     ObjectStoreRMW(objectContext, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     ObjectStoreUpsert(objectContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     ObjectStoreDelete(objectContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.UnifiedStoreRMW:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreRMW(unifiedContext, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreStringUpsert(unifiedContext, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreObjectUpsert(unifiedContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreDelete:
-                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreDelete(unifiedContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoredProcedure:
@@ -325,7 +324,6 @@ namespace Garnet.server
 
         private void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
         {
-            Debug.Assert(storeWrapper.serverOptions.AofPhysicalSublogCount > 1);
             var shardedHeader = *(AofShardedHeader*)ptr;
             var curr = ptr + sizeof(AofShardedHeader);
             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
