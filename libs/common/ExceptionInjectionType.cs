@@ -78,7 +78,7 @@ namespace Garnet.common
         /// </summary>
         VectorSet_Interrupt_Delete_2,
         /// <summary>
-        /// Fail TakeOverAsPrimary during failover by blocking BeginRecovery lock acquisition.
+        /// Fail TakeOverAsPrimary during failover by throwing before BeginRecovery is called.
         /// </summary>
         Failover_Fail_TakeOverAsPrimary,
     }
