@@ -119,6 +119,11 @@ namespace Garnet.cluster
 
             try
             {
+#if DEBUG
+                // Exception injection point for testing: simulates TakeOverAsPrimary failure
+                // after PauseWritesAndWaitForSync has already sent failstopwrites to the primary.
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Failover_Fail_TakeOverAsPrimary);
+#endif
                 // Make replica syncing unavailable by setting recovery flag
                 if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, upgradeLock: false))
                 {
@@ -281,6 +286,7 @@ namespace Garnet.cluster
             // CLUSTER FAILOVER OPTIONS
             // FORCE: Do not await for the primary since it might be unreachable
             // TAKEOVER: Same as force but also do not await for voting from other primaries
+            var failoverSucceeded = false;
             try
             {
                 // Issue stop writes and on ack wait for replica to catch up
@@ -298,9 +304,6 @@ namespace Garnet.cluster
                 // Transition to primary role
                 if (!TakeOverAsPrimary())
                 {
-                    // Request primary to be reset to original state only if DEFAULT option was used
-                    if (primaryClient != null)
-                        _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
                     return false;
                 }
 
@@ -310,6 +313,7 @@ namespace Garnet.cluster
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasks();
                 clusterProvider.storeWrapper.StartPrimaryTasks();
 
+                failoverSucceeded = true;
                 return true;
             }
             catch (Exception ex)
@@ -319,6 +323,24 @@ namespace Garnet.cluster
             }
             finally
             {
+                // If failstopwrites was sent to the primary but the failover did not
+                // succeed, reset the primary back to its original state.
+                // Without this, the primary has already given up its slots (via TryStopWrites)
+                // but the replica never claimed them (TakeOverAsPrimary never ran or failed),
+                // leaving the cluster in an incoherent state where no node owns the slots.
+                if (primaryClient != null && !failoverSucceeded)
+                {
+                    try
+                    {
+                        logger?.LogWarning("Attempting to reset primary after failed failover");
+                        _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Failed to reset primary after failed failover — cluster may be in an incoherent state");
+                    }
+                }
+
                 primaryClient?.Dispose();
                 status = FailoverStatus.NO_FAILOVER;
             }
