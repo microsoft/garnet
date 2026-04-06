@@ -100,22 +100,32 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
+            // GET output goes to ScratchBufferAllocator (not ScratchBufferBuilder),
+            // so SBB offset does not advance after GET calls.
             var buffOffset1 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out PinnedSpanByte outval1);
 
             var buffOffset2 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out PinnedSpanByte outval2);
 
-            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            // Verify GET results are valid
+            if (outval1.Length == 0 || outval2.Length == 0)
             {
-                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                WriteError(ref output, "ERR GET returned empty value");
                 return false;
             }
 
-            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
-            if (garnetApi.ResetScratchBuffer(buffOffset2))
+            // Since GET uses SBA, both offsets should be equal (SBB unchanged)
+            if (buffOffset1 != buffOffset2)
             {
-                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
+                WriteError(ref output, "ERR SBB offset should not change after GET");
+                return false;
+            }
+
+            // ResetScratchBuffer should succeed (offset unchanged)
+            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer failed");
                 return false;
             }
 

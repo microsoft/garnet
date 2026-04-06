@@ -81,15 +81,11 @@ namespace Garnet.server
             var ret = GET(key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
+                // Copy result to SBA so the returned PinnedSpanByte remains valid across calls
+                value = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+
                 if (!_output.SpanByteAndMemory.IsSpanByte)
-                {
-                    value = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
                     _output.SpanByteAndMemory.Memory.Dispose();
-                }
-                else
-                {
-                    value = scratchBufferBuilder.CreateArgSlice(_output.SpanByteAndMemory.Length);
-                }
             }
             return ret;
         }
