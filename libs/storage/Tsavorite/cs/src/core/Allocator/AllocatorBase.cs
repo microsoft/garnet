@@ -1017,6 +1017,8 @@ namespace Tsavorite.core
 
             // Epoch already protected, so launch the shift and wait for eviction to complete
             _ = ShiftHeadAddress(newHeadAddress);
+
+            // We wait for ClosedUntilAddress here to ensure eviction scan is complete
             while (waitForEviction && ClosedUntilAddress < newHeadAddress)
                 epoch.ProtectAndDrain();
         }
