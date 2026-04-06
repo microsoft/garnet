@@ -64,6 +64,10 @@ namespace Garnet.common
         /// <summary>
         /// Replication diskless sync reset cts
         /// </summary>
-        Replication_Diskless_Sync_Reset_Cts
+        Replication_Diskless_Sync_Reset_Cts,
+        /// <summary>
+        /// Fail TakeOverAsPrimary during failover by throwing before BeginRecovery is called.
+        /// </summary>
+        Failover_Fail_TakeOverAsPrimary,
     }
 }
