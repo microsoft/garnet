@@ -240,12 +240,13 @@ namespace Tsavorite.test
 
             void LocalUpdate(int tid)
             {
-                using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+                using var localSession = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+                var localBContext = localSession.BasicContext;
                 for (int i = 0; i < totalRecords; i++)
                 {
                     var key1 = new TestObjectKey { key = i + keyTag };
                     var value = new TestObjectValue { value = (tid + 1) * i };
-                    var status = bContext.Upsert(key1, value);
+                    var status = localBContext.Upsert(key1, value);
                     Assert.That(status.IsPending, Is.False, "Upsert should not go pending");
                 }
             }

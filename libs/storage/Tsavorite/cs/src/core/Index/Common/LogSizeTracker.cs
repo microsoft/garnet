@@ -280,11 +280,11 @@ namespace Tsavorite.core
         }
 
         private bool DetermineEvictionRange(long currentSize, CancellationToken cancellationToken, out long headAddress,
-            ref int allocatedPageCount, out long heapTrimmedSize)
+            ref int allocatedPageCount, out long estimatedHeapTrimmedSize)
         {
             // We know we are oversize so we calculate how much we need to trim to get to lowTargetSize.
             var overSize = currentSize - lowTargetSize;
-            heapTrimmedSize = 0L;
+            estimatedHeapTrimmedSize = 0L;
 
             var allocator = logAccessor.allocatorBase;
             headAddress = allocator.HeadAddress;
@@ -332,10 +332,10 @@ namespace Tsavorite.core
             using var iterator = logAccessor.Scan(headAddress, untilAddress);
             allocatedPageCount = allocator.AllocatedPageCount;
             var pageTrimmedSize = 0L;
-            while (heapTrimmedSize + pageTrimmedSize < overSize && iterator.GetNext() && !IsStopped)
+            while (estimatedHeapTrimmedSize + pageTrimmedSize < overSize && iterator.GetNext() && !IsStopped)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                heapTrimmedSize += iterator.CalculateHeapMemorySize();
+                estimatedHeapTrimmedSize += iterator.CalculateHeapMemorySize();
 
                 // If we've crossed a page boundary, we can subtract the pagesize as well.
                 var currentPage = allocator.GetPage(iterator.CurrentAddress);
@@ -353,7 +353,7 @@ namespace Tsavorite.core
             headAddress = iterator.NextAddress;
 
             // Return whether we could satisfy the resize request; for Recovery, we may need to wait on flush.
-            return heapTrimmedSize + pageTrimmedSize >= overSize;
+            return estimatedHeapTrimmedSize + pageTrimmedSize >= overSize;
         }
 
         /// <summary>
@@ -367,7 +367,7 @@ namespace Tsavorite.core
             if (currentSize <= highTargetSize)
                 return;
 
-            long headAddress, heapTrimmedSize, readOnlyAddress;
+            long headAddress, estimatedHeapTrimmedSize, readOnlyAddress;
             var isComplete = false;
             var allocatedPageCount = logAccessor.AllocatedPageCount;
             logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, highTargetSize, allocatedPageCount, logAccessor.BufferSize);
@@ -376,9 +376,9 @@ namespace Tsavorite.core
             logAccessor.allocatorBase.epoch.Resume();
             try
             {
-                // See how much we can evict between ReadOnlyAddress and HeadAddress. Ignore the return value that indicates whether this is complete;
+                // See how much we can evict from HeadAddress onwards. Ignore the return value that indicates whether this is complete;
                 // we calculate the new ROA up to MinTargetPageCount pages before TailAddress, and that's as far as we can go.
-                isComplete = DetermineEvictionRange(currentSize, cancellationToken, out headAddress, ref allocatedPageCount, out heapTrimmedSize);
+                isComplete = DetermineEvictionRange(currentSize, cancellationToken, out headAddress, ref allocatedPageCount, out estimatedHeapTrimmedSize);
                 if (runState != (int)RunState.Running)
                     return;
 
@@ -394,8 +394,8 @@ namespace Tsavorite.core
             // ShiftHeadAddress caps the new HeadAddress at FlushedUntilAddress. Wait until the SHA eviction is complete to avoid going further over budget.
             logAccessor.ShiftAddresses(readOnlyAddress, headAddress, waitForEviction: true);
 
-            // Now subtract what we were able to trim from heapSize. Inline page total size is tracked separately in logAccessor.MemorySizeBytes.
-            heapSize.Increment(-heapTrimmedSize);
+            // Heap size subtraction is handled by the OnNext eviction callback (called during ShiftAddresses),
+            // which subtracts each record's CURRENT HeapMemorySize at eviction time.
             Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
 
             // Calculate the number of trimmed pages and report the new expected AllocatedPageCount here, since our last iteration (which may have been the only one)
