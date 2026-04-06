@@ -209,10 +209,10 @@ To add a new Garnet server setting:
 
 `StorageSession` has two scratch buffer types — use the right one:
 
-- **`ScratchBufferBuilder` (SBB)** — Single contiguous buffer for temporary workspace. Reallocates in place (old buffer is freed). Use for building command inputs, Lua serialization, or any data that is consumed immediately and then rewound. **Do not** return `PinnedSpanByte` from SBB to callers — it may be invalidated by subsequent allocations. Always rewind after use. Debug builds enforce single-outstanding-slice discipline via asserts.
-  - Key APIs: `CreateArgSlice` (returns `PinnedSpanByte`, must rewind), `CreateArgSliceAsOffset` (returns `(Offset, Length)`, safe for multi-alloc), `ViewRemainingArgSlice`/`ViewFullArgSlice` (immediate-use views, do not store), `MoveOffset`, `Reset`, `RewindScratchBuffer`.
+- **`ScratchBufferBuilder` (SBB)** — Single contiguous buffer for temporary workspace. All data is laid out sequentially in one buffer. On expansion, the previous data is copied into a new larger buffer and the old buffer is freed — **any existing pointers into the old buffer become invalid**. Use for building command inputs, Lua serialization, or any data that is consumed immediately and then rewound. **Do not** return `PinnedSpanByte` from SBB to callers — it may be invalidated by subsequent allocations. Always rewind after use. Debug builds enforce single-outstanding-slice discipline via asserts.
+  - Key APIs: `CreateArgSlice` (returns `PinnedSpanByte`, must rewind), `CreateArgSliceAsOffset` (returns `(Offset, Length)`, safe for multi-alloc since offsets survive reallocation), `ViewRemainingArgSlice`/`ViewFullArgSlice` (immediate-use views, do not store), `MoveOffset`, `Reset`, `RewindScratchBuffer`.
 
-- **`ScratchBufferAllocator` (SBA)** — Multi-buffer allocator that keeps old buffers rooted (pinned arrays via `GC.AllocateArray(_, true)`). Use for `PinnedSpanByte` values returned via `out` parameters or `IGarnetApi` that callers retain across multiple API calls. Reset between batches.
+- **`ScratchBufferAllocator` (SBA)** — Maintains a collection of fragmented pinned buffers (via `GC.AllocateArray(_, true)`). When the current buffer fills, a new one is allocated and the old buffer is kept rooted in a stack — so previously returned `PinnedSpanByte` values remain valid. Use for `PinnedSpanByte` values returned via `out` parameters or `IGarnetApi` that callers retain across multiple API calls. Reset between batches.
   - Key APIs: `CreateArgSlice`, `ViewRemainingArgSlice`, `Reset`.
 
 **Rules:**
