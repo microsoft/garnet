@@ -43,6 +43,14 @@ namespace Garnet.server
         /// </summary>
         int scratchBufferOffset;
 
+#if DEBUG
+        /// <summary>
+        /// Number of outstanding PinnedSpanByte slices that have been created but not rewound.
+        /// Used to detect unsafe multi-alloc patterns where buffer expansion could invalidate earlier pointers.
+        /// </summary>
+        int outstandingSlices;
+#endif
+
         /// <summary>Current offset in scratch buffer</summary>
         internal int ScratchBufferOffset => scratchBufferOffset;
 
@@ -53,7 +61,13 @@ namespace Garnet.server
         /// <summary>
         /// Reset scratch buffer - loses all ArgSlice instances created on the scratch buffer
         /// </summary>
-        public void Reset() => scratchBufferOffset = 0;
+        public void Reset()
+        {
+            scratchBufferOffset = 0;
+#if DEBUG
+            outstandingSlices = 0;
+#endif
+        }
 
         /// <summary>
         /// Return the full buffer managed by this <see cref="ScratchBufferBuilder"/>.
@@ -70,6 +84,9 @@ namespace Garnet.server
             if (slice.ptr + slice.Length == scratchBufferHead + scratchBufferOffset)
             {
                 scratchBufferOffset -= slice.Length;
+#if DEBUG
+                outstandingSlices--;
+#endif
                 slice = default; // invalidate the given ArgSlice
                 return true;
             }
@@ -87,7 +104,26 @@ namespace Garnet.server
                 return false;
 
             scratchBufferOffset = offset;
+#if DEBUG
+            outstandingSlices = 0;
+#endif
             return true;
+        }
+
+        /// <summary>
+        /// Create an arg slice in scratch buffer, from given ReadOnlySpan, returning the
+        /// offset and length instead of a PinnedSpanByte. Safe for multiple calls without
+        /// rewind — use <see cref="ViewFullArgSlice"/> to resolve offsets later.
+        /// </summary>
+        public (int Offset, int Length) CreateArgSliceAsOffset(ReadOnlySpan<byte> bytes)
+        {
+            ExpandScratchBufferIfNeeded(bytes.Length);
+
+            var offset = scratchBufferOffset;
+            var dest = new Span<byte>(scratchBufferHead + scratchBufferOffset, bytes.Length);
+            bytes.CopyTo(dest);
+            scratchBufferOffset += bytes.Length;
+            return (offset, bytes.Length);
         }
 
         /// <summary>
@@ -95,11 +131,20 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte CreateArgSlice(ReadOnlySpan<byte> bytes)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use CreateArgSliceAsOffset, " +
+                "or use ScratchBufferAllocator for slices that must coexist.");
+#endif
             ExpandScratchBufferIfNeeded(bytes.Length);
 
             var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, bytes.Length);
             bytes.CopyTo(retVal.Span);
             scratchBufferOffset += bytes.Length;
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -117,12 +162,20 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte CreateArgSlice(string str)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
+#endif
             int length = Encoding.UTF8.GetByteCount(str);
             ExpandScratchBufferIfNeeded(length);
 
             var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             Encoding.UTF8.GetBytes(str, retVal.Span);
             scratchBufferOffset += length;
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -152,6 +205,11 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte FormatScratchAsResp(int headerSize, PinnedSpanByte arg1, PinnedSpanByte arg2)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
+#endif
             int length = headerSize + GetRespFormattedStringLength(arg1) + GetRespFormattedStringLength(arg2);
             ExpandScratchBufferIfNeeded(length);
 
@@ -166,6 +224,9 @@ namespace Garnet.server
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -174,6 +235,11 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte FormatScratchAsResp(int headerSize, PinnedSpanByte arg1)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
+#endif
             int length = headerSize + GetRespFormattedStringLength(arg1);
             ExpandScratchBufferIfNeeded(length);
 
@@ -186,6 +252,9 @@ namespace Garnet.server
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -194,6 +263,11 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte FormatScratch(int headerSize, PinnedSpanByte arg)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
+#endif
             int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
@@ -205,6 +279,9 @@ namespace Garnet.server
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -213,11 +290,19 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte CreateArgSlice(int length)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
+#endif
             ExpandScratchBufferIfNeeded(length);
 
             var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -242,6 +327,11 @@ namespace Garnet.server
         /// </summary>
         public PinnedSpanByte FormatScratch(int headerSize, ReadOnlySpan<byte> arg)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder already has an outstanding slice. " +
+                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
+#endif
             int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
@@ -253,6 +343,9 @@ namespace Garnet.server
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -333,6 +426,13 @@ namespace Garnet.server
 
         void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0,
+                "ScratchBufferBuilder is expanding with outstanding slices. " +
+                "Previously returned PinnedSpanByte values will be invalidated. " +
+                "Use ScratchBufferAllocator for slices that must remain valid across allocations, " +
+                "or use a single CreateArgSlice and partition the buffer manually.");
+#endif
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
