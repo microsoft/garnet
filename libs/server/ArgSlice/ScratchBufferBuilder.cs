@@ -290,16 +290,22 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// View remaining scratch space (of specified minimum length) as an ArgSlice
-        /// Does NOT move the offset forward
+        /// View remaining scratch space (of specified minimum length) as a PinnedSpanByte.
+        /// Does NOT move the offset forward. The returned value is an immediate-use view
+        /// that may be invalidated by any subsequent allocation or expansion — do not store
+        /// or return it. Use <see cref="MoveOffset"/> to claim space after writing.
         /// </summary>
-        /// <returns></returns>
         public PinnedSpanByte ViewRemainingArgSlice(int minLength = 0)
         {
             ExpandScratchBufferIfNeeded(minLength);
             return PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, scratchBuffer.Length - scratchBufferOffset);
         }
 
+        /// <summary>
+        /// View the full scratch buffer contents (up to current offset) as a PinnedSpanByte.
+        /// The returned value is an immediate-use view that may be invalidated by any
+        /// subsequent allocation or expansion — do not store or return it.
+        /// </summary>
         public PinnedSpanByte ViewFullArgSlice()
         {
             return PinnedSpanByte.FromPinnedPointer(scratchBufferHead, scratchBufferOffset);
