@@ -356,7 +356,7 @@ namespace Garnet.server
             if (db.StoreCollectionDbStorageSession == null)
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
-                var scratchBufferAllocator = new ScratchBufferAllocator();
+                var scratchBufferAllocator = new ScratchBufferAllocator(minSizeBuffer: 64);
                 db.StoreCollectionDbStorageSession =
                     new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, Logger);
             }
@@ -602,7 +602,7 @@ namespace Garnet.server
             if (db.StoreExpiredKeyDeletionDbStorageSession == null)
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
-                var scratchBufferAllocator = new ScratchBufferAllocator();
+                var scratchBufferAllocator = new ScratchBufferAllocator(minSizeBuffer: 64);
                 db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, Logger);
             }
 
@@ -641,7 +641,7 @@ namespace Garnet.server
             if (db.HybridLogStatScanStorageSession == null)
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
-                var scratchBufferAllocator = new ScratchBufferAllocator();
+                var scratchBufferAllocator = new ScratchBufferAllocator(minSizeBuffer: 64);
                 db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, Logger);
             }
 
