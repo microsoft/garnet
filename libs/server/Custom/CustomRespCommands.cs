@@ -309,7 +309,10 @@ namespace Garnet.server
                         break;
                     default:
                         if (_output.SpanByteAndMemory.Memory != null)
+                        {
                             output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                            _output.SpanByteAndMemory.Memory.Dispose();
+                        }
                         else
                             output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
@@ -324,7 +327,10 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         if (_output.SpanByteAndMemory.Memory != null)
+                        {
                             output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                            _output.SpanByteAndMemory.Memory.Dispose();
+                        }
                         else
                             output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
