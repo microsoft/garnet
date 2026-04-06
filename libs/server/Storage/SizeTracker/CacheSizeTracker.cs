@@ -62,14 +62,14 @@ namespace Garnet.server
             {
                 mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize,
                         targetSize / HighTargetSizeDeltaFraction, targetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("MainLogSizeTracker"));
-                store.Log.SetLogSizeTracker(mainLogTracker);
+                store.Log.SubscribeEvictions(mainLogTracker);
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)
             {
                 readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.ReadCache, readCacheTargetSize,
                         readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("ReadCacheSizeTracker"));
-                store.ReadCache.SetLogSizeTracker(readCacheTracker);
+                store.ReadCache.SubscribeEvictions(readCacheTracker);
             }
         }
 
