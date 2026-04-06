@@ -368,6 +368,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
+
+        /// <inheritdoc />
+        public int GetScratchBufferAllocatorOffset()
+            => storageSession.scratchBufferAllocator.ScratchBufferOffset;
+
+        /// <inheritdoc />
+        public void ResetScratchBufferAllocator()
+            => storageSession.scratchBufferAllocator.Reset();
         #endregion
     }
 }

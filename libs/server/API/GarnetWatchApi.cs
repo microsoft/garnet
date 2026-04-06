@@ -623,6 +623,14 @@ namespace Garnet.server
         public bool ResetScratchBuffer(int offset)
             => garnetApi.ResetScratchBuffer(offset);
 
+        /// <inheritdoc />
+        public int GetScratchBufferAllocatorOffset()
+            => garnetApi.GetScratchBufferAllocatorOffset();
+
+        /// <inheritdoc />
+        public void ResetScratchBufferAllocator()
+            => garnetApi.ResetScratchBufferAllocator();
+
         #endregion
     }
 }

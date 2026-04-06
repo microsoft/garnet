@@ -90,7 +90,7 @@ namespace Garnet.server
         /// <summary>
         /// Combined offset in all managed scratch buffers
         /// </summary>
-        internal int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
+        public int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
 
         /// <summary>
         /// Total length of all currently managed buffers

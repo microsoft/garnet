@@ -1965,6 +1965,17 @@ namespace Garnet.server
         /// <returns>True if successful, else false</returns>
         bool ResetScratchBuffer(int offset);
 
+        /// <summary>
+        /// Retrieve the current scratch buffer allocator offset.
+        /// </summary>
+        /// <returns>Current offset</returns>
+        int GetScratchBufferAllocatorOffset();
+
+        /// <summary>
+        /// Resets the scratch buffer allocator, releasing all allocated slices.
+        /// </summary>
+        void ResetScratchBufferAllocator();
+
         #endregion
 
     }

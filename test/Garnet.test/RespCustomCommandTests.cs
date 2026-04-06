@@ -26,39 +26,25 @@ namespace Garnet.test
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
-            {
-                bool status = garnetApi.ResetScratchBuffer(buffOffset);
-                if (!status)
-                    WriteError(ref output, "ERR ResetScratchBuffer failed");
-
-                return status;
-            }
-
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            var buffOffset = garnetApi.GetScratchBufferOffset();
+            // Test SBA offset management: GET output goes to ScratchBufferAllocator
             for (var i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                {
-                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
-                        return false;
-                }
+                    garnetApi.ResetScratchBufferAllocator();
             }
 
-            buffOffset = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out PinnedSpanByte outval1);
             garnetApi.GET(key, out PinnedSpanByte outval2);
-            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+            garnetApi.ResetScratchBufferAllocator();
 
-            buffOffset = garnetApi.GetScratchBufferOffset();
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+            garnetApi.ResetScratchBufferAllocator();
 
             return true;
         }
@@ -77,18 +63,13 @@ namespace Garnet.test
         {
             int offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
-            var buffOffset = garnetApi.GetScratchBufferOffset();
+
+            // Test SBA offset management: GET output goes to ScratchBufferAllocator
             for (int i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                {
-                    if (!garnetApi.ResetScratchBuffer(buffOffset))
-                    {
-                        WriteError(ref output, "ERR ResetScratchBuffer failed");
-                        return;
-                    }
-                }
+                    garnetApi.ResetScratchBufferAllocator();
             }
         }
     }
@@ -100,12 +81,11 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            // GET output goes to ScratchBufferAllocator (not ScratchBufferBuilder),
-            // so SBB offset does not advance after GET calls.
-            var buffOffset1 = garnetApi.GetScratchBufferOffset();
+            // Test SBA offset management with GET (output goes to ScratchBufferAllocator)
+            var sbaOffset1 = garnetApi.GetScratchBufferAllocatorOffset();
             garnetApi.GET(key, out PinnedSpanByte outval1);
 
-            var buffOffset2 = garnetApi.GetScratchBufferOffset();
+            var sbaOffset2 = garnetApi.GetScratchBufferAllocatorOffset();
             garnetApi.GET(key, out PinnedSpanByte outval2);
 
             // Verify GET results are valid
@@ -115,17 +95,21 @@ namespace Garnet.test
                 return false;
             }
 
-            // Since GET uses SBA, both offsets should be equal (SBB unchanged)
-            if (buffOffset1 != buffOffset2)
+            // SBA offset should have advanced after each GET
+            if (sbaOffset2 <= sbaOffset1)
             {
-                WriteError(ref output, "ERR SBB offset should not change after GET");
+                WriteError(ref output, "ERR SBA offset should advance after GET");
                 return false;
             }
 
-            // ResetScratchBuffer should succeed (offset unchanged)
-            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            // Reset SBA (full reset, discards all GET results)
+            garnetApi.ResetScratchBufferAllocator();
+
+            // Verify offset is back to initial
+            var sbaOffsetAfterReset = garnetApi.GetScratchBufferAllocatorOffset();
+            if (sbaOffsetAfterReset != sbaOffset1)
             {
-                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                WriteError(ref output, "ERR SBA offset should be back to initial after reset");
                 return false;
             }
 

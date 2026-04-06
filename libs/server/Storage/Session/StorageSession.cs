@@ -46,7 +46,7 @@ namespace Garnet.server
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
-        readonly ScratchBufferAllocator scratchBufferAllocator;
+        public readonly ScratchBufferAllocator scratchBufferAllocator;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
