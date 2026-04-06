@@ -19,7 +19,7 @@ namespace Garnet.cluster
         public readonly TimeSpan gossipDelay;
         public readonly TimeSpan clusterTimeout;
         private volatile int numActiveTasks = 0;
-        private SingleWriterMultiReaderLock activeMergeLock;
+        private readonly common.ReaderWriterLock activeMergeLock;
         public readonly GarnetClusterConnectionStore clusterConnectionStore;
 
         public GossipStats gossipStats;
