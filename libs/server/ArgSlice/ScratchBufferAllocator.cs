@@ -100,7 +100,7 @@ namespace Garnet.server
         /// <summary>
         /// Creates an instance of <see cref="ScratchBufferAllocator"/>
         /// </summary>
-        /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 2)</param>
+        /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 64)</param>
         /// <param name="maxInitialCapacity">Max size of previously allocated unused buffer to keep upon reset (Default: no limit)</param>
         public ScratchBufferAllocator(int minSizeBuffer = 64, int maxInitialCapacity = int.MaxValue)
         {
