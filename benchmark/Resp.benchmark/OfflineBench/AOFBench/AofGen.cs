@@ -149,7 +149,7 @@ namespace Resp.benchmark
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
             if (options.AofBenchType == AofBenchType.Replay)
             {
-                Console.WriteLine($"Generated {threads}x{options.DbSize} pages of size {aofServerOptions.AofPageSize} in {seconds:N2} secs");
+                Console.WriteLine($"Generated {threads}x{options.AofGenPages} pages of size {aofServerOptions.AofPageSize} in {seconds:N2} secs");
                 Console.WriteLine($"Generated number of AOF records: {total_number_of_aof_records:N0}");
                 Console.WriteLine($"Generated number of AOF bytes: {total_number_of_aof_bytes:N0}");
             }
@@ -164,7 +164,7 @@ namespace Resp.benchmark
                 var number_of_aof_bytes = 0L;
                 var kvPairs = GenerateKVPairs(threadId, options.AofPhysicalSublogCount == 1);
                 // Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
-                var pages = options.DbSize;
+                var pages = options.AofGenPages;
                 pageBuffers[threadId] = new Page[pages];
                 for (var i = 0; i < pages; i++)
                 {
@@ -196,7 +196,8 @@ namespace Resp.benchmark
                                 var key = SpanByte.FromPinnedPointer(keyPtr, keyData.Length);
                                 var value = SpanByte.FromPinnedPointer(valuePtr, valueData.Length);
                                 var aofHeader = new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = 1, sessionID = 0 };
-                                if (options.AofPhysicalSublogCount == 1)
+                                var useShardedHeader = options.AofPhysicalSublogCount > 1 || options.AofReplayTaskCount > 1;
+                                if (!useShardedHeader)
                                 {
                                     if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
                                         ref pageOffset,

@@ -705,7 +705,7 @@ namespace Garnet.test.cluster
         public void Reconnect(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null)
         {
             CloseConnections();
-            EndPointCollection endPoints = endpoints;
+            var endPoints = endpoints;
             if (nodes != null)
             {
                 endPoints = new EndPointCollection();
