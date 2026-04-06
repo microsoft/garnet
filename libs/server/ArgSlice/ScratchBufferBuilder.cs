@@ -94,23 +94,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Resets scratch buffer offset to the specified offset.
-        /// </summary>
-        /// <param name="offset">Offset to reset to</param>
-        /// <returns>True if successful, else false</returns>
-        public bool ResetScratchBuffer(int offset)
-        {
-            if (offset < 0 || offset > scratchBufferOffset)
-                return false;
-
-            scratchBufferOffset = offset;
-#if DEBUG
-            outstandingSlices = 0;
-#endif
-            return true;
-        }
-
-        /// <summary>
         /// Create an arg slice in scratch buffer, from given ReadOnlySpan, returning the
         /// offset and length instead of a PinnedSpanByte. Safe for multiple calls without
         /// rewind — use <see cref="ViewFullArgSlice"/> to resolve offsets later.
