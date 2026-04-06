@@ -278,6 +278,14 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Returns true if failstopwrites was confirmed by the primary and the primary's
+        /// config was modified (slots given up, role changed to replica). Used to determine
+        /// whether the primary needs to be reset on failover failure.
+        /// </summary>
+        private bool PrimaryNeedsReset()
+            => status is FailoverStatus.WAITING_FOR_SYNC or FailoverStatus.TAKING_OVER_AS_PRIMARY;
+
+        /// <summary>
         /// REPLICA main failover task
         /// </summary>
         /// <returns></returns>
@@ -306,6 +314,7 @@ namespace Garnet.cluster
                 {
                     return false;
                 }
+                failoverSucceeded = true;
 
                 // Attach to old replicas, and old primary if DEFAULT option
                 await IssueAttachReplicas();
@@ -313,7 +322,6 @@ namespace Garnet.cluster
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasks();
                 clusterProvider.storeWrapper.StartPrimaryTasks();
 
-                failoverSucceeded = true;
                 return true;
             }
             catch (Exception ex)
@@ -323,12 +331,12 @@ namespace Garnet.cluster
             }
             finally
             {
-                // If failstopwrites was sent to the primary but the failover did not
-                // succeed, reset the primary back to its original state.
-                // Without this, the primary has already given up its slots (via TryStopWrites)
-                // but the replica never claimed them (TakeOverAsPrimary never ran or failed),
-                // leaving the cluster in an incoherent state where no node owns the slots.
-                if (primaryClient != null && !failoverSucceeded)
+                // If failstopwrites was confirmed by the primary (status reached WAITING_FOR_SYNC
+                // or beyond) but the failover did not succeed, reset the primary back to its
+                // original state. Without this, the primary has already given up its slots
+                // (via TryStopWrites) but the replica never claimed them, leaving the cluster
+                // in an incoherent state where no node owns the slots.
+                if (PrimaryNeedsReset() && !failoverSucceeded)
                 {
                     try
                     {
