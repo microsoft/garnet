@@ -22,6 +22,23 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    /// <summary>
+    /// Validates that data matches the deterministic pattern (i % 251) used by scratch buffer tests.
+    /// </summary>
+    internal static class ScratchBufferTestHelper
+    {
+        internal static bool ValidateContent(ReadOnlySpan<byte> data)
+        {
+            if (data.Length == 0) return false;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] != (byte)(i % 251))
+                    return false;
+            }
+            return true;
+        }
+    }
+
     public class LargeGet : CustomProcedure
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
@@ -44,13 +61,11 @@ namespace Garnet.test
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            if (value.Length == 0)
+            if (!ScratchBufferTestHelper.ValidateContent(value.ReadOnlySpan))
             {
-                WriteError(ref output, "ERR HashGet returned empty value");
+                WriteError(ref output, "ERR HashGet returned corrupted data");
                 return false;
             }
-            // Validate data is accessible (not dangling pointer)
-            _ = value.ReadOnlySpan.ToArray();
             garnetApi.ResetScratchBuffer();
 
             return true;
@@ -92,10 +107,10 @@ namespace Garnet.test
             garnetApi.GET(key, out PinnedSpanByte outval1);
             garnetApi.GET(key, out PinnedSpanByte outval2);
 
-            // Verify GET results contain valid accessible data (not dangling pointers)
-            if (outval1.Length == 0 || outval2.Length == 0)
+            // Verify GET results contain valid data (i % 251 pattern)
+            if (!ScratchBufferTestHelper.ValidateContent(outval1.ReadOnlySpan))
             {
-                WriteError(ref output, "ERR GET returned empty value");
+                WriteError(ref output, "ERR GET returned corrupted data for outval1");
                 return false;
             }
 
@@ -814,6 +829,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -838,6 +855,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -860,6 +879,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
 
             var result = db.Execute("OUTOFORDERFREE", key);
