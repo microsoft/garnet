@@ -255,7 +255,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// View remaining scratch space (of specified minimum length) as an ArgSlice.
+        /// View remaining scratch space (of specified minimum length) as a <see cref="PinnedSpanByte"/>.
         /// Does NOT move the offset forward.
         /// </summary>
         /// <param name="minLength">Minimum length of remaining space</param>

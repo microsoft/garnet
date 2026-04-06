@@ -44,6 +44,13 @@ namespace Garnet.test
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
+            if (value.Length == 0)
+            {
+                WriteError(ref output, "ERR HashGet returned empty value");
+                return false;
+            }
+            // Validate data is accessible (not dangling pointer)
+            _ = value.ReadOnlySpan.ToArray();
             garnetApi.ResetScratchBuffer();
 
             return true;
@@ -85,10 +92,17 @@ namespace Garnet.test
             garnetApi.GET(key, out PinnedSpanByte outval1);
             garnetApi.GET(key, out PinnedSpanByte outval2);
 
-            // Verify GET results are valid
+            // Verify GET results contain valid accessible data (not dangling pointers)
             if (outval1.Length == 0 || outval2.Length == 0)
             {
                 WriteError(ref output, "ERR GET returned empty value");
+                return false;
+            }
+
+            // Verify both results are identical (validates data integrity)
+            if (!outval1.ReadOnlySpan.SequenceEqual(outval2.ReadOnlySpan))
+            {
+                WriteError(ref output, "ERR GET results should be identical");
                 return false;
             }
 
