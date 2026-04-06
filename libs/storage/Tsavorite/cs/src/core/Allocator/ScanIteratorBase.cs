@@ -318,27 +318,25 @@ namespace Tsavorite.core
         {
             for (var i = 0; i < frameSize; i++)
             {
+                // Wait for ongoing reads to complete/fail; if the wait throws (e.g. due to cancellation), we still
+                // need to dispose the event, CTS, and read buffers below.
                 try
                 {
-                    // Wait for ongoing reads to complete/fail
-                    if (loadCompletionEvents != null)
-                    {
-                        if (loadedPages[i] != -1)
-                            loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
-                        loadCompletionEvents[i]?.Dispose();
-                        loadCompletionEvents = default;
-                    }
-                    if (loadCTSs is not null)
-                    {
-                        loadCTSs[i]?.Dispose();
-                        loadCTSs[i] = null;
-                    }
-                    // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
-                    // things and leaves it in an "initialized" state.
-                    objectReadBuffers?[i]?.Dispose();
+                    if (loadCompletionEvents != null && loadedPages[i] != -1)
+                        loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
                 }
                 catch { }
+
+                // Always dispose resources regardless of whether the wait succeeded.
+                loadCompletionEvents?[i]?.Dispose();
+                loadCTSs?[i]?.Dispose();
+                loadCTSs?[i] = null;
+
+                // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
+                // things and leaves it in an "initialized" state.
+                objectReadBuffers?[i]?.Dispose();
             }
+            loadCompletionEvents = default;
         }
 
         /// <summary>
