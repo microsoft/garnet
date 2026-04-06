@@ -184,64 +184,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice values (arg1 and arg2)
-        /// </summary>
-        public PinnedSpanByte FormatScratchAsResp(int headerSize, PinnedSpanByte arg1, PinnedSpanByte arg2)
-        {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
-                "ScratchBufferBuilder already has an outstanding slice. " +
-                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
-#endif
-            int length = headerSize + GetRespFormattedStringLength(arg1) + GetRespFormattedStringLength(arg2);
-            ExpandScratchBufferIfNeeded(length);
-
-            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
-            retVal.Span[..headerSize].Clear(); // Clear the header
-
-            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
-            Debug.Assert(success);
-            success = RespWriteUtils.TryWriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
-            Debug.Assert(success);
-
-            scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-#if DEBUG
-            outstandingSlices++;
-#endif
-            return retVal;
-        }
-
-        /// <summary>
-        /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice value arg1
-        /// </summary>
-        public PinnedSpanByte FormatScratchAsResp(int headerSize, PinnedSpanByte arg1)
-        {
-#if DEBUG
-            Debug.Assert(outstandingSlices == 0,
-                "ScratchBufferBuilder already has an outstanding slice. " +
-                "Rewind or reset before creating a new one, or use ScratchBufferAllocator.");
-#endif
-            int length = headerSize + GetRespFormattedStringLength(arg1);
-            ExpandScratchBufferIfNeeded(length);
-
-            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
-            retVal.Span[..headerSize].Clear(); // Clear the header
-
-            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
-            Debug.Assert(success);
-
-            scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-#if DEBUG
-            outstandingSlices++;
-#endif
-            return retVal;
-        }
-
-        /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by the specified ArgSlice (arg)
         /// </summary>
         public PinnedSpanByte FormatScratch(int headerSize, PinnedSpanByte arg)
@@ -397,16 +339,6 @@ namespace Garnet.server
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
-        /// <summary>
-        /// Get length of a RESP Bulk-String formatted version of the specified ArgSlice
-        /// RESP format: $[size]\r\n[value]\r\n
-        /// Total size: 1 + [number of digits in the size value] + 2 + [size of value] + 2
-        /// </summary>
-        /// <param name="slice"></param>
-        /// <returns></returns>
-        static int GetRespFormattedStringLength(PinnedSpanByte slice)
-            => 1 + NumUtils.CountDigits(slice.Length) + 2 + slice.Length + 2;
-
         void ExpandScratchBufferIfNeeded(int newLength)
         {
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
@@ -435,20 +367,6 @@ namespace Garnet.server
             }
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="PinnedSpanByte"/>
-        /// with the <paramref name="length"/> bytes of the buffer;
-        /// these are the most recently added bytes.
-        /// </summary>
-        /// <param name="length">Length for the new slice</param>
-        /// <remarks>This is called by functions that add multiple items to the buffer,
-        /// after all items have been added and all reallocations have been done.
-        /// </remarks>
-        public PinnedSpanByte GetSliceFromTail(int length)
-        {
-            return PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset - length, length);
         }
 
         /// <summary>
