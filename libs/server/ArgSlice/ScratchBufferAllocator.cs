@@ -279,8 +279,8 @@ namespace Garnet.server
             var currLength = currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length;
 
             ScratchBuffer newScratchBuffer = default;
-            InitializeScratchBuffer(ref newScratchBuffer, requiredLength: Math.Max(minSizeBuffer, requiredLength),
-                currentLength: currLength);
+            InitializeScratchBuffer(ref newScratchBuffer, requiredLength,
+                currentLength: currLength, minSizeBuffer);
 
             totalLength += newScratchBuffer.Length;
 
@@ -302,7 +302,7 @@ namespace Garnet.server
             currScratchBuffer = newScratchBuffer;
         }
 
-        private static void InitializeScratchBuffer(ref ScratchBuffer buffer, int requiredLength, int currentLength = 0)
+        private static void InitializeScratchBuffer(ref ScratchBuffer buffer, int requiredLength, int currentLength, int minSizeBuffer)
         {
             // Length of new buffer is:
             // If there is no current buffer - the closest power of 2 to the data length
@@ -310,6 +310,9 @@ namespace Garnet.server
             var newLength = currentLength == 0
                 ? (int)BitOperations.RoundUpToPowerOf2((uint)requiredLength + 1)
                 : (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(currentLength, requiredLength) + 1);
+
+            // Ensure minimum buffer size
+            newLength = Math.Max(newLength, minSizeBuffer);
 
             buffer.Initialize(newLength);
         }
