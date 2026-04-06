@@ -535,6 +535,36 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Calculates the index of the replay task associated with the specified AOF header pointer.
+        /// </summary>
+        /// <param name="ptr">A pointer to a byte array representing the AOF header.</param>
+        /// <returns>The zero-based index of the replay task to which the entry should be assigned. Returns -1 if the header type
+        /// does not contain a key for task assignment.</returns>
+        /// <exception cref="GarnetException">Thrown when the AOF header type referenced by <paramref name="ptr"/> is not supported.</exception>
+        public int GetReplayTaskIdx(byte* ptr)
+        {
+            var header = *(AofHeader*)ptr;
+            var replayHeaderType = (AofHeaderType)header.padding;
+            switch (replayHeaderType)
+            {
+                // Check if should replay entry by inspecting key
+                case AofHeaderType.ShardedHeader:
+                    var shardedHeader = *(AofShardedHeader*)ptr;
+                    var curr = AofHeader.SkipHeader(ptr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                    var hash = GarnetLog.HASH(key);
+                    var _replayTaskIdx = (int)(hash % storeWrapper.serverOptions.AofReplayTaskCount);
+                    return _replayTaskIdx;
+                // If no key to inspect, check bit vector for participating replay tasks in the transaction
+                // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
+                case AofHeaderType.TransactionHeader:
+                    return -1;
+                default:
+                    throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
+            }
+        }
+
+        /// <summary>
         /// Determines whether the specified log entry should be skipped during replay based on its sequence number.
         /// </summary>
         /// <param name="ptr">A pointer to the start of the log entry header in memory. Must point to a valid header structure.</param>

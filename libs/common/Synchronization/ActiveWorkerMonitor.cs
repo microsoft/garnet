@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -50,9 +51,33 @@ namespace Garnet.common
             }
 
             // Atomically flip the count negative; if no workers were active, skip wait
-            if (Interlocked.Add(ref workerCount, int.MinValue) != int.MinValue)
-                drainEvent.Wait();
+            TryClose();
             drainEvent.Dispose();
+        }
+
+        /// <summary>
+        /// Attempts to open the resource if it is currently closed.
+        /// </summary>
+        /// <returns>true if the resource was successfully opened; otherwise, false.</returns>
+        public bool TryOpen()
+        {
+            Debug.Assert(workerCount == int.MinValue);
+            drainEvent.Reset();
+            return Interlocked.CompareExchange(ref workerCount, 0, int.MinValue) == int.MinValue;
+        }
+
+        /// <summary>
+        /// Attempts to close the resource gracefully, waiting for active workers to complete within the specified
+        /// timeout period.
+        /// </summary>
+        /// <param name="timeout">The maximum time, in milliseconds, to wait for active workers to finish before closing. Specify -1 to wait
+        /// indefinitely.</param>
+        /// <param name="token">A cancellation token that can be used to cancel the close operation before the timeout elapses.</param>
+        public void TryClose(int timeout = -1, CancellationToken token = default)
+        {
+            // Atomically flip the count negative; if no workers were active, skip wait
+            if (Interlocked.Add(ref workerCount, int.MinValue) != int.MinValue)
+                _ = drainEvent.Wait(timeout, token);
         }
 
         /// <summary>
@@ -60,7 +85,7 @@ namespace Garnet.common
         /// Returns <c>false</c> if the monitor has been closed.
         /// </summary>
         public bool TryEnter()
-            => TryEnter(out _);
+            => TryEnter(1, out _);
 
         /// <summary>
         /// Attempts to register a new active worker.
@@ -68,13 +93,13 @@ namespace Garnet.common
         /// When successful, <paramref name="count"/> contains the new worker count (always &gt; 0).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryEnter(out int count)
+        public bool TryEnter(int add, out int count)
         {
-            var cnt = Interlocked.Increment(ref workerCount);
+            var cnt = Interlocked.Add(ref workerCount, add);
             if (cnt < 0)
             {
                 // Closed — undo the increment; if we happen to be the last, signal drain.
-                if (Interlocked.Decrement(ref workerCount) == int.MinValue)
+                if (Interlocked.Add(ref workerCount, -add) == int.MinValue)
                     drainEvent.Set();
                 count = 0;
                 return false;

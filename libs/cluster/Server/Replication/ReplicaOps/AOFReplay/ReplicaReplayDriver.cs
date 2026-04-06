@@ -32,6 +32,9 @@ namespace Garnet.cluster
         internal readonly ReplayBatchContext replayBatchContext;
         readonly ReplicaReplayTask[] replayTasks;
         readonly TsavoriteLog physicalSublog;
+        readonly bool useChannels = false;
+
+        internal readonly ActiveWorkerMonitor batchWorkerMonitor;
 
         public bool ResumeReplay() => activeWorkerMonitor.TryEnter();
 
@@ -55,6 +58,7 @@ namespace Garnet.cluster
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;
             activeWorkerMonitor = new();
+            batchWorkerMonitor = new();
             physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
             this.cts = cts;
             this.logger = logger;
@@ -66,7 +70,16 @@ namespace Garnet.cluster
                 replayBatchContext = new ReplayBatchContext(replayTaskCount);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
-                    _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay().ConfigureAwait(false));
+                {
+                    if (!useChannels)
+                    {
+                        _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay().ConfigureAwait(false));
+                    }
+                    else
+                    {
+                        _ = Task.Run(async () => await replayTask.ChannelBackgroundReplay().ConfigureAwait(false));
+                    }
+                }
             }
         }
 
@@ -96,22 +109,90 @@ namespace Garnet.cluster
             }
             else
             {
-                replayBatchContext.Record = record;
-                replayBatchContext.RecordLength = recordLength;
-                replayBatchContext.CurrentAddress = currentAddress;
-                replayBatchContext.NextAddress = nextAddress;
-                replayBatchContext.IsProtected = isProtected;
-                replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
-
-                // Set replication offset currentAddress
-                replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
-
-                // Wait for replay to complete.
-                replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token);
-
-                // Advertise new replicaton offset after replay completes
-                replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
+                if (!useChannels)
+                {
+                    ScheduleReplay(record, recordLength, currentAddress, nextAddress, isProtected);
+                }
+                else
+                {
+                    ConsumeAndScheduleReplay(record, recordLength, currentAddress, nextAddress, isProtected);
+                }
             }
+        }
+
+        private unsafe void ScheduleReplay(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            replayBatchContext.Record = record;
+            replayBatchContext.RecordLength = recordLength;
+            replayBatchContext.CurrentAddress = currentAddress;
+            replayBatchContext.NextAddress = nextAddress;
+            replayBatchContext.IsProtected = isProtected;
+            replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
+
+            // Set replication offset currentAddress
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+
+            // Wait for replay to complete.
+            replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token);
+
+            // Advertise new replicaton offset after replay completes
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
+        }
+
+        private unsafe void ConsumeAndScheduleReplay(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            ValidateSublogIndex(physicalSublogIdx);
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+            var replicationOffset = currentAddress;
+            var ptr = record;
+
+            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
+            while (ptr < record + recordLength)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                var entryLength = appendOnlyFile.HeaderSize;
+                var payloadLength = physicalSublog.UnsafeGetLength(ptr);
+                if (payloadLength > 0)
+                {
+                    var entryPtr = ptr + entryLength;
+                    var replayTaskIdx = replicationManager.AofProcessor.GetReplayTaskIdx(entryPtr);
+                    // Signal one worker item;
+                    _ = batchWorkerMonitor.TryEnter();
+                    replayTasks[replayTaskIdx].AddRecord(new ReplayRecord()
+                    {
+                        entryPtr = entryPtr,
+                        payloadLength = payloadLength
+                    });
+                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                }
+                else if (payloadLength < 0)
+                {
+                    if (!serverOptions.EnableFastCommit)
+                    {
+                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                    }
+                    TsavoriteLogRecoveryInfo info = new();
+                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                    physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
+                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                }
+                ptr += entryLength;
+                replicationOffset += entryLength;
+            }
+
+            batchWorkerMonitor.TryClose();
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
+            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
+
+            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != nextAddress)
+            {
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
+                throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
+            }
+
+            // Initialize monitor to wait until batch is processed
+            if (!batchWorkerMonitor.TryOpen())
+                ExceptionUtils.ThrowException(new GarnetException("Failed to TryOpen batchWorkerMonitor"));
         }
 
         /// <summary>
