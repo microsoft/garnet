@@ -46,6 +46,7 @@ namespace Garnet.server
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
+        readonly ScratchBufferAllocator scratchBufferAllocator;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
@@ -59,6 +60,7 @@ namespace Garnet.server
 
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
+            ScratchBufferAllocator scratchBufferAllocator,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
@@ -68,6 +70,7 @@ namespace Garnet.server
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferBuilder = scratchBufferBuilder;
+            this.scratchBufferAllocator = scratchBufferAllocator;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();
