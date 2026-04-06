@@ -90,7 +90,7 @@ namespace Garnet.server
         /// <summary>
         /// Combined offset in all managed scratch buffers
         /// </summary>
-        public int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
+        internal int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
 
         /// <summary>
         /// Total length of all currently managed buffers
@@ -252,6 +252,20 @@ namespace Garnet.server
             currScratchBuffer.scratchBufferOffset += length;
             Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
             return retVal;
+        }
+
+        /// <summary>
+        /// View remaining scratch space (of specified minimum length) as an ArgSlice.
+        /// Does NOT move the offset forward.
+        /// </summary>
+        /// <param name="minLength">Minimum length of remaining space</param>
+        /// <returns>A <see cref="PinnedSpanByte"/> covering the remaining space</returns>
+        public PinnedSpanByte ViewRemainingArgSlice(int minLength = 0)
+        {
+            ExpandScratchBufferIfNeeded(minLength);
+            return PinnedSpanByte.FromPinnedPointer(
+                currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset,
+                currScratchBuffer.Length - currScratchBuffer.scratchBufferOffset);
         }
 
         void ExpandScratchBufferIfNeeded(int requiredLength)

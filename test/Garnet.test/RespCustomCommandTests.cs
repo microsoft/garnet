@@ -34,17 +34,17 @@ namespace Garnet.test
             {
                 garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                    garnetApi.ResetScratchBufferAllocator();
+                    garnetApi.ResetScratchBuffer();
             }
 
             garnetApi.GET(key, out PinnedSpanByte outval1);
             garnetApi.GET(key, out PinnedSpanByte outval2);
-            garnetApi.ResetScratchBufferAllocator();
+            garnetApi.ResetScratchBuffer();
 
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            garnetApi.ResetScratchBufferAllocator();
+            garnetApi.ResetScratchBuffer();
 
             return true;
         }
@@ -69,7 +69,7 @@ namespace Garnet.test
             {
                 garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                    garnetApi.ResetScratchBufferAllocator();
+                    garnetApi.ResetScratchBuffer();
             }
         }
     }
@@ -81,11 +81,8 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            // Test SBA offset management with GET (output goes to ScratchBufferAllocator)
-            var sbaOffset1 = garnetApi.GetScratchBufferAllocatorOffset();
+            // Test scratch buffer reset with GET (output goes to ScratchBufferAllocator)
             garnetApi.GET(key, out PinnedSpanByte outval1);
-
-            var sbaOffset2 = garnetApi.GetScratchBufferAllocatorOffset();
             garnetApi.GET(key, out PinnedSpanByte outval2);
 
             // Verify GET results are valid
@@ -95,23 +92,8 @@ namespace Garnet.test
                 return false;
             }
 
-            // SBA offset should have advanced after each GET
-            if (sbaOffset2 <= sbaOffset1)
-            {
-                WriteError(ref output, "ERR SBA offset should advance after GET");
-                return false;
-            }
-
-            // Reset SBA (full reset, discards all GET results)
-            garnetApi.ResetScratchBufferAllocator();
-
-            // Verify offset is back to initial
-            var sbaOffsetAfterReset = garnetApi.GetScratchBufferAllocatorOffset();
-            if (sbaOffsetAfterReset != sbaOffset1)
-            {
-                WriteError(ref output, "ERR SBA offset should be back to initial after reset");
-                return false;
-            }
+            // Reset scratch buffer (full reset, discards all GET results)
+            garnetApi.ResetScratchBuffer();
 
             return true;
         }

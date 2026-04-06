@@ -362,19 +362,7 @@ namespace Garnet.server
          => storageSession.ObjectScan(key.ReadOnlySpan, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public int GetScratchBufferOffset()
-            => storageSession.scratchBufferBuilder.ScratchBufferOffset;
-
-        /// <inheritdoc />
-        public bool ResetScratchBuffer(int offset)
-            => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
-
-        /// <inheritdoc />
-        public int GetScratchBufferAllocatorOffset()
-            => storageSession.scratchBufferAllocator.ScratchBufferOffset;
-
-        /// <inheritdoc />
-        public void ResetScratchBufferAllocator()
+        public void ResetScratchBuffer()
             => storageSession.scratchBufferAllocator.Reset();
         #endregion
     }
