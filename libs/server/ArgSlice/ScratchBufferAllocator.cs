@@ -102,7 +102,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 2)</param>
         /// <param name="maxInitialCapacity">Max size of previously allocated unused buffer to keep upon reset (Default: no limit)</param>
-        public ScratchBufferAllocator(int minSizeBuffer = 2, int maxInitialCapacity = int.MaxValue)
+        public ScratchBufferAllocator(int minSizeBuffer = 64, int maxInitialCapacity = int.MaxValue)
         {
             this.minSizeBuffer = minSizeBuffer;
             this.maxInitialCapacity = maxInitialCapacity;

@@ -242,7 +242,7 @@ namespace Garnet.server
             this.scratchBufferBuilder = new ScratchBufferBuilder();
 
             // Initialize session-local scratch allocation of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferAllocator = new ScratchBufferAllocator(minSizeBuffer: 64);
+            this.scratchBufferAllocator = new ScratchBufferAllocator();
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
