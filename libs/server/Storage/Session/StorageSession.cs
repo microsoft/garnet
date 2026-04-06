@@ -44,9 +44,9 @@ namespace Garnet.server
         public UnifiedBasicContext unifiedBasicContext;
         public UnifiedTransactionalContext unifiedTransactionalContext;
 
-        public readonly ScratchBufferBuilder scratchBufferBuilder;
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
-        public readonly ScratchBufferAllocator scratchBufferAllocator;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
