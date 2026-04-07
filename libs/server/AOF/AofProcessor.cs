@@ -85,6 +85,9 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            activeVectorManager?.WaitForVectorOperationsToComplete();
+            activeVectorManager?.ShutdownReplayTasks();
+
             var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
             foreach (var dbSession in databaseSessionsSnapshot)
             {
