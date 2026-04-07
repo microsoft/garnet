@@ -152,8 +152,10 @@ namespace Garnet.cluster
 
             public void Throttle()
             {
+                cts.Token.ThrowIfCancellationRequested();
+
                 if (!garnetClient.IsConnected)
-                    throw new GarnetException("AOF stream client disconnected!");
+                    ExceptionUtils.ThrowException(new GarnetException("AOF stream client disconnected!"));
 
                 // Trigger flush while we are out of epoch protection
                 garnetClient.CompletePending(false);
@@ -167,7 +169,7 @@ namespace Garnet.cluster
                 {
                     enteredMonitor = aofSyncDriver.activeWorkerMonitor.TryEnter();
                     if (!enteredMonitor)
-                        throw new GarnetException($"[{physicalSublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}");
+                        ExceptionUtils.ThrowException(new GarnetException($"[{physicalSublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}"));
 
                     logger?.LogInformation(
                         "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",

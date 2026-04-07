@@ -217,6 +217,5 @@ namespace Garnet.cluster
                 }
             }
         }
-
     }
 }

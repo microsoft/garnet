@@ -22,7 +22,7 @@ namespace Garnet.cluster
         readonly ILogger logger;
         readonly CancellationTokenSource cts;
 
-        AofSyncTask[] aofSyncTasks;
+        readonly AofSyncTask[] aofSyncTasks;
 
         /// <summary>
         /// Check if client connection is healthy
