@@ -841,7 +841,7 @@ namespace Garnet.test
         [Test]
         public void AofObjectStoreRMWDeleteRecoverSortedSetTest()
         {
-            // Verify ZREM that empties a sorted set is persisted to AOF and recovered correctly
+            // Verify ZREM that removes one member from a sorted set is persisted to AOF and recovered correctly
             var key = "AofObjectStoreRMWDeleteRecoverSortedSetKey";
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {

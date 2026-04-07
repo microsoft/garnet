@@ -594,7 +594,7 @@ namespace Garnet.test
             // WATCH a list key, then LPOP all elements on the same connection.
             // The LPOP that empties the list should increment the watch version,
             // causing the subsequent EXEC to fail.
-            var lightClientRequest = TestUtils.CreateRequest();
+            using var lightClientRequest = TestUtils.CreateRequest();
             var key = "watchlist";
 
             // Create a single-element list
