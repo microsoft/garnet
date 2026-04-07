@@ -22,7 +22,7 @@ namespace Garnet.server
         readonly int maxCount = maxItemNum;
         public int Count => items.Count;
         public bool IsEmpty => items.Count == 0;
-        readonly List<(int Offset, int Length, bool HasNamespace)> items = [];
+        readonly List<((int Offset, int Length) Entry, bool HasNamespace)> items = [];
 
         /// <summary>
         /// Try to add ArgSlice
@@ -36,11 +36,9 @@ namespace Garnet.server
             if (Count + 1 >= maxCount)
                 return false;
 
-            var insertLoc = bufferManager.ScratchBufferOffset;
+            var entry = bufferManager.CreateArgSliceAsOffset(item);
 
-            var sb = bufferManager.CreateArgSlice(item);
-
-            items.Add((insertLoc, sb.Length, false));
+            items.Add((entry, false));
             return true;
         }
 
@@ -64,9 +62,8 @@ namespace Garnet.server
             BinaryPrimitives.WriteInt32LittleEndian(toWrite[(sizeof(int) + namespaceBytes.Length)..], item.Length);
             item.CopyTo(toWrite[(sizeof(int) + namespaceBytes.Length + sizeof(int))..]);
 
-            var sb = bufferManager.CreateArgSlice(toWrite);
-
-            items.Add((insertLoc, sb.Length, true));
+            var entry = bufferManager.CreateArgSliceAsOffset(item);
+            items.Add((entry, true));
             return true;
         }
 
@@ -91,7 +88,7 @@ namespace Garnet.server
             enumerating = true;
             try
             {
-                foreach (var (offset, length, hasNamespace) in items)
+                foreach (var ((offset, length), hasNamespace) in items)
                 {
                     if (!hasNamespace)
                     {

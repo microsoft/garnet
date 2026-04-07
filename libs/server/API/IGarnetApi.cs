@@ -1965,17 +1965,9 @@ namespace Garnet.server
         GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
-        /// Retrieve the current scratch buffer offset.
+        /// Resets the scratch buffer, releasing all allocated slices.
         /// </summary>
-        /// <returns>Current offset</returns>
-        int GetScratchBufferOffset();
-
-        /// <summary>
-        /// Resets the scratch buffer to the given offset.
-        /// </summary>
-        /// <param name="offset">Offset to reset to</param>
-        /// <returns>True if successful, else false</returns>
-        bool ResetScratchBuffer(int offset);
+        void ResetScratchBuffer();
 
         #endregion
 

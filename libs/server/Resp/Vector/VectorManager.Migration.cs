@@ -157,7 +157,7 @@ namespace Garnet.server
                 Debug.Assert(db != null, "Must have DB if session is not already set");
                 Debug.Assert(storeWrapper != null, "Must have StoreWrapper if session is not already set");
 
-                ActiveThreadSession = newStorageSession = new StorageSession(storeWrapper, new(), null, null, db.Id, this, this.logger);
+                ActiveThreadSession = newStorageSession = new StorageSession(storeWrapper, new(), new(), null, null, db.Id, this, this.logger);
             }
             else
             {
@@ -286,7 +286,7 @@ namespace Garnet.server
         public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<byte[]> keys, Dictionary<byte[], byte[]> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
-            using var storageSession = new StorageSession(storeWrapper, new(), null, null, storeWrapper.DefaultDatabase.Id, this, logger);
+            using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, this, logger);
 
             HashSet<ulong> namespaces = null;
 

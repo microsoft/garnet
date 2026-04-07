@@ -80,19 +80,21 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GET);
             value = default;
 
-            var _output = new StringOutput(new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice() });
+            var _output = new StringOutput(new SpanByteAndMemory { SpanByte = scratchBufferAllocator.ViewRemainingArgSlice() });
 
             var ret = GET(key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.SpanByteAndMemory.IsSpanByte)
                 {
-                    value = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
+                    // Output overflowed to heap Memory — copy to SBA and dispose
+                    value = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
                     _output.SpanByteAndMemory.Memory.Dispose();
                 }
                 else
                 {
-                    value = scratchBufferBuilder.CreateArgSlice(_output.SpanByteAndMemory.Length);
+                    // Output fit in SBA's remaining space — just claim it (zero copy)
+                    value = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.Length);
                 }
             }
             return ret;
