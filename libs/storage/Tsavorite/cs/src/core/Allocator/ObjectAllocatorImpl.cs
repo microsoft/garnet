@@ -641,6 +641,7 @@ namespace Tsavorite.core
                 // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
                 // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
+                var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
                 srcBuffer = bufferPool.Get(alignedBufferSize);
                 asyncResult.freeBuffer1 = srcBuffer;
 
@@ -655,22 +656,10 @@ namespace Tsavorite.core
                     result.DisposeHandle();
                 }
 
-                // Capture objectIdMap and copy inline data under epoch protection to ensure the page
-                // has not been evicted (which would clear the objectIdMap and free the page memory).
-                ObjectIdMap objectIdMap;
                 try
                 {
                     if (pulseEpoch)
                         epoch.Resume();
-
-                    // If HeadAddress has advanced past the flush page, the page data and objectIdMap are no longer valid.
-                    if (pulseEpoch && HeadAddress > asyncResult.untilAddress)
-                    {
-                        asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
-                        goto WritePage;
-                    }
-
-                    objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
 
                     // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
                     var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
