@@ -46,6 +46,9 @@ namespace Tsavorite.core
             this.completionTcs = completionTcs;
             this.flushSemaphore = enableThrottling ? new SemaphoreSlim(0) : null;
             this.count = count;
+
+            if (count == 0)
+                _ = completionTcs.TrySetResult(true);
         }
 
         /// <summary>
