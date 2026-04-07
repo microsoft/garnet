@@ -743,7 +743,7 @@ namespace Garnet.test.cluster
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
-            var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            var shards = context.clusterTestUtils.ClusterShards(primaryIndex, context.logger);
             ClassicAssert.AreEqual(2, shards.Count);
             ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
             ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
@@ -752,13 +752,11 @@ namespace Garnet.test.cluster
             context.kvPairs = [];
             context.kvPairsObj = [];
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true));
-            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primary_count, replica_count, disableObjects));
+            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primaryIndex, primary_count, replica_count, disableObjects));
 
-            if (!context.checkpointTask.Wait(TimeSpan.FromSeconds(60)))
-                Assert.Fail("checkpointTask timeout");
-
-            if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(60)))
-                Assert.Fail("attachReplicaTask timeout");
+            var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
+                Assert.Fail($"Task timeout - checkpointTask: {context.checkpointTask.Status}, attachReplicaTask: {attachReplicaTask.Status}");
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
         }

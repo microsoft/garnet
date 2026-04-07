@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -640,7 +641,6 @@ namespace Tsavorite.core
                 // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
                 // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
-                var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
                 srcBuffer = bufferPool.Get(alignedBufferSize);
                 asyncResult.freeBuffer1 = srcBuffer;
 
@@ -655,10 +655,22 @@ namespace Tsavorite.core
                     result.DisposeHandle();
                 }
 
+                // Capture objectIdMap and copy inline data under epoch protection to ensure the page
+                // has not been evicted (which would clear the objectIdMap and free the page memory).
+                ObjectIdMap objectIdMap;
                 try
                 {
                     if (pulseEpoch)
                         epoch.Resume();
+
+                    // If HeadAddress has advanced past the flush page, the page data and objectIdMap are no longer valid.
+                    if (pulseEpoch && HeadAddress > asyncResult.untilAddress)
+                    {
+                        asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
+                        goto WritePage;
+                    }
+
+                    objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
 
                     // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
                     var allocatorPageSpan = new Span<byte>((byte*)logPagePointer + startOffset, (int)numBytesToWrite);
@@ -738,6 +750,11 @@ namespace Tsavorite.core
                                                     asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
                                                     goto WritePage;
                                                 }
+
+                                                // The page's objectIdMap may have been cleared when HeadAddress advanced.
+                                                // Skip object serialization for this record; mark it invalid so recovery skips it.
+                                                logRecord.InfoRef.SetInvalid();
+                                                goto NextRecord;
                                             }
                                         }
 
@@ -777,6 +794,7 @@ namespace Tsavorite.core
                         }
                     } // endif record id Valid
 
+                NextRecord:
                     logicalAddress += logRecordSize + extraRecordOffset;    // advance in main log
                     physicalAddress += logRecordSize + extraRecordOffset;   // advance in source buffer
                 }
@@ -1067,7 +1085,7 @@ namespace Tsavorite.core
             observer?.OnNext(iter);
         }
 
-        internal override void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        internal override void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             throw new TsavoriteException("Incremental snapshots not supported with generic allocator");
         }

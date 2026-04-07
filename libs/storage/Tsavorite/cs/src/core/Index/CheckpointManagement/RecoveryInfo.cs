@@ -3,7 +3,7 @@
 
 using System;
 using System.IO;
-using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -338,7 +338,7 @@ namespace Tsavorite.core
         public IDevice snapshotFileObjectLogDevice;
         public IDevice deltaFileDevice;
         public DeltaLog deltaLog;
-        public SemaphoreSlim flushedSemaphore;
+        public Task flushedTask;
         public long prevVersion;
         internal CircularDiskWriteBuffer objectLogFlushBuffers;
 

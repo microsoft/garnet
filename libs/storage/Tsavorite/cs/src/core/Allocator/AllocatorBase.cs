@@ -241,18 +241,27 @@ namespace Tsavorite.core
         /// <summary>Flush checkpoint Delta to the Device</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal virtual void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
-            out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+            out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var _completedSemaphore = new SemaphoreSlim(0);
-            completedSemaphore = _completedSemaphore;
-
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+            {
+                completedTask = Task.Run(FlushRunner);
+            }
             else
-                FlushRunner();
+            {
+                try
+                {
+                    FlushRunner();
+                    completedTask = Task.CompletedTask;
+                }
+                catch (Exception ex)
+                {
+                    completedTask = Task.FromException(ex);
+                }
+            }
 
             void FlushRunner()
             {
@@ -340,7 +349,6 @@ namespace Tsavorite.core
 
                 if (destOffset > 0)
                     deltaLog.Seal(destOffset);
-                _completedSemaphore.Release();
             }
         }
 
@@ -1870,70 +1878,87 @@ namespace Tsavorite.core
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
         /// <param name="objectLogDevice"></param>
-        /// <param name="completedSemaphore"></param>
+        /// <param name="completedTask">Task that completes when all pages are flushed, or faults if an exception occurs</param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long startLogicalAddress, long endLogicalAddress,
-            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var _completedSemaphore = new SemaphoreSlim(0);
-            completedSemaphore = _completedSemaphore;
-
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+            {
+                completedTask = Task.Run(FlushRunner);
+            }
             else
-                FlushRunner();
+            {
+                try
+                {
+                    FlushRunner();
+                    completedTask = Task.CompletedTask;
+                }
+                catch (Exception ex)
+                {
+                    completedTask = Task.FromException(ex);
+                }
+            }
 
             void FlushRunner()
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
 
-                // Flush each page in sequence
-                for (long flushPage = startPage; flushPage < endPage; flushPage++)
+                try
                 {
-                    // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
-                    // for middle pages, we flush the entire page.
-                    var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
-                    if (startLogicalAddress > flushStartAddress)
-                        flushStartAddress = startLogicalAddress;
-                    var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
-                    if (endLogicalAddress < flushEndAddress)
-                        flushEndAddress = endLogicalAddress;
-                    var flushSize = flushEndAddress - flushStartAddress;
-                    if (flushSize <= 0)
-                        continue;
-
-                    var asyncResult = new PageAsyncFlushResult<Empty>
+                    // Flush each page in sequence
+                    for (long flushPage = startPage; flushPage < endPage; flushPage++)
                     {
-                        flushCompletionTracker = flushCompletionTracker,
-                        page = flushPage,
-                        fromAddress = flushStartAddress,
-                        untilAddress = flushEndAddress,
-                        count = 1,
-                        flushRequestState = FlushRequestState.Snapshot,
-                        flushBuffers = flushBuffers
-                    };
+                        // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
+                        // for middle pages, we flush the entire page.
+                        var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                        if (startLogicalAddress > flushStartAddress)
+                            flushStartAddress = startLogicalAddress;
+                        var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
+                        if (endLogicalAddress < flushEndAddress)
+                            flushEndAddress = endLogicalAddress;
+                        var flushSize = flushEndAddress - flushStartAddress;
+                        if (flushSize <= 0)
+                            continue;
 
-                    // Intended destination is flushPage
-                    WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
-
-                    // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
-                    // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                    if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
-                    {
-                        if (throttleCheckpointFlushDelayMs >= 0)
+                        var asyncResult = new PageAsyncFlushResult<Empty>
                         {
-                            flushCompletionTracker.WaitOneFlush();
-                            Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            flushCompletionTracker = flushCompletionTracker,
+                            page = flushPage,
+                            fromAddress = flushStartAddress,
+                            untilAddress = flushEndAddress,
+                            count = 1,
+                            flushRequestState = FlushRequestState.Snapshot,
+                            flushBuffers = flushBuffers
+                        };
+
+                        // Intended destination is flushPage
+                        WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+
+                        // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
+                        // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
+                        if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
+                        {
+                            if (throttleCheckpointFlushDelayMs >= 0)
+                            {
+                                flushCompletionTracker.WaitOneFlush();
+                                Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            }
                         }
+                        else
+                            _ = asyncResult.Release();
                     }
-                    else
-                        _ = asyncResult.Release();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
+                    throw;
                 }
             }
         }
@@ -2257,9 +2282,8 @@ namespace Tsavorite.core
                 {
                     if (epochTaken)
                         epoch.Suspend();
+                    _ = result.Release();
                 }
-
-                _ = result.Release();
             }
             catch when (disposed) { }
         }

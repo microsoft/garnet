@@ -17,7 +17,7 @@ namespace Tsavorite.core
     {
         SystemState systemState;
         IStateMachine stateMachine;
-        readonly List<SemaphoreSlim> waitingList;
+        readonly List<(StateMachineTaskType type, Task task)> waitingList;
         TaskCompletionSource<bool> stateMachineCompleted;
         // All threads have entered the given state
         SemaphoreSlim waitForTransitionIn;
@@ -75,7 +75,7 @@ namespace Tsavorite.core
 
             // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
             if (GetNumActiveTransactions(version) > 0)
-                AddToWaitingList(lastVersionTransactionsDone);
+                AddToWaitingList(lastVersionTransactionsDone, StateMachineTaskType.LastVersionTransactionsDone);
         }
 
         internal void ResetLastVersion()
@@ -155,10 +155,16 @@ namespace Tsavorite.core
         public void EndTransaction(long txnVersion)
             => DecrementActiveTransactions(txnVersion);
 
-        internal void AddToWaitingList(SemaphoreSlim waiter)
+        internal void AddToWaitingList(SemaphoreSlim waiter, StateMachineTaskType type)
         {
             if (waiter != null)
-                waitingList.Add(waiter);
+                waitingList.Add((type, waiter.WaitAsync()));
+        }
+
+        internal void AddToWaitingList(Task waiter, StateMachineTaskType type)
+        {
+            if (waiter != null)
+                waitingList.Add((type, waiter));
         }
 
         public bool Register(IStateMachine stateMachine, CancellationToken token = default)
@@ -309,9 +315,17 @@ namespace Tsavorite.core
             {
                 throw waitForTransitionInException;
             }
-            foreach (var waiter in waitingList)
+            foreach (var (type, task) in waitingList)
             {
-                await waiter.WaitAsync(token);
+                try
+                {
+                    await task.WaitAsync(token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger?.LogError(ex, "State machine task '{type}' faulted", type);
+                    throw;
+                }
             }
             waitingList.Clear();
         }

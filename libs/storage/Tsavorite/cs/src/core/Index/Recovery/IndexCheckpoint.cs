@@ -54,8 +54,8 @@ namespace Tsavorite.core
 
         internal void AddIndexCheckpointWaitingList(StateMachineDriver stateMachineDriver)
         {
-            stateMachineDriver.AddToWaitingList(mainIndexCheckpointSemaphore);
-            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointSemaphore());
+            stateMachineDriver.AddToWaitingList(mainIndexCheckpointSemaphore, StateMachineTaskType.IndexCheckpointSMTaskMainIndexCheckpoint);
+            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointSemaphore(), StateMachineTaskType.IndexCheckpointSMTaskOverflowBucketsCheckpoint);
         }
 
         internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)

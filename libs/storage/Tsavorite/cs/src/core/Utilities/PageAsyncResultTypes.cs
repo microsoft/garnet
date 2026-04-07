@@ -75,12 +75,7 @@ namespace Tsavorite.core
     internal sealed class FlushCompletionTracker
     {
         /// <summary>
-        /// Semaphore to set on flush completion
-        /// </summary>
-        readonly SemaphoreSlim completedSemaphore;
-
-        /// <summary>
-        /// Semaphore to wait on for flush completion
+        /// Semaphore to wait on for per-page flush completion (throttling)
         /// </summary>
         readonly SemaphoreSlim flushSemaphore;
 
@@ -91,20 +86,17 @@ namespace Tsavorite.core
 
         public override string ToString()
         {
-            var compSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
-            var flushSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
-            return $"count {count}, compSemCount {compSemCount}, flushSemCount {flushSemCount}";
+            var flushSemCount = flushSemaphore?.CurrentCount.ToString() ?? "null";
+            return $"count {count}, flushSemCount {flushSemCount}";
         }
 
         /// <summary>
         /// Create a flush completion tracker
         /// </summary>
-        /// <param name="completedSemaphore">Semaphpore to release when all flushes completed</param>
-        /// <param name="flushSemaphore">Semaphpore to release when each flush completes</param>
+        /// <param name="flushSemaphore">Semaphore to release when each flush completes</param>
         /// <param name="count">Number of pages to flush</param>
-        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, SemaphoreSlim flushSemaphore, int count)
+        public FlushCompletionTracker(SemaphoreSlim flushSemaphore, int count)
         {
-            this.completedSemaphore = completedSemaphore;
             this.flushSemaphore = flushSemaphore;
             this.count = count;
         }
@@ -115,8 +107,7 @@ namespace Tsavorite.core
         public void CompleteFlush()
         {
             _ = (flushSemaphore?.Release());
-            if (Interlocked.Decrement(ref count) == 0)
-                _ = completedSemaphore.Release();
+            _ = Interlocked.Decrement(ref count);
         }
 
         public void WaitOneFlush() => flushSemaphore?.Wait();
