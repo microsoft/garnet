@@ -119,11 +119,10 @@ namespace Garnet.cluster
 
             try
             {
-#if DEBUG
                 // Exception injection point for testing: simulates TakeOverAsPrimary failure
                 // after PauseWritesAndWaitForSync has already sent failstopwrites to the primary.
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Failover_Fail_TakeOverAsPrimary);
-#endif
+
                 // Make replica syncing unavailable by setting recovery flag
                 if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, upgradeLock: false))
                 {
