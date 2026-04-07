@@ -1532,6 +1532,7 @@ namespace Garnet.server
             var dbStorageSession = new StorageSession(
                 storeWrapper,
                 scratchBufferBuilder,
+                scratchBufferAllocator,
                 sessionMetrics,
                 LatencyMetrics,
                 dbId,
@@ -1568,6 +1569,7 @@ namespace Garnet.server
             var dbStorageSession = new StorageSession(
                 storeWrapper,
                 scratchBufferBuilder,
+                scratchBufferAllocator,
                 sessionMetrics,
                 LatencyMetrics,
                 dbId: dbId, // NOTE: only for cluster need to retrieve default database
