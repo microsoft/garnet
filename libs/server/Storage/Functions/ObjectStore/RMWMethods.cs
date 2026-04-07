@@ -145,6 +145,8 @@ namespace Garnet.server
                         {
                             functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
                             value = null;
+                            if (functionsState.appendOnlyFile != null)
+                                rmwInfo.UserData |= NeedAofLog; // Log the RMW operation that emptied the collection
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
@@ -238,6 +240,8 @@ namespace Garnet.server
 
                         if (output.HasRemoveKey)
                         {
+                            if (functionsState.appendOnlyFile != null)
+                                rmwInfo.UserData |= NeedAofLog; // Log the RMW operation that emptied the collection
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }

@@ -891,5 +891,140 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(expectedValue, val.ToString());
         }
+
+        [Test]
+        public void AofLPopEmptyListRecoverTest()
+        {
+            // Verify that LPOP on a single-element list (which empties and removes the list key) is persisted via AOF
+            var key = "AofLPopEmptyListRecoverTestKey";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.ListLeftPush(key, "value1");
+
+                // Pop the only element - list key should be deleted
+                var popped = db.ListLeftPop(key);
+                ClassicAssert.AreEqual("value1", popped.ToString());
+
+                // Verify key no longer exists
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                // After recovery, the list key should still not exist (LPOP persisted correctly)
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public void AofHDelEmptyHashRecoverTest()
+        {
+            // Verify that HDEL that removes all hash fields (emptying and removing the hash key) is persisted via AOF
+            var key = "AofHDelEmptyHashRecoverTestKey";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.HashSet(key, [new HashEntry("field1", "val1"), new HashEntry("field2", "val2")]);
+
+                // Delete all fields - hash key should be deleted
+                var deleted = db.HashDelete(key, ["field1", "field2"]);
+                ClassicAssert.AreEqual(2, deleted);
+
+                // Verify key no longer exists
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                // After recovery, the hash key should still not exist (HDEL persisted correctly)
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public void AofZRemPartialRecoverTest()
+        {
+            // Verify that ZREM that removes a member (but leaves other members) is persisted via AOF
+            var key = "AofZRemPartialRecoverTestKey";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.SortedSetAdd(key, [new SortedSetEntry("member1", 10), new SortedSetEntry("member2", 20)]);
+
+                // Remove one member - sorted set still has member2
+                var removed = db.SortedSetRemove(key, "member1");
+                ClassicAssert.IsTrue(removed);
+
+                // Verify member1 is gone but member2 remains
+                ClassicAssert.IsFalse(db.SortedSetScore(key, "member1").HasValue);
+                ClassicAssert.IsTrue(db.SortedSetScore(key, "member2").HasValue);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                // After recovery, member1 should still be gone and member2 should remain
+                ClassicAssert.IsFalse(db.SortedSetScore(key, "member1").HasValue);
+                ClassicAssert.IsTrue(db.SortedSetScore(key, "member2").HasValue);
+            }
+        }
+
+        [Test]
+        public void AofMultiDbRecoverTest()
+        {
+            // Test that AOF recovery correctly handles multiple databases without NullReferenceException
+            var key0 = "AofMultiDbRecoverTestKey0";
+            var key1 = "AofMultiDbRecoverTestKey1";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                // Write to database 0
+                var db0 = redis.GetDatabase(0);
+                db0.StringSet(key0, "value0");
+
+                // Write to database 1
+                var db1 = redis.GetDatabase(1);
+                db1.ListLeftPush(key1, "item1");
+                // Pop the only element - list key should be deleted
+                db1.ListLeftPop(key1);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db0 = redis.GetDatabase(0);
+                // key0 should still exist in DB 0
+                ClassicAssert.AreEqual("value0", db0.StringGet(key0).ToString());
+
+                var db1 = redis.GetDatabase(1);
+                // key1 should not exist in DB 1 (LPOP persisted correctly)
+                ClassicAssert.IsFalse(db1.KeyExists(key1));
+            }
+        }
     }
 }
