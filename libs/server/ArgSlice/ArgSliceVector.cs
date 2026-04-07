@@ -35,11 +35,8 @@ namespace Garnet.server
             if (Count + 1 >= maxCount)
                 return false;
 
-            var insertLoc = bufferManager.ScratchBufferOffset;
-
-            var sb = bufferManager.CreateArgSlice(item);
-
-            items.Add((insertLoc, sb.Length));
+            var entry = bufferManager.CreateArgSliceAsOffset(item);
+            items.Add(entry);
             return true;
         }
 
