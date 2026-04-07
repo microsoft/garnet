@@ -309,6 +309,8 @@ namespace Garnet.server
                             return default;
                         elements = [new ArgSlice(result, len)];
                     }
+
+                    CopyArgSliceArrayToScratchBuffer(elements, ref outputFooter);
                 }
             }
             finally
@@ -442,6 +444,8 @@ namespace Garnet.server
                             return default;
                         elements = [new ArgSlice(result, len)];
                     }
+
+                    CopyArgSliceArrayToScratchBuffer(elements, ref output);
                 }
             }
             finally
@@ -592,6 +596,76 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// When output uses heap Memory (which is not pinned), copies ArgSlice array data
+        /// to the scratch buffer allocator (which uses pinned arrays) so that pointers remain valid.
+        /// Must be called inside the fixed block while source memory is still pinned.
+        /// </summary>
+        unsafe void CopyArgSliceArrayToScratchBuffer(ArgSlice[] elements, ref GarnetObjectStoreOutput output)
+        {
+            if (elements == null || elements.Length == 0 || output.SpanByteAndMemory.IsSpanByte)
+                return;
+
+            var totalSize = 0;
+            for (var i = 0; i < elements.Length; i++)
+                totalSize += elements[i].Length;
+
+            if (totalSize == 0)
+                return;
+
+            var buf = scratchBufferAllocator.CreateArgSlice(totalSize);
+            var bufPtr = buf.ptr;
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var elemLen = elements[i].Length;
+                if (elemLen > 0)
+                {
+                    elements[i].ReadOnlySpan.CopyTo(new Span<byte>(bufPtr, elemLen));
+                    elements[i] = new ArgSlice(bufPtr, elemLen);
+                    bufPtr += elemLen;
+                }
+            }
+        }
+
+        /// <summary>
+        /// When output uses heap Memory (which is not pinned), copies ArgSlice pair data
+        /// to the scratch buffer allocator (which uses pinned arrays) so that pointers remain valid.
+        /// Must be called inside the fixed block while source memory is still pinned.
+        /// </summary>
+        unsafe void CopyArgSlicePairsToScratchBuffer((ArgSlice member, ArgSlice score)[] pairs, ref GarnetObjectStoreOutput output)
+        {
+            if (pairs == null || pairs.Length == 0 || output.SpanByteAndMemory.IsSpanByte)
+                return;
+
+            var totalSize = 0;
+            for (var i = 0; i < pairs.Length; i++)
+                totalSize += pairs[i].member.Length + pairs[i].score.Length;
+
+            if (totalSize == 0)
+                return;
+
+            var buf = scratchBufferAllocator.CreateArgSlice(totalSize);
+            var bufPtr = buf.ptr;
+            for (var i = 0; i < pairs.Length; i++)
+            {
+                var memberLen = pairs[i].member.Length;
+                if (memberLen > 0)
+                {
+                    pairs[i].member.ReadOnlySpan.CopyTo(new Span<byte>(bufPtr, memberLen));
+                    pairs[i].member = new ArgSlice(bufPtr, memberLen);
+                    bufPtr += memberLen;
+                }
+
+                var scoreLen = pairs[i].score.Length;
+                if (scoreLen > 0)
+                {
+                    pairs[i].score.ReadOnlySpan.CopyTo(new Span<byte>(bufPtr, scoreLen));
+                    pairs[i].score = new ArgSlice(bufPtr, scoreLen);
+                    bufPtr += scoreLen;
+                }
+            }
+        }
+
+        /// <summary>
         /// Processes RESP output as pairs of score and member.
         /// </summary>
         unsafe (ArgSlice member, ArgSlice score)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput output, out string error)
@@ -637,6 +711,8 @@ namespace Garnet.server
                             result[i].score = new ArgSlice(element, len);
                         }
                     }
+
+                    CopyArgSlicePairsToScratchBuffer(result, ref output);
                 }
             }
             finally
@@ -673,6 +749,12 @@ namespace Garnet.server
                         return default;
 
                     result = new ArgSlice(element, len);
+
+                    // When output uses heap Memory, the finally block will dispose it, invalidating
+                    // the ArgSlice pointer. Copy data to scratch buffer while still pinned.
+                    // CreateArgSlice allocates pinned space and copies the data into it.
+                    if (result.Length > 0 && !output.SpanByteAndMemory.IsSpanByte)
+                        result = scratchBufferAllocator.CreateArgSlice(result.ReadOnlySpan);
                 }
             }
             finally

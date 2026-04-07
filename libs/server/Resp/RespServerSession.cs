@@ -1523,7 +1523,7 @@ namespace Garnet.server
             var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
             Debug.Assert(dbRes, "Should always find database if we're switching to it");
 
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, database.VectorManager, logger, respProtocolVersion);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId, database.VectorManager, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
