@@ -627,6 +627,23 @@ namespace Garnet.server
             bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
+
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> is allowed while a session is in
+        /// pub/sub subscription mode (RESP2). Per the Redis protocol, only
+        /// (P|S)SUBSCRIBE, (P|S)UNSUBSCRIBE, PING, and QUIT are valid in this state.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsAllowedInSubscriptionMode(this RespCommand cmd)
+        {
+            return cmd is RespCommand.SUBSCRIBE
+                or RespCommand.UNSUBSCRIBE
+                or RespCommand.PSUBSCRIBE
+                or RespCommand.PUNSUBSCRIBE
+                or RespCommand.SSUBSCRIBE
+                or RespCommand.PING
+                or RespCommand.QUIT;
+        }
     }
 
     /// <summary>

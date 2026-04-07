@@ -80,6 +80,10 @@ namespace Garnet.server
 
         int opCount;
 
+        // Thread ID of the thread currently processing commands (used by Publish/PatternPublish
+        // callbacks to detect reentrant calls when the same session publishes to a self-subscribed channel)
+        int commandProcessingThreadId;
+
         /// <summary>
         /// Current database session items
         /// </summary>
@@ -441,8 +445,8 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                commandProcessingThreadId = Environment.CurrentManagedThreadId;
                 ProcessMessages();
-                recvBufferPtr = null;
             }
             catch (RespParsingException ex)
             {
@@ -497,6 +501,7 @@ namespace Garnet.server
             }
             finally
             {
+                commandProcessingThreadId = 0;
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
                 scratchBufferBuilder.Reset();
@@ -575,7 +580,14 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
-                        if (txnManager.state != TxnState.None)
+                        // In RESP2, only a small set of commands are allowed while in subscription mode.
+                        // RESP3 uses distinct push types for subscription messages, so all commands are valid.
+                        if (isSubscriptionSession && respProtocolVersion == 2 && !cmd.IsAllowedInSubscriptionMode())
+                        {
+                            while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandNotAllowed, cmd.ToString()), ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else if (txnManager.state != TxnState.None)
                         {
                             if (txnManager.state == TxnState.Running)
                             {

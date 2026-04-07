@@ -328,6 +328,7 @@ namespace Garnet.server
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
+        public const string GenericPubSubCommandNotAllowed = "ERR Can't execute '{0}': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT are allowed in this context";
         public const string GenericErrLonLat = "ERR invalid longitude,latitude pair {0:F6},{1:F6}";
         public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
         public const string GenericErrCommandDisallowedWithOption =
