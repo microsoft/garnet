@@ -2672,21 +2672,22 @@ namespace Garnet.test
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp);// NX return false existing expiry
 
-            args[1] = 50;
+            var ttlSmall = command.Equals("EXPIRE") ? 50 : 50000; // 50 seconds or 50000 ms
+            args[1] = ttlSmall;
             args[2] = testCaseSensitivity ? "xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// XX return true existing expiry
 
             var time = db.KeyTimeToLive(key);
             ClassicAssert.Greater(time.Value.TotalSeconds, 0);
-            ClassicAssert.LessOrEqual(time.Value.TotalSeconds, (int)args[1]);
+            ClassicAssert.LessOrEqual(time.Value.TotalSeconds, ttlSmall);
 
             args[1] = 1;
             args[2] = testCaseSensitivity ? "Gt" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // GT return false new expiry < current expiry
 
-            args[1] = 1000;
+            args[1] = command.Equals("EXPIRE") ? 1000 : 1000000; // 1000 seconds or 1000000 ms
             args[2] = testCaseSensitivity ? "gT" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
@@ -2695,12 +2696,12 @@ namespace Garnet.test
             ClassicAssert.Greater(command.Equals("EXPIRE") ?
                     time.Value.TotalSeconds : time.Value.TotalMilliseconds, 500);
 
-            args[1] = 2000;
+            args[1] = command.Equals("EXPIRE") ? 2000 : 2000000; // must be > GT value above
             args[2] = testCaseSensitivity ? "lt" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
-            args[1] = 500;
+            args[1] = command.Equals("EXPIRE") ? 500 : 500000; // must be < GT value above
             args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
