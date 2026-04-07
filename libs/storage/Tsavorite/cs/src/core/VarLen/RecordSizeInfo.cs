@@ -74,7 +74,7 @@ namespace Tsavorite.core
         /// Calculate the Record sizes based on the given <paramref name="keySize"/> and <paramref name="valueSize"/> sizes, which are adjusted for inline vs. overflow/object.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CalculateSizes(int keySize, int valueSize)
+        public void CalculateSizes(int keySize, int valueSize)
         {
             if (FieldInfo.ExtendedNamespaceSize > sbyte.MaxValue)
                 ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");

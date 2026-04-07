@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
@@ -107,6 +108,10 @@ namespace Tsavorite.core
             header.startOffset = offsetFromStart;
             header.endOffset = offsetFromEnd;
         }
+
+        /// <summary>Pin the underlying heap object.  It is the caller's responsibility to release the returned <see cref="GCHandle"/>.</summary>
+        public readonly GCHandle Pin()
+        => GCHandle.Alloc(Array, GCHandleType.Pinned);
 
         /// <summary>Get the <see cref="ReadOnlySpan{_byte_}"/> of a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/> constructor.</summary>
         internal static ReadOnlySpan<byte> AsReadOnlySpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).ReadOnlySpan;

@@ -167,7 +167,8 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="replace"></param>
-        public void SetClusterMigrateHeader(string sourceNodeId, bool replace)
+        /// <param name="isVectorSets"></param>
+        public void SetClusterMigrateHeader(string sourceNodeId, bool replace, bool isVectorSets)
         {
             // For Migration we send the (curr - end) buffer as the SpanByteAndMemory.SpanByte output to Tsavorite. Thus we must
             // initialize the header first, so we have curr properly positioned, but we cannot yet enqueue currTcsIterationTask.
@@ -176,8 +177,9 @@ namespace Garnet.client
             curr = offset;
             this.ist = IncrementalSendType.MIGRATE;
             var replaceOption = replace ? T : F;
+            var vectorSetOption = isVectorSets ? T : F;
 
-            var arraySize = 5;
+            var arraySize = 6;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -219,6 +221,14 @@ namespace Garnet.client
             offset = curr;
 
             // 5
+            while (!RespWriteUtils.TryWriteBulkString(vectorSetOption, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 6
             // Reserve space for the bulk string header + final newline
             while (ExtraSpace + 2 > (int)(end - curr))
             {
@@ -237,7 +247,7 @@ namespace Garnet.client
         /// <returns></returns>
         public Task<string> CompleteMigrate(string sourceNodeId, bool replace)
         {
-            SetClusterMigrateHeader(sourceNodeId, replace);
+            SetClusterMigrateHeader(sourceNodeId, replace, isVectorSets: false);
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
