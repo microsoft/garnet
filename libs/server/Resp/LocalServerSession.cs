@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -25,6 +26,11 @@ namespace Garnet.server
         public BasicGarnetApi BasicGarnetApi;
 
         /// <summary>
+        /// Basic Vector Context
+        /// </summary>
+        public VectorBasicContext VectorBasicContext;
+
+        /// <summary>
         /// Create new local server session
         /// </summary>
         public LocalServerSession(StoreWrapper storeWrapper)
@@ -41,10 +47,14 @@ namespace Garnet.server
             this.scratchBufferBuilder = new ScratchBufferBuilder();
             this.scratchBufferAllocator = new ScratchBufferAllocator();
 
+            var dbRes = storeWrapper.TryGetOrAddDatabase(0, out var database, out _);
+            Debug.Assert(dbRes, "Should always be able to get DB 0");
+
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId: 0, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId: 0, database.VectorManager, logger);
 
             this.BasicGarnetApi = new BasicGarnetApi(storageSession, storageSession.stringBasicContext, storageSession.objectBasicContext, storageSession.unifiedBasicContext);
+            this.VectorBasicContext = storageSession.vectorBasicContext;
         }
 
         /// <inheritdoc />
