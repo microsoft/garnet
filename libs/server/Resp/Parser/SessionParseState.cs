@@ -261,8 +261,13 @@ namespace Garnet.server
         /// <param name="arg">Argument to set</param>
         public void SetArgument(int i, PinnedSpanByte arg)
         {
-            Debug.Assert(i < Count);
+            Debug.Assert(i < rootBuffer.Length);
             *(bufferPtr + i) = arg;
+
+            if (i >= Count)
+            {
+                Count = i + 1;
+            }
         }
 
         /// <summary>
@@ -439,6 +444,28 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
+        }
+
+        /// <summary>
+        /// Get float argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float GetFloat(int i, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.ReadFloat(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
+        }
+
+        /// <summary>
+        /// Try to get double argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadFloat(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
         }
 
         /// <summary>

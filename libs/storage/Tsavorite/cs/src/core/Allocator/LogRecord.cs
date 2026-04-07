@@ -405,7 +405,7 @@ namespace Tsavorite.core
 #endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
+            _ = header.Initialize(ref InfoRef, in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress);   // TODO: Pass in (possibly) namespace span
 
             // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
             // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
@@ -477,7 +477,7 @@ namespace Tsavorite.core
 #endif
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
+            _ = header.Initialize(ref InfoRef, in sizeInfo, out var keyAddress, out var namespaceAddress, out _ /*valueAddress*/);
 
             InfoRef.SetKeyAndValueInline();
 
@@ -879,7 +879,7 @@ namespace Tsavorite.core
             // caller. So all we need to do is initialize it to a consistent RecordLength state. We could make this a little leaner for this case but this is
             // called only on recovery from a failed TryAllocate (e.g. HeadAddress moved up so we couldn't complete the allocation), so it's not perf-critical.
             InfoRef = RecordInfo.InitialValid;
-            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, recordType: 0, out _ /*keyAddress*/, out _ /*namespaceAddress*/, out _ /*valueAddress*/);
+            _ = new RecordDataHeader((byte*)DataHeaderAddress).Initialize(ref InfoRef, in sizeInfo, out _ /*keyAddress*/, out _ /*namespaceAddress*/, out _ /*valueAddress*/);
         }
 
         /// <summary>
