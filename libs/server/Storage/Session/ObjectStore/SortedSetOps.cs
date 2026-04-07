@@ -397,6 +397,8 @@ namespace Garnet.server
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
                 ref output);
 
+            scratchBufferBuilder.RewindScratchBuffer(ref incrSlice);
+
             // Process output
             if (status == GarnetStatus.OK)
             {
@@ -483,19 +485,32 @@ namespace Garnet.server
                 rangeOpts |= SortedSetRangeOpts.Reverse;
             }
 
-            // Limit parameter
+            // Limit parameter — single contiguous allocation to avoid
+            // ScratchBufferBuilder reallocation invalidating earlier pointers.
+            ArgSlice paramsSlice = default;
             if (limit != default && (sortedSetOrderOperation == SortedSetOrderOperation.ByScore || sortedSetOrderOperation == SortedSetOrderOperation.ByLex))
             {
-                arguments.Add(scratchBufferBuilder.CreateArgSlice("LIMIT"u8));
+                var limitKeywordBytes = "LIMIT"u8;
+                var offsetLength = Encoding.UTF8.GetByteCount(limit.Item1);
+                var countLength = NumUtils.CountDigits(limit.Item2);
+                var totalSize = limitKeywordBytes.Length + offsetLength + countLength;
+
+                paramsSlice = scratchBufferBuilder.CreateArgSlice(totalSize);
+                var ptr = paramsSlice.ptr;
+
+                // LIMIT keyword
+                limitKeywordBytes.CopyTo(new Span<byte>(ptr, limitKeywordBytes.Length));
+                arguments.Add(new ArgSlice(ptr, limitKeywordBytes.Length));
+                ptr += limitKeywordBytes.Length;
 
                 // Offset
-                arguments.Add(scratchBufferBuilder.CreateArgSlice(limit.Item1));
+                Encoding.UTF8.GetBytes(limit.Item1, new Span<byte>(ptr, offsetLength));
+                arguments.Add(new ArgSlice(ptr, offsetLength));
+                ptr += offsetLength;
 
                 // Count
-                var limitCountLength = NumUtils.CountDigits(limit.Item2);
-                var limitCountSlice = scratchBufferBuilder.CreateArgSlice(limitCountLength);
-                NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
-                arguments.Add(limitCountSlice);
+                NumUtils.WriteInt64(limit.Item2, new Span<byte>(ptr, countLength));
+                arguments.Add(new ArgSlice(ptr, countLength));
             }
 
             parseState.InitializeWithArguments([.. arguments]);
@@ -507,11 +522,8 @@ namespace Garnet.server
             var output = new GarnetObjectStoreOutput();
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
 
-            for (var i = arguments.Count - 1; i > 1; i--)
-            {
-                var currSlice = arguments[i];
-                scratchBufferBuilder.RewindScratchBuffer(ref currSlice);
-            }
+            if (paramsSlice.Length > 0)
+                scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
             if (status == GarnetStatus.OK)
                 elements = ProcessRespArrayOutput(output, out error);
