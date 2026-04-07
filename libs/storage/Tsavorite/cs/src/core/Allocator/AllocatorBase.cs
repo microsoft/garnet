@@ -1899,7 +1899,7 @@ namespace Tsavorite.core
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, enableThrottling: throttleCheckpointFlushDelayMs >= 0, totalNumPages);
 
                 try
                 {
@@ -1917,7 +1917,11 @@ namespace Tsavorite.core
                         var flushSize = flushEndAddress - flushStartAddress;
                         if (flushSize <= 0)
                         {
+                            // No data to flush for this page. Signal completion and drain the
+                            // throttle semaphore so the next real page's WaitOneFlush is not
+                            // satisfied by this page's release.
                             flushCompletionTracker.CompleteFlush();
+                            flushCompletionTracker.WaitOneFlush();
                             continue;
                         }
 
