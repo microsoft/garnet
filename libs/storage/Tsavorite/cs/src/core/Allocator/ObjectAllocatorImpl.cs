@@ -733,17 +733,14 @@ namespace Tsavorite.core
                                                     // which will never be less than HeadAddress. So we do not need to worry about whatever values are in the inline
                                                     // record space between the current logicalAddress and HeadAddress.
                                                     extraRecordOffset = (int)(headAddress - (logicalAddress + logRecordSize));
+                                                    // Skip object serialization
+                                                    goto NextRecord;
                                                 }
                                                 else
                                                 {
                                                     asyncResult.flushRequestState = FlushRequestState.WriteNotIssued;
                                                     goto WritePage;
                                                 }
-
-                                                // The page's objectIdMap may have been cleared when HeadAddress advanced.
-                                                // Skip object serialization for this record; mark it invalid so recovery skips it.
-                                                logRecord.InfoRef.SetInvalid();
-                                                goto NextRecord;
                                             }
                                         }
 
