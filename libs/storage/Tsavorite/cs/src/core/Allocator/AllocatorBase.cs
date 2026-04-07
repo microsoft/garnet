@@ -1886,29 +1886,20 @@ namespace Tsavorite.core
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
+            var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            completedTask = completionTcs.Task;
+
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-            {
-                completedTask = Task.Run(FlushRunner);
-            }
+                _ = Task.Run(FlushRunner);
             else
-            {
-                try
-                {
-                    FlushRunner();
-                    completedTask = Task.CompletedTask;
-                }
-                catch (Exception ex)
-                {
-                    completedTask = Task.FromException(ex);
-                }
-            }
+                FlushRunner();
 
             void FlushRunner()
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
 
                 try
                 {
@@ -1958,7 +1949,7 @@ namespace Tsavorite.core
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
-                    throw;
+                    flushCompletionTracker.SetException(ex);
                 }
             }
         }

@@ -7,6 +7,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
@@ -75,6 +76,11 @@ namespace Tsavorite.core
     internal sealed class FlushCompletionTracker
     {
         /// <summary>
+        /// Task completion source to signal when all page flushes are done, or to fault on error.
+        /// </summary>
+        readonly TaskCompletionSource<bool> completionTcs;
+
+        /// <summary>
         /// Semaphore to wait on for per-page flush completion (throttling)
         /// </summary>
         readonly SemaphoreSlim flushSemaphore;
@@ -93,10 +99,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a flush completion tracker
         /// </summary>
-        /// <param name="flushSemaphore">Semaphore to release when each flush completes</param>
+        /// <param name="completionTcs">TaskCompletionSource to signal when all flushes complete or to fault on error</param>
+        /// <param name="flushSemaphore">Semaphore to release when each flush completes (for throttling)</param>
         /// <param name="count">Number of pages to flush</param>
-        public FlushCompletionTracker(SemaphoreSlim flushSemaphore, int count)
+        public FlushCompletionTracker(TaskCompletionSource<bool> completionTcs, SemaphoreSlim flushSemaphore, int count)
         {
+            this.completionTcs = completionTcs;
             this.flushSemaphore = flushSemaphore;
             this.count = count;
         }
@@ -107,8 +115,15 @@ namespace Tsavorite.core
         public void CompleteFlush()
         {
             _ = (flushSemaphore?.Release());
-            _ = Interlocked.Decrement(ref count);
+            if (Interlocked.Decrement(ref count) == 0)
+                _ = completionTcs.TrySetResult(true);
         }
+
+        /// <summary>
+        /// Signal that the flush failed with an exception.
+        /// </summary>
+        public void SetException(Exception ex)
+            => _ = completionTcs.TrySetException(ex);
 
         public void WaitOneFlush() => flushSemaphore?.Wait();
     }
