@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -740,5 +741,35 @@ namespace Garnet.server
 
             return len;
         }
+    }
+
+    /// <summary>
+    /// Header for Garnet Main Store inputs but for Vector element r/w/d ops
+    /// </summary>
+    public struct VectorInput : IStoreInput
+    {
+        public int SerializedLength => throw new NotImplementedException();
+
+        public int ReadDesiredSize { get; set; }
+
+        public int WriteDesiredSize { get; set; }
+
+        public int Index { get; set; }
+        public nint CallbackContext { get; set; }
+        public nint Callback { get; set; }
+
+        public bool AlignmentExpected { get; set; }
+
+        [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
+        public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
+
+        public int? MaxMigrationHeapAllocationSize { get; set; }
+
+        public VectorInput()
+        {
+        }
+
+        public unsafe int CopyTo(byte* dest, int length) => throw new NotImplementedException();
+        public unsafe int DeserializeFrom(byte* src) => throw new NotImplementedException();
     }
 }

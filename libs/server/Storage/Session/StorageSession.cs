@@ -43,6 +43,12 @@ namespace Garnet.server
         public ConsistentReadObjectTransactionalContext objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
+        /// Session Contexts for vector store
+        /// </summary>
+        public VectorBasicContext vectorBasicContext;
+        public VectorTransactionalContext vectorTransactionalContext;
+
+        /// <summary>
         /// Session Contexts for unified store
         /// </summary>
         public UnifiedBasicContext unifiedBasicContext;
@@ -74,6 +80,11 @@ namespace Garnet.server
         /// </summary>
         readonly ReadSessionState readSessionState;
 
+        /// <summary>
+        /// Vector manage instance
+        /// </summary>
+        public readonly VectorManager vectorManager;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             ScratchBufferAllocator scratchBufferAllocator,
@@ -81,6 +92,7 @@ namespace Garnet.server
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
             ReadSessionState readSessionState,
+            VectorManager vectorManager,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -93,6 +105,7 @@ namespace Garnet.server
             this.IsConsistentReadSession = readSessionState != null;
             this.readSessionState = readSessionState;
             parseState.Initialize();
+            this.vectorManager = vectorManager;
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 
@@ -117,6 +130,9 @@ namespace Garnet.server
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState, readSessionState);
             var unifiedStoreSession = db.Store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession);
 
+            var vectorFunctions = new VectorSessionFunctions(functionsState, readSessionState);
+            var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions);
+
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;
             consistentReadContext = session.ConsistentReadContext;
@@ -126,6 +142,9 @@ namespace Garnet.server
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
             unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
             unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
+
+            vectorBasicContext = vectorSession.BasicContext;
+            vectorTransactionalContext = vectorSession.TransactionalContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
@@ -148,6 +167,7 @@ namespace Garnet.server
             stringBasicContext.Session.Dispose();
             objectBasicContext.Session?.Dispose();
             unifiedBasicContext.Session?.Dispose();
+            vectorBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }

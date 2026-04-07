@@ -49,7 +49,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public readonly void GetInput(int i, out StringInput input)
-        => input = default;
+        => input = new(RespCommand.GET, arg1: -1);
 
         /// <inheritdoc/>
         public readonly void GetKey(int i, out FixedSpanByteKey key)

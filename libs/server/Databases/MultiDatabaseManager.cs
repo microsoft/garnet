@@ -139,6 +139,9 @@ namespace Garnet.server
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw;
                 }
+
+                // Once everything is setup, initialize the VectorManager
+                db.VectorManager.Initialize();
             }
         }
 
@@ -699,7 +702,7 @@ namespace Garnet.server
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, Logger, respProtocolVersion);
+            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, db.VectorManager, Logger, respProtocolVersion);
         }
 
         /// <inheritdoc/>
@@ -1037,6 +1040,21 @@ namespace Garnet.server
             if (storeTailAddress.HasValue)
             {
                 db.LastSaveStoreTailAddress = storeTailAddress.Value;
+            }
+        }
+
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                databasesMapSnapshot[dbId].VectorManager.ResumePostRecovery();
             }
         }
 

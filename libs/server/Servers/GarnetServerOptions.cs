@@ -512,11 +512,23 @@ namespace Garnet.server
 
         /// <summary>
         /// Check if the startup configuration allows the possibility of data loss during replication
-        /// NOTE: null device cannot guarantee or FastAofTruncate without OnDemandCheckpoint cannot guarantee the integrity of the AOF
-        /// since it is being truncated aggresively.
+        /// NOTE: null device cannot or FastAofTruncate without OnDemandCheckpoint cannot guarantee the integrity of replication
+        /// since the AOF is being truncated aggresively.
         /// </summary>
         public bool AllowDataLoss
             => UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint);
+
+        /// <summary>
+        /// If true, enable Vector Set commands.
+        /// 
+        /// This is a preview feature, subject to substantial change, and should not be relied upon.
+        /// </summary>
+        public bool EnableVectorSetPreview = false;
+
+        /// <summary>
+        /// Configure how many replay tasks are use to replay VectorSet operations.
+        /// </summary>
+        public int VectorSetReplayTaskCount = Environment.ProcessorCount;
 
         /// <summary>
         /// Get the directory name for database checkpoints

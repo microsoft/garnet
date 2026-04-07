@@ -60,11 +60,18 @@ namespace Garnet.test.Resp
             auth.HasACLSupport = false;
             auth.IsAuthenticated = false;
 
+            var serverStarted = false;
             int authCalls = 0;
 
             auth.AuthenticateCallback =
                 (p, u) =>
                 {
+                    if (!serverStarted)
+                    {
+                        auth.IsAuthenticated = true;
+                        return true;
+                    }
+
                     if (authCalls == 0)
                     {
                         ClassicAssert.AreEqual("default", Encoding.UTF8.GetString(u));
@@ -82,6 +89,8 @@ namespace Garnet.test.Resp
 
             using GarnetServer server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, authenticationSettings: authSettings);
             server.Start();
+
+            serverStarted = true;
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();

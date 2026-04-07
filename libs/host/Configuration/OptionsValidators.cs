@@ -11,6 +11,7 @@ using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet
@@ -620,6 +621,53 @@ namespace Garnet
                     if (forbiddenValues.Contains(otherOptionValueAsString, StringComparer.OrdinalIgnoreCase))
                     {
                         return new ValidationResult($"{validationContext.DisplayName} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
+                    }
+                }
+            }
+
+            return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
+    /// Validate that, when annotated property is set, another option has a least a minimum memory value.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class RequiresMinimumMemory : OptionValidationAttribute
+    {
+        private readonly string otherOptionName;
+        private readonly string minimumValue;
+        private readonly long minimumValueBytes;
+
+        internal RequiresMinimumMemory(string otherOptionName, string minimumValue)
+        {
+            this.otherOptionName = otherOptionName;
+            this.minimumValue = minimumValue;
+
+            minimumValueBytes = GarnetServerOptions.ParseSize(this.minimumValue, out var readBytes);
+            if (readBytes != minimumValue.Length)
+            {
+                // If we can't parse config, disable validation
+                minimumValueBytes = long.MinValue;
+            }
+        }
+
+        /// <inheritdoc/>
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            var optionIsSet = value is bool valueBool && valueBool;
+            if (optionIsSet)
+            {
+                var propAccessor = validationContext.ObjectInstance?.GetType()?.GetProperty(otherOptionName, BindingFlags.Instance | BindingFlags.Public);
+                if (propAccessor != null)
+                {
+                    var otherOptionValue = propAccessor.GetValue(validationContext.ObjectInstance);
+                    var otherOptionValueAsString = (otherOptionValue is string strVal ? strVal : otherOptionValue?.ToString())?.Trim();
+
+                    var otherOptionValueBytes = GarnetServerOptions.ParseSize(otherOptionValueAsString, out var readBytes);
+                    if (readBytes == otherOptionValueAsString.Length && otherOptionValueBytes < minimumValueBytes)
+                    {
+                        return new ValidationResult($"{validationContext.DisplayName} requires {otherOptionName} be at least '{minimumValue}'");
                     }
                 }
             }

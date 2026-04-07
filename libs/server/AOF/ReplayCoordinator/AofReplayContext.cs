@@ -11,11 +11,13 @@ namespace Garnet.server
     /// <summary>
     /// Sublog replay buffer (one for each sublog)
     /// </summary>
-    public class AofReplayContext
+    internal class AofReplayContext
     {
         public readonly List<byte[]> fuzzyRegionOps = [];
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
+
+        internal readonly RespServerSession respServerSession;
 
         public CustomProcedureInput customProcInput;
         public readonly SessionParseState parseState;
@@ -23,6 +25,10 @@ namespace Garnet.server
         public readonly byte[] objectOutputBuffer;
 
         public MemoryResult<byte> output;
+
+        public StringBasicContext StringBasicContext => respServerSession.storageSession.stringBasicContext;
+        public ObjectBasicContext ObjectBasicContext => respServerSession.storageSession.objectBasicContext.Session == null ? default : respServerSession.storageSession.objectBasicContext.Session.BasicContext;
+        public UnifiedBasicContext UnifiedBasicContext => respServerSession.storageSession.unifiedBasicContext;
 
         /// <summary>
         /// Fuzzy region of AOF is the region between the checkpoint start and end commit markers.
@@ -37,11 +43,24 @@ namespace Garnet.server
         /// <summary>
         /// AOF replay context constructor
         /// </summary>
-        public AofReplayContext()
+        public AofReplayContext(RespServerSession respServerSession)
         {
+            this.respServerSession = respServerSession;
             parseState.Initialize();
             customProcInput.parseState = parseState;
             objectOutputBuffer = GC.AllocateArray<byte>(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), pinned: true);
+        }
+
+        public void Dispose()
+        {
+            var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
+            foreach (var dbSession in databaseSessionsSnapshot)
+            {
+                dbSession.StorageSession.stringBasicContext.Session?.Dispose();
+                dbSession.StorageSession.objectBasicContext.Session?.Dispose();
+            }
+            respServerSession?.Dispose();
+            output.MemoryOwner?.Dispose();
         }
 
         /// <summary>

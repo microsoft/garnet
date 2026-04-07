@@ -101,6 +101,13 @@ namespace Garnet.server
                     CopyRespTo(value, ref output);
                     break;
 
+                case RespCommand.VADD:
+                case RespCommand.VSIM:
+                case RespCommand.VEMB:
+                case RespCommand.VGETATTR:
+                case RespCommand.VINFO:
+                case RespCommand.VREM:
+                case RespCommand.VDIM:
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
                     if (value.Length <= output.SpanByteAndMemory.Length)
@@ -724,6 +731,11 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
+            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg))
+            {
+                return;
+            }
+
             // We need this check because when we ingest records from the primary
             // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
             // will incorrectly modify the total length of value.
@@ -751,6 +763,12 @@ namespace Garnet.server
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
+
+            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg))
+            {
+                return;
+            }
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Log.Enqueue(

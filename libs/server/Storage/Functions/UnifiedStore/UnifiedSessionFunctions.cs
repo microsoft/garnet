@@ -31,18 +31,18 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void BeforeConsistentReadCallback(long hash)
-            => readSessionState.BeforeConsistentReadKeyCallback(hash);
+            => readSessionState?.BeforeConsistentReadKeyCallback(hash);
 
         /// <inheritdoc />
         public void AfterConsistentReadKeyCallback()
-            => readSessionState.AfterConsistentReadKeyCallback();
+            => readSessionState?.AfterConsistentReadKeyCallback();
 
         /// <inheritdoc />
         public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters)
-            => readSessionState.BeforeConsistentReadKeyBatch(parameters);
+            => readSessionState?.BeforeConsistentReadKeyBatch(parameters);
 
         /// <inheritdoc />
         public bool AfterConsistentReadKeyBatchCallback(int keyCount)
-            => readSessionState.AfterConsistentReadKeyBatch(keyCount);
+            => readSessionState != null && readSessionState.AfterConsistentReadKeyBatch(keyCount);
     }
 }

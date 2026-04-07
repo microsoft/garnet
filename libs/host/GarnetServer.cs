@@ -311,8 +311,14 @@ namespace Garnet
         {
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
+            var vectorManager = new VectorManager(
+                dbId,
+                serverOptions,
+                () => Provider.GetSession(WireFormat.ASCII, null),
+                loggerFactory
+            );
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)

@@ -59,12 +59,19 @@ namespace Garnet.common
                 , allows ref struct
 #endif
         {
+            // Special cases for FixedSpanByteKey
             if (typeof(TFirstKey) == typeof(FixedSpanByteKey))
             {
-                // Guarantee, irrespective of inlining, that
+                // Guarantee, irrespective of inlining, that we reduce to this
                 if (typeof(TSecondKey) == typeof(FixedSpanByteKey))
                 {
                     return SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
+                }
+
+                if (typeof(TSecondKey) == typeof(VectorElementKey))
+                {
+                    // Vector elements always has namespace, never equal
+                    return false;
                 }
 
                 if (k2.HasNamespace)
@@ -84,8 +91,39 @@ namespace Garnet.common
                 return SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
             }
 
-            // TODO: Special case Vector Set key type 
+            // Special cases for VectorElementKey
+            if (typeof(TFirstKey) == typeof(VectorElementKey))
+            {
+                // Guarantee, irrespective of inlining, that we reduce to this
+                if (typeof(TSecondKey) == typeof(VectorElementKey))
+                {
+                    return SpanByteComparer.StaticEquals(k1.NamespaceBytes, k2.NamespaceBytes) && SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
+                }
 
+                if (typeof(TSecondKey) == typeof(FixedSpanByteKey))
+                {
+                    // FixedSpanByteKey never has namespace, never equal
+                    return false;
+                }
+
+                if (!k2.HasNamespace)
+                {
+                    return false;
+                }
+
+                return SpanByteComparer.StaticEquals(k1.NamespaceBytes, k2.NamespaceBytes) && SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
+            }
+            else if (typeof(TSecondKey) == typeof(VectorElementKey))
+            {
+                if (!k1.HasNamespace)
+                {
+                    return false;
+                }
+
+                return SpanByteComparer.StaticEquals(k1.NamespaceBytes, k2.NamespaceBytes) && SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
+            }
+
+            // Generic cases
             if (k1.HasNamespace)
             {
                 if (!k2.HasNamespace)
@@ -115,14 +153,20 @@ namespace Garnet.common
                 , allows ref struct
 #endif
         {
+            // Guarantee, irrespective of inlining decisions, that FixedSpanByteKey is special cased
             if (typeof(TKey) == typeof(FixedSpanByteKey))
             {
-                // Guarantee, irrespective of inlining decisions, that FixedSpanByteKey is special cased
                 return SpanByteComparer.StaticGetHashCode64(key.KeyBytes);
             }
 
-            // TODO: For the Vector Set key type, don't bother checking HasNamespace since we know it's always set
+            // Guarantee, irrespective of inlining decisions, that VectorElementKey is special cased
+            if (typeof(TKey) == typeof(VectorElementKey))
+            {
+                // TODO: Better hash construction?
+                return SpanByteComparer.StaticGetHashCode64(key.KeyBytes) ^ SpanByteComparer.StaticGetHashCode64(key.NamespaceBytes);
+            }
 
+            // Generic cases
             if (key.HasNamespace)
             {
                 // TODO: Better hash construction?

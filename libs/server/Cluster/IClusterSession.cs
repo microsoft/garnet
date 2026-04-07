@@ -62,7 +62,7 @@ namespace Garnet.server
         /// <summary>
         /// Process cluster commands
         /// </summary>
-        unsafe void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
+        unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Reset cached slot verification result
@@ -76,8 +76,9 @@ namespace Garnet.server
         /// <param name="keySlice"></param>
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
+        /// <param name="waitForStableSlot"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, bool SessionAsking);
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot);
 
         /// <summary>
         /// Write cached slot verification message to output

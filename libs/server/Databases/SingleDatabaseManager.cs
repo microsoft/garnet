@@ -86,6 +86,9 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
+
+            // Once everything is setup, initialize the VectorManager
+            defaultDatabase.VectorManager.Initialize();
         }
 
         /// <inheritdoc/>
@@ -352,7 +355,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, SizeTracker, Logger, respProtocolVersion);
+            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, SizeTracker, DefaultDatabase.VectorManager, Logger, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
@@ -389,6 +392,12 @@ namespace Garnet.server
             {
                 AppendOnlyFile.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog, defaultDatabase.Id);
             }
+        }
+
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            defaultDatabase.VectorManager.ResumePostRecovery();
         }
 
         public override void Dispose()

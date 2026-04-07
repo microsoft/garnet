@@ -1184,6 +1184,18 @@ namespace Garnet.server
         GarnetStatus HyperLogLogMerge(ref StringInput input, out bool error);
 
         #endregion
+
+        #region VectorSet Methods
+        /// <summary>
+        /// Adds to (and may create) a vector set with the given parameters.
+        /// </summary>
+        GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Remove a member from a vector set, if it is present and the key exists.
+        /// </summary>
+        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+        #endregion
     }
 
     /// <summary>
@@ -1959,6 +1971,47 @@ namespace Garnet.server
 
         #endregion
 
+        #region Vector Sets
+
+        /// <summary>
+        /// Perform a similarity search given a vector and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap);
+
+        /// <summary>
+        /// Perform a similarity search given an element already in the vector set and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, PinnedSpanByte element, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap);
+
+        /// <summary>
+        /// Fetch the embedding of a given element in a Vector set.
+        /// </summary>
+        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances);
+
+        /// <summary>
+        /// Fetch the dimensionality of the given Vector Set.
+        /// 
+        /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
+        /// </summary>
+        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions);
+
+        /// <summary>
+        /// Fetch debugging information about the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
+
+        /// <summary>
+        /// Get the attributes associated with an element in the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes);
+
+        #endregion 
     }
 
     /// <summary>

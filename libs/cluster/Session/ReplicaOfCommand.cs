@@ -45,6 +45,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
                     UnsafeBumpAndWaitForEpochTransition();
+                    clusterProvider.storeWrapper.SuspendReplicaOnlyTasks().Wait();
                     clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
                 finally
@@ -84,6 +85,8 @@ namespace Garnet.cluster
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
                     clusterProvider.replicationManager.TryReplicateDisklessSync(this, syncOpts, out var errorMessage) :
                     clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, syncOpts, out errorMessage);
+
+                clusterProvider.storeWrapper.StartReplicaTasks();
 
                 if (!success)
                 {

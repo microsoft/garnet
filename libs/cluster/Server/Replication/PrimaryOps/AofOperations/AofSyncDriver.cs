@@ -237,8 +237,8 @@ namespace Garnet.cluster
         public Task<string> ExecuteAttachSync(SyncMetadata syncMetadata)
             => aofSyncTasks[0].garnetClient.ExecuteClusterAttachSync(syncMetadata.ToByteArray());
 
-        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
-            => aofSyncTasks[0].garnetClient.TryWriteRecordSpan(recordSpan, out task);
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, MigrationRecordSpanType type, out Task<string> task)
+            => aofSyncTasks[0].garnetClient.TryWriteRecordSpan(recordSpan, type, out task);
 
         public Task<string> SendAndResetIterationBuffer()
             => aofSyncTasks[0].garnetClient.SendAndResetIterationBuffer();

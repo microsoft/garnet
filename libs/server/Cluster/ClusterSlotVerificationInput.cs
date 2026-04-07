@@ -24,5 +24,14 @@ namespace Garnet.server
         /// Whether the command is a sub-command (affects key index offset calculation)
         /// </summary>
         public bool isSubCommand;
+
+        /// <summary>
+        /// If the command being executed requires a slot be STABLE for executing.
+        /// 
+        /// This requires special handling during migrations.
+        /// 
+        /// Currently only true for Vector Set commands that are writes.
+        /// </summary>
+        public bool waitForStableSlot;
     }
 }

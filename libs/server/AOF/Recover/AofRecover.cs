@@ -94,8 +94,6 @@ namespace Garnet.server
                 finally
                 {
                     aofReplayCoordinator.Dispose();
-                    foreach (var respServerSession in respServerSessions)
-                        respServerSession.Dispose();
                 }
 
                 return AofAddress.Create(storeWrapper.serverOptions.AofPhysicalSublogCount, -1);

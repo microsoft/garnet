@@ -48,7 +48,10 @@ namespace Garnet.server
         /// <para>See <see cref="StoreWrapper.IndexAutoGrowTask"/> for implementation.</para>
         /// </summary>
         IndexAutoGrowTask,
-
+        /// <summary>
+        /// Replays <see cref="RespCommand.VADD"/>s on replicas in parallel.
+        /// </summary>
+        VectorReplicationReplayTask,
         /// <summary>
         /// Task used to process advance time signals at replica
         /// </summary>
@@ -70,6 +73,7 @@ namespace Garnet.server
         /// </summary>
         static TaskTypeExtensions()
         {
+            TaskPlacementMapping[(int)TaskType.VectorReplicationReplayTask] = TaskPlacementCategory.Replica;
             TaskPlacementMapping[(int)TaskType.AofSizeLimitTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.CommitTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.CompactionTask] = TaskPlacementCategory.Primary;

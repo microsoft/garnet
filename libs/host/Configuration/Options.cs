@@ -204,11 +204,11 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
-        [IntRangeValidation(1, 64)]
+        [IntRangeValidation(1, 64, isRequired: false)]
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
         public int AofPhysicalSublogCount { get; set; }
 
-        [IntRangeValidation(1, 256)]
+        [IntRangeValidation(1, 256, isRequired: false)]
         [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
         public int AofReplayTaskCount { get; set; }
 
@@ -637,6 +637,14 @@ namespace Garnet
         [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
         public bool ClusterReplicaResumeWithData { get; set; }
 
+        [RequiresMinimumMemory(nameof(PageSize), minimumValue: "16K")]
+        [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableVectorSetPreview { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-replay-task-count")]
+        public int VectorSetReplayTaskCount { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -921,6 +929,8 @@ namespace Garnet
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
+                EnableVectorSetPreview = EnableVectorSetPreview,
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : VectorSetReplayTaskCount
             };
         }
 

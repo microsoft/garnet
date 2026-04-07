@@ -64,21 +64,22 @@ namespace Garnet.server
             readonly GarnetServerOptions serverOptions = serverOptions;
             readonly ConcurrentDictionary<BarrierKey, LeaderBarrier> leaderBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
-            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount);
+            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount, aofProcessor);
+            SingleWriterMultiReaderLock disposed = new();
+            readonly ILogger logger = logger;
 
             /// <summary>
             /// Replay context for replay subtask
             /// </summary>
             /// <param name="sublogIdx"></param>
             /// <returns></returns>
-            public AofReplayContext GetReplayContext(int sublogIdx) => aofReplayContext[sublogIdx];
-            readonly ILogger logger = logger;
+            internal AofReplayContext GetReplayContext(int sublogIdx) => aofReplayContext[sublogIdx];
 
-            internal static AofReplayContext[] InitializeReplayContext(int AofVirtualSublogCount)
+            internal static AofReplayContext[] InitializeReplayContext(int AofVirtualSublogCount, AofProcessor aofProcessor)
             {
                 var virtualSublogReplayContext = new AofReplayContext[AofVirtualSublogCount];
                 for (var i = 0; i < virtualSublogReplayContext.Length; i++)
-                    virtualSublogReplayContext[i] = new();
+                    virtualSublogReplayContext[i] = new(aofProcessor.ObtainServerSession());
                 return virtualSublogReplayContext;
             }
 
@@ -87,8 +88,9 @@ namespace Garnet.server
             /// </summary>
             public void Dispose()
             {
+                if (!disposed.TryWriteLock()) return;
                 foreach (var replayContext in aofReplayContext)
-                    replayContext.output.MemoryOwner?.Dispose();
+                    replayContext.Dispose();
             }
 
             /// <summary>
@@ -209,10 +211,18 @@ namespace Garnet.server
                 var fuzzyRegionOps = aofReplayContext[sublogIdx].fuzzyRegionOps;
                 if (fuzzyRegionOps.Count > 0)
                     logger?.LogInformation("Replaying sublogIdx: {sublogIdx} - {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", sublogIdx, fuzzyRegionOps.Count, storeVersion);
+                var replayContext = GetReplayContext(sublogIdx);
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
-                        _ = aofProcessor.ReplayOp(sublogIdx, aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, entryPtr, entry.Length, asReplica);
+                        _ = aofProcessor.ReplayOp(
+                            sublogIdx,
+                            replayContext.StringBasicContext,
+                            replayContext.ObjectBasicContext,
+                            replayContext.UnifiedBasicContext,
+                            entryPtr,
+                            entry.Length,
+                            asReplica);
                 }
             }
 
@@ -234,19 +244,26 @@ namespace Garnet.server
             /// Process provided transaction group
             /// </summary>
             /// <param name="sublogIdx"></param>
+            /// <param name="ptr"></param>
             /// <param name="asReplica"></param>
             /// <param name="txnGroup"></param>
             internal void ProcessTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, TransactionGroup txnGroup)
             {
+                var replayContext = GetReplayContext(sublogIdx);
                 if (!asReplica)
                 {
                     // If recovering reads will not expose partial transactions so we can replay without locking.
                     // Also we don't have to synchronize replay of sublogs because write ordering has been established at the time of enqueue.
-                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, txnGroup, asReplica);
+                    ProcessTransactionGroupOperations(
+                        aofProcessor,
+                        replayContext.StringBasicContext,
+                        replayContext.ObjectBasicContext,
+                        replayContext.UnifiedBasicContext,
+                        txnGroup, asReplica);
                 }
                 else
                 {
-                    var txnManager = aofProcessor.respServerSessions[sublogIdx].txnManager;
+                    var txnManager = replayContext.respServerSession.txnManager;
 
                     // Start by saving transaction keys for locking
                     SaveTransactionGroupKeysToLock(txnManager, txnGroup);
@@ -304,7 +321,14 @@ namespace Garnet.server
                     foreach (var entry in txnGroup.Operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(txnGroup.VirtualSublogIdx, stringContext, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
+                            _ = aofProcessor.ReplayOp(
+                                txnGroup.VirtualSublogIdx,
+                                stringContext,
+                                objectContext,
+                                unifiedContext,
+                                entryPtr,
+                                entry.Length,
+                                asReplica: asReplica);
                     }
                 }
             }
@@ -353,12 +377,13 @@ namespace Garnet.server
                 {
                     var curr = AofHeader.SkipHeader(entryPtr);
 
+                    var replayContext = aofReplayContext[sublogIdx];
                     // Reconstructing CustomProcedureInput
-                    _ = aofReplayContext[sublogIdx].customProcInput.DeserializeFrom(curr);
+                    _ = replayContext.customProcInput.DeserializeFrom(curr);
 
                     // Run the stored procedure with the reconstructed input
-                    var output = aofReplayContext[sublogIdx].output;
-                    _ = aofProcessor.respServerSessions[sublogIdx].RunCustomTxnProcAtReplica(id, ref aofReplayContext[sublogIdx].customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
+                    var output = replayContext.output;
+                    _ = replayContext.respServerSession.RunCustomTxnProcAtReplica(id, ref replayContext.customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
                 }
             }
 
