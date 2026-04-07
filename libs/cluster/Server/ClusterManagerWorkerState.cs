@@ -222,6 +222,10 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
                 }
             }
+
+            clusterProvider.storeWrapper.SuspendPrimaryOnlyTasks().Wait();
+            clusterProvider.storeWrapper.StartReplicaTasks();
+
             FlushConfig();
             return true;
         }

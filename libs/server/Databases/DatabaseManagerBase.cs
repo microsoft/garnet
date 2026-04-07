@@ -114,6 +114,9 @@ namespace Garnet.server
         public abstract IDatabaseManager Clone(bool enableAof);
 
         /// <inheritdoc/>
+        public abstract void RecoverVectorSets();
+
+        /// <inheritdoc/>
         public TsavoriteKV<StoreFunctions, StoreAllocator> Store => DefaultDatabase.Store;
 
         /// <inheritdoc/>
@@ -358,7 +361,8 @@ namespace Garnet.server
                 var scratchBufferBuilder = new ScratchBufferBuilder();
                 var scratchBufferAllocator = new ScratchBufferAllocator();
                 db.StoreCollectionDbStorageSession =
-                    new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, Logger);
+                    new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, db.VectorManager, Logger);
+
             }
 
             ExecuteHashCollect(db.StoreCollectionDbStorageSession);
@@ -603,7 +607,7 @@ namespace Garnet.server
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
                 var scratchBufferAllocator = new ScratchBufferAllocator();
-                db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, Logger);
+                db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, db.VectorManager, Logger);
             }
 
             var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
@@ -642,7 +646,7 @@ namespace Garnet.server
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
                 var scratchBufferAllocator = new ScratchBufferAllocator();
-                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, Logger);
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, db.VectorManager, Logger);
             }
 
             using var session = store.NewSession<FixedSpanByteKey, TInput, TOutput, long, ISessionFunctions<TInput, TOutput, long>>(sessionFunctions);

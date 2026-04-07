@@ -610,6 +610,7 @@ namespace Garnet.test.cluster
         {
             if (cancellationToken.IsCancellationRequested)
                 Assert.Fail(msg ?? "Cancellation Requested");
+
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 

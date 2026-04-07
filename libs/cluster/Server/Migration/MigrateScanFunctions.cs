@@ -3,6 +3,7 @@
 
 using System;
 using Garnet.common;
+using Garnet.server;
 using Tsavorite.core;
 
 namespace Garnet.cluster
@@ -35,12 +36,32 @@ namespace Garnet.cluster
                 if (!srcLogRecord.Info.Tombstone && ClusterSession.Expired(in srcLogRecord))
                     return true;
 
-                var key = srcLogRecord.Key;
-                var slot = HashSlotUtils.HashSlot(key);
+                if (srcLogRecord.HasNamespace)
+                {
+                    // Migrating a Vector Set element
+                    if (migrateOperation.ContainsNamespace(srcLogRecord.NamespaceBytes) && !migrateOperation.sketch.TryHashAndStore(srcLogRecord.NamespaceBytes, srcLogRecord.KeyBytes))
+                        return false;
+                }
+                else
+                {
+                    var key = srcLogRecord.Key;
+                    var slot = HashSlotUtils.HashSlot(key);
 
-                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
-                if (migrateOperation.Contains(slot) && !migrateOperation.sketch.TryHashAndStore(key))
-                    return false;
+                    // Check if key belongs to slot that is being migrated and if it can be added to our buffer
+                    if (migrateOperation.Contains(slot))
+                    {
+                        if (srcLogRecord.RecordType == VectorManager.RecordType)
+                        {
+                            // We can't delete the vector set _yet_ nor can we migrate it, 
+                            // we just need to remember it to migrate once the associated namespaces are all moved over
+                            migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray());
+                        }
+                        else if (!migrateOperation.sketch.TryHashAndStore(key))
+                        {
+                            return false;
+                        }
+                    }
+                }
 
                 return true;
             }

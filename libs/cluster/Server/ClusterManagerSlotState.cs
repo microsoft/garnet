@@ -466,7 +466,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="basicGarnetApi"></param>
         /// <param name="slots">Slot list</param>
-        public static unsafe void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
+        public static void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
         {
             using var iter = basicGarnetApi.IterateStore();
             while (iter.GetNext())

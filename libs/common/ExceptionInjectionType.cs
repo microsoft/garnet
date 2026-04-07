@@ -69,5 +69,17 @@ namespace Garnet.common
         /// Fail TakeOverAsPrimary during failover by throwing before BeginRecovery is called.
         /// </summary>
         Failover_Fail_TakeOverAsPrimary,
+        /// <summary>
+        /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
+        /// </summary>
+        VectorSet_Interrupt_Delete_0,
+        /// <summary>
+        /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
+        /// </summary>
+        VectorSet_Interrupt_Delete_1,
+        /// <summary>
+        /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
+        /// </summary>
+        VectorSet_Interrupt_Delete_2,
     }
 }
