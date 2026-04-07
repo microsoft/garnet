@@ -1076,7 +1076,7 @@ namespace Garnet.test
 
         [Test]
         [Repeat(10)]
-        public void ListPushPopStressTest()
+        public async Task ListPushPopStressTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1102,22 +1102,22 @@ namespace Garnet.test
                         await db.ListLeftPushAsync(key, j).ConfigureAwait(false);
                 });
 
-                tasks[i + 1] = Task.Run(() =>
+                tasks[i + 1] = Task.Run(async () =>
                 {
                     var key = keyArray[idx >> 1];
                     for (int j = 0; j < ppCount; j++)
                     {
-                        var value = db.ListRightPop(key);
+                        var value = await db.ListRightPopAsync(key).ConfigureAwait(false);
                         while (value.IsNull)
                         {
-                            Thread.Yield();
-                            value = db.ListRightPop(key);
+                            await Task.Delay(1).ConfigureAwait(false);
+                            value = await db.ListRightPopAsync(key).ConfigureAwait(false);
                         }
                         ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                     }
                 });
             }
-            Task.WaitAll(tasks);
+            await Task.WhenAll(tasks);
 
             foreach (var key in keyArray)
             {

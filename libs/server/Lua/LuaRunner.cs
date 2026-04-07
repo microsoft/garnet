@@ -1239,6 +1239,7 @@ namespace Garnet.server
                     {
                         var _key = scratchBufferBuilder.CreateArgSlice(key);
                         txnKeyEntries.AddKey(_key, Tsavorite.core.LockType.Exclusive);
+                        scratchBufferBuilder.RewindScratchBuffer(_key);
                     }
 
                     adapter = new(scratchBufferBuilder);

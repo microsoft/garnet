@@ -1002,7 +1002,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="newReadOnlyAddress">New ReadOnlyAddress</param>
         /// <param name="newHeadAddress">New HeadAddress</param>
-        /// <param name="waitForEviction">Wait for operation to complete (may involve page flushing and closing)</param>
+        /// <param name="waitForEviction">Wait for eviction to complete, i.e., until ClosedUntilAddress catches up (may involve page flushing, closing, and eviction callbacks)</param>
         public void ShiftAddressesWithWait(long newReadOnlyAddress, long newHeadAddress, bool waitForEviction)
         {
             Debug.Assert(newHeadAddress <= newReadOnlyAddress, $"new HeadAddress {newHeadAddress} must not be ahead of newReadOnlyAddress {newReadOnlyAddress}");
@@ -1022,14 +1022,16 @@ namespace Tsavorite.core
                     epoch.Suspend();
                 }
 
-                while (waitForEviction && SafeHeadAddress < newHeadAddress)
+                while (waitForEviction && ClosedUntilAddress < newHeadAddress)
                     _ = Thread.Yield();
                 return;
             }
 
             // Epoch already protected, so launch the shift and wait for eviction to complete
             _ = ShiftHeadAddress(newHeadAddress);
-            while (waitForEviction && SafeHeadAddress < newHeadAddress)
+
+            // We wait for ClosedUntilAddress here to ensure eviction scan is complete
+            while (waitForEviction && ClosedUntilAddress < newHeadAddress)
                 epoch.ProtectAndDrain();
         }
 
