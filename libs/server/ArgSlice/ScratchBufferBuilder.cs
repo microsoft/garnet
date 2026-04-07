@@ -42,6 +42,14 @@ namespace Garnet.server
         /// </summary>
         int scratchBufferOffset;
 
+#if DEBUG
+        /// <summary>
+        /// Tracks number of outstanding ArgSlice views that have not been rewound.
+        /// Used to detect invalid scratch buffer expansion while views are active.
+        /// </summary>
+        int outstandingSlices;
+#endif
+
         /// <summary>Current offset in scratch buffer</summary>
         internal int ScratchBufferOffset => scratchBufferOffset;
 
@@ -52,7 +60,13 @@ namespace Garnet.server
         /// <summary>
         /// Reset scratch buffer - loses all ArgSlice instances created on the scratch buffer
         /// </summary>
-        public void Reset() => scratchBufferOffset = 0;
+        public void Reset()
+        {
+            scratchBufferOffset = 0;
+#if DEBUG
+            outstandingSlices = 0;
+#endif
+        }
 
         /// <summary>
         /// Return the full buffer managed by this <see cref="ScratchBufferBuilder"/>.
@@ -70,6 +84,9 @@ namespace Garnet.server
             {
                 scratchBufferOffset -= slice.Length;
                 slice = default; // invalidate the given ArgSlice
+#if DEBUG
+                outstandingSlices--;
+#endif
                 return true;
             }
             return false;
@@ -86,6 +103,9 @@ namespace Garnet.server
                 return false;
 
             scratchBufferOffset = offset;
+#if DEBUG
+            outstandingSlices = 0;
+#endif
             return true;
         }
 
@@ -94,11 +114,17 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice CreateArgSlice(ReadOnlySpan<byte> bytes)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0, "Cannot create new ArgSlice while there are outstanding slices");
+#endif
             ExpandScratchBufferIfNeeded(bytes.Length);
 
             var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, bytes.Length);
             bytes.CopyTo(retVal.Span);
             scratchBufferOffset += bytes.Length;
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -116,12 +142,18 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice CreateArgSlice(string str)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0, "Cannot create new ArgSlice while there are outstanding slices");
+#endif
             int length = Encoding.UTF8.GetByteCount(str);
             ExpandScratchBufferIfNeeded(length);
 
             var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             Encoding.UTF8.GetBytes(str, retVal.Span);
             scratchBufferOffset += length;
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -147,52 +179,13 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice values (arg1 and arg2)
-        /// </summary>
-        public ArgSlice FormatScratchAsResp(int headerSize, ArgSlice arg1, ArgSlice arg2)
-        {
-            int length = headerSize + GetRespFormattedStringLength(arg1) + GetRespFormattedStringLength(arg2);
-            ExpandScratchBufferIfNeeded(length);
-
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
-            retVal.Span[..headerSize].Clear(); // Clear the header
-
-            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
-            Debug.Assert(success);
-            success = RespWriteUtils.TryWriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
-            Debug.Assert(success);
-
-            scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-            return retVal;
-        }
-
-        /// <summary>
-        /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice value arg1
-        /// </summary>
-        public ArgSlice FormatScratchAsResp(int headerSize, ArgSlice arg1)
-        {
-            int length = headerSize + GetRespFormattedStringLength(arg1);
-            ExpandScratchBufferIfNeeded(length);
-
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
-            retVal.Span[..headerSize].Clear(); // Clear the header
-
-            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
-            Debug.Assert(success);
-
-            scratchBufferOffset += length;
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-            return retVal;
-        }
-
-        /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by the specified ArgSlice (arg)
         /// </summary>
         public ArgSlice FormatScratch(int headerSize, ArgSlice arg)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0, "Cannot create new ArgSlice while there are outstanding slices");
+#endif
             int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
@@ -204,6 +197,9 @@ namespace Garnet.server
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -212,25 +208,68 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice CreateArgSlice(int length)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0, "Cannot create new ArgSlice while there are outstanding slices");
+#endif
             ExpandScratchBufferIfNeeded(length);
 
             var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
         /// <summary>
-        /// View remaining scratch space (of specified minimum length) as an ArgSlice
-        /// Does NOT move the offset forward
+        /// Create an ArgSlice as an offset-length pair, useful when the buffer may be reallocated
+        /// and pointer-based ArgSlice would become invalid.
         /// </summary>
-        /// <returns></returns>
+        /// <param name="bytes">Input bytes</param>
+        /// <returns>Tuple of (Offset, Length) in the scratch buffer</returns>
+        public (int Offset, int Length) CreateArgSliceAsOffset(ReadOnlySpan<byte> bytes)
+        {
+            ExpandScratchBufferIfNeeded(bytes.Length);
+
+            var offset = scratchBufferOffset;
+            bytes.CopyTo(new Span<byte>(scratchBufferHead + scratchBufferOffset, bytes.Length));
+            scratchBufferOffset += bytes.Length;
+            return (offset, bytes.Length);
+        }
+
+        /// <summary>
+        /// Create an ArgSlice as an offset-length pair of specified length, leaves contents as is.
+        /// </summary>
+        /// <param name="length">Length of slice</param>
+        /// <returns>Tuple of (Offset, Length) in the scratch buffer</returns>
+        public (int Offset, int Length) CreateArgSliceAsOffset(int length)
+        {
+            ExpandScratchBufferIfNeeded(length);
+
+            var offset = scratchBufferOffset;
+            scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+            return (offset, length);
+        }
+
+        /// <summary>
+        /// View remaining scratch space (of specified minimum length) as an ArgSlice.
+        /// Does NOT move the offset forward. This is an immediate-use view that
+        /// becomes invalid after any subsequent allocation or buffer expansion.
+        /// </summary>
+        /// <returns>ArgSlice view of remaining space</returns>
         public ArgSlice ViewRemainingArgSlice(int minLength = 0)
         {
             ExpandScratchBufferIfNeeded(minLength);
             return new ArgSlice(scratchBufferHead + scratchBufferOffset, scratchBuffer.Length - scratchBufferOffset);
         }
 
+        /// <summary>
+        /// View the full used portion of the scratch buffer as an ArgSlice.
+        /// This is an immediate-use view that becomes invalid after any
+        /// subsequent allocation or buffer expansion.
+        /// </summary>
         public ArgSlice ViewFullArgSlice()
         {
             return new ArgSlice(scratchBufferHead, scratchBufferOffset);
@@ -241,6 +280,9 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice FormatScratch(int headerSize, ReadOnlySpan<byte> arg)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0, "Cannot create new ArgSlice while there are outstanding slices");
+#endif
             int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
@@ -252,6 +294,9 @@ namespace Garnet.server
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+#if DEBUG
+            outstandingSlices++;
+#endif
             return retVal;
         }
 
@@ -314,16 +359,6 @@ namespace Garnet.server
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
-        /// <summary>
-        /// Get length of a RESP Bulk-String formatted version of the specified ArgSlice
-        /// RESP format: $[size]\r\n[value]\r\n
-        /// Total size: 1 + [number of digits in the size value] + 2 + [size of value] + 2
-        /// </summary>
-        /// <param name="slice"></param>
-        /// <returns></returns>
-        static int GetRespFormattedStringLength(ArgSlice slice)
-            => 1 + NumUtils.CountDigits(slice.Length) + 2 + slice.Length + 2;
-
         void ExpandScratchBufferIfNeeded(int newLength)
         {
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
@@ -332,6 +367,9 @@ namespace Garnet.server
 
         void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
+#if DEBUG
+            Debug.Assert(outstandingSlices == 0, "Cannot expand scratch buffer while there are outstanding slices");
+#endif
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
@@ -345,20 +383,6 @@ namespace Garnet.server
             }
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
-        }
-
-        /// <summary>
-        /// Returns a new <see cref="ArgSlice"/>
-        /// with the <paramref name="length"/> bytes of the buffer;
-        /// these are the most recently added bytes.
-        /// </summary>
-        /// <param name="length">Length for the new slice</param>
-        /// <remarks>This is called by functions that add multiple items to the buffer,
-        /// after all items have been added and all reallocations have been done.
-        /// </remarks>
-        public ArgSlice GetSliceFromTail(int length)
-        {
-            return new ArgSlice(scratchBufferHead + scratchBufferOffset - length, length);
         }
 
         /// <summary>

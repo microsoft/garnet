@@ -49,7 +49,7 @@ namespace Garnet.server
         public BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorContext;
         public LockableContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorLockableContext;
 
-        public readonly ScratchBufferBuilder scratchBufferBuilder;
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
 

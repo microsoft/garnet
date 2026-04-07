@@ -2019,17 +2019,9 @@ namespace Garnet.server
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
-        /// Retrieve the current scratch buffer offset.
+        /// Resets the scratch buffer allocator, freeing all temporary allocations.
         /// </summary>
-        /// <returns>Current offset</returns>
-        int GetScratchBufferOffset();
-
-        /// <summary>
-        /// Resets the scratch buffer to the given offset.
-        /// </summary>
-        /// <param name="offset">Offset to reset to</param>
-        /// <returns>True if successful, else false</returns>
-        bool ResetScratchBuffer(int offset);
+        void ResetScratchBuffer();
 
         #endregion
 

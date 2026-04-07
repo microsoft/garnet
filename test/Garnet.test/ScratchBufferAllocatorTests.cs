@@ -20,7 +20,7 @@ namespace Garnet.test
             var string2 = new string('b', 65);
             var string3 = new string('c', 6000);
 
-            var sam = new ScratchBufferAllocator(maxInitialCapacity: maxInitialCapacity);
+            var sam = new ScratchBufferAllocator(minSizeBuffer: 2, maxInitialCapacity: maxInitialCapacity);
 
             // Data of length 5 - SAM creates a buffer of size 8
             var as1 = sam.CreateArgSlice(string1);

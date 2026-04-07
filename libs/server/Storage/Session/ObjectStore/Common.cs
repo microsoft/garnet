@@ -599,6 +599,7 @@ namespace Garnet.server
         /// When output uses heap Memory (which is not pinned), copies ArgSlice array data
         /// to the scratch buffer allocator (which uses pinned arrays) so that pointers remain valid.
         /// Must be called inside the fixed block while source memory is still pinned.
+        /// Uses a single allocation to avoid scratch buffer reallocation during the copy.
         /// </summary>
         unsafe void CopyArgSliceArrayToScratchBuffer(ArgSlice[] elements, ref GarnetObjectStoreOutput output)
         {
@@ -630,6 +631,7 @@ namespace Garnet.server
         /// When output uses heap Memory (which is not pinned), copies ArgSlice pair data
         /// to the scratch buffer allocator (which uses pinned arrays) so that pointers remain valid.
         /// Must be called inside the fixed block while source memory is still pinned.
+        /// Uses a single allocation to avoid scratch buffer reallocation during the copy.
         /// </summary>
         unsafe void CopyArgSlicePairsToScratchBuffer((ArgSlice member, ArgSlice score)[] pairs, ref GarnetObjectStoreOutput output)
         {

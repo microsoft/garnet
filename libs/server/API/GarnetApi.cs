@@ -501,12 +501,8 @@ namespace Garnet.server
          => storageSession.ObjectScan(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public int GetScratchBufferOffset()
-            => storageSession.scratchBufferBuilder.ScratchBufferOffset;
-
-        /// <inheritdoc />
-        public bool ResetScratchBuffer(int offset)
-            => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
+        public void ResetScratchBuffer()
+            => storageSession.scratchBufferAllocator.Reset();
         #endregion
 
         #region VectorSet commands

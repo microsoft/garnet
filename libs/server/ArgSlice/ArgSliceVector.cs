@@ -35,11 +35,9 @@ namespace Garnet.server
             if (Count + 1 >= maxCount)
                 return false;
 
-            var insertLoc = bufferManager.ScratchBufferOffset;
+            var (insertLoc, length) = bufferManager.CreateArgSliceAsOffset(item);
 
-            var sb = bufferManager.CreateArgSlice(item);
-
-            items.Add((insertLoc, sb.Length, HasNamespace: false));
+            items.Add((insertLoc, length, HasNamespace: false));
             return true;
         }
 
@@ -57,9 +55,8 @@ namespace Garnet.server
             if (Count + 1 >= maxCount)
                 return false;
 
-            var insertLoc = bufferManager.ScratchBufferOffset;
-
-            var argSlice = bufferManager.CreateArgSlice(item.Length + 1);
+            var (insertLoc, _) = bufferManager.CreateArgSliceAsOffset(item.Length + 1);
+            var argSlice = new ArgSlice(bufferManager.ViewFullArgSlice().ptr + insertLoc, item.Length + 1);
             var sb = argSlice.SpanByte;
 
             sb.MarkNamespace();
