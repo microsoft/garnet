@@ -1916,7 +1916,10 @@ namespace Tsavorite.core
                             flushEndAddress = endLogicalAddress;
                         var flushSize = flushEndAddress - flushStartAddress;
                         if (flushSize <= 0)
+                        {
+                            flushCompletionTracker.CompleteFlush();
                             continue;
+                        }
 
                         var asyncResult = new PageAsyncFlushResult<Empty>
                         {
