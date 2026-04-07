@@ -253,6 +253,8 @@ namespace Garnet.server
                             return default;
                         elements = [PinnedSpanByte.FromPinnedPointer(result, len)];
                     }
+
+                    CopyPinnedSpanByteArrayToScratchBuffer(elements, ref output);
                 }
             }
             finally
@@ -385,6 +387,8 @@ namespace Garnet.server
                             return default;
                         elements = [PinnedSpanByte.FromPinnedPointer(result, len)];
                     }
+
+                    CopyPinnedSpanByteArrayToScratchBuffer(elements, ref output);
                 }
             }
             finally
@@ -533,6 +537,78 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// When output uses heap Memory (which is not pinned), copies PinnedSpanByte array data
+        /// to the scratch buffer (which uses pinned arrays) so that pointers remain valid.
+        /// Must be called inside the fixed block while source memory is still pinned.
+        /// Uses a single allocation to avoid scratch buffer reallocation during the copy.
+        /// </summary>
+        unsafe void CopyPinnedSpanByteArrayToScratchBuffer(PinnedSpanByte[] elements, ref ObjectOutput output)
+        {
+            if (elements == null || elements.Length == 0 || output.SpanByteAndMemory.IsSpanByte)
+                return;
+
+            var totalSize = 0;
+            for (var i = 0; i < elements.Length; i++)
+                totalSize += elements[i].Length;
+
+            if (totalSize == 0)
+                return;
+
+            var buf = scratchBufferAllocator.CreateArgSlice(totalSize);
+            var bufPtr = buf.ptr;
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var elemLen = elements[i].Length;
+                if (elemLen > 0)
+                {
+                    elements[i].ReadOnlySpan.CopyTo(new Span<byte>(bufPtr, elemLen));
+                    elements[i] = PinnedSpanByte.FromPinnedPointer(bufPtr, elemLen);
+                    bufPtr += elemLen;
+                }
+            }
+        }
+
+        /// <summary>
+        /// When output uses heap Memory (which is not pinned), copies PinnedSpanByte pair data
+        /// to the scratch buffer (which uses pinned arrays) so that pointers remain valid.
+        /// Must be called inside the fixed block while source memory is still pinned.
+        /// Uses a single allocation to avoid scratch buffer reallocation during the copy.
+        /// </summary>
+        unsafe void CopyPinnedSpanBytePairsToScratchBuffer((PinnedSpanByte member, PinnedSpanByte score)[] pairs, ref ObjectOutput output)
+        {
+            if (pairs == null || pairs.Length == 0 || output.SpanByteAndMemory.IsSpanByte)
+                return;
+
+            var totalSize = 0;
+            for (var i = 0; i < pairs.Length; i++)
+                totalSize += pairs[i].member.Length + pairs[i].score.Length;
+
+            if (totalSize == 0)
+                return;
+
+            var buf = scratchBufferAllocator.CreateArgSlice(totalSize);
+            var bufPtr = buf.ptr;
+            for (var i = 0; i < pairs.Length; i++)
+            {
+                var memberLen = pairs[i].member.Length;
+                if (memberLen > 0)
+                {
+                    pairs[i].member.ReadOnlySpan.CopyTo(new Span<byte>(bufPtr, memberLen));
+                    pairs[i].member = PinnedSpanByte.FromPinnedPointer(bufPtr, memberLen);
+                    bufPtr += memberLen;
+                }
+
+                var scoreLen = pairs[i].score.Length;
+                if (scoreLen > 0)
+                {
+                    pairs[i].score.ReadOnlySpan.CopyTo(new Span<byte>(bufPtr, scoreLen));
+                    pairs[i].score = PinnedSpanByte.FromPinnedPointer(bufPtr, scoreLen);
+                    bufPtr += scoreLen;
+                }
+            }
+        }
+
+        /// <summary>
         /// Processes RESP output as pairs of score and member.
         /// </summary>
         unsafe (PinnedSpanByte member, PinnedSpanByte score)[] ProcessRespArrayOutputAsPairs(ObjectOutput output, out string error)
@@ -577,6 +653,8 @@ namespace Garnet.server
                             result[i].score = PinnedSpanByte.FromPinnedPointer(element, len);
                         }
                     }
+
+                    CopyPinnedSpanBytePairsToScratchBuffer(result, ref output);
                 }
             }
             finally
@@ -611,6 +689,12 @@ namespace Garnet.server
                         || len < 0)
                         return default;
                     result = PinnedSpanByte.FromPinnedPointer(element, len);
+
+                    // When output uses heap Memory, the finally block will dispose it, invalidating
+                    // the PinnedSpanByte pointer. Copy data to scratch buffer while still pinned.
+                    // CreateArgSlice allocates pinned space and copies the data into it.
+                    if (result.Length > 0 && !output.SpanByteAndMemory.IsSpanByte)
+                        result = scratchBufferAllocator.CreateArgSlice(result.ReadOnlySpan);
                 }
             }
             finally

@@ -22,43 +22,51 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    /// <summary>
+    /// Validates that data matches the deterministic pattern (i % 251) used by scratch buffer tests.
+    /// </summary>
+    internal static class ScratchBufferTestHelper
+    {
+        internal static bool ValidateContent(ReadOnlySpan<byte> data)
+        {
+            if (data.Length == 0) return false;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] != (byte)(i % 251))
+                    return false;
+            }
+            return true;
+        }
+    }
+
     public class LargeGet : CustomProcedure
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
-            {
-                bool status = garnetApi.ResetScratchBuffer(buffOffset);
-                if (!status)
-                    WriteError(ref output, "ERR ResetScratchBuffer failed");
-
-                return status;
-            }
-
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            var buffOffset = garnetApi.GetScratchBufferOffset();
+            // Test SBA offset management: GET output goes to ScratchBufferAllocator
             for (var i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                {
-                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
-                        return false;
-                }
+                    garnetApi.ResetScratchBuffer();
             }
 
-            buffOffset = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out PinnedSpanByte outval1);
             garnetApi.GET(key, out PinnedSpanByte outval2);
-            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+            garnetApi.ResetScratchBuffer();
 
-            buffOffset = garnetApi.GetScratchBufferOffset();
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
+            if (!ScratchBufferTestHelper.ValidateContent(value.ReadOnlySpan))
+            {
+                WriteError(ref output, "ERR HashGet returned corrupted data");
+                return false;
+            }
+            garnetApi.ResetScratchBuffer();
 
             return true;
         }
@@ -77,18 +85,13 @@ namespace Garnet.test
         {
             int offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
-            var buffOffset = garnetApi.GetScratchBufferOffset();
+
+            // Test SBA offset management: GET output goes to ScratchBufferAllocator
             for (int i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
-                {
-                    if (!garnetApi.ResetScratchBuffer(buffOffset))
-                    {
-                        WriteError(ref output, "ERR ResetScratchBuffer failed");
-                        return;
-                    }
-                }
+                    garnetApi.ResetScratchBuffer();
             }
         }
     }
@@ -100,24 +103,26 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            var buffOffset1 = garnetApi.GetScratchBufferOffset();
+            // Test scratch buffer reset with GET (output goes to ScratchBufferAllocator)
             garnetApi.GET(key, out PinnedSpanByte outval1);
-
-            var buffOffset2 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out PinnedSpanByte outval2);
 
-            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            // Verify GET results contain valid data (i % 251 pattern)
+            if (!ScratchBufferTestHelper.ValidateContent(outval1.ReadOnlySpan))
             {
-                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                WriteError(ref output, "ERR GET returned corrupted data for outval1");
                 return false;
             }
 
-            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
-            if (garnetApi.ResetScratchBuffer(buffOffset2))
+            // Verify both results are identical (validates data integrity)
+            if (!outval1.ReadOnlySpan.SequenceEqual(outval2.ReadOnlySpan))
             {
-                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
+                WriteError(ref output, "ERR GET results should be identical");
                 return false;
             }
+
+            // Reset scratch buffer (full reset, discards all GET results)
+            garnetApi.ResetScratchBuffer();
 
             return true;
         }
@@ -824,6 +829,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -848,6 +855,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -870,6 +879,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
+            for (int i = 0; i < value.Length; i++)
+                value[i] = (byte)(i % 251); // deterministic pattern for content validation
             db.StringSet(key, value);
 
             var result = db.Execute("OUTOFORDERFREE", key);
