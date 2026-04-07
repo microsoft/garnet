@@ -111,8 +111,6 @@ namespace Garnet.server
 
             var status = storageApi.SET_Conditional(key, ref input);
 
-            scratchBufferBuilder.RewindScratchBuffer(ref valArgSlice);
-
             if (status is GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

@@ -22,48 +22,43 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    public static class ScratchBufferTestHelper
-    {
-        public static void ValidateContent(ArgSlice value, int length)
-        {
-            if (value.Length != length)
-                throw new Exception($"Expected length {length}, got {value.Length}");
-            for (var i = 0; i < length; i++)
-            {
-                if (value.ReadOnlySpan[i] != (byte)(i % 251))
-                    throw new Exception($"Content mismatch at index {i}: expected {(byte)(i % 251)}, got {value.ReadOnlySpan[i]}");
-            }
-        }
-    }
-
     public class LargeGet : CustomProcedure
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
+            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
+            {
+                bool status = garnetApi.ResetScratchBuffer(buffOffset);
+                if (!status)
+                    WriteError(ref output, "ERR ResetScratchBuffer failed");
+
+                return status;
+            }
+
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
+            var buffOffset = garnetApi.GetScratchBufferOffset();
             for (var i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out var outval);
-                ScratchBufferTestHelper.ValidateContent(outval, 10_000);
                 if (i % 100 == 0)
                 {
-                    garnetApi.ResetScratchBuffer();
+                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
+                        return false;
                 }
             }
 
+            buffOffset = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);
-            ScratchBufferTestHelper.ValidateContent(outval1, 10_000);
             garnetApi.GET(key, out var outval2);
-            ScratchBufferTestHelper.ValidateContent(outval2, 10_000);
-            garnetApi.ResetScratchBuffer();
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
+            buffOffset = garnetApi.GetScratchBufferOffset();
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            ScratchBufferTestHelper.ValidateContent(value, 10_000);
-            garnetApi.ResetScratchBuffer();
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             return true;
         }
@@ -82,13 +77,17 @@ namespace Garnet.test
         {
             int offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
+            var buffOffset = garnetApi.GetScratchBufferOffset();
             for (int i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out var outval);
-                ScratchBufferTestHelper.ValidateContent(outval, 10_000);
                 if (i % 100 == 0)
                 {
-                    garnetApi.ResetScratchBuffer();
+                    if (!garnetApi.ResetScratchBuffer(buffOffset))
+                    {
+                        WriteError(ref output, "ERR ResetScratchBuffer failed");
+                        return;
+                    }
                 }
             }
         }
@@ -101,16 +100,24 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
+            var buffOffset1 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);
-            ScratchBufferTestHelper.ValidateContent(outval1, 10_000);
 
+            var buffOffset2 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval2);
-            ScratchBufferTestHelper.ValidateContent(outval2, 10_000);
 
-            garnetApi.ResetScratchBuffer();
+            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer failed");
+                return false;
+            }
 
-            garnetApi.GET(key, out var outval3);
-            ScratchBufferTestHelper.ValidateContent(outval3, 10_000);
+            // Previous reset call would have shrunk the buffer. This call should fail otherwise it will expand the buffer.
+            if (garnetApi.ResetScratchBuffer(buffOffset2))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer shouldn't expand the buffer");
+                return false;
+            }
 
             return true;
         }
@@ -818,8 +825,6 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
-            for (var i = 0; i < value.Length; i++)
-                value[i] = (byte)(i % 251);
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -844,8 +849,6 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
-            for (var i = 0; i < value.Length; i++)
-                value[i] = (byte)(i % 251);
             db.StringSet(key, value);
             db.HashSet(hashKey, [new HashEntry(hashField, value)]);
 
@@ -868,8 +871,6 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             byte[] value = new byte[10_000];
-            for (var i = 0; i < value.Length; i++)
-                value[i] = (byte)(i % 251);
             db.StringSet(key, value);
 
             var result = db.Execute("OUTOFORDERFREE", key);

@@ -1240,7 +1240,6 @@ namespace Garnet.server
                         txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
                         if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                             txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
-                        scratchBufferBuilder.RewindScratchBuffer(ref _key);
                     }
 
                     adapter = new(scratchBufferBuilder);

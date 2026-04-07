@@ -90,19 +90,19 @@ namespace Garnet.server
             value = default;
 
             var _key = key.SpanByte;
-            var _output = new SpanByteAndMemory { SpanByte = scratchBufferAllocator.ViewRemainingArgSlice().SpanByte };
+            var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice().SpanByte };
 
             var ret = GET(ref _key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.IsSpanByte)
                 {
-                    value = scratchBufferAllocator.CreateArgSlice(_output.AsReadOnlySpan());
+                    value = scratchBufferBuilder.FormatScratch(0, _output.AsReadOnlySpan());
                     _output.Memory.Dispose();
                 }
                 else
                 {
-                    value = scratchBufferAllocator.CreateArgSlice(_output.Length);
+                    value = scratchBufferBuilder.CreateArgSlice(_output.Length);
                 }
             }
             return ret;
