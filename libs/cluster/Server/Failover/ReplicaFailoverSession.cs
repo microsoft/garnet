@@ -337,7 +337,10 @@ namespace Garnet.cluster
                     try
                     {
                         logger?.LogWarning("Attempting to reset primary after failed failover");
-                        _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                        if (primaryClient != null)
+                        {
+                            _ = await primaryClient.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                        }
                     }
                     catch (Exception ex)
                     {
