@@ -62,7 +62,7 @@ namespace Garnet.server
             BinaryPrimitives.WriteInt32LittleEndian(toWrite[(sizeof(int) + namespaceBytes.Length)..], item.Length);
             item.CopyTo(toWrite[(sizeof(int) + namespaceBytes.Length + sizeof(int))..]);
 
-            var entry = bufferManager.CreateArgSliceAsOffset(item);
+            var entry = bufferManager.CreateArgSliceAsOffset(toWrite);
             items.Add((entry, true));
             return true;
         }
