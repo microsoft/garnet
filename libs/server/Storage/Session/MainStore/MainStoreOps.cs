@@ -90,21 +90,21 @@ namespace Garnet.server
             value = default;
 
             var _key = key.SpanByte;
-            var _output = new SpanByteAndMemory { SpanByte = scratchBufferAllocator.ViewRemainingArgSlice().SpanByte };
+            var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice().SpanByte };
 
             var ret = GET(ref _key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.IsSpanByte)
                 {
-                    // Output overflowed to heap Memory — copy to SBA and dispose
+                    // Output overflowed to heap Memory — copy to SBA (pinned) and dispose
                     value = scratchBufferAllocator.CreateArgSlice(_output.AsReadOnlySpan());
                     _output.Memory.Dispose();
                 }
                 else
                 {
-                    // Output fit in SBA's remaining space — just claim it (zero copy)
-                    value = scratchBufferAllocator.CreateArgSlice(_output.Length);
+                    // Output fit in SBB's remaining space — claim it
+                    value = scratchBufferBuilder.CreateArgSlice(_output.Length);
                 }
             }
             return ret;

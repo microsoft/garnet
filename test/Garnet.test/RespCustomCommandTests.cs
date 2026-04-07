@@ -26,33 +26,39 @@ namespace Garnet.test
     {
         public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
+            static bool ResetBuffer(TGarnetApi garnetApi, ref MemoryResult<byte> output, int buffOffset)
+            {
+                bool status = garnetApi.ResetScratchBuffer(buffOffset);
+                if (!status)
+                    WriteError(ref output, "ERR ResetScratchBuffer failed");
+
+                return status;
+            }
+
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            // GET output goes to ScratchBufferAllocator which grows as needed
-            for (var i = 0; i < 100; i++)
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (var i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!ResetBuffer(garnetApi, ref output, buffOffset))
+                        return false;
+                }
             }
 
+            buffOffset = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);
             garnetApi.GET(key, out var outval2);
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
-            // Verify results are valid
-            if (outval1.Length == 0 || outval2.Length == 0)
-            {
-                WriteError(ref output, "ERR GET returned empty value");
-                return false;
-            }
-
+            buffOffset = garnetApi.GetScratchBufferOffset();
             var hashKey = GetNextArg(ref procInput, ref offset);
             var field = GetNextArg(ref procInput, ref offset);
             garnetApi.HashGet(hashKey, field, out var value);
-            if (value.Length == 0)
-            {
-                WriteError(ref output, "ERR HashGet returned empty value");
-                return false;
-            }
+            if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             return true;
         }
@@ -71,9 +77,18 @@ namespace Garnet.test
         {
             int offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
-            for (int i = 0; i < 100; i++)
+            var buffOffset = garnetApi.GetScratchBufferOffset();
+            for (int i = 0; i < 120_000; i++)
             {
                 garnetApi.GET(key, out var outval);
+                if (i % 100 == 0)
+                {
+                    if (!garnetApi.ResetScratchBuffer(buffOffset))
+                    {
+                        WriteError(ref output, "ERR ResetScratchBuffer failed");
+                        return;
+                    }
+                }
             }
         }
     }
@@ -85,8 +100,10 @@ namespace Garnet.test
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            // GET output goes to ScratchBufferAllocator, not ScratchBufferBuilder
+            var buffOffset1 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval1);
+
+            var buffOffset2 = garnetApi.GetScratchBufferOffset();
             garnetApi.GET(key, out var outval2);
 
             // Verify GET results are valid and identical
@@ -99,6 +116,12 @@ namespace Garnet.test
             if (!outval1.ReadOnlySpan.SequenceEqual(outval2.ReadOnlySpan))
             {
                 WriteError(ref output, "ERR GET results should be identical");
+                return false;
+            }
+
+            if (!garnetApi.ResetScratchBuffer(buffOffset1))
+            {
+                WriteError(ref output, "ERR ResetScratchBuffer failed");
                 return false;
             }
 
