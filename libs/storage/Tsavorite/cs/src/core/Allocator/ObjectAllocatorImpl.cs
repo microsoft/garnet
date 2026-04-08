@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -519,17 +520,22 @@ namespace Tsavorite.core
             var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
-                if (HeadAddress >= asyncResult.untilAddress)
+                var headAddress = HeadAddress;
+
+                if (headAddress >= asyncResult.untilAddress)
                 {
                     // Requested span on page is entirely unavailable in memory; ignore it and call the callback directly.
                     callback(0, 0, asyncResult);
                     return;
                 }
 
-                // If requested page span is only partly available in memory, adjust the start position. WriteAsync will handle it if HeadAddress is lower,
-                // but this is faster.
-                if (HeadAddress > asyncResult.fromAddress)
-                    asyncResult.fromAddress = HeadAddress;
+                // If requested page span is only partly available in memory, adjust the start position
+                // and mark as partial so WriteAsync recalculates the flush size from the adjusted range.
+                if (headAddress > asyncResult.fromAddress)
+                {
+                    asyncResult.fromAddress = headAddress;
+                    asyncResult.partial = true;
+                }
 
                 // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
                 // HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress, which is the page starting at offset 0 of the snapshot file.
@@ -732,6 +738,8 @@ namespace Tsavorite.core
                                                     // which will never be less than HeadAddress. So we do not need to worry about whatever values are in the inline
                                                     // record space between the current logicalAddress and HeadAddress.
                                                     extraRecordOffset = (int)(headAddress - (logicalAddress + logRecordSize));
+                                                    // Skip object serialization
+                                                    goto NextRecord;
                                                 }
                                                 else
                                                 {
@@ -777,6 +785,7 @@ namespace Tsavorite.core
                         }
                     } // endif record id Valid
 
+                NextRecord:
                     logicalAddress += logRecordSize + extraRecordOffset;    // advance in main log
                     physicalAddress += logRecordSize + extraRecordOffset;   // advance in source buffer
                 }
@@ -1067,7 +1076,7 @@ namespace Tsavorite.core
             observer?.OnNext(iter);
         }
 
-        internal override void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        internal override void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             throw new TsavoriteException("Incremental snapshots not supported with generic allocator");
         }

@@ -66,6 +66,10 @@ namespace Garnet.common
         /// </summary>
         Replication_Diskless_Sync_Reset_Cts,
         /// <summary>
+        /// Fail TakeOverAsPrimary during failover by throwing before BeginRecovery is called.
+        /// </summary>
+        Failover_Fail_TakeOverAsPrimary,
+        /// <summary>
         /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
         /// </summary>
         VectorSet_Interrupt_Delete_0,

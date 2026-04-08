@@ -769,31 +769,31 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
+        public void AttachAndWaitForSync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
         {
-            var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
+            var primaryId = clusterTestUtils.GetNodeIdFromNode(primaryIndex, logger);
 
             // Wait until primary node is known so as not to fail replicate
-            for (var i = primary_count; i < primary_count + replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
                 clusterTestUtils.WaitUntilNodeIdIsKnown(i, primaryId, logger: logger);
 
             // Issue cluster replicate and bump epoch manually to capture config.
-            for (var i = primary_count; i < primary_count + replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
                 _ = clusterTestUtils.ClusterReplicate(i, primaryId, async: true, logger: logger);
 
             if (!checkpointTask.Wait(TimeSpan.FromSeconds(100))) Assert.Fail("Checkpoint task timeout");
 
             // Wait for recovery and AofSync
-            for (var i = primary_count; i < replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
             {
                 clusterTestUtils.WaitForReplicaRecovery(i, logger);
-                clusterTestUtils.WaitForReplicaAofSync(0, i, logger);
+                clusterTestUtils.WaitForReplicaAofSync(primaryIndex, i, logger);
             }
 
-            clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, logger: logger);
+            clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, replicaCount, logger: logger);
 
             // Validate data on replicas
-            for (var i = primary_count; i < replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
             {
                 if (disableObjects)
                     ValidateKVCollectionAgainstReplica(ref kvPairs, i);
