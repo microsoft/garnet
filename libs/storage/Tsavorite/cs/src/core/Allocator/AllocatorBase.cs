@@ -411,6 +411,7 @@ namespace Tsavorite.core
             bufferPool.Free();
 
             flushEvent.Dispose();
+            notifyFlushedUntilAddressTcs?.TrySetCanceled();
             notifyFlushedUntilAddressTcs = null;
 
             onReadOnlyObserver?.OnCompleted();

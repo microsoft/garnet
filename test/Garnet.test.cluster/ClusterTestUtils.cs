@@ -3068,8 +3068,9 @@ namespace Garnet.test.cluster
 
         public void Checkpoint(IPEndPoint endPoint, ILogger logger = null)
         {
+            const int maxRetries = 10;
             var server = redis.GetServer(endPoint);
-            while (true)
+            for (var attempt = 0; ; attempt++)
             {
                 try
                 {
@@ -3080,9 +3081,12 @@ namespace Garnet.test.cluster
                 }
                 catch (RedisServerException ex) when (ex.Message.Contains("checkpoint already in progress", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (attempt >= maxRetries)
+                        Assert.Fail($"Checkpoint still in progress after {maxRetries} retries");
+
                     // Another checkpoint is in progress (e.g., on-demand checkpoint from replication).
                     // Retry after a short delay.
-                    logger?.LogWarning(ex, "Checkpoint already in progress, retrying");
+                    logger?.LogWarning(ex, "Checkpoint already in progress, retrying (attempt {attempt})", attempt);
                     BackOff(cancellationToken: context?.cts?.Token ?? CancellationToken.None);
                 }
                 catch (Exception ex)
