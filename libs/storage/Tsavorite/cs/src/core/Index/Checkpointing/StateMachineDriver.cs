@@ -17,7 +17,7 @@ namespace Tsavorite.core
     {
         SystemState systemState;
         IStateMachine stateMachine;
-        readonly List<(Task task, StateMachineTaskType type)> waitingList;
+        readonly List<(SemaphoreSlim semaphore, Task task, StateMachineTaskType type)> waitingList;
         TaskCompletionSource<bool> stateMachineCompleted;
         // All threads have entered the given state
         SemaphoreSlim waitForTransitionIn;
@@ -158,13 +158,13 @@ namespace Tsavorite.core
         internal void AddToWaitingList(SemaphoreSlim waiter, StateMachineTaskType type)
         {
             if (waiter != null)
-                waitingList.Add((waiter.WaitAsync(), type));
+                waitingList.Add((waiter, null, type));
         }
 
         internal void AddToWaitingList(Task waiter, StateMachineTaskType type)
         {
             if (waiter != null)
-                waitingList.Add((waiter, type));
+                waitingList.Add((null, waiter, type));
         }
 
         public bool Register(IStateMachine stateMachine, CancellationToken token = default)
@@ -315,11 +315,14 @@ namespace Tsavorite.core
             {
                 throw waitForTransitionInException;
             }
-            foreach (var (task, type) in waitingList)
+            foreach (var (semaphore, task, type) in waitingList)
             {
                 try
                 {
-                    await task.WaitAsync(token).ConfigureAwait(false);
+                    if (semaphore != null)
+                        await semaphore.WaitAsync(token).ConfigureAwait(false);
+                    else
+                        await task.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

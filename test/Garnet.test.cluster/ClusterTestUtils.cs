@@ -3078,12 +3078,12 @@ namespace Garnet.test.cluster
 #pragma warning restore CS0618 // Type or member is obsolete
                     break;
                 }
-                catch (RedisServerException ex) when (ex.Message.Contains("checkpoint already in progress"))
+                catch (RedisServerException ex) when (ex.Message.Contains("checkpoint already in progress", StringComparison.OrdinalIgnoreCase))
                 {
                     // Another checkpoint is in progress (e.g., on-demand checkpoint from replication).
                     // Retry after a short delay.
                     logger?.LogWarning(ex, "Checkpoint already in progress, retrying");
-                    BackOff(cancellationToken: context.cts.Token);
+                    BackOff(cancellationToken: context?.cts?.Token ?? CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
