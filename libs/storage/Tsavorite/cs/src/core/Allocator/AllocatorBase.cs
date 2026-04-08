@@ -2278,6 +2278,7 @@ namespace Tsavorite.core
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
+                            startAddress += alignedRecordSize;
                         }
                     }
                 }

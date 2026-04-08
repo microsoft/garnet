@@ -527,10 +527,12 @@ namespace Tsavorite.core
                     return;
                 }
 
-                // If requested page span is only partly available in memory, adjust the start position. WriteAsync will handle it if HeadAddress is lower,
-                // but this is faster.
+                // If requested page span is only partly available in memory, adjust the start position and flush size.
                 if (HeadAddress > asyncResult.fromAddress)
+                {
+                    pageFlushSize -= (int)(HeadAddress - asyncResult.fromAddress);
                     asyncResult.fromAddress = HeadAddress;
+                }
 
                 // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
                 // HybridLogRecoveryInfo.snapshotStartFlushedLogicalAddress, which is the page starting at offset 0 of the snapshot file.
