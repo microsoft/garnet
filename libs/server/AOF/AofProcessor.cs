@@ -88,13 +88,8 @@ namespace Garnet.server
             activeVectorManager?.WaitForVectorOperationsToComplete();
             activeVectorManager?.ShutdownReplayTasks();
 
-            var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
-            foreach (var dbSession in databaseSessionsSnapshot)
-            {
-                dbSession.StorageSession.stringBasicContext.Session?.Dispose();
-                dbSession.StorageSession.objectBasicContext.Session?.Dispose();
-                dbSession.StorageSession.unifiedBasicContext.Session?.Dispose();
-            }
+            aofReplayCoordinator.Dispose();
+            respServerSession.Dispose();
         }
 
         /// <summary>
@@ -178,11 +173,6 @@ namespace Garnet.server
 
                     if (storeWrapper.serverOptions.FailOnRecoveryError)
                         throw;
-                }
-                finally
-                {
-                    aofReplayCoordinator.Dispose();
-                    respServerSession.Dispose();
                 }
 
                 return -1;
