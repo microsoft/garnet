@@ -1581,7 +1581,7 @@ namespace Tsavorite.core
                     flushEvent.Set();
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
-                        _ = notifyFlushedUntilAddressTcs.TrySetResult(true);
+                        _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
                 }
             }
 
@@ -1950,7 +1950,12 @@ namespace Tsavorite.core
                             }
                         }
                         else
+                        {
                             _ = asyncResult.Release();
+                            // Release() called CompleteFlush() which released the throttle semaphore.
+                            // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
+                            flushCompletionTracker.WaitOneFlush();
+                        }
                     }
                 }
                 catch (Exception ex)

@@ -7,7 +7,7 @@ namespace Tsavorite.core
     /// Identifies the type of waiter added to the state machine driver waiting list,
     /// including the originating state machine task.
     /// </summary>
-    public enum StateMachineTaskType
+    internal enum StateMachineTaskType
     {
         /// <summary>
         /// Waiting for all transactions in the last version to complete.
