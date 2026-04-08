@@ -16,7 +16,7 @@ namespace Garnet.cluster
         readonly TimeSpan clusterTimeout;
         readonly ILogger logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
-        public FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
+        public volatile FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
 
         /// <summary>
         /// Shared epoch instance for failover GarnetClient connections
