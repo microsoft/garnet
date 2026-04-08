@@ -520,7 +520,9 @@ namespace Tsavorite.core
             var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
-                if (HeadAddress >= asyncResult.untilAddress)
+                var headAddress = HeadAddress;
+
+                if (headAddress >= asyncResult.untilAddress)
                 {
                     // Requested span on page is entirely unavailable in memory; ignore it and call the callback directly.
                     callback(0, 0, asyncResult);
@@ -529,9 +531,9 @@ namespace Tsavorite.core
 
                 // If requested page span is only partly available in memory, adjust the start position
                 // and mark as partial so WriteAsync recalculates the flush size from the adjusted range.
-                if (HeadAddress > asyncResult.fromAddress)
+                if (headAddress > asyncResult.fromAddress)
                 {
-                    asyncResult.fromAddress = HeadAddress;
+                    asyncResult.fromAddress = headAddress;
                     asyncResult.partial = true;
                 }
 
