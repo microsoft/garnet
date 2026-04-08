@@ -3068,26 +3068,32 @@ namespace Garnet.test.cluster
 
         public void Checkpoint(IPEndPoint endPoint, ILogger logger = null)
         {
+            const int maxRetries = 10;
             var server = redis.GetServer(endPoint);
-            try
+            for (var attempt = 0; ; attempt++)
             {
-                var previousSaveTicks = (long)server.Execute("LASTSAVE");
+                try
+                {
 #pragma warning disable CS0618 // Type or member is obsolete
-                server.Save(SaveType.ForegroundSave);
+                    server.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618 // Type or member is obsolete
+                    break;
+                }
+                catch (RedisServerException ex) when (ex.Message.Contains("checkpoint already in progress", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (attempt >= maxRetries)
+                        Assert.Fail($"Checkpoint still in progress after {maxRetries} retries");
 
-                //// Spin wait for checkpoint to complete
-                //while (true)
-                //{
-                //    var lastSaveTicks = (long)server.Execute("LASTSAVE");
-                //    if (previousSaveTicks < lastSaveTicks) break;
-                //    BackOff(TimeSpan.FromSeconds(1));
-                //}
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occurred; StoreWrapper.Checkpoint");
-                Assert.Fail();
+                    // Another checkpoint is in progress (e.g., on-demand checkpoint from replication).
+                    // Retry after a short delay.
+                    logger?.LogWarning(ex, "Checkpoint already in progress, retrying (attempt {attempt})", attempt);
+                    BackOff(cancellationToken: context?.cts?.Token ?? CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "An error has occurred; StoreWrapper.Checkpoint");
+                    Assert.Fail(ex.Message);
+                }
             }
         }
 
