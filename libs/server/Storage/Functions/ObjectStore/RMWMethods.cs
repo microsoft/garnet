@@ -136,6 +136,10 @@ namespace Garnet.server
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
                     logRecord.ClearValueIfHeap(obj => { });
+                    if (!logRecord.Info.Modified)
+                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    if (functionsState.appendOnlyFile != null)
+                        rmwInfo.UserData |= NeedAofLog;
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
@@ -210,6 +214,10 @@ namespace Garnet.server
                     return true;
                 if (output.HasRemoveKey)
                 {
+                    // Log to AOF before returning, so the mutation that emptied the collection
+                    // is persisted and replayed correctly on recovery.
+                    if (functionsState.appendOnlyFile != null)
+                        rmwInfo.UserData |= NeedAofLog;
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }

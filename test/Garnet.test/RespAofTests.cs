@@ -809,6 +809,196 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AofObjectStoreRMWDeleteRecoverListTest()
+        {
+            // Verify LPOP that empties a list is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverListKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.ListLeftPush(key, "value1");
+                var popped = db.ListLeftPop(key);
+                ClassicAssert.AreEqual("value1", popped.ToString());
+
+                // Key should not exist after popping the only element
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                // After recovery, the key should still not exist
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public void AofObjectStoreRMWDeleteRecoverSortedSetTest()
+        {
+            // Verify ZREM that removes one member from a sorted set is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverSortedSetKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.SortedSetAdd(key, [new SortedSetEntry("top1", 50), new SortedSetEntry("top2", 60)]);
+                db.SortedSetRemove(key, "top1");
+
+                // Sorted set should have one remaining member
+                var score = db.SortedSetScore(key, "top1");
+                ClassicAssert.IsFalse(score.HasValue);
+
+                score = db.SortedSetScore(key, "top2");
+                ClassicAssert.IsTrue(score.HasValue);
+                ClassicAssert.AreEqual(60, score.Value);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // After recovery, "top1" should still be absent
+                var score = db.SortedSetScore(key, "top1");
+                ClassicAssert.IsFalse(score.HasValue);
+
+                score = db.SortedSetScore(key, "top2");
+                ClassicAssert.IsTrue(score.HasValue);
+                ClassicAssert.AreEqual(60, score.Value);
+            }
+        }
+
+        [Test]
+        public void AofObjectStoreRMWDeleteRecoverSortedSetEmptyTest()
+        {
+            // Verify ZREM that empties a sorted set completely is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverSortedSetEmptyKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.SortedSetAdd(key, [new SortedSetEntry("top1", 50)]);
+                db.SortedSetRemove(key, "top1");
+
+                // Key should not exist after removing the only member
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public void AofObjectStoreRMWDeleteRecoverHashTest()
+        {
+            // Verify HDEL that removes fields from a hash is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverHashKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.HashSet(key, [new HashEntry("hkey1", "v1"), new HashEntry("hkey2", "v2")]);
+                db.HashDelete(key, ["hkey1", "hkey2"]);
+
+                // Key should not exist after deleting all hash fields
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public void AofObjectStoreRMWDeleteRecoverSetTest()
+        {
+            // Verify SREM that empties a set is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverSetKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.SetAdd(key, ["member1", "member2"]);
+                db.SetRemove(key, ["member1", "member2"]);
+
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public void AofObjectStoreRMWPartialDeleteRecoverHashTest()
+        {
+            // Verify HDEL that removes only some fields (not emptying the hash) is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWPartialDeleteRecoverHashKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.HashSet(key, [new HashEntry("hkey1", "v1"), new HashEntry("hkey2", "v2"), new HashEntry("hkey3", "v3")]);
+                db.HashDelete(key, "hkey1");
+                db.HashDelete(key, "hkey2");
+
+                // Key should still exist with remaining field
+                ClassicAssert.IsTrue(db.KeyExists(key));
+                ClassicAssert.AreEqual("v3", db.HashGet(key, "hkey3").ToString());
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey1").HasValue);
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey2").HasValue);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // After recovery, deleted fields should remain deleted
+                ClassicAssert.IsTrue(db.KeyExists(key));
+                ClassicAssert.AreEqual("v3", db.HashGet(key, "hkey3").ToString());
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey1").HasValue);
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey2").HasValue);
+            }
+        }
+
+        [Test]
         public void AofCustomTxnRecoverTest()
         {
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });

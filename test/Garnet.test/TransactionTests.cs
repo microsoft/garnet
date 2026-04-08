@@ -587,5 +587,45 @@ namespace Garnet.test
             var expectedResponse = "+OK\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
+
+        [Test]
+        public void WatchFailsWhenListEmptiedByLPop()
+        {
+            // WATCH a list key, then LPOP all elements on the same connection.
+            // The LPOP that empties the list should increment the watch version,
+            // causing the subsequent EXEC to fail.
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var key = "watchlist";
+
+            // Create a single-element list
+            var response = lightClientRequest.SendCommand($"LPUSH {key} value1");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // WATCH the list key
+            response = lightClientRequest.SendCommand($"WATCH {key}");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // LPOP the only element (empties and deletes the list) — same connection, before MULTI
+            response = lightClientRequest.SendCommand($"LPOP {key}");
+            expectedResponse = "$6\r\nvalue1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Start a transaction
+            response = lightClientRequest.SendCommand("MULTI");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Queue a command
+            response = lightClientRequest.SendCommand($"LPUSH {key} value2");
+            expectedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // EXEC should fail because the watched key was modified by LPOP
+            response = lightClientRequest.SendCommand("EXEC");
+            expectedResponse = "*-1";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
     }
 }
