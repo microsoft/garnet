@@ -37,9 +37,12 @@ namespace Tsavorite.core
                     try
                     {
                         store.epoch.Resume();
-                        _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
-                        if (store._hybridLogCheckpoint.flushedSemaphore != null)
-                            stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore, StateMachineSemaphoreType.FoldOverSMTaskHybridLogFlushed);
+                        _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out var flushedTask);
+                        if (flushedTask != null)
+                        {
+                            store._hybridLogCheckpoint.flushedTask = flushedTask;
+                            stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedTask, StateMachineTaskType.FoldOverSMTaskHybridLogFlushed);
+                        }
 
                         // Update final logical address to the flushed tail - this may not be necessary
                         store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;

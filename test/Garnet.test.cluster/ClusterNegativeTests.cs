@@ -625,5 +625,217 @@ namespace Garnet.test.cluster
             var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
             ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
+
+        [Test, Order(14), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverSucceedsDuringEnsureReplication(CancellationToken cancellationToken)
+        {
+            // Verify that EnsureReplication does not block an in-flight failover.
+            // EnsureReplication polls for dropped replication sessions and attempts auto-resync.
+            // Without the failover status guard, it could acquire a ReadRole lock that blocks
+            // TakeOverAsPrimary from obtaining its ClusterFailover write lock, aborting the failover.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            // Enable EnsureReplication by setting clusterReplicationReestablishmentTimeout to 1 second
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+                timeout: timeout, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Set up replication
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+
+            // Populate primary and wait for sync
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Issue failover — with EnsureReplication enabled (polling every 1s),
+            // the guard should prevent it from interfering with the failover
+            resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Wait for failover to complete — without the guard this could hang or abort
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
+
+            // The old primary should become a replica
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, context.logger);
+
+            // Verify the new primary (formerly replica) is functional
+            var role = context.clusterTestUtils.RoleCommand(replicaIndex, context.logger);
+            ClassicAssert.AreEqual("master", role.Value);
+
+            var oldPrimaryRole = context.clusterTestUtils.RoleCommand(primaryIndex, context.logger);
+            ClassicAssert.AreEqual("slave", oldPrimaryRole.Value);
+
+            // Verify last failover state
+            var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+            ClassicAssert.AreEqual("failover-completed", infoItem[0].Item2);
+        }
+
+        [Test, Order(15), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterEnsureReplicationWorksAfterFailover(CancellationToken cancellationToken)
+        {
+            // Verify that EnsureReplication still functions after a failover completes.
+            // The failover guard should only suppress auto-resync during active failover states,
+            // not after failover has completed or aborted.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            // Enable EnsureReplication with a 1-second poll frequency
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+                timeout: timeout, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Set up replication
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+
+            // Populate primary data and sync
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Run failover
+            resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
+
+            // Old primary should now be a replica of the new primary
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, context.logger);
+
+            // Verify last_failover_state is "failover-completed" — this should NOT suppress EnsureReplication
+            var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+            ClassicAssert.AreEqual("failover-completed", infoItem[0].Item2);
+
+            // Verify replication is working in the new topology
+            // The old primary (index 0) is now a replica of the new primary (index 1)
+            // Write to new primary and verify it replicates to old primary (now replica)
+            var slotMap = new int[16384];
+            for (var i = 0; i < 16384; i++)
+                slotMap[i] = replicaIndex;
+
+            var newKvPairs = new Dictionary<string, int>();
+            context.PopulatePrimary(ref newKvPairs, keyLength: 32, kvpairCount: 8, replicaIndex, slotMap: slotMap);
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, primaryIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref newKvPairs, primaryIndex);
+        }
+
+#if DEBUG
+        [Test, Order(16), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverResetsPrimaryOnTakeOverFailure(CancellationToken cancellationToken)
+        {
+            // Verify that when TakeOverAsPrimary fails after PauseWritesAndWaitForSync
+            // has already sent failstopwrites to the primary, the primary is reset back
+            // to its original state (owns slots, is a primary).
+            //
+            // Without the reset in BeginAsyncReplicaFailover's finally block, the primary
+            // would have given up its slots (via TryStopWrites) but the replica never
+            // claimed them, leaving the cluster in an incoherent state.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Set up replication
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+
+            // Populate data and sync
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Verify primary owns all slots before failover
+            var slotsBefore = context.clusterTestUtils.GetOwnedSlotsFromNode(primaryIndex, context.logger);
+            ClassicAssert.AreEqual(16384, slotsBefore.Count, "Primary should own all slots before failover");
+
+            try
+            {
+                // Enable exception injection to make TakeOverAsPrimary fail.
+                // This simulates the scenario where PauseWritesAndWaitForSync succeeds
+                // (failstopwrites sent to primary, primary gives up slots) but the
+                // subsequent TakeOverAsPrimary fails (e.g., due to lock contention from
+                // EnsureReplication holding the ReadRole lock).
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Failover_Fail_TakeOverAsPrimary);
+
+                // Issue DEFAULT failover — this will:
+                // 1. Send failstopwrites to primary (primary gives up slots)
+                // 2. Wait for sync
+                // 3. TakeOverAsPrimary — FAILS due to injected exception
+                // 4. finally block sends failstopwrites([]) to reset primary
+                resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                // Wait for failover to be aborted
+                while (true)
+                {
+                    var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                        [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                    if (infoItem[0].Item2.Equals("failover-aborted"))
+                        break;
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover to abort");
+                }
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Failover_Fail_TakeOverAsPrimary);
+            }
+
+            // Verify primary has been reset: it should own all slots again
+            // Without the reset fix, the primary would have 0 slots here.
+            while (true)
+            {
+                var slotsAfter = context.clusterTestUtils.GetOwnedSlotsFromNode(primaryIndex, context.logger);
+                if (slotsAfter.Count == 16384)
+                    break;
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"Waiting for primary to reclaim slots (current: {slotsAfter.Count})");
+            }
+
+            // Verify primary is still a primary
+            var role = context.clusterTestUtils.RoleCommand(primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("master", role.Value, "Primary should be reset back to master role");
+
+            // Verify replica is still a replica (failover was aborted)
+            role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("slave", role.Value, "Replica should remain a slave after aborted failover");
+
+            // Verify data is still accessible from the primary
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, primaryIndex);
+        }
+#endif
     }
 }

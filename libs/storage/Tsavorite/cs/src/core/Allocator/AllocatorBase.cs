@@ -241,18 +241,27 @@ namespace Tsavorite.core
         /// <summary>Flush checkpoint Delta to the Device</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal virtual void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
-            out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+            out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var _completedSemaphore = new SemaphoreSlim(0);
-            completedSemaphore = _completedSemaphore;
-
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+            {
+                completedTask = Task.Run(FlushRunner);
+            }
             else
-                FlushRunner();
+            {
+                try
+                {
+                    FlushRunner();
+                    completedTask = Task.CompletedTask;
+                }
+                catch (Exception ex)
+                {
+                    completedTask = Task.FromException(ex);
+                }
+            }
 
             void FlushRunner()
             {
@@ -340,7 +349,6 @@ namespace Tsavorite.core
 
                 if (destOffset > 0)
                     deltaLog.Seal(destOffset);
-                _completedSemaphore.Release();
             }
         }
 
@@ -403,7 +411,8 @@ namespace Tsavorite.core
             bufferPool.Free();
 
             flushEvent.Dispose();
-            notifyFlushedUntilAddressSemaphore?.Dispose();
+            notifyFlushedUntilAddressTcs?.TrySetCanceled();
+            notifyFlushedUntilAddressTcs = null;
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
@@ -1304,15 +1313,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>Used by applications to make the current state of the database immutable quickly</summary>
-        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
+        public bool ShiftReadOnlyToTail(out long tailAddress, out Task notifyDone)
         {
             notifyDone = null;
             tailAddress = GetTailAddress();
             var localTailAddress = tailAddress;
             if (MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out _))
             {
-                notifyFlushedUntilAddressSemaphore = new SemaphoreSlim(0);
-                notifyDone = notifyFlushedUntilAddressSemaphore;
+                notifyFlushedUntilAddressTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                notifyDone = notifyFlushedUntilAddressTcs.Task;
                 notifyFlushedUntilAddress = localTailAddress;
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress));
                 return true;
@@ -1573,7 +1582,7 @@ namespace Tsavorite.core
                     flushEvent.Set();
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
-                        _ = notifyFlushedUntilAddressSemaphore.Release();
+                        _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
                 }
             }
 
@@ -1592,8 +1601,8 @@ namespace Tsavorite.core
         /// <summary>Address for notification of flushed-until</summary>
         public long notifyFlushedUntilAddress;
 
-        /// <summary>Semaphore for notification of flushed-until</summary>
-        public SemaphoreSlim notifyFlushedUntilAddressSemaphore;
+        /// <summary>TaskCompletionSource for notification of flushed-until</summary>
+        public TaskCompletionSource<bool> notifyFlushedUntilAddressTcs;
 
         /// <summary>Reset for recovery</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1872,16 +1881,16 @@ namespace Tsavorite.core
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
         /// <param name="objectLogDevice"></param>
-        /// <param name="completedSemaphore"></param>
+        /// <param name="completedTask">Task that completes when all pages are flushed, or faults if an exception occurs</param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long startLogicalAddress, long endLogicalAddress,
-            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var _completedSemaphore = new SemaphoreSlim(0);
-            completedSemaphore = _completedSemaphore;
+            var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            completedTask = completionTcs.Task;
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
@@ -1893,13 +1902,13 @@ namespace Tsavorite.core
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, enableThrottling: throttleCheckpointFlushDelayMs >= 0, totalNumPages);
 
                 try
                 {
 
                     // Flush each page in sequence
-                    for (var flushPage = startPage; flushPage < endPage; flushPage++)
+                    for (long flushPage = startPage; flushPage < endPage; flushPage++)
                     {
                         // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
                         // for middle pages, we flush the entire page.
@@ -1910,9 +1919,16 @@ namespace Tsavorite.core
                         if (endLogicalAddress < flushEndAddress)
                             flushEndAddress = endLogicalAddress;
                         var flushSize = flushEndAddress - flushStartAddress;
-                        // TODO: Should we release completedSemaphore also if the flushSize <=0
+
                         if (flushSize <= 0)
+                        {
+                            // No data to flush for this page. Signal completion and drain the
+                            // throttle semaphore so the next real page's WaitOneFlush is not
+                            // satisfied by this page's release.
+                            flushCompletionTracker.CompleteFlush();
+                            flushCompletionTracker.WaitOneFlush();
                             continue;
+                        }
 
                         var asyncResult = new PageAsyncFlushResult<Empty>
                         {
@@ -1939,14 +1955,18 @@ namespace Tsavorite.core
                             }
                         }
                         else
+                        {
                             _ = asyncResult.Release();
+                            // Release() called CompleteFlush() which released the throttle semaphore.
+                            // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
+                            flushCompletionTracker.WaitOneFlush();
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
-                    _completedSemaphore.Release();
-                    throw;
+                    flushCompletionTracker.SetException(ex);
                 }
             }
         }
@@ -2263,6 +2283,7 @@ namespace Tsavorite.core
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
+                            startAddress += alignedRecordSize;
                         }
                     }
                 }

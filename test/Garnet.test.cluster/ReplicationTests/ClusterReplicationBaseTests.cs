@@ -779,11 +779,11 @@ namespace Garnet.test.cluster
             context.kvPairs = [];
             context.kvPairsObj = [];
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true));
-            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primary_count, replica_count, disableObjects));
+            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primaryIndex, primary_count, replica_count, disableObjects));
 
             var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
             if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
-                Assert.Fail($"checkpointTask timeout checkpointTask: {context.checkpointTask.Status}, attachReplicaTask:{attachReplicaTask.Status}");
+                Assert.Fail($"Task timeout - checkpointTask: {context.checkpointTask.Status}, attachReplicaTask: {attachReplicaTask.Status}");
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
         }

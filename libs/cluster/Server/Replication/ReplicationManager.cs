@@ -204,6 +204,20 @@ namespace Garnet.cluster
                 return;
             }
 
+            // Suppress auto-resync while a failover is in progress.
+            // Without this guard, EnsureReplication would acquire a ReadRole lock that blocks
+            // TakeOverAsPrimary from obtaining its ClusterFailover write lock, aborting the failover.
+            var failoverStatus = clusterProvider.failoverManager.lastFailoverStatus;
+            if (failoverStatus is FailoverStatus.BEGIN_FAILOVER
+                              or FailoverStatus.ISSUING_PAUSE_WRITES
+                              or FailoverStatus.WAITING_FOR_SYNC
+                              or FailoverStatus.FAILOVER_IN_PROGRESS
+                              or FailoverStatus.TAKING_OVER_AS_PRIMARY)
+            {
+                logger?.LogDebug("Suppressing auto-resync during active failover (status: {failoverStatus})", failoverStatus);
+                return;
+            }
+
             // Now we're going to attempt to re-establish replication
 
             // To avoid a TOCTOU issue, we need to prevent role change while we do this

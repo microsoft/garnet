@@ -72,56 +72,6 @@ namespace Tsavorite.core
     /// <summary>
     /// Shared flush completion tracker, when bulk-flushing many pages
     /// </summary>
-    internal sealed class FlushCompletionTracker
-    {
-        /// <summary>
-        /// Semaphore to set on flush completion
-        /// </summary>
-        readonly SemaphoreSlim completedSemaphore;
-
-        /// <summary>
-        /// Semaphore to wait on for flush completion
-        /// </summary>
-        readonly SemaphoreSlim flushSemaphore;
-
-        /// <summary>
-        /// Number of pages being flushed
-        /// </summary>
-        int count;
-
-        public override string ToString()
-        {
-            var compSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
-            var flushSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
-            return $"count {count}, compSemCount {compSemCount}, flushSemCount {flushSemCount}";
-        }
-
-        /// <summary>
-        /// Create a flush completion tracker
-        /// </summary>
-        /// <param name="completedSemaphore">Semaphpore to release when all flushes completed</param>
-        /// <param name="flushSemaphore">Semaphpore to release when each flush completes</param>
-        /// <param name="count">Number of pages to flush</param>
-        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, SemaphoreSlim flushSemaphore, int count)
-        {
-            this.completedSemaphore = completedSemaphore;
-            this.flushSemaphore = flushSemaphore;
-            this.count = count;
-        }
-
-        /// <summary>
-        /// Complete flush of one page
-        /// </summary>
-        public void CompleteFlush()
-        {
-            _ = (flushSemaphore?.Release());
-            if (Interlocked.Decrement(ref count) == 0)
-                _ = completedSemaphore.Release();
-        }
-
-        public void WaitOneFlush() => flushSemaphore?.Wait();
-    }
-
     internal enum FlushRequestState : byte
     {
         /// <summary>The default; we are here for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForReadOnly"/> flush. This

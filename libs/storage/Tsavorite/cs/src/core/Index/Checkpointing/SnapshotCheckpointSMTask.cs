@@ -67,10 +67,10 @@ namespace Tsavorite.core
                         fuzzyStartLogicalAddress: store._hybridLogCheckpoint.info.startLogicalAddress,
                         logDevice: store._hybridLogCheckpoint.snapshotFileDevice,
                         objectLogDevice: store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
-                        out store._hybridLogCheckpoint.flushedSemaphore,
+                        out store._hybridLogCheckpoint.flushedTask,
                         store.ThrottleCheckpointFlushDelayMs);
-                    if (store._hybridLogCheckpoint.flushedSemaphore != null)
-                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore, StateMachineSemaphoreType.SnapshotCheckpointSMTaskHybridLogFlushed);
+                    if (store._hybridLogCheckpoint.flushedTask != null)
+                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedTask, StateMachineTaskType.SnapshotCheckpointSMTaskHybridLogFlushed);
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
