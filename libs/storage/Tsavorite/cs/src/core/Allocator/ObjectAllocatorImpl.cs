@@ -527,11 +527,12 @@ namespace Tsavorite.core
                     return;
                 }
 
-                // If requested page span is only partly available in memory, adjust the start position and flush size.
+                // If requested page span is only partly available in memory, adjust the start position
+                // and mark as partial so WriteAsync recalculates the flush size from the adjusted range.
                 if (HeadAddress > asyncResult.fromAddress)
                 {
-                    pageFlushSize -= (int)(HeadAddress - asyncResult.fromAddress);
                     asyncResult.fromAddress = HeadAddress;
+                    asyncResult.partial = true;
                 }
 
                 // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
