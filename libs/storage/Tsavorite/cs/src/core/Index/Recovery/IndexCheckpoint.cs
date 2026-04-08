@@ -54,8 +54,8 @@ namespace Tsavorite.core
 
         internal void AddIndexCheckpointWaitingList(StateMachineDriver stateMachineDriver)
         {
-            stateMachineDriver.AddToWaitingList(mainIndexCheckpointSemaphore, StateMachineTaskType.IndexCheckpointSMTaskMainIndexCheckpoint);
-            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointSemaphore(), StateMachineTaskType.IndexCheckpointSMTaskOverflowBucketsCheckpoint);
+            stateMachineDriver.AddToWaitingList(mainIndexCheckpointTcs.Task, StateMachineTaskType.IndexCheckpointSMTaskMainIndexCheckpoint);
+            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointTask(), StateMachineTaskType.IndexCheckpointSMTaskOverflowBucketsCheckpoint);
         }
 
         internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
@@ -71,14 +71,14 @@ namespace Tsavorite.core
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of Tsavorite
         private int mainIndexCheckpointCallbackCount;
-        private SemaphoreSlim mainIndexCheckpointSemaphore;
+        private TaskCompletionSource<bool> mainIndexCheckpointTcs;
         private SemaphoreSlim throttleIndexCheckpointFlushSemaphore;
 
         internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default, int throttleCheckpointFlushDelayMs = -1)
         {
             long totalSize = state[version].size * sizeof(HashBucket);
             numBytesWritten = (ulong)totalSize;
-            mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
+            mainIndexCheckpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             if (throttleCheckpointFlushDelayMs >= 0)
                 Task.Run(FlushRunner);
@@ -155,9 +155,7 @@ namespace Tsavorite.core
 
         private async ValueTask IsMainIndexCheckpointCompletedAsync(CancellationToken token = default)
         {
-            var s = mainIndexCheckpointSemaphore;
-            await s.WaitAsync(token).ConfigureAwait(false);
-            s.Release();
+            await mainIndexCheckpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
         private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
@@ -172,7 +170,7 @@ namespace Tsavorite.core
             }
             if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
             {
-                mainIndexCheckpointSemaphore.Release();
+                mainIndexCheckpointTcs.TrySetResult(true);
             }
             throttleIndexCheckpointFlushSemaphore?.Release();
         }

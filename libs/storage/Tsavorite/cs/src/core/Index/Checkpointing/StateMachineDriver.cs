@@ -17,7 +17,7 @@ namespace Tsavorite.core
     {
         SystemState systemState;
         IStateMachine stateMachine;
-        readonly List<(SemaphoreSlim semaphore, Task task, StateMachineTaskType type)> waitingList;
+        readonly List<(Task task, StateMachineTaskType type)> waitingList;
         TaskCompletionSource<bool> stateMachineCompleted;
         // All threads have entered the given state
         SemaphoreSlim waitForTransitionIn;
@@ -26,7 +26,7 @@ namespace Tsavorite.core
         SemaphoreSlim waitForTransitionOut;
         // Transactions drained in last version
         long lastVersion;
-        SemaphoreSlim lastVersionTransactionsDone;
+        TaskCompletionSource<bool> lastVersionTransactionsDone;
         List<IStateMachineCallback> callbacks;
         readonly LightEpoch epoch;
         readonly ILogger logger;
@@ -59,7 +59,7 @@ namespace Tsavorite.core
                 var _lastVersionTransactionsDone = lastVersionTransactionsDone;
                 if (_lastVersionTransactionsDone != null && txnVersion == lastVersion)
                 {
-                    _lastVersionTransactionsDone.Release();
+                    _lastVersionTransactionsDone.TrySetResult(true);
                 }
             }
         }
@@ -68,19 +68,19 @@ namespace Tsavorite.core
         {
             if (GetNumActiveTransactions(version) > 0)
             {
-                // Set version number first, then create semaphore
+                // Set version number first, then create TCS
                 lastVersion = version;
-                lastVersionTransactionsDone = new(0);
+                lastVersionTransactionsDone = new(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
             // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
             if (GetNumActiveTransactions(version) > 0)
-                AddToWaitingList(lastVersionTransactionsDone, StateMachineTaskType.LastVersionTransactionsDone);
+                AddToWaitingList(lastVersionTransactionsDone.Task, StateMachineTaskType.LastVersionTransactionsDone);
         }
 
         internal void ResetLastVersion()
         {
-            // First null semaphore, then reset version number
+            // First null TCS, then reset version number
             lastVersionTransactionsDone = null;
             lastVersion = 0;
         }
@@ -155,16 +155,10 @@ namespace Tsavorite.core
         public void EndTransaction(long txnVersion)
             => DecrementActiveTransactions(txnVersion);
 
-        internal void AddToWaitingList(SemaphoreSlim waiter, StateMachineTaskType type)
-        {
-            if (waiter != null)
-                waitingList.Add((waiter, null, type));
-        }
-
         internal void AddToWaitingList(Task waiter, StateMachineTaskType type)
         {
             if (waiter != null)
-                waitingList.Add((null, waiter, type));
+                waitingList.Add((waiter, type));
         }
 
         public bool Register(IStateMachine stateMachine, CancellationToken token = default)
@@ -315,14 +309,11 @@ namespace Tsavorite.core
             {
                 throw waitForTransitionInException;
             }
-            foreach (var (semaphore, task, type) in waitingList)
+            foreach (var (task, type) in waitingList)
             {
                 try
                 {
-                    if (semaphore != null)
-                        await semaphore.WaitAsync(token).ConfigureAwait(false);
-                    else
-                        await task.WaitAsync(token).ConfigureAwait(false);
+                    await task.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

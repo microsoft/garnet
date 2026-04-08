@@ -411,7 +411,7 @@ namespace Tsavorite.core
             bufferPool.Free();
 
             flushEvent.Dispose();
-            notifyFlushedUntilAddressSemaphore?.Dispose();
+            notifyFlushedUntilAddressTcs = null;
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
@@ -1312,15 +1312,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>Used by applications to make the current state of the database immutable quickly</summary>
-        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
+        public bool ShiftReadOnlyToTail(out long tailAddress, out Task notifyDone)
         {
             notifyDone = null;
             tailAddress = GetTailAddress();
             var localTailAddress = tailAddress;
             if (MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out _))
             {
-                notifyFlushedUntilAddressSemaphore = new SemaphoreSlim(0);
-                notifyDone = notifyFlushedUntilAddressSemaphore;
+                notifyFlushedUntilAddressTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                notifyDone = notifyFlushedUntilAddressTcs.Task;
                 notifyFlushedUntilAddress = localTailAddress;
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress));
                 return true;
@@ -1581,7 +1581,7 @@ namespace Tsavorite.core
                     flushEvent.Set();
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
-                        _ = notifyFlushedUntilAddressSemaphore.Release();
+                        _ = notifyFlushedUntilAddressTcs.TrySetResult(true);
                 }
             }
 
@@ -1600,8 +1600,8 @@ namespace Tsavorite.core
         /// <summary>Address for notification of flushed-until</summary>
         public long notifyFlushedUntilAddress;
 
-        /// <summary>Semaphore for notification of flushed-until</summary>
-        public SemaphoreSlim notifyFlushedUntilAddressSemaphore;
+        /// <summary>TaskCompletionSource for notification of flushed-until</summary>
+        public TaskCompletionSource<bool> notifyFlushedUntilAddressTcs;
 
         /// <summary>Reset for recovery</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]

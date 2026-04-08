@@ -327,8 +327,8 @@ namespace Tsavorite.test.Objects
             store.epoch.Resume();
             try
             {
-                Assert.That(store.hlogBase.ShiftReadOnlyToTail(out _, out var sroSemaphore), Is.True);
-                sroSemaphore.Wait();
+                Assert.That(store.hlogBase.ShiftReadOnlyToTail(out _, out var sroTask), Is.True);
+                sroTask.Wait();
             }
             finally
             {
@@ -417,11 +417,11 @@ namespace Tsavorite.test.Objects
             // We have to wait for this outside the epoch to avoid deadlock.
             gate.Wait();
 
-            SemaphoreSlim sroSemaphore;
+            Task sroTask;
             store.epoch.Resume();
             try
             {
-                Assert.That(store.hlogBase.ShiftReadOnlyToTail(out _, out sroSemaphore), Is.True);
+                Assert.That(store.hlogBase.ShiftReadOnlyToTail(out _, out sroTask), Is.True);
             }
             finally
             {
@@ -429,7 +429,7 @@ namespace Tsavorite.test.Objects
             }
             gate.Dispose();
 
-            await Task.WhenAll(task, sroSemaphore.WaitAsync(millisecondsTimeout: 2000));
+            await Task.WhenAll(task, sroTask);
 
             // Test that the FlushedUntilAddress is correct and that we get the right results back; nothing has been evicted yet, so all records are in memory.
             Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.GetTailAddress()));
