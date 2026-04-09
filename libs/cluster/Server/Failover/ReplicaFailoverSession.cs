@@ -170,6 +170,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimary));
+                throw;
             }
             finally
             {
