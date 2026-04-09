@@ -153,7 +153,7 @@ namespace Garnet.cluster
             finally
             {
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
-                logger?.LogWarning("AofSync task terminated; client disposed replicaId:{remoteNodeId} [{address}:{port}] previousAddress:{previousAddress}", remoteNodeId, address, port, PreviousAddress);
+                logger?.LogWarning("AofSyncDriver terminated; client disposed replicaId:{remoteNodeId} [{address}:{port}] startAddress: {startAddress}, previousAddress:{previousAddress}", remoteNodeId, address, port, StartAddress, PreviousAddress);
 
                 if (!aofSyncDriverStore.TryRemove(this))
                     logger?.LogError("Unable to remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
