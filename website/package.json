@@ -31,13 +31,17 @@
     "@docusaurus/module-type-aliases": "3.9.2",
     "@docusaurus/types": "3.9.2"
   },
-  "overrides": {
-    "webpack-dev-server": "^5.2.1",
-    "on-headers": "^1.1.0",
-    "lodash-es": "4.17.23",
+  "resolutions": {
+    "//serialize-javascript": "CVE-2024-11831 (RCE) and CVE-2025-27789 (DoS) – deps request ^6.x, force 7.x",
+    "serialize-javascript": "7.0.5",
+    "//webpackbar": "webpackbar 6.x passes invalid options to webpack >=5.106 ProgressPlugin",
+    "webpackbar": "7.0.0",
+    "//lodash-es": "CVE-2025-23083 (Code Injection) and CVE-2025-24964 (Prototype Pollution)",
+    "lodash-es": "4.18.1",
+    "//minimatch": "CVE-2024-21538, CVE-2023-36326, CVE-2023-34104 (ReDoS)",
     "minimatch": "3.1.5",
-    "serialize-javascript": "7.0.4",
-    "dompurify": "3.3.1"
+    "//dompurify": "CVE-2025-26791 (XSS)",
+    "dompurify": "3.3.3"
   },
   "browserslist": {
     "production": [
@@ -52,6 +56,6 @@
     ]
   },
   "engines": {
-    "node": ">=20.0"
+    "node": ">=22.0"
   }
 }
