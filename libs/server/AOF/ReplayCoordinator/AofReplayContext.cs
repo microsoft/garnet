@@ -20,7 +20,7 @@ namespace Garnet.server
         internal readonly RespServerSession respServerSession;
 
         public CustomProcedureInput customProcInput;
-        public readonly SessionParseState parseState;
+        public SessionParseState parseState;
 
         public readonly byte[] objectOutputBuffer;
 

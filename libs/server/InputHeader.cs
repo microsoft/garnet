@@ -303,7 +303,7 @@ namespace Garnet.server
             var len = parseState.DeserializeFrom(curr);
             curr += len;
 
-            return (int)(src - curr);
+            return (int)(curr - src);
         }
     }
 
