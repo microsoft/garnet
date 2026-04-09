@@ -23,6 +23,11 @@ namespace Garnet.common.Collections
         private int _count;
 
         /// <summary>
+        /// Raw heap access to do iteration really fast
+        /// </summary>
+        public (TElement element, TPriority priority)[] RawHeap => _heap;
+
+        /// <summary>
         /// Number of elements in the priority queue.
         /// </summary>
         public int Count => _count;

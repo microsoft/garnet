@@ -571,14 +571,18 @@ namespace Garnet.server
         /// <returns>The count of elements in the sorted set.</returns>
         public int Count()
         {
-            if (!HasExpirableItems())
+            if (!HasExpirableItems() || (expirationQueue.TryPeek(out _, out var minExpiration) && minExpiration > DateTimeOffset.UtcNow.Ticks))
                 return sortedSetDict.Count;
 
             var expiredKeysCount = 0;
-            foreach (var item in sortedSetDict)
+            var rawHeap = expirationQueue.RawHeap;
+            var heapCount = expirationQueue.Count;
+            for (int i = 0; i < heapCount; i++)
             {
-                if (IsExpired(item.Key))
+                if (rawHeap[i].priority < DateTimeOffset.UtcNow.Ticks)
+                {
                     expiredKeysCount++;
+                }
             }
             return sortedSetDict.Count - expiredKeysCount;
         }
@@ -616,7 +620,7 @@ namespace Garnet.server
             else
             {
                 HeapMemorySize -= MemoryUtils.IndexedPriorityQueueEntryOverhead;
-                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead + MemoryUtils.SortedSetOverhead);
             }
         }
 
@@ -669,6 +673,7 @@ namespace Garnet.server
             {
                 _ = sortedSetDict.Remove(key, out var value);
                 _ = sortedSet.Remove((value, key));
+                _ = expirationQueue.TryRemove(key);
                 UpdateSize(key, add: false);
                 return (int)SortedSetExpireResult.KeyAlreadyExpired;
             }
