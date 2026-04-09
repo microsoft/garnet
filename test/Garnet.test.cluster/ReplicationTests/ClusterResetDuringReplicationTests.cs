@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
-namespace Garnet.test.cluster.ReplicationTests
+namespace Garnet.test.cluster
 {
     /// <summary>
     /// These tests simulate scenarios where a replica gets stuck or is in replication attach and verify that

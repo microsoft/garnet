@@ -30,6 +30,8 @@ namespace Garnet.test.cluster
     [AllureNUnit]
     public class ClusterVectorSetTests : AllureTestBase
     {
+        protected int sublogCount = 1;
+
         private sealed class StringAndByteArrayComparer : IEqualityComparer<(string Key, byte[] Elem)>
         {
             public static readonly StringAndByteArrayComparer Instance = new();
@@ -2099,7 +2101,7 @@ namespace Garnet.test.cluster
 
         private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false)
         {
-            context.CreateInstances(shardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots);
+            context.CreateInstances(shardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots, sublogCount: sublogCount);
             context.CreateConnection(useTLS: true);
             return context.clusterTestUtils.SimpleSetupCluster(primary_count: primaryCount, replica_count: replicaCount);
         }

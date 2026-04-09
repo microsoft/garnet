@@ -231,12 +231,12 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
-            var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            var cconfig = context.clusterTestUtils.ClusterNodes(primaryIndex, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
-            shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            shards = context.clusterTestUtils.ClusterShards(primaryIndex, context.logger);
             ClassicAssert.AreEqual(1, shards.Count);
             ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
             ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
@@ -251,28 +251,28 @@ namespace Garnet.test.cluster
             // Populate Primary
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
-            var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
-            var replicaLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             // Populate Primary
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
             context.SimpleValidateDB(disableObjects, replicaIndex);
 
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
-            context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
-            context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
 
             // Shutdown secondary
-            context.nodes[1].Dispose(false);
+            context.nodes[replicaIndex].Dispose(false);
             context.clusterTestUtils.WaitForAofSyncDriverDipose(primaryIndex);
 
             // New insert
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
             // Restart secondary
-            context.nodes[1] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(1),
+            context.nodes[replicaIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(replicaIndex),
                 disableObjects: disableObjects,
                 tryRecover: true,
                 enableAOF: true,
@@ -281,15 +281,16 @@ namespace Garnet.test.cluster
                 cleanClusterConfig: false,
                 asyncReplay: asyncReplay,
                 sublogCount: sublogCount);
-            context.nodes[1].Start();
+            context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
-            for (var i = 1; i < replica_count; i++) context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
-            context.clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, context.logger);
+            for (var i = 1; i < replica_count; i++)
+                context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, replica_count, context.logger);
 
             // Validate synchronization was success
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
             context.SimpleValidateDB(disableObjects, replicaIndex);
         }
 
