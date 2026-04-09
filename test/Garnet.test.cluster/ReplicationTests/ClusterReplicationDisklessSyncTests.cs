@@ -13,15 +13,6 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
-    /// <summary>
-    /// TODO: Testing scenarios
-    /// 1. Empty replica attach sync
-    ///     a. Primary empty
-    ///     b. Primary non-empty
-    /// 2. Replica same history and version different AOF
-    /// 3. Replica same history and different version and AOF
-    /// 4. Replica different history, version and AOF
-    /// </summary>
     [AllureNUnit]
     [TestFixture]
     [NonParallelizable]
