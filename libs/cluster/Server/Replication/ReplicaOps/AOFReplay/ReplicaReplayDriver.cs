@@ -210,6 +210,7 @@ namespace Garnet.cluster
             ValidateSublogIndex(physicalSublogIdx);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
             var ptr = record;
+            var replicationOffset = currentAddress;
             // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
             while (ptr < record + recordLength)
             {
@@ -224,7 +225,7 @@ namespace Garnet.cluster
                     if (isCheckpointStart)
                     {
                         // This is safe to be updated in parallel given that each sublog replay taks will update its own slot with corresponding address of the checkpoint marker
-                        replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
+                        replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationOffset;
                     }
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
@@ -240,11 +241,13 @@ namespace Garnet.cluster
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
                 ptr += entryLength;
-                replicationManager.IncrementSublogReplicationOffset(physicalSublogIdx, entryLength);
+                replicationOffset += entryLength;
             }
             // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
 
-            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != nextAddress)
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
+
+            if (replicationOffset != nextAddress)
             {
                 logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
