@@ -28,6 +28,7 @@
     <PackageReference Include="Allure.Net.Commons" />
     <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="diskann-garnet" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
