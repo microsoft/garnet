@@ -541,11 +541,14 @@ namespace Garnet.server
 
             if (sortedSetObject2 != null)
             {
+                var keysToRemove = new List<byte[]>();
                 foreach (var item in dict1)
                 {
                     if (!sortedSetObject2.IsExpired(item.Key) && sortedSetObject2.sortedSetDict.ContainsKey(item.Key))
-                        _ = dict1.Remove(item.Key);
+                        keysToRemove.Add(item.Key);
                 }
+                foreach (var key in keysToRemove)
+                    _ = dict1.Remove(key);
             }
         }
 
