@@ -82,7 +82,9 @@ namespace Garnet.test
             var entries = AddVectors_FP32(db, key, vectors, dimensions, quantType, distanceMetric);
             var k = Math.Min(topK, entries.Count);
 
-            var useCosine = distanceMetric == "COSINE";
+            Func<float[], float[], double> distFunc = distanceMetric == "COSINE"
+                ? CosineDistance
+                : SquaredL2Distance_Raw;
             var totalMatchCount = 0;
             var totalExpectedCount = 0;
 
@@ -92,12 +94,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(k, vsimIds.Count,
                     $"VSIM should return {k} results for vector {entry.Id}");
 
-                var expectedNN = useCosine
-                    ? BruteForceNearestNeighbors_FP32_Cosine(entries, entry.Vector, k)
-                    : BruteForceNearestNeighbors_FP32(entries, entry.Vector, k);
-                var matchCount = useCosine
-                    ? CountDistanceBasedIntersection_FP32_Cosine(entries, entry.Vector, expectedNN, vsimIds)
-                    : CountDistanceBasedIntersection_FP32(entries, entry.Vector, expectedNN, vsimIds);
+                var expectedNN = BruteForceNearestNeighbors(entries, k,
+                    e => e.Id, e => distFunc(entry.Vector, e.Vector));
+                var expectedDist = CountPerDistance(entries, expectedNN,
+                    e => e.Id, e => (long)Math.Round(distFunc(entry.Vector, e.Vector) * 1_000_000));
+                var actualDist = CountPerDistance(entries, vsimIds,
+                    e => e.Id, e => (long)Math.Round(distFunc(entry.Vector, e.Vector) * 1_000_000));
+                var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
                 totalExpectedCount += expectedNN.Count;
@@ -126,9 +129,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(k, vsimIds.Count,
                     $"VSIM should return {k} results for vector {entry.Id}");
 
-                var expectedNN = BruteForceNearestNeighbors_XB8(entries, entry.VectorBytes, k);
-                var matchCount = CountDistanceBasedIntersection_XB8(
-                    entries, entry.VectorBytes, expectedNN, vsimIds);
+                var expectedNN = BruteForceNearestNeighbors(entries, k,
+                    e => e.Id, e => (double)SquaredL2Distance_XB8(e.VectorBytes, entry.VectorBytes));
+                var expectedDist = CountPerDistance(entries, expectedNN,
+                    e => e.Id, e => SquaredL2Distance_XB8(e.VectorBytes, entry.VectorBytes));
+                var actualDist = CountPerDistance(entries, vsimIds,
+                    e => e.Id, e => SquaredL2Distance_XB8(e.VectorBytes, entry.VectorBytes));
+                var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
                 totalExpectedCount += expectedNN.Count;
@@ -337,13 +344,12 @@ namespace Garnet.test
             return ids;
         }
 
-        private static HashSet<int> BruteForceNearestNeighbors_FP32(List<FP32VectorEntry> entries, float[] queryVector, int count)
+        private static HashSet<int> BruteForceNearestNeighbors<TEntry>(List<TEntry> entries, int count, Func<TEntry, int> getId, Func<TEntry, double> getDistance)
         {
             var pq = new PriorityQueue<int, double>();
             foreach (var entry in entries)
             {
-                var dist = SquaredL2Distance_Raw(queryVector, entry.Vector);
-                pq.Enqueue(entry.Id, -dist);
+                pq.Enqueue(getId(entry), -getDistance(entry));
                 if (pq.Count > count)
                     pq.Dequeue();
             }
@@ -354,32 +360,27 @@ namespace Garnet.test
             return result;
         }
 
-        private static int CountDistanceBasedIntersection_FP32(List<FP32VectorEntry> entries, float[] queryVector, HashSet<int> expectedIds, HashSet<int> actualIds)
+        private static int CountDictionaryIntersection(Dictionary<long, int> expected, Dictionary<long, int> actual)
         {
-            var expectedDistCounts = CountPerDistance_FP32_Raw(entries, queryVector, expectedIds);
-            var actualDistCounts = CountPerDistance_FP32_Raw(entries, queryVector, actualIds);
-
             var intersection = 0;
-            foreach (var kvp in expectedDistCounts)
+            foreach (var kvp in expected)
             {
-                if (actualDistCounts.TryGetValue(kvp.Key, out var actualCount))
+                if (actual.TryGetValue(kvp.Key, out var actualCount))
                     intersection += Math.Min(kvp.Value, actualCount);
             }
 
             return intersection;
         }
 
-        private static Dictionary<double, int> CountPerDistance_FP32_Raw(List<FP32VectorEntry> entries, float[] queryVector, HashSet<int> ids)
+        private static Dictionary<long, int> CountPerDistance<TEntry>(List<TEntry> entries, HashSet<int> ids, Func<TEntry, int> getId, Func<TEntry, long> getDistanceKey)
         {
-            var counts = new Dictionary<double, int>();
+            var counts = new Dictionary<long, int>();
             foreach (var entry in entries)
             {
-                if (!ids.Contains(entry.Id))
+                if (!ids.Contains(getId(entry)))
                     continue;
-                var dist = SquaredL2Distance_Raw(queryVector, entry.Vector);
-                if (!counts.ContainsKey(dist))
-                    counts[dist] = 0;
-                counts[dist]++;
+                var key = getDistanceKey(entry);
+                counts[key] = counts.GetValueOrDefault(key) + 1;
             }
 
             return counts;
@@ -395,55 +396,6 @@ namespace Garnet.test
             }
 
             return dist;
-        }
-
-        private static HashSet<int> BruteForceNearestNeighbors_XB8(List<XB8VectorEntry> entries, byte[] queryVector, int count)
-        {
-            var pq = new PriorityQueue<int, long>();
-            foreach (var entry in entries)
-            {
-                var dist = SquaredL2Distance_XB8(entry.VectorBytes, queryVector);
-                pq.Enqueue(entry.Id, -dist);
-                if (pq.Count > count)
-                    pq.Dequeue();
-            }
-
-            var result = new HashSet<int>();
-            while (pq.Count > 0)
-                result.Add(pq.Dequeue());
-
-            return result;
-        }
-
-        private static int CountDistanceBasedIntersection_XB8(List<XB8VectorEntry> entries, byte[] queryVector, HashSet<int> expectedIds, HashSet<int> actualIds)
-        {
-            var expectedDistCounts = CountPerDistance_XB8(entries, queryVector, expectedIds);
-            var actualDistCounts = CountPerDistance_XB8(entries, queryVector, actualIds);
-
-            var intersection = 0;
-            foreach (var kvp in expectedDistCounts)
-            {
-                if (actualDistCounts.TryGetValue(kvp.Key, out var actualCount))
-                    intersection += Math.Min(kvp.Value, actualCount);
-            }
-
-            return intersection;
-        }
-
-        private static Dictionary<long, int> CountPerDistance_XB8(List<XB8VectorEntry> entries, byte[] queryVector, HashSet<int> ids)
-        {
-            var counts = new Dictionary<long, int>();
-            foreach (var entry in entries)
-            {
-                if (!ids.Contains(entry.Id))
-                    continue;
-                var dist = SquaredL2Distance_XB8(entry.VectorBytes, queryVector);
-                if (!counts.ContainsKey(dist))
-                    counts[dist] = 0;
-                counts[dist]++;
-            }
-
-            return counts;
         }
 
         private static long SquaredL2Distance_XB8(byte[] a, byte[] b)
@@ -470,52 +422,6 @@ namespace Garnet.test
 
             var denom = Math.Sqrt(normA) * Math.Sqrt(normB);
             return denom == 0 ? 1.0 : 1.0 - dot / denom;
-        }
-
-        private static HashSet<int> BruteForceNearestNeighbors_FP32_Cosine(List<FP32VectorEntry> entries, float[] queryVector, int count)
-        {
-            var pq = new PriorityQueue<int, double>();
-            foreach (var entry in entries)
-            {
-                var dist = CosineDistance(queryVector, entry.Vector);
-                pq.Enqueue(entry.Id, -dist);
-                if (pq.Count > count)
-                    pq.Dequeue();
-            }
-
-            var result = new HashSet<int>();
-            while (pq.Count > 0)
-                result.Add(pq.Dequeue());
-            return result;
-        }
-
-        private static int CountDistanceBasedIntersection_FP32_Cosine(List<FP32VectorEntry> entries, float[] queryVector, HashSet<int> expectedIds, HashSet<int> actualIds)
-        {
-            var expectedDistCounts = CountPerDistance_FP32_Cosine(entries, queryVector, expectedIds);
-            var actualDistCounts = CountPerDistance_FP32_Cosine(entries, queryVector, actualIds);
-
-            var intersection = 0;
-            foreach (var kvp in expectedDistCounts)
-            {
-                if (actualDistCounts.TryGetValue(kvp.Key, out var actualCount))
-                    intersection += Math.Min(kvp.Value, actualCount);
-            }
-
-            return intersection;
-        }
-
-        private static Dictionary<double, int> CountPerDistance_FP32_Cosine(List<FP32VectorEntry> entries, float[] queryVector, HashSet<int> ids)
-        {
-            var counts = new Dictionary<double, int>();
-            foreach (var entry in entries)
-            {
-                if (!ids.Contains(entry.Id))
-                    continue;
-                var dist = CosineDistance(queryVector, entry.Vector);
-                counts[dist] = counts.GetValueOrDefault(dist) + 1;
-            }
-
-            return counts;
         }
 
         private class FP32VectorEntry
