@@ -40,6 +40,11 @@ namespace Garnet.common.Collections
             _index = new Dictionary<TElement, int>(comparer);
         }
 
+        /// <summary>
+        /// Determines whether the specified element exists in the priority queue.
+        /// </summary>
+        /// <param name="element">The element to look up.</param>
+        /// <returns><see langword="true"/> if the element exists; otherwise, <see langword="false"/>.</returns>
         public bool Exists(TElement element) => _index.ContainsKey(element);
 
         /// <summary>
@@ -136,20 +141,20 @@ namespace Garnet.common.Collections
 
             _index.Remove(key);
             _count--;
-            if (idxInHeap == _count)
+
+            if (idxInHeap != _count)
             {
-                // Removing the last element, no need to sift
-                return true;
+                _heap[idxInHeap] = _heap[_count];
+                _index[_heap[idxInHeap].element] = idxInHeap;
+
+                // Try sifting down, if it doesn't move then try sifting up
+                if (SiftDown(idxInHeap) == idxInHeap)
+                {
+                    SiftUp(idxInHeap);
+                }
             }
 
-            _heap[idxInHeap] = _heap[_count];
-            _index[_heap[idxInHeap].element] = idxInHeap;
-
-            // Try sifting down, if it doesn't move then try sifting up
-            if (SiftDown(idxInHeap) == idxInHeap)
-            {
-                SiftUp(idxInHeap);
-            }
+            _heap[_count] = default;
 
             if (_heap.Length > DefaultCapacity && _count < _heap.Length / 2)
             {
@@ -183,8 +188,13 @@ namespace Garnet.common.Collections
             if (_count > 0)
             {
                 _heap[0] = _heap[_count];
+                _heap[_count] = default;
                 _index[_heap[0].element] = 0;
                 SiftDown(0);
+            }
+            else
+            {
+                _heap[0] = default;
             }
 
             if (_heap.Length > DefaultCapacity && _count < _heap.Length / 2)
