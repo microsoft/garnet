@@ -293,10 +293,10 @@ namespace Garnet.server
 
             foreach (var key in sortedSetDict)
             {
-                if (IsExpired(key.Key) && IsExpired(key.Key))
+                if (IsExpired(key.Key) && other.IsExpired(key.Key))
                     continue;
 
-                if (IsExpired(key.Key) || IsExpired(key.Key))
+                if (IsExpired(key.Key) || other.IsExpired(key.Key))
                     return false;
 
                 if (!other.sortedSetDict.TryGetValue(key.Key, out var otherValue) || key.Value != otherValue)
@@ -676,7 +676,7 @@ namespace Garnet.server
             {
                 _ = sortedSetDict.Remove(key, out var value);
                 _ = sortedSet.Remove((value, key));
-                _ = expirationQueue.TryRemove(key);
+                TryRemoveExpiration(key);
                 UpdateSize(key, add: false);
                 return (int)SortedSetExpireResult.KeyAlreadyExpired;
             }
