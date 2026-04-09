@@ -44,6 +44,18 @@ namespace Garnet.server
         /// <summary>.Net object avg. overhead for holding a priority queue entry</summary>
         public const int PriorityQueueEntryOverhead = 48;
 
+        /// <summary>
+        /// .Net object overhead for IndexedPriorityQueue (Dictionary + array + count).
+        /// Dictionary(80) + array object header(24) + int(4) ≈ 108, rounded to 112.
+        /// </summary>
+        public const int IndexedPriorityQueueOverhead = 112;
+
+        /// <summary>
+        /// .Net object avg. overhead per entry in IndexedPriorityQueue.
+        /// Dictionary entry(64) + heap array slot (ref 8 + long 8 = 16) = 80.
+        /// </summary>
+        public const int IndexedPriorityQueueEntryOverhead = 80;
+
         internal static long CalculateKeyValueSize(byte[] key, IGarnetObject value)
         {
             // Round up key size to account for alignment during allocation 
