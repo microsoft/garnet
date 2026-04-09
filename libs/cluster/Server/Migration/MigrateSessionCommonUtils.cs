@@ -30,7 +30,7 @@ namespace Garnet.cluster
                 CompletePending(ref storeStatus, ref output, ref localServerSession.VectorBasicContext);
             }
 
-            if (storeStatus.IsCompletedSuccessfully)
+            if (storeStatus.Found)
             {
                 status = GarnetStatus.OK;
             }
@@ -49,13 +49,18 @@ namespace Garnet.cluster
                 return true;
             }
 
-            // Map up any namespaces as needed
-            VectorSessionFunctions.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
-
-            fixed (byte* ptr = output.SpanByteAndMemory.Span)
+            if (status == GarnetStatus.OK)
             {
-                return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
+                // Map up any namespaces as needed
+                VectorSessionFunctions.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
+
+                fixed (byte* ptr = output.SpanByteAndMemory.Span)
+                {
+                    return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
+                }
             }
+
+            return true;
 
             // Complete reads that go pending
             static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -79,8 +84,8 @@ namespace Garnet.cluster
             // Read the value for the key. This will populate output with the entire serialized record.
             status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
 
-            // Skip (but do not fail) if key NOTFOUND
-            if (status == GarnetStatus.NOTFOUND)
+            // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
+            if (status != GarnetStatus.OK)
             {
                 return true;
             }
