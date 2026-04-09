@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Garnet.common;
+using Garnet.common.Collections;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -141,8 +142,7 @@ namespace Garnet.server
     {
         private readonly SortedSet<(double Score, byte[] Element)> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
-        private Dictionary<byte[], long> expirationTimes;
-        private PriorityQueue<byte[], long> expirationQueue;
+        private IndexedPriorityQueue<byte[], long> expirationQueue;
 
         // Byte #31 is used to denote if key has expiration (1) or not (0)
         private const int ExpirationBitMask = 1 << 31;
@@ -192,8 +192,7 @@ namespace Garnet.server
                     if (expiration > 0)
                     {
                         InitializeExpirationStructures();
-                        expirationTimes.Add(item, expiration);
-                        expirationQueue.Enqueue(item, expiration);
+                        expirationQueue.EnqueueOrUpdate(item, expiration);
                         UpdateExpirationSize(add: true);
                     }
                 }
@@ -208,7 +207,6 @@ namespace Garnet.server
         {
             sortedSet = sortedSetObject.sortedSet;
             sortedSetDict = sortedSetObject.sortedSetDict;
-            expirationTimes = sortedSetObject.expirationTimes;
             expirationQueue = sortedSetObject.expirationQueue;
         }
 
@@ -252,7 +250,7 @@ namespace Garnet.server
             writer.Write(count);
             foreach (var kvp in sortedSetDict)
             {
-                if (expirationTimes is not null && expirationTimes.TryGetValue(kvp.Key, out var expiration))
+                if (expirationQueue is not null && expirationQueue.TryGetPriority(kvp.Key, out var expiration))
                 {
                     writer.Write(kvp.Key.Length | ExpirationBitMask);
                     writer.Write(kvp.Key);
@@ -277,7 +275,7 @@ namespace Garnet.server
         /// <param name="score"></param>
         public void Add(byte[] item, double score)
         {
-            DeleteExpiredItems();
+            DeleteExpiredItems(bound: 16);
 
             sortedSetDict.Add(item, score);
             _ = sortedSet.Add((score, item));
@@ -509,7 +507,7 @@ namespace Garnet.server
 
             if (sortedSetObject2 == null)
             {
-                if (sortedSetObject1.expirationTimes is null)
+                if (!sortedSetObject1.HasExpirableItems())
                 {
                     return new Dictionary<byte[], double>(sortedSetObject1.sortedSetDict, ByteArrayComparer.Instance);
                 }
@@ -577,7 +575,7 @@ namespace Garnet.server
                 return sortedSetDict.Count;
 
             var expiredKeysCount = 0;
-            foreach (var item in expirationTimes)
+            foreach (var item in sortedSetDict)
             {
                 if (IsExpired(item.Key))
                     expiredKeysCount++;
@@ -591,40 +589,33 @@ namespace Garnet.server
         /// <param name="key">The key to check for expiration.</param>
         /// <returns>True if the key is expired; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
+        public bool IsExpired(byte[] key) => expirationQueue is not null && expirationQueue.TryGetPriority(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
 
         /// <summary>
         /// Determines whether the sorted set has expirable items.
         /// </summary>
         /// <returns>True if the sorted set has expirable items; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool HasExpirableItems() => expirationTimes is not null;
+        public bool HasExpirableItems() => expirationQueue is not null && expirationQueue.Count > 0;
 
         #endregion
         private void InitializeExpirationStructures()
         {
-            if (expirationTimes is null)
+            if (expirationQueue is null)
             {
-                expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
-                expirationQueue = new PriorityQueue<byte[], long>();
-                HeapMemorySize += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
-                // No DiskSize adjustment needed yet; wait until keys are added or removed
+                expirationQueue = new IndexedPriorityQueue<byte[], long>(ByteArrayComparer.Instance);
+                HeapMemorySize += MemoryUtils.IndexedPriorityQueueOverhead;
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void UpdateExpirationSize(bool add, bool includePQ = true)
+        private void UpdateExpirationSize(bool add)
         {
-            // Account for dictionary entry and priority queue entry
-            var memorySize = IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
-            if (includePQ)
-                memorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
-
             if (add)
-                HeapMemorySize += memorySize;
+                HeapMemorySize += MemoryUtils.IndexedPriorityQueueEntryOverhead;
             else
             {
-                HeapMemorySize -= memorySize;
+                HeapMemorySize -= MemoryUtils.IndexedPriorityQueueEntryOverhead;
                 Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
             }
         }
@@ -632,47 +623,38 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void CleanupExpirationStructuresIfEmpty()
         {
-            if (expirationTimes.Count != 0)
+            if (expirationQueue.Count != 0)
                 return;
 
-            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead) * expirationQueue.Count;
-            HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
-            expirationTimes = null;
+            HeapMemorySize -= MemoryUtils.IndexedPriorityQueueOverhead;
             expirationQueue = null;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void DeleteExpiredItems()
+        private void DeleteExpiredItems(int bound = 0)
         {
-            if (expirationTimes is null)
+            if (expirationQueue is null)
                 return;
-            DeleteExpiredItemsWorker();
+            DeleteExpiredItemsWorker(bound);
         }
 
-        private void DeleteExpiredItemsWorker()
+        private void DeleteExpiredItemsWorker(int bound)
         {
+            int i = 0;
             while (expirationQueue.TryPeek(out var key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks)
             {
-                if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
-                {
-                    _ = expirationTimes.Remove(key);
-                    _ = expirationQueue.Dequeue();
-                    UpdateExpirationSize(add: false);
-                    if (sortedSetDict.TryGetValue(key, out var value))
-                    {
-                        _ = sortedSetDict.Remove(key);
-                        _ = sortedSet.Remove((value, key));
-                        UpdateSize(key, add: false);
-                    }
-                }
-                else
-                {
-                    // The key was not in expirationTimes. It may have been Remove()d.
-                    _ = expirationQueue.Dequeue();
+                if (bound > 0 && i >= bound)
+                    break;
 
-                    // Adjust memory size for the priority queue entry removal. No DiskSize change needed as it was not in expirationTimes.
-                    HeapMemorySize -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
+                _ = expirationQueue.Dequeue();
+                UpdateExpirationSize(add: false);
+                if (sortedSetDict.TryGetValue(key, out var value))
+                {
+                    _ = sortedSetDict.Remove(key);
+                    _ = sortedSet.Remove((value, key));
+                    UpdateSize(key, add: false);
                 }
+                i++;
             }
 
             CleanupExpirationStructuresIfEmpty();
@@ -693,7 +675,7 @@ namespace Garnet.server
 
             InitializeExpirationStructures();
 
-            if (expirationTimes.TryGetValue(key, out var currentExpiration))
+            if (expirationQueue.TryGetPriority(key, out var currentExpiration))
             {
                 if (expireOption.HasFlag(ExpireOption.NX) ||
                     (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
@@ -702,20 +684,15 @@ namespace Garnet.server
                     return (int)SortedSetExpireResult.ExpireConditionNotMet;
                 }
 
-                expirationTimes[key] = expiration;
-                expirationQueue.Enqueue(key, expiration);
-
-                // LogMemorySize of dictionary entry already accounted for as the key already exists.
-                // DiskSize of expiration already accounted for as the key already exists in expirationTimes.
-                HeapMemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
+                expirationQueue.EnqueueOrUpdate(key, expiration);
+                // In-place update — no size change needed
             }
             else
             {
                 if ((expireOption & ExpireOption.XX) == ExpireOption.XX || (expireOption & ExpireOption.GT) == ExpireOption.GT)
                     return (int)SortedSetExpireResult.ExpireConditionNotMet;
 
-                expirationTimes[key] = expiration;
-                expirationQueue.Enqueue(key, expiration);
+                expirationQueue.EnqueueOrUpdate(key, expiration);
                 UpdateExpirationSize(add: true);
             }
 
@@ -732,19 +709,17 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryRemoveExpiration(byte[] key)
         {
-            if (expirationTimes is null)
+            if (expirationQueue is null)
                 return false;
             return TryRemoveExpirationWorker(key);
         }
 
         private bool TryRemoveExpirationWorker(byte[] key)
         {
-            if (!expirationTimes.TryGetValue(key, out _))
+            if (!expirationQueue.TryRemove(key))
                 return false;
 
-            _ = expirationTimes.Remove(key);
-
-            UpdateExpirationSize(add: false, includePQ: false);
+            UpdateExpirationSize(add: false);
             CleanupExpirationStructuresIfEmpty();
             return true;
         }
@@ -753,7 +728,7 @@ namespace Garnet.server
         {
             if (!sortedSetDict.ContainsKey(key))
                 return -2;
-            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration))
+            if (expirationQueue is not null && expirationQueue.TryGetPriority(key, out var expiration))
                 return expiration;
             return -1;
         }
