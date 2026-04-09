@@ -91,10 +91,6 @@ namespace Garnet.server
                     if (storeWrapper.serverOptions.FailOnRecoveryError)
                         throw;
                 }
-                finally
-                {
-                    aofReplayCoordinator.Dispose();
-                }
 
                 return AofAddress.Create(storeWrapper.serverOptions.AofPhysicalSublogCount, -1);
             }
