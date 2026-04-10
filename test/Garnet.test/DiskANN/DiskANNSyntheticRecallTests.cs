@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -113,10 +114,12 @@ namespace Garnet.test
 
                 var expectedNN = BruteForceNearestNeighbors(entries, k,
                     e => e.Id, e => getDistance(entry.Vector, e.Vector));
-                var expectedDist = CountPerDistance(entries, expectedNN,
-                    e => e.Id, e => toDistanceKey(getDistance(entry.Vector, e.Vector)));
-                var actualDist = CountPerDistance(entries, vsimIds,
-                    e => e.Id, e => toDistanceKey(getDistance(entry.Vector, e.Vector)));
+                var expectedDist = CountPerDistance(entry.Vector,
+                    entries.Where(e => expectedNN.Contains(e.Id)).Select(e => e.Vector),
+                    getDistance, toDistanceKey);
+                var actualDist = CountPerDistance(entry.Vector,
+                    entries.Where(e => vsimIds.Contains(e.Id)).Select(e => e.Vector),
+                    getDistance, toDistanceKey);
                 var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
@@ -354,14 +357,12 @@ namespace Garnet.test
             return intersection;
         }
 
-        private static Dictionary<long, int> CountPerDistance<TEntry>(List<TEntry> entries, HashSet<int> ids, Func<TEntry, int> getId, Func<TEntry, long> getDistanceKey)
+        private static Dictionary<long, int> CountPerDistance<TVec>(TVec targetVector, IEnumerable<TVec> otherVectors, Func<TVec, TVec, double> getDistance, Func<double, long> toDistanceKey)
         {
             var counts = new Dictionary<long, int>();
-            foreach (var entry in entries)
+            foreach (var vec in otherVectors)
             {
-                if (!ids.Contains(getId(entry)))
-                    continue;
-                var key = getDistanceKey(entry);
+                var key = toDistanceKey(getDistance(targetVector, vec));
                 counts[key] = counts.GetValueOrDefault(key) + 1;
             }
 
