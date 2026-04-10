@@ -57,8 +57,6 @@ namespace Garnet.cluster
                 return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
             }
 
-            return true;
-
             // Complete reads that go pending
             static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
             {
