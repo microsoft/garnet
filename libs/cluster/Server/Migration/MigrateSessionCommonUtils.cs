@@ -11,16 +11,16 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
-        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory o, out GarnetStatus status)
+        private Task<bool> WriteOrSendMainStoreKeyValuePairAsync(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory o, out GarnetStatus status)
         {
             // Read value for key
             status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
 
             // Skip if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
-                return true;
+                return Task.FromResult(true);
 
             // Get SpanByte from stack if any
             ref var value = ref o.SpanByte;
@@ -43,12 +43,17 @@ namespace Garnet.cluster
             }
 
             // Write key to network buffer if it has not expired
-            if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(gcs, ref key, ref value))
-                return false;
 
-            return true;
+            if (ClusterSession.Expired(ref value))
+            {
+                // Ignore but do not fail
+                return Task.FromResult(true);
+            }
 
-            bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, ref SpanByte key, ref SpanByte value)
+            var sendTask = WriteOrSendMainStoreKeyValuePairAsync(gcs, ref key, ref value);
+            return sendTask;
+
+            Task<bool> WriteOrSendMainStoreKeyValuePairAsync(GarnetClientSession gcs, ref SpanByte key, ref SpanByte value)
             {
                 // Check if we need to initialize cluster migrate command arguments
                 if (gcs.NeedsInitialization)
@@ -58,17 +63,35 @@ namespace Garnet.cluster
                 while (!gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
                 {
                     // Flush key value pairs in the buffer
-                    if (!HandleMigrateTaskResponse(task))
-                        return false;
+                    var flushTask = HandleMigrateTaskResponseAsync(task);
+                    return flushTask.ContinueWith(
+                        res =>
+                        {
+                            if (!res.IsCompletedSuccessfully || !res.Result)
+                            {
+                                _ = Debugger.Launch();
+                                return false;
+                            }
 
-                    // re-initialize cluster migrate command parameters
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
+                            // re-initialize cluster migrate command parameters
+                            gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
+
+                            return true;
+                        },
+                        TaskContinuationOptions.RunContinuationsAsynchronously
+                    );
+
+                    //if (!HandleMigrateTaskResponse(task))
+                    //    return false;
+
+                    //// re-initialize cluster migrate command parameters
+                    //gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
                 }
-                return true;
+                return Task.FromResult(true);
             }
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, out GarnetStatus status)
+        private Task<bool> WriteOrSendObjectStoreKeyValuePairAsync(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, out GarnetStatus status)
         {
             var keyByteArray = key.AsReadOnlySpan().ToArray();
 
@@ -78,19 +101,19 @@ namespace Garnet.cluster
 
             // Skip if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
-                return true;
+                return Task.FromResult(true);
 
             if (!ClusterSession.Expired(ref value.GarnetObject))
             {
                 var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
 
-                if (!WriteOrSendObjectStoreKeyValuePair(gcs, keyByteArray, objectData, value.GarnetObject.Expiration))
-                    return false;
+                var sendTask = WriteOrSendObjectStoreKeyValuePairAsync(gcs, keyByteArray, objectData, value.GarnetObject.Expiration);
+                return sendTask;
             }
 
-            return true;
+            return Task.FromResult(true);
 
-            bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, byte[] key, byte[] value, long expiration)
+            async Task<bool> WriteOrSendObjectStoreKeyValuePairAsync(GarnetClientSession gcs, byte[] key, byte[] value, long expiration)
             {
                 // Check if we need to initialize cluster migrate command arguments
                 if (gcs.NeedsInitialization)
@@ -99,7 +122,7 @@ namespace Garnet.cluster
                 while (!gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
                 {
                     // Flush key value pairs in the buffer
-                    if (!HandleMigrateTaskResponse(task))
+                    if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                         return false;
                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false, isVectorSets: false);
                 }
@@ -112,26 +135,42 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="task"></param>
         /// <returns>True on successful completion of data send, otherwise false</returns>
-        public bool HandleMigrateTaskResponse(Task<string> task)
+        public async Task<bool> HandleMigrateTaskResponseAsync(Task<string> task)
         {
             if (task != null)
             {
                 try
                 {
-                    return task.ContinueWith(resp =>
+                    var respResult = await task.WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+
+                    // Check if setslotsrange executed correctly
+                    if (!respResult.Equals("OK", StringComparison.Ordinal))
                     {
-                        // Check if setslotsrange executed correctly
-                        if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                        {
-                            logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
-                            Status = MigrateState.FAIL;
-                            return false;
-                        }
-                        return true;
-                    }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
+                        _ = Debugger.Launch();
+
+                        logger?.LogError("ClusterMigrate Keys failed with error:{error}.", respResult);
+                        Status = MigrateState.FAIL;
+                        return false;
+                    }
+
+                    return true;
+
+                    //return task.ContinueWith(resp =>
+                    //{
+                    //    // Check if setslotsrange executed correctly
+                    //    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
+                    //    {
+                    //        logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
+                    //        Status = MigrateState.FAIL;
+                    //        return false;
+                    //    }
+                    //    return true;
+                    //}, TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(_timeout, _cts.Token).Result;
                 }
                 catch (Exception ex)
                 {
+                    _ = Debugger.Launch();
+
                     logger?.LogError(ex, "An error has occurred");
                     Status = MigrateState.FAIL;
                     return false;

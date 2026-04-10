@@ -161,7 +161,7 @@ namespace Garnet.cluster
                         return false;
                     }
                     return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+                }, TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
             }
         }
 

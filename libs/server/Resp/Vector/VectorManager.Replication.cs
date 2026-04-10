@@ -572,5 +572,15 @@ namespace Garnet.server
             Debug.Assert(!more);
             completedOutputs.Dispose();
         }
+
+        static void DebugAssert(bool cond, string msg)
+        {
+            if (!cond)
+            {
+                _ = Debugger.Launch();
+            }
+
+            Debug.Assert(cond, msg);
+        }
     }
 }

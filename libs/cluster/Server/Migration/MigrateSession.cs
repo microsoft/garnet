@@ -210,7 +210,7 @@ namespace Garnet.cluster
                                 return false;
                             }
                             return true;
-                        }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
+                        }, TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(_timeout, _cts.Token).Result;
                     }
                     catch (Exception ex)
                     {

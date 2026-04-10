@@ -59,9 +59,9 @@ namespace Garnet.server
 
             public readonly bool IsInUse(ulong context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -71,9 +71,9 @@ namespace Garnet.server
 
             public readonly bool IsMigrating(ulong context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
@@ -161,14 +161,14 @@ namespace Garnet.server
 
             public void MarkInUse(ulong context, ushort hashSlot)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) == 0, "About to mark context which is already in use");
+                DebugAssert((inUse & mask) == 0, "About to mark context which is already in use");
                 inUse |= mask;
 
                 slots[(int)bitIx] = hashSlot;
@@ -178,15 +178,15 @@ namespace Garnet.server
 
             public void MarkMigrating(ulong context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "About to mark migrating a context which is not in use");
-                Debug.Assert((migrating & mask) == 0, "About to mark migrating a context which is already migrating");
+                DebugAssert((inUse & mask) != 0, "About to mark migrating a context which is not in use");
+                DebugAssert((migrating & mask) == 0, "About to mark migrating a context which is already migrating");
                 migrating |= mask;
 
                 Version++;
@@ -194,16 +194,16 @@ namespace Garnet.server
 
             public void MarkMigrationComplete(ulong context, ushort hashSlot)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "Should already be in use");
-                Debug.Assert((migrating & mask) != 0, "Should be migrating target");
-                Debug.Assert(slots[(int)bitIx] == ushort.MaxValue, "Hash slot should not be known yet");
+                DebugAssert((inUse & mask) != 0, "Should already be in use");
+                DebugAssert((migrating & mask) != 0, "Should be migrating target");
+                DebugAssert(slots[(int)bitIx] == ushort.MaxValue, "Hash slot should not be known yet");
 
                 migrating &= ~mask;
 
@@ -214,15 +214,15 @@ namespace Garnet.server
 
             public void MarkCleaningUp(ulong context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "About to mark for cleanup when not actually in use");
-                Debug.Assert((cleaningUp & mask) == 0, "About to mark for cleanup when already marked");
+                DebugAssert((inUse & mask) != 0, "About to mark for cleanup when not actually in use");
+                DebugAssert((cleaningUp & mask) == 0, "About to mark for cleanup when already marked");
                 cleaningUp |= mask;
 
                 // If this slot were migrating, it isn't anymore
@@ -235,15 +235,15 @@ namespace Garnet.server
 
             public void FinishedCleaningUp(ulong context)
             {
-                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
-                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+                DebugAssert(context > 0, "Context 0 is reserved, should never queried");
+                DebugAssert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                DebugAssert(context <= byte.MaxValue, "Context larger than expected");
 
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((inUse & mask) != 0, "Cleaned up context which isn't in use");
-                Debug.Assert((cleaningUp & mask) != 0, "Cleaned up context not marked for it");
+                DebugAssert((inUse & mask) != 0, "Cleaned up context which isn't in use");
+                DebugAssert((cleaningUp & mask) != 0, "Cleaned up context not marked for it");
                 cleaningUp &= ~mask;
                 inUse &= ~mask;
 

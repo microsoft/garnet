@@ -36,8 +36,7 @@ namespace Garnet.cluster
 
                 logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
 
-                var result = await client.SetSlotRange(stateBytes, nodeid, _slotRanges)
-                    .WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                var result = await client.SetSlotRange(stateBytes, nodeid, _slotRanges).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
 
                 // Check if setslotsrange executed correctly
                 if (!result.Equals("OK", StringComparison.Ordinal))
@@ -92,21 +91,18 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin migration task
         /// </summary>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
+        public async Task<(bool Result, byte[] ErrorMessage)> TryStartMigrationTaskAsync()
         {
-            errorMessage = default;
             if (transferOption == TransferOption.KEYS)
             {
                 try
                 {
                     // This executes synchronously and serves the keys variant of resp command
-                    if (!MigrateKeys())
+                    if (!await MigrateKeysAsync().ConfigureAwait(false))
                     {
-                        errorMessage = "IOERR Migrate keys failed."u8;
                         Status = MigrateState.FAIL;
-                        return false;
+                        return (false, "IOERR Migrate keys failed."u8.ToArray());
                     }
 
                     Status = MigrateState.SUCCESS;
@@ -123,7 +119,7 @@ namespace Garnet.cluster
                 _ = Task.Run(BeginAsyncMigrationTask);
             }
 
-            return true;
+            return (true, null);
         }
 
         /// <summary>
@@ -163,7 +159,7 @@ namespace Garnet.cluster
 
                 // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
                 // we need to reserve destination sets on the other side
-                if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync())
+                if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to reserve destination vector sets, migration failed");
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);
@@ -173,7 +169,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 // Migrate actual data
-                if (!await MigrateSlotsDriverInline())
+                if (!await MigrateSlotsDriverInline().ConfigureAwait(false))
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);
@@ -187,7 +183,7 @@ namespace Garnet.cluster
                 // Lock config merge to avoid a background epoch bump
                 clusterProvider.clusterManager.SuspendConfigMerge();
                 configResumed = false;
-                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
 
                 // Change ownership of slots to target node.
                 if (!await TrySetSlotRangesAsync(GetTargetNodeId, MigrateState.NODE).ConfigureAwait(false))
@@ -208,7 +204,7 @@ namespace Garnet.cluster
                 }
 
                 // Gossip again to ensure that source and target agree on the slot exchange
-                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
                 #endregion
 
                 // Enqueue success log

@@ -6,6 +6,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 #if DEBUG
 using Garnet.common;
@@ -31,7 +32,7 @@ namespace Garnet.cluster
 
             try
             {
-                var reservedCtxs = await migrateOperation[0].Client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString());
+                var reservedCtxs = await migrateOperation[0].Client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString()).ConfigureAwait(false);
 
                 var rootNamespacesMigrating = _namespaces.Where(static x => (x % VectorManager.ContextStep) == 0);
 
@@ -81,7 +82,7 @@ namespace Garnet.cluster
 
             // Send main store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            var success = await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize).ConfigureAwait(false);
             if (!success) return false;
 
             // Send object store
@@ -91,7 +92,7 @@ namespace Garnet.cluster
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
                 logger?.LogWarning("Object Store migrate scan range [{objectStoreBeginAddress}, {objectStoreTailAddress}]", objectStoreBeginAddress, objectStoreTailAddress);
-                success = await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                success = await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize).ConfigureAwait(false);
                 if (!success) return false;
             }
 
@@ -100,7 +101,7 @@ namespace Garnet.cluster
             async Task<bool> CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
-                var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+                var migrateOperationRunners = new Task<bool>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 var i = 0;
                 while (i < migrateOperationRunners.Length)
                 {
@@ -111,7 +112,13 @@ namespace Garnet.cluster
 
                 try
                 {
-                    await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    var transmitResults = await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    if (!transmitResults.All(static x => x))
+                    {
+                        _ = Debugger.Launch();
+
+                        return false;
+                    }
 
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
                     if (storeType == StoreType.Main)
@@ -131,6 +138,9 @@ namespace Garnet.cluster
                                 var newContext = _namespaceMap[oldContext];
                                 VectorManager.SetContextForMigration(value, newContext);
 
+                                Task<bool> pendingHandleTask = null;
+
+                            retry:
                                 unsafe
                                 {
                                     fixed (byte* keyPtr = key, valuePtr = value)
@@ -143,26 +153,79 @@ namespace Garnet.cluster
 
                                         while (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
                                         {
-                                            if (!HandleMigrateTaskResponse(task))
+                                            var handleTask = HandleMigrateTaskResponseAsync(task);
+                                            if (handleTask.IsCompletedSuccessfully)
                                             {
-                                                logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
-                                                return false;
+                                                if (!handleTask.Result)
+                                                {
+                                                    logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
+                                                    return false;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                pendingHandleTask = handleTask;
+                                                goto awaitAndRetry;
                                             }
 
                                             gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
                                         }
 
                                         // Force a flush before doing the delete, in case that fails
-                                        if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                                        var handleBeforeDeleteTask = HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer());
+                                        if (handleBeforeDeleteTask.IsCompletedSuccessfully)
                                         {
-                                            logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", keySpan);
-                                            return false;
+                                            if (!handleBeforeDeleteTask.Result)
+                                            {
+                                                logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", keySpan);
+                                                return false;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            pendingHandleTask = handleBeforeDeleteTask;
+                                            goto awaitAndDelete;
                                         }
 
                                         // Delete the index on this node now that it's moved over to the destination node
                                         migrateOperation[0].DeleteVectorSet(ref keySpan);
+
+                                        continue;
                                     }
                                 }
+
+                                // Can't await in unsafe, so move out if we must go async
+                            awaitAndRetry:
+                                if (!await pendingHandleTask.ConfigureAwait(false))
+                                {
+                                    logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", Encoding.ASCII.GetString(key));
+                                    return false;
+                                }
+
+                                pendingHandleTask = null;
+                                goto retry;
+
+                                // Can't await in unsafe, so move out if we must go async
+                            awaitAndDelete:
+                                if (!await pendingHandleTask.ConfigureAwait(false))
+                                {
+                                    logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", Encoding.ASCII.GetString(key));
+                                    return false;
+                                }
+
+                                pendingHandleTask = null;
+
+                                unsafe
+                                {
+                                    fixed (byte* keyPtr = key)
+                                    {
+                                        var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+                                        // Delete the index on this node now that it's moved over to the destination node
+                                        migrateOperation[0].DeleteVectorSet(ref keySpan);
+                                    }
+                                }
+
+                                continue;
                             }
                         }
                     }
@@ -177,7 +240,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 var migrateOperation = this.migrateOperation[taskId];
                 var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTaskCount;
@@ -187,7 +250,7 @@ namespace Garnet.cluster
                 workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
                 workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
                 if (!migrateOperation.Initialize())
-                    return Task.FromResult(false);
+                    return false;
 
                 var cursor = workerStartAddress;
                 logger?.LogWarning("<{StoreType}:{taskId}> migrate scan range [{workerStartAddress}, {workerEndAddress}]", storeType, taskId, workerStartAddress, workerEndAddress);
@@ -209,7 +272,13 @@ namespace Garnet.cluster
                     WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateOperation.TransmitSlots(storeType);
+                    if (!await migrateOperation.TransmitSlotsAsync(storeType).ConfigureAwait(false))
+                    {
+                        _ = Debugger.Launch();
+
+                        logger?.LogError("[{taskId}> Transmit Slots failed for {cursor} to {current}", taskId, cursor, current);
+                        return false;
+                    }
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
@@ -223,7 +292,7 @@ namespace Garnet.cluster
                     cursor = current;
                 }
 
-                return Task.FromResult(true);
+                return true;
             }
         }
     }

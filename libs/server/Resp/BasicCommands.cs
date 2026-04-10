@@ -854,6 +854,7 @@ namespace Garnet.server
         {
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             toDispose = true;
             return true;
         }

@@ -200,7 +200,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogCritical(ex, "GOSSIP faulted processing response");
                 }
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            }, TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
         }
 
         /// <summary>

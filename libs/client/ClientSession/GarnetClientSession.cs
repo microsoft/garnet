@@ -193,7 +193,7 @@ namespace Garnet.client
                         NoDelay = true
                     };
 
-                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                         return socket;
                 }
             }
@@ -203,7 +203,7 @@ namespace Garnet.client
                 if (EndPoint is not UnixDomainSocketEndPoint)
                     socket.NoDelay = true;
 
-                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken).ConfigureAwait(false))
                     return socket;
             }
 
@@ -228,7 +228,7 @@ namespace Garnet.client
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
                     var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
-                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)).ConfigureAwait(false) == connectTask)
                     {
                         // Task completed within timeout.
                         // Consider that the task may have faulted or been canceled.
@@ -525,7 +525,11 @@ namespace Garnet.client
                 else if (!RawResult)
                 {
                     var tcs = tcsQueue.Dequeue();
-                    if (error) tcs?.SetException(new Exception(result));
+                    if (error)
+                    {
+                        _ = Debugger.Launch();
+                        tcs?.SetException(new Exception(result));
+                    }
                     else tcs?.SetResult(result);
                 }
             }
@@ -533,7 +537,12 @@ namespace Garnet.client
             if (RawResult)
             {
                 var tcs = tcsQueue.Dequeue();
-                if (error) tcs?.SetException(new Exception(result));
+                if (error)
+                {
+                    _ = Debugger.Launch();
+
+                    tcs?.SetException(new Exception(result));
+                }
                 else tcs?.SetResult(result);
             }
 
@@ -579,6 +588,8 @@ namespace Garnet.client
             }
             while (!tcsQueue.IsEmpty())
             {
+                _ = Debugger.Launch();
+
                 var tcs = tcsQueue.Dequeue();
                 tcs?.TrySetException(disposeException);
             }

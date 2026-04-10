@@ -356,7 +356,24 @@ namespace Garnet.cluster
             else
             {
                 //Start migration task
-                if (!mSession.TryStartMigrationTask(out var errorMessage))
+                var migrationStartTask = mSession.TryStartMigrationTaskAsync();
+
+                // We must block here for the KEYS option
+                //
+                // Other options schedule work in the background and the task "completes" immediately
+                bool success;
+                byte[] errorMessage;
+                if (migrationStartTask.IsCompletedSuccessfully)
+                {
+                    (success, errorMessage) = migrationStartTask.Result;
+                }
+                else
+                {
+                    (success, errorMessage) = migrationStartTask.GetAwaiter().GetResult();
+                }
+
+                // Write out response
+                if (!success)
                 {
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();

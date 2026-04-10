@@ -1592,11 +1592,24 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(data2.SequenceEqual(emb2));
         }
 
+        class HackTraceListener : TraceListener
+        {
+            public override void Fail(string message, string detailMessage)
+            {
+                _ = Debugger.Launch();
+            }
+
+            public override void Write(string message) { }
+            public override void WriteLine(string message) { }
+        }
+
         [Test]
         public async Task MigrateVectorStressAsync()
         {
             // Move vector sets back and forth between replicas, making sure we don't drop data
             // Keeps reads and writes going continuously
+
+            Trace.Listeners.Add(new HackTraceListener());
 
             const int Primary0Index = 0;
             const int Primary1Index = 1;

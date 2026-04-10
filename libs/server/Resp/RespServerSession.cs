@@ -470,6 +470,8 @@ namespace Garnet.server
             }
             catch (RespParsingException ex)
             {
+                _ = Debugger.Launch();
+
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
@@ -486,6 +488,8 @@ namespace Garnet.server
             }
             catch (GarnetException ex)
             {
+                _ = Debugger.Launch();
+
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
 
@@ -514,6 +518,8 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
+                _ = Debugger.Launch();
+
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
