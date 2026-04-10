@@ -1530,6 +1530,10 @@ namespace Garnet.test.cluster
             {
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
+                    // Skip migration/import markers like [slot->-nodeId] and [slot-<-nodeId]
+                    if (nodeInfo[i].StartsWith('['))
+                        continue;
+
                     var range = nodeInfo[i].Split('-');
                     if (!ushort.TryParse(range[0], out var slotStart))
                         Assert.Fail($"GetOwnedSlotsFromNode: {range[0]}");

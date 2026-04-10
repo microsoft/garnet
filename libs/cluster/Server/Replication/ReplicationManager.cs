@@ -69,8 +69,6 @@ namespace Garnet.cluster
 
         public void SetSublogReplicationOffset(int sublogIdx, long offset)
             => replicationOffset[sublogIdx] = offset;
-        public void IncrementSublogReplicationOffset(int sublogIdx, long offset)
-            => replicationOffset[sublogIdx] += offset;
         public long GetSublogReplicationOffset(int sublogIdx)
             => replicationOffset[sublogIdx];
 
