@@ -80,35 +80,16 @@ namespace Garnet.test
             var key = $"recalltest_{tag.Replace(' ', '_')}";
 
             var entries = AddVectors_FP32(db, key, vectors, dimensions, quantType, distanceMetric);
-            var k = Math.Min(topK, entries.Count);
-
             Func<float[], float[], double> distFunc = distanceMetric == "COSINE"
                 ? CosineDistance
                 : SquaredL2Distance_Raw;
-            var totalMatchCount = 0;
-            var totalExpectedCount = 0;
 
-            foreach (var entry in entries)
-            {
-                var vsimIds = VsimQuery_FP32(db, key, entry.Vector, dimensions, k);
-                ClassicAssert.AreEqual(k, vsimIds.Count,
-                    $"VSIM should return {k} results for vector {entry.Id}");
-
-                var expectedNN = BruteForceNearestNeighbors(entries, k,
-                    e => e.Id, e => distFunc(entry.Vector, e.Vector));
-                var expectedDist = CountPerDistance(entries, expectedNN,
-                    e => e.Id, e => (long)Math.Round(distFunc(entry.Vector, e.Vector) * 1_000_000));
-                var actualDist = CountPerDistance(entries, vsimIds,
-                    e => e.Id, e => (long)Math.Round(distFunc(entry.Vector, e.Vector) * 1_000_000));
-                var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
-
-                totalMatchCount += matchCount;
-                totalExpectedCount += expectedNN.Count;
-            }
-
-            var recall = (double)totalMatchCount / totalExpectedCount;
-            ClassicAssert.GreaterOrEqual(recall, minRecall,
-                $"Recall {recall:F4} is below threshold {minRecall} for [{tag}]");
+            RunRecallTest(entries, topK, tag,
+                e => e.Id,
+                (entry, k) => VsimQuery_FP32(db, key, entry.Vector, dimensions, k),
+                (a, b) => distFunc(a.Vector, b.Vector),
+                d => (long)Math.Round(d * 1_000_000),
+                minRecall);
         }
 
         private void RunRecallTest_XB8(List<byte[]> vectors, int dimensions, string quantType, int topK, string tag, double minRecall = 0.99)
@@ -118,23 +99,41 @@ namespace Garnet.test
             var key = $"recalltest_{tag.Replace(' ', '_')}";
 
             var entries = AddVectors_XB8(db, key, vectors, dimensions, quantType);
-            var k = Math.Min(topK, entries.Count);
 
+            RunRecallTest(entries, topK, tag,
+                e => e.Id,
+                (entry, k) => VsimQuery_XB8(db, key, entry.Vector, k),
+                (a, b) => (double)SquaredL2Distance_XB8(a.Vector, b.Vector),
+                d => (long)d,
+                minRecall);
+        }
+
+        private static void RunRecallTest<TEntry>(
+            List<TEntry> entries,
+            int topK,
+            string tag,
+            Func<TEntry, int> getId,
+            Func<TEntry, int, HashSet<int>> queryVsim,
+            Func<TEntry, TEntry, double> getDistance,
+            Func<double, long> toDistanceKey,
+            double minRecall)
+        {
+            var k = Math.Min(topK, entries.Count);
             var totalMatchCount = 0;
             var totalExpectedCount = 0;
 
             foreach (var entry in entries)
             {
-                var vsimIds = VsimQuery_XB8(db, key, entry.VectorBytes, k);
+                var vsimIds = queryVsim(entry, k);
                 ClassicAssert.AreEqual(k, vsimIds.Count,
-                    $"VSIM should return {k} results for vector {entry.Id}");
+                    $"VSIM should return {k} results for vector {getId(entry)}");
 
                 var expectedNN = BruteForceNearestNeighbors(entries, k,
-                    e => e.Id, e => (double)SquaredL2Distance_XB8(e.VectorBytes, entry.VectorBytes));
+                    getId, e => getDistance(entry, e));
                 var expectedDist = CountPerDistance(entries, expectedNN,
-                    e => e.Id, e => SquaredL2Distance_XB8(e.VectorBytes, entry.VectorBytes));
+                    getId, e => toDistanceKey(getDistance(entry, e)));
                 var actualDist = CountPerDistance(entries, vsimIds,
-                    e => e.Id, e => SquaredL2Distance_XB8(e.VectorBytes, entry.VectorBytes));
+                    getId, e => toDistanceKey(getDistance(entry, e)));
                 var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
@@ -146,9 +145,9 @@ namespace Garnet.test
                 $"Recall {recall:F4} is below threshold {minRecall} for [{tag}]");
         }
 
-        private static List<FP32VectorEntry> AddVectors_FP32(IDatabase db, string key, List<float[]> vectors, int dimensions, string quantType, string distanceMetric = null)
+        private static List<VectorEntry<float[]>> AddVectors_FP32(IDatabase db, string key, List<float[]> vectors, int dimensions, string quantType, string distanceMetric = null)
         {
-            var entries = new List<FP32VectorEntry>(vectors.Count);
+            var entries = new List<VectorEntry<float[]>>(vectors.Count);
 
             // VADD key VALUES <dim> [dim values...] <idBytes> <quantType> EF 200 M 16 [XDISTANCE_METRIC <metric>]
             List<object> baseArgs =
@@ -190,7 +189,7 @@ namespace Garnet.test
                 var res = db.Execute("VADD", args);
                 ClassicAssert.AreEqual(1, (int)res, $"VADD should return 1 for new vector {vectorId}");
 
-                entries.Add(new FP32VectorEntry
+                entries.Add(new VectorEntry<float[]>
                 {
                     Id = vectorId,
                     IdStr = idStr,
@@ -220,9 +219,9 @@ namespace Garnet.test
             return ParseVsimIds((RedisResult[])res);
         }
 
-        private static List<XB8VectorEntry> AddVectors_XB8(IDatabase db, string key, List<byte[]> vectors, int dimensions, string quantType)
+        private static List<VectorEntry<byte[]>> AddVectors_XB8(IDatabase db, string key, List<byte[]> vectors, int dimensions, string quantType)
         {
-            var entries = new List<XB8VectorEntry>(vectors.Count);
+            var entries = new List<VectorEntry<byte[]>>(vectors.Count);
 
             // VADD key XB8 <vectorBytes> <idBytes> <quantType> EF 200 M 16
             var args = new object[]
@@ -242,11 +241,11 @@ namespace Garnet.test
                 var res = db.Execute("VADD", args);
                 ClassicAssert.AreEqual(1, (int)res, $"VADD should return 1 for new vector {vectorId}");
 
-                entries.Add(new XB8VectorEntry
+                entries.Add(new VectorEntry<byte[]>
                 {
                     Id = vectorId,
                     IdStr = idStr,
-                    VectorBytes = vectors[idx],
+                    Vector = vectors[idx],
                 });
             }
 
@@ -424,18 +423,11 @@ namespace Garnet.test
             return denom == 0 ? 1.0 : 1.0 - dot / denom;
         }
 
-        private class FP32VectorEntry
+        private class VectorEntry<TVec>
         {
             public int Id;
             public string IdStr;
-            public float[] Vector;
-        }
-
-        private class XB8VectorEntry
-        {
-            public int Id;
-            public string IdStr;
-            public byte[] VectorBytes;
+            public TVec Vector;
         }
 
     }
