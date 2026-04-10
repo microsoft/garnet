@@ -921,7 +921,7 @@ namespace Garnet.server
 
         private void SortedSetCollect(ref ObjectInput input, ref ObjectOutput output)
         {
-            DeleteExpiredItems(bound: 16);
+            DeleteExpiredItems();
 
             output.result1 = 1;
         }
