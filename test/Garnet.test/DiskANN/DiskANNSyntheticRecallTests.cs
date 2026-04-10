@@ -102,6 +102,8 @@ namespace Garnet.test
             var key = $"recalltest_{tag.Replace(' ', '_')}";
 
             var entries = addVectors(db, key, vectors, dimensions, quantType);
+            var idToVector = entries.ToDictionary(e => e.Id, e => e.Vector);
+            var allVectors = entries.Select(e => e.Vector).ToList();
             var k = Math.Min(topK, entries.Count);
             var totalMatchCount = 0;
             var totalExpectedCount = 0;
@@ -112,18 +114,14 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(k, vsimIds.Count,
                     $"VSIM should return {k} results for vector {entry.Id}");
 
-                var expectedNN = BruteForceNearestNeighbors(entries, k,
-                    e => e.Id, e => getDistance(entry.Vector, e.Vector));
-                var expectedDist = CountPerDistance(entry.Vector,
-                    entries.Where(e => expectedNN.Contains(e.Id)).Select(e => e.Vector),
-                    getDistance, toDistanceKey);
-                var actualDist = CountPerDistance(entry.Vector,
-                    entries.Where(e => vsimIds.Contains(e.Id)).Select(e => e.Vector),
-                    getDistance, toDistanceKey);
+                var actualNeighbors = vsimIds.Select(id => idToVector[id]).ToList();
+                var expectedNeighbors = BruteForceNearestNeighbors(entry.Vector, allVectors, k, getDistance);
+                var expectedDist = CountPerDistance(entry.Vector, expectedNeighbors, getDistance, toDistanceKey);
+                var actualDist = CountPerDistance(entry.Vector, actualNeighbors, getDistance, toDistanceKey);
                 var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
-                totalExpectedCount += expectedNN.Count;
+                totalExpectedCount += expectedNeighbors.Count;
             }
 
             var recall = (double)totalMatchCount / totalExpectedCount;
@@ -329,17 +327,17 @@ namespace Garnet.test
             return ids;
         }
 
-        private static HashSet<int> BruteForceNearestNeighbors<TEntry>(List<TEntry> entries, int count, Func<TEntry, int> getId, Func<TEntry, double> getDistance)
+        private static List<TVec> BruteForceNearestNeighbors<TVec>(TVec targetVector, List<TVec> candidates, int count, Func<TVec, TVec, double> getDistance)
         {
-            var pq = new PriorityQueue<int, double>();
-            foreach (var entry in entries)
+            var pq = new PriorityQueue<TVec, double>();
+            foreach (var candidate in candidates)
             {
-                pq.Enqueue(getId(entry), -getDistance(entry));
+                pq.Enqueue(candidate, -getDistance(targetVector, candidate));
                 if (pq.Count > count)
                     pq.Dequeue();
             }
 
-            var result = new HashSet<int>();
+            var result = new List<TVec>(count);
             while (pq.Count > 0)
                 result.Add(pq.Dequeue());
             return result;
