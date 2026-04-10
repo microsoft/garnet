@@ -3,14 +3,16 @@
 
 using System;
 using System.Collections.Generic;
+using Allure.NUnit;
 using Garnet.common.Collections;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class IndexedPriorityQueueTests
+    public class IndexedPriorityQueueTests : AllureTestBase
     {
         #region Basic Operations
 
