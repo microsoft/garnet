@@ -44,8 +44,12 @@ namespace Garnet.test
         public void GridRecall_FP32_NoQuant(int gridSize, int dimensions, int topK)
         {
             var vectors = GenerateGridVectors(dimensions, gridSize);
-            RunRecallTest_FP32(vectors, dimensions, "NOQUANT", topK,
-                tag: $"grid={gridSize} dim={dimensions} FP32 NOQUANT topK={topK}");
+            RunRecallTest(vectors, dimensions, "NOQUANT", topK,
+                $"grid={gridSize} dim={dimensions} FP32 NOQUANT topK={topK}",
+                (db, key, vecs, dim, qt) => AddVectors_FP32(db, key, vecs, dim, qt),
+                (db, key, vec, k) => VsimQuery_FP32(db, key, vec, dimensions, k),
+                SquaredL2Distance_Raw,
+                d => (long)Math.Round(d * 1_000_000));
         }
 
         [Test]
@@ -55,8 +59,12 @@ namespace Garnet.test
         public void GridRecall_XB8_XPREQ8(int gridSize, int dimensions, int topK)
         {
             var vectors = GenerateGridVectorsUInt8(dimensions, gridSize);
-            RunRecallTest_XB8(vectors, dimensions, "XPREQ8", topK,
-                tag: $"grid={gridSize} dim={dimensions} XB8 XPREQ8 topK={topK}");
+            RunRecallTest(vectors, dimensions, "XPREQ8", topK,
+                $"grid={gridSize} dim={dimensions} XB8 XPREQ8 topK={topK}",
+                (db, key, vecs, dim, qt) => AddVectors_XB8(db, key, vecs, dim, qt),
+                (db, key, vec, k) => VsimQuery_XB8(db, key, vec, k),
+                (a, b) => (double)SquaredL2Distance_XB8(a, b),
+                d => (long)d);
         }
 
         [Test]
@@ -68,72 +76,47 @@ namespace Garnet.test
             var vectors = radius != 0.0f
                 ? GenerateCircleVectors(pointCount, radius)
                 : GenerateVariousRadiiCircleVectors(pointCount);
-            RunRecallTest_FP32(vectors, 2, "NOQUANT", topK,
-                distanceMetric: "COSINE",
-                tag: $"circle={pointCount}pt {(radius != 0.0f ? $"r={radius}" : "variousRadii")} FP32 NOQUANT COSINE topK={topK}");
+            RunRecallTest(vectors, 2, "NOQUANT", topK,
+                $"circle={pointCount}pt {(radius != 0.0f ? $"r={radius}" : "variousRadii")} FP32 NOQUANT COSINE topK={topK}",
+                (db, key, vecs, dim, qt) => AddVectors_FP32(db, key, vecs, dim, qt, "COSINE"),
+                (db, key, vec, k) => VsimQuery_FP32(db, key, vec, 2, k),
+                CosineDistance,
+                d => (long)Math.Round(d * 1_000_000));
         }
 
-        private void RunRecallTest_FP32(List<float[]> vectors, int dimensions, string quantType, int topK, string tag, string distanceMetric = null, double minRecall = 0.99)
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-            var key = $"recalltest_{tag.Replace(' ', '_')}";
-
-            var entries = AddVectors_FP32(db, key, vectors, dimensions, quantType, distanceMetric);
-            Func<float[], float[], double> distFunc = distanceMetric == "COSINE"
-                ? CosineDistance
-                : SquaredL2Distance_Raw;
-
-            RunRecallTest(entries, topK, tag,
-                e => e.Id,
-                (entry, k) => VsimQuery_FP32(db, key, entry.Vector, dimensions, k),
-                (a, b) => distFunc(a.Vector, b.Vector),
-                d => (long)Math.Round(d * 1_000_000),
-                minRecall);
-        }
-
-        private void RunRecallTest_XB8(List<byte[]> vectors, int dimensions, string quantType, int topK, string tag, double minRecall = 0.99)
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-            var key = $"recalltest_{tag.Replace(' ', '_')}";
-
-            var entries = AddVectors_XB8(db, key, vectors, dimensions, quantType);
-
-            RunRecallTest(entries, topK, tag,
-                e => e.Id,
-                (entry, k) => VsimQuery_XB8(db, key, entry.Vector, k),
-                (a, b) => (double)SquaredL2Distance_XB8(a.Vector, b.Vector),
-                d => (long)d,
-                minRecall);
-        }
-
-        private static void RunRecallTest<TEntry>(
-            List<TEntry> entries,
+        private void RunRecallTest<TVec>(
+            List<TVec> vectors,
+            int dimensions,
+            string quantType,
             int topK,
             string tag,
-            Func<TEntry, int> getId,
-            Func<TEntry, int, HashSet<int>> queryVsim,
-            Func<TEntry, TEntry, double> getDistance,
+            Func<IDatabase, string, List<TVec>, int, string, List<VectorEntry<TVec>>> addVectors,
+            Func<IDatabase, string, TVec, int, HashSet<int>> queryVsim,
+            Func<TVec, TVec, double> getDistance,
             Func<double, long> toDistanceKey,
-            double minRecall)
+            double minRecall = 0.99)
         {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = $"recalltest_{tag.Replace(' ', '_')}";
+
+            var entries = addVectors(db, key, vectors, dimensions, quantType);
             var k = Math.Min(topK, entries.Count);
             var totalMatchCount = 0;
             var totalExpectedCount = 0;
 
             foreach (var entry in entries)
             {
-                var vsimIds = queryVsim(entry, k);
+                var vsimIds = queryVsim(db, key, entry.Vector, k);
                 ClassicAssert.AreEqual(k, vsimIds.Count,
-                    $"VSIM should return {k} results for vector {getId(entry)}");
+                    $"VSIM should return {k} results for vector {entry.Id}");
 
                 var expectedNN = BruteForceNearestNeighbors(entries, k,
-                    getId, e => getDistance(entry, e));
+                    e => e.Id, e => getDistance(entry.Vector, e.Vector));
                 var expectedDist = CountPerDistance(entries, expectedNN,
-                    getId, e => toDistanceKey(getDistance(entry, e)));
+                    e => e.Id, e => toDistanceKey(getDistance(entry.Vector, e.Vector)));
                 var actualDist = CountPerDistance(entries, vsimIds,
-                    getId, e => toDistanceKey(getDistance(entry, e)));
+                    e => e.Id, e => toDistanceKey(getDistance(entry.Vector, e.Vector)));
                 var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
