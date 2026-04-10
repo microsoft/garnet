@@ -111,5 +111,12 @@ namespace Tsavorite.core
 
         /// <summary>Dispose an on-disk log record</summary>
         void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason);
+
+        /// <summary>
+        /// Iterate records in the given logical address range and invoke the application-level
+        /// <see cref="IRecordDisposer.DisposeRecord"/> hook for each non-null record.
+        /// Used during page eviction to allow disposal of external resources.
+        /// </summary>
+        void DisposeRecordsInRangeForEviction(long startAddress, long endAddress);
     }
 }
