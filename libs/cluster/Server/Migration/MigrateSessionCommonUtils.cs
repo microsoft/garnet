@@ -43,21 +43,18 @@ namespace Garnet.cluster
                 status = GarnetStatus.NOTFOUND;
             }
 
-            // Skip (but do not fail) if key NOTFOUND
-            if (status == GarnetStatus.NOTFOUND)
+            // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
+            if (status != GarnetStatus.OK)
             {
                 return true;
             }
 
-            if (status == GarnetStatus.OK)
-            {
-                // Map up any namespaces as needed
-                VectorSessionFunctions.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
+            // Map up any namespaces as needed
+            VectorSessionFunctions.UpdateMigratedElementNamespaces(_namespaceMap, ref input, ref output);
 
-                fixed (byte* ptr = output.SpanByteAndMemory.Span)
-                {
-                    return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
-                }
+            fixed (byte* ptr = output.SpanByteAndMemory.Span)
+            {
+                return WriteOrSendRecordSpan(gcs, MigrationRecordSpanType.VectorSetElement, new(ptr, output.SpanByteAndMemory.Span.Length));
             }
 
             return true;
