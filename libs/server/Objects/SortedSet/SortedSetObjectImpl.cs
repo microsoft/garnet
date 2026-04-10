@@ -758,7 +758,7 @@ namespace Garnet.server
         /// <returns>A tuple containing the score and the element as a byte array.</returns>
         public (double Score, byte[] Element) PopMinOrMax(bool popMaxScoreElement = false)
         {
-            DeleteExpiredItems(bound: 16);
+            DeleteExpiredItems();
 
             if (sortedSet.Count == 0)
                 return default;
@@ -780,7 +780,7 @@ namespace Garnet.server
         /// <param name="op"></param>
         private void SortedSetPopMinOrMaxCount(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, SortedSetOperation op)
         {
-            DeleteExpiredItems(bound: 16);
+            DeleteExpiredItems();
 
             var count = input.arg1;
             var countDone = 0;
