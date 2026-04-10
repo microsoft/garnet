@@ -49,8 +49,7 @@ namespace Garnet.test
                 $"grid={gridSize} dim={dimensions} FP32 NOQUANT topK={topK}",
                 (db, key, vecs, dim, qt) => AddVectors_FP32(db, key, vecs, dim, qt),
                 (db, key, vec, k) => VsimQuery_FP32(db, key, vec, dimensions, k),
-                SquaredL2Distance_Raw,
-                d => (long)Math.Round(d * 1_000_000));
+                SquaredL2Distance_Raw);
         }
 
         [Test]
@@ -64,8 +63,7 @@ namespace Garnet.test
                 $"grid={gridSize} dim={dimensions} XB8 XPREQ8 topK={topK}",
                 (db, key, vecs, dim, qt) => AddVectors_XB8(db, key, vecs, dim, qt),
                 (db, key, vec, k) => VsimQuery_XB8(db, key, vec, k),
-                (a, b) => (double)SquaredL2Distance_XB8(a, b),
-                d => (long)d);
+                (a, b) => (double)SquaredL2Distance_XB8(a, b));
         }
 
         [Test]
@@ -81,8 +79,7 @@ namespace Garnet.test
                 $"circle={pointCount}pt {(radius != 0.0f ? $"r={radius}" : "variousRadii")} FP32 NOQUANT COSINE topK={topK}",
                 (db, key, vecs, dim, qt) => AddVectors_FP32(db, key, vecs, dim, qt, "COSINE"),
                 (db, key, vec, k) => VsimQuery_FP32(db, key, vec, 2, k),
-                CosineDistance,
-                d => (long)Math.Round(d * 1_000_000));
+                CosineDistance);
         }
 
         private void RunRecallTest<TVec>(
@@ -94,7 +91,6 @@ namespace Garnet.test
             Func<IDatabase, string, List<TVec>, int, string, List<VectorEntry<TVec>>> addVectors,
             Func<IDatabase, string, TVec, int, HashSet<int>> queryVsim,
             Func<TVec, TVec, double> getDistance,
-            Func<double, long> toDistanceKey,
             double minRecall = 0.99)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -116,8 +112,8 @@ namespace Garnet.test
 
                 var actualNeighbors = vsimIds.Select(id => idToVector[id]).ToList();
                 var expectedNeighbors = BruteForceNearestNeighbors(entry.Vector, allVectors, k, getDistance);
-                var expectedDist = CountPerDistance(entry.Vector, expectedNeighbors, getDistance, toDistanceKey);
-                var actualDist = CountPerDistance(entry.Vector, actualNeighbors, getDistance, toDistanceKey);
+                var expectedDist = CountPerDistance(entry.Vector, expectedNeighbors, getDistance);
+                var actualDist = CountPerDistance(entry.Vector, actualNeighbors, getDistance);
                 var matchCount = CountDictionaryIntersection(expectedDist, actualDist);
 
                 totalMatchCount += matchCount;
@@ -355,12 +351,12 @@ namespace Garnet.test
             return intersection;
         }
 
-        private static Dictionary<long, int> CountPerDistance<TVec>(TVec targetVector, IEnumerable<TVec> otherVectors, Func<TVec, TVec, double> getDistance, Func<double, long> toDistanceKey)
+        private static Dictionary<long, int> CountPerDistance<TVec>(TVec targetVector, IEnumerable<TVec> otherVectors, Func<TVec, TVec, double> getDistance)
         {
             var counts = new Dictionary<long, int>();
             foreach (var vec in otherVectors)
             {
-                var key = toDistanceKey(getDistance(targetVector, vec));
+                var key = (long)Math.Round(getDistance(targetVector, vec) * 100);
                 counts[key] = counts.GetValueOrDefault(key) + 1;
             }
 
