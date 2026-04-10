@@ -342,6 +342,49 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Iterate records in the given logical address range and call DisposeRecord on each.
+        /// Used during page eviction to allow disposal of external resources.
+        /// </summary>
+        internal void DisposeRecordsInRangeForEviction(long startAddress, long endAddress)
+        {
+            // Ensure we start after the page header
+            var page = GetPage(startAddress);
+            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
+
+            while (address < endAddress)
+            {
+                var physicalAddress = GetPhysicalAddress(address);
+                var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
+                var allocatedSize = logRecord.AllocatedSize;
+
+                // Guard against corrupt records causing infinite loops
+                if (allocatedSize <= 0)
+                    break;
+
+                // If record does not fit on page, stop (shouldn't happen within a single-page eviction range)
+                var offset = GetOffsetOnPage(address);
+                if (offset + allocatedSize > PageSize)
+                    break;
+
+                // Skip null and closed/sealed records
+                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan)
+                {
+                    address += allocatedSize;
+                    continue;
+                }
+
+                // Call application dispose hook directly for eviction. We do not call the full
+                // DisposeRecord (which includes ClearHeapFields/ClearOptionals) to keep eviction
+                // behavior unchanged — FreePage handles bulk cleanup of the ObjectIdMap.
+                // Currently DisposeRecordsInRangeForEviction is only called for PageEviction.
+                storeFunctions.DisposeRecord(ref logRecord, DisposeReason.PageEviction);
+
+                address += allocatedSize;
+            }
+        }
+
+        /// <summary>
         /// Dispose memory allocator
         /// </summary>
         public override void Dispose()
