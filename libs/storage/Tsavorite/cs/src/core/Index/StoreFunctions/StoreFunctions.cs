@@ -89,6 +89,10 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordDisposer.DisposeValueObject(valueObject, reason);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) => recordDisposer.DisposeRecord(ref logRecord, reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion

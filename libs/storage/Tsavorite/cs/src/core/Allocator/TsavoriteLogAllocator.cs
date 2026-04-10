@@ -142,5 +142,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <inheritdoc/>
+        public void DisposeRecordsInRangeForEviction(long startAddress, long endAddress) { }
     }
 }

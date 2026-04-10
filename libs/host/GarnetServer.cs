@@ -367,7 +367,8 @@ namespace Garnet
 
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
-                    () => new GarnetObjectSerializer(customCommandManager))
+                    () => new GarnetObjectSerializer(customCommandManager),
+                    new GarnetRecordDisposer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
