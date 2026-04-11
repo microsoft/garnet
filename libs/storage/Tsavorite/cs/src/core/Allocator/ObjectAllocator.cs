@@ -144,5 +144,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+
+        /// <inheritdoc/>
+        public readonly void DisposeRecordsInRangeForEviction(long startAddress, long endAddress) => _this.DisposeRecordsInRangeForEviction(startAddress, endAddress);
     }
 }

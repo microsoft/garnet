@@ -1483,6 +1483,10 @@ namespace Tsavorite.core
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
+                    // Dispose records being evicted — allows cleanup of external resources via DisposeRecord.
+                    if (storeFunctions.DisposeOnPageEviction)
+                        _wrapper.DisposeRecordsInRangeForEviction(start, end);
+
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
                         _ = MonotonicUpdate(ref BeginAddress, end, out _);

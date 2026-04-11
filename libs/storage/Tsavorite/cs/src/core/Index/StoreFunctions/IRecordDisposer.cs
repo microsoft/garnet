@@ -11,8 +11,8 @@ namespace Tsavorite.core
     public interface IRecordDisposer
     {
         /// <summary>
-        /// If true, <see cref="DisposeValueObject(IHeapObject, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
-        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and do any needed disposal there.
+        /// If true, <see cref="DisposeRecord(ref LogRecord, DisposeReason)"/> is called per record
+        /// during page evictions from both readcache and main log, allowing cleanup of external resources.
         /// </summary>
         public bool DisposeOnPageEviction { get; }
 
@@ -20,6 +20,13 @@ namespace Tsavorite.core
         /// Dispose the Key and Value of a record, if necessary. See comments in <see cref="IStoreFunctions.DisposeValueObject(IHeapObject, DisposeReason)"/> for details.
         /// </summary>
         void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
+
+        /// <summary>
+        /// Called during record disposal to allow the application to clean up external resources.
+        /// The application can inspect RecordType, ValueIsObject, or any other record property
+        /// to decide what cleanup is needed. Default implementation is a no-op.
+        /// </summary>
+        void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) { }
     }
 
     /// <summary>
