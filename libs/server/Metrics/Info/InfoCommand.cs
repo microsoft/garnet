@@ -28,17 +28,20 @@ namespace Garnet.server
                         reset = true;
                     else if (sbSection.EqualsUpperCaseSpanIgnoringCase("HELP"u8))
                         help = true;
-                    else if (!sbSection.EqualsUpperCaseSpanIgnoringCase("ALL"u8))
+                    else if (sbSection.EqualsUpperCaseSpanIgnoringCase("ALL"u8))
+                        sections.UnionWith(GarnetInfoMetrics.AllInfoSet);
+                    else if (sbSection.EqualsUpperCaseSpanIgnoringCase("DEFAULT"u8))
+                        sections.UnionWith(GarnetInfoMetrics.DefaultInfo);
+                    else if (sbSection.EqualsUpperCaseSpanIgnoringCase("EVERYTHING"u8))
+                        sections.UnionWith(GarnetInfoMetrics.DefaultInfo);
+                    else if (parseState.TryGetInfoMetricsType(i, out var sectionType))
                     {
-                        if (parseState.TryGetInfoMetricsType(i, out var sectionType))
-                        {
-                            sections.Add(sectionType);
-                        }
-                        else
-                        {
-                            invalid = true;
-                            invalidSection = parseState.GetString(i);
-                        }
+                        sections.Add(sectionType);
+                    }
+                    else
+                    {
+                        invalid = true;
+                        invalidSection = parseState.GetString(i);
                     }
                 }
             }

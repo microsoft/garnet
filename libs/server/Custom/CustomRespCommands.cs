@@ -53,11 +53,11 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isRecovering = false)
+        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isReplaying)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferAllocator, out _);
-            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output, isRecovering);
+            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output, isReplaying);
         }
 
         private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)
@@ -96,14 +96,14 @@ namespace Garnet.server
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            var output = new SpanByteAndMemory(null);
+            var output = new StringOutput();
             if (type == CommandType.ReadModifyWrite)
             {
                 _ = storageApi.RMW_MainStore(key, ref input, ref output);
-                Debug.Assert(!output.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
-                if (output.Memory != null)
-                    SendAndReset(output.Memory, output.Length);
+                if (output.SpanByteAndMemory.Memory != null)
+                    SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                 else
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -111,19 +111,19 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.Read_MainStore(key, ref input, ref output);
-                Debug.Assert(!output.IsSpanByte);
+                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (output.Memory != null)
-                        SendAndReset(output.Memory, output.Length);
+                    if (output.SpanByteAndMemory.Memory != null)
+                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                     else
                         while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                 }
                 else
                 {
-                    Debug.Assert(output.Memory == null);
+                    Debug.Assert(output.SpanByteAndMemory.Memory == null);
                     WriteNull();
                 }
             }
@@ -228,46 +228,46 @@ namespace Garnet.server
             var cmd = customCommandManagerSession.GetCustomRespCommand(customCommand.id);
             var stringInput = new StringInput(cmd, ref customCommandParseState, arg1: inputArg);
 
-            var _output = new SpanByteAndMemory(null);
+            var _output = new StringOutput();
             if (customCommand.type == CommandType.ReadModifyWrite)
             {
                 _ = storageApi.RMW_MainStore(key, ref stringInput, ref _output);
-                Debug.Assert(!_output.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
-                if (_output.Memory != null)
+                if (_output.SpanByteAndMemory.Memory != null)
                 {
-                    output = scratchBufferBuilder.FormatScratch(0, _output.ReadOnlySpan);
-                    _output.Memory.Dispose();
+                    output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                    _output.SpanByteAndMemory.Memory.Dispose();
                 }
                 else
                 {
-                    output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_OK);
+                    output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                 }
             }
             else
             {
                 var status = storageApi.Read_MainStore(key, ref stringInput, ref _output);
-                Debug.Assert(!_output.IsSpanByte);
+                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (_output.Memory != null)
+                    if (_output.SpanByteAndMemory.Memory != null)
                     {
-                        output = scratchBufferBuilder.FormatScratch(0, _output.ReadOnlySpan);
-                        _output.Memory.Dispose();
+                        output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                        _output.SpanByteAndMemory.Memory.Dispose();
                     }
                     else
                     {
-                        output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_OK);
+                        output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                     }
                 }
                 else
                 {
-                    Debug.Assert(_output.Memory == null);
+                    Debug.Assert(_output.SpanByteAndMemory.Memory == null);
                     if (respProtocolVersion >= 3)
-                        output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
+                        output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
                     else
-                        output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
+                        output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
                 }
             }
 
@@ -305,13 +305,16 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
-                        output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                     default:
                         if (_output.SpanByteAndMemory.Memory != null)
-                            output = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
+                        {
+                            output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                            _output.SpanByteAndMemory.Memory.Dispose();
+                        }
                         else
-                            output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_OK);
+                            output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
                 }
             }
@@ -324,19 +327,22 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         if (_output.SpanByteAndMemory.Memory != null)
-                            output = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
+                        {
+                            output = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
+                            _output.SpanByteAndMemory.Memory.Dispose();
+                        }
                         else
-                            output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_OK);
+                            output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(_output.SpanByteAndMemory.Memory == null);
                         if (respProtocolVersion >= 3)
-                            output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
+                            output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
                         else
-                            output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
+                            output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
                         break;
                     case GarnetStatus.WRONGTYPE:
-                        output = scratchBufferBuilder.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);
+                        output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                 }
             }

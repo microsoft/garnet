@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,8 +15,9 @@ using NotImplementedException = System.NotImplementedException;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespAdminCommandsTests
+    public class RespAdminCommandsTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -31,7 +33,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         #region LightclientTests
@@ -329,15 +331,18 @@ namespace Garnet.test
 
         [Test]
         [TestCase(63, 15, 1)]
-        [TestCase(63, 2, 1)]
+        [TestCase(63, 4, 1)]
         [TestCase(16, 16, 1)]
         [TestCase(5, 64, 1)]
+        //[Repeat(3000)]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
-            string sizeToString(int size) => size + "k";
+            static string sizeToString(int size) => size + "k";
 
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(memorySize), pageSize: sizeToString(pageSize));
+            var pageCount = recoveryMemorySize / pageSize;
+            var totalMemorySize = recoveryMemorySize + 64;  // Add in some for heap
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(totalMemorySize), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
@@ -345,28 +350,29 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 3000; i++)
-                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+                for (var i = 0; i < 3000; i++)
+                    _ = db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
 
-                for (int i = 0; i < 3000; i++)
+                for (var i = 0; i < 3000; i++)
                     ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
                 var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
-                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(recoveryMemorySize), pageSize: sizeToString(pageSize), heapMemorySize: "64k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(totalMemorySize /* will add 'k' */), pageCount: pageCount, pageSize: sizeToString(pageSize));
             server.Start();
 
-            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
+            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.HighWaterAllocatedPageCount, pageCount);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
                 for (var i = 3000; i < 3100; i++)
-                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+                    _ = db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
 
                 for (var i = 0; i < 3100; i++)
                     ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
@@ -376,7 +382,7 @@ namespace Garnet.test
         [Test]
         [TestCase("63k", "15k")]
         [TestCase("63k", "3k")]
-        [TestCase("63k", "1k")]
+        [TestCase("63k", "2k")]
         [TestCase("8k", "5k")]
         [TestCase("16k", "16k")]
         [TestCase("5k", "8k")]

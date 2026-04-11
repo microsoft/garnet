@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -20,8 +21,10 @@ namespace Tsavorite.core
         internal readonly IDevice objectLogDevice;
         internal readonly ILogger logger;
 
-        readonly DiskReadBuffer[] buffers;
+        DiskReadBuffer[] buffers;
         int currentIndex;
+
+        bool disposed;
 
         /// <summary>Device address to do the next read from (segment and offset); set at the start of a record by <see cref="ObjectLogReader{TStoreFunctions}"/>
         /// and incremented with each buffer read; all of these should be aligned to sector size, so this address remains sector-aligned.</summary>
@@ -41,7 +44,12 @@ namespace Tsavorite.core
             currentIndex = 0;
         }
 
-        internal DiskReadBuffer GetCurrentBuffer() => buffers[currentIndex];
+        internal DiskReadBuffer GetCurrentBuffer()
+        {
+            if (disposed)
+                throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
+            return buffers[currentIndex];
+        }
 
         int GetNextBufferIndex(int curIndex)
         {
@@ -116,6 +124,9 @@ namespace Tsavorite.core
         ///     in the ReadAsync call.</param>
         internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength)
         {
+            if (disposed)
+                throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
+
             Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
             nextFileReadPosition = startFilePosition;
             unreadLengthRemaining = totalLength;
@@ -139,6 +150,18 @@ namespace Tsavorite.core
                     break;
                 DoReadBuffer(ii, recordStartPosition);
                 recordStartPosition = 0;  // After the first read, subsequent reads start on an aligned address
+            }
+        }
+
+        /// <summary>
+        /// Called when one or more records with Objects have been read and via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback,
+        /// and we have completed reading and deserializing those objects.
+        /// </summary>
+        internal void OnEndReadRecords()
+        {
+            for (var ii = 0; ii < buffers.Length; ii++)
+            {
+                Debug.Assert(buffers[ii] is null || !buffers[ii].HasInFlightRead, $"All reads should have been completed by OnEndReadRecords()");
             }
         }
 
@@ -187,7 +210,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="nextBuffer">The next buffer</param>
         /// <returns></returns>
-        internal unsafe bool MoveToNextBuffer(out DiskReadBuffer nextBuffer)
+        internal bool MoveToNextBuffer(out DiskReadBuffer nextBuffer)
         {
             // If we have more data to read, "backfill" this buffer with a read before departing it, else initialize it.
             if (unreadLengthRemaining > 0)
@@ -206,13 +229,14 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal unsafe void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
+        internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
                 logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
 
             // Finish setting up the buffer
             var buffer = (DiskReadBuffer)context;
+
             buffer.endPosition += (int)numBytes;
             if (buffer.endPosition == 0)
                 Debug.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");
@@ -225,8 +249,18 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
-            for (var ii = 0; ii < buffers.Length; ii++)
-                buffers[ii]?.Dispose();
+            disposed = true;
+
+            // Atomic swap to avoid clearing twice.
+            var localBuffers = Interlocked.Exchange(ref buffers, null);
+            if (localBuffers == null)
+                return;
+
+            for (var ii = 0; ii < localBuffers.Length; ii++)
+                localBuffers[ii]?.Dispose();
+
+            // Restore the now-cleared buffers array.
+            //buffers = localBuffers;
         }
 
         /// <inheritdoc/>

@@ -95,7 +95,6 @@ namespace Tsavorite.core
             {
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
-                diskLogRecord = default;
             }
             diskLogRecord = default;
             currentAddress = nextAddress;
@@ -135,18 +134,15 @@ namespace Tsavorite.core
         {
             var offset = hlogBase.GetOffsetOnPage(logicalAddress);
 
-            // Subtracting offset means this physicalAddress is at the start of the page.
-            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset;
-            long totalSizes = 0;
+            // Subtracting offset means this physicalAddress is at the start of the page. Adjust for PageHeader.
+            long totalSizes = PageHeader.Size;
             if (currentPage == 0)
             {
                 if (logicalAddress < hlogBase.BeginAddress)
                     return logicalAddress = hlogBase.BeginAddress;
-
-                // Bump past the FirstValidAddress offset
-                physicalAddress += hlogBase.BeginAddress;
                 totalSizes = (int)hlogBase.BeginAddress;
             }
+            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset + totalSizes;
 
             while (totalSizes <= offset)
             {
@@ -182,7 +178,7 @@ namespace Tsavorite.core
         /// Get next record in iterator
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        public unsafe bool GetNext()
+        public bool GetNext()
         {
             while (true)
             {
@@ -224,7 +220,7 @@ namespace Tsavorite.core
                             if (currentAddress >= headAddress && store is not null)
                             {
                                 var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
-                                store.LockForScan(ref stackCtx, logRecord.Key);
+                                store.LockForScan(ref stackCtx, logRecord);
                             }
 
                             if (recordBuffer == null)
@@ -270,7 +266,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator.BeginGetPrevInMemory(ReadOnlySpan<byte> key, out LogRecord logRecord, out bool continueOnDisk)
+        bool IPushScanIterator.BeginGetPrevInMemory<TKey>(TKey key, out LogRecord logRecord, out bool continueOnDisk)
         {
             while (true)
             {
@@ -288,8 +284,9 @@ namespace Tsavorite.core
 
                 logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
                 nextAddress = logRecord.Info.PreviousAddress;
-                var skipOnScan = !includeClosedRecords && logRecord.Info.SkipOnScan;
-                if (skipOnScan || logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
+
+                // Do not SkipOnScan here; we Seal previous versions.
+                if (logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord, key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -386,7 +383,25 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public int ActualSize => diskLogRecord.ActualSize;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long CalculateHeapMemorySize() => diskLogRecord.CalculateHeapMemorySize();
         #endregion // ISourceLogRecord
+
+        #region IKey
+        /// <inheritdoc/>
+        public bool IsPinned => false;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public bool HasNamespace => diskLogRecord.HasNamespace;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> NamespaceBytes => diskLogRecord.NamespaceBytes;
+        #endregion
 
         /// <summary>
         /// Dispose iterator
@@ -401,22 +416,8 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPagesFromDeviceToFrame(readBuffers, readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
-
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
-        {
-            var result = (PageAsyncReadResult<Empty>)context;
-
-            if (errorCode == 0)
-                _ = result.handle?.Signal();
-            else
-            {
-                logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
-                result.cts?.Cancel();
-            }
-            Interlocked.MemoryBarrier();
-        }
+            => hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
     }
 }

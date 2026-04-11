@@ -10,27 +10,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-    using TransactionalGarnetApi = GarnetApi<TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
     [Flags]
     public enum TransactionStoreTypes : byte
     {
@@ -50,32 +29,32 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for main store
         /// </summary>
-        readonly BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
+        readonly StringBasicContext stringBasicContext;
 
         /// <summary>
         /// Transactional context for main store
         /// </summary>
-        readonly TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringTransactionalContext;
+        readonly StringTransactionalContext stringTransactionalContext;
 
         /// <summary>
         /// Basic context for object store
         /// </summary>
-        readonly BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
+        readonly ObjectBasicContext objectBasicContext;
 
         /// <summary>
         /// Transactional context for object store
         /// </summary>
-        readonly TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectTransactionalContext;
+        readonly ObjectTransactionalContext objectTransactionalContext;
 
         /// <summary>
         /// Basic context for unified store
         /// </summary>
-        readonly BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
+        readonly UnifiedBasicContext unifiedBasicContext;
 
         /// <summary>
         /// Transactional context for unified store
         /// </summary>
-        readonly TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
+        readonly UnifiedTransactionalContext unifiedTransactionalContext;
 
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
@@ -89,6 +68,8 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
+        internal readonly ScratchBufferAllocator txnScratchBufferAllocator;
+        internal SessionParseState txnKeysParseState;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -108,14 +89,16 @@ namespace Garnet.server
         long txnVersion;
         private TransactionStoreTypes storeTypes;
 
-        internal TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
+        internal TransactionalContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
             => stringTransactionalContext;
-        internal TransactionalUnsafeContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
+        internal TransactionalUnsafeContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
             => stringBasicContext.Session.TransactionalUnsafeContext;
-        internal TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectTransactionalContext
+        internal TransactionalContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectTransactionalContext
             => objectTransactionalContext;
-        internal TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext
+        internal TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext
             => unifiedTransactionalContext;
+
+        bool IsReplaying { get; set; } = false;
 
         /// <summary>
         /// Array to keep pointer keys in keyBuffer
@@ -154,7 +137,8 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
+            txnScratchBufferAllocator = new ScratchBufferAllocator();
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
@@ -168,7 +152,10 @@ namespace Garnet.server
 
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)
-                keys = new PinnedSpanByte[initialKeyBufferSize];
+            {
+                txnKeysParseState.Initialize(initialKeyBufferSize);
+                txnKeysParseState.Count = 0;
+            }
 
             Reset(false);
         }
@@ -203,15 +190,20 @@ namespace Garnet.server
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
 
-            // Reset cluster variables used for slot verification
-            this.saveKeyRecvBufferPtr = null;
-            this.keyCount = 0;
+            // Reset cluster key parse state
+            if (clusterEnabled)
+            {
+                txnKeysParseState.Count = 0;
+                saveKeyRecvBufferPtr = null;
+                txnScratchBufferAllocator.Reset();
+            }
         }
 
-        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isRecovering = false)
+        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isReplaying = false)
         {
             var running = false;
             scratchBufferAllocator.Reset();
+            IsReplaying = isReplaying;
             try
             {
                 // If cluster is enabled reset slot verification state cache
@@ -265,7 +257,7 @@ namespace Garnet.server
                     // If the transaction was invoked during AOF replay skip the finalize step altogether
                     // Finalize logs to AOF accordingly, so let the replay pick up the commits from AOF as
                     // part of normal AOF replay.
-                    if (!isRecovering)
+                    if (!isReplaying)
                     {
                         proc.Finalize(garnetTxFinalizeApi, ref procInput, ref output);
                     }
@@ -275,7 +267,6 @@ namespace Garnet.server
                 // Reset scratch buffer for next txn invocation
                 scratchBufferAllocator.Reset();
             }
-
 
             return true;
         }
@@ -321,10 +312,10 @@ namespace Garnet.server
 
             // Release context
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                stringTransactionalContext.ResetModified(key.ReadOnlySpan);
+                stringTransactionalContext.ResetModified((FixedSpanByteKey)key);
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
-                objectTransactionalContext.ResetModified(key.ReadOnlySpan);
-            unifiedTransactionalContext.ResetModified(key.ReadOnlySpan);
+                objectTransactionalContext.ResetModified((FixedSpanByteKey)key);
+            unifiedTransactionalContext.ResetModified((FixedSpanByteKey)key);
         }
 
         internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)
@@ -347,13 +338,22 @@ namespace Garnet.server
 
         internal string GetLockset() => keyEntries.GetLockset();
 
-        internal void GetKeysForValidation(byte* recvBufferPtr, out PinnedSpanByte[] keys, out int keyCount, out bool readOnly)
+        internal void GetSlotVerificationInput(byte* recvBufferPtr, byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
         {
-            UpdateRecvBufferPtr(recvBufferPtr);
+            // Copy keys if buffer changed since last queued command
+            if (recvBufferPtr != saveKeyRecvBufferPtr)
+            {
+                CopyExistingKeysToScratchBuffer();
+                saveKeyRecvBufferPtr = recvBufferPtr;
+            }
+
             watchContainer.SaveKeysToKeyList(this);
-            keys = this.keys;
-            keyCount = this.keyCount;
-            readOnly = keyEntries.IsReadOnly;
+            clusterSlotVerificationInput = new ClusterSlotVerificationInput
+            {
+                readOnly = keyEntries.IsReadOnly,
+                sessionAsking = sessionAsking,
+                // We don't specify key specs here as slot verification will know to iterate over all keys in this context
+            };
         }
 
         void BeginTransaction()

@@ -1,5 +1,5 @@
 #
-# Auto generated YML file to run CodeQL except for build steps at the bottom which needed to be manual since using net90
+# Auto generated YML file to run CodeQL except for build steps at the bottom which needed to be manual since using net10
 #
 name: "CodeQL Advanced"
 
@@ -85,13 +85,13 @@ jobs:
       if: ${{ matrix.build-mode == 'manual' }}
       run: dotnet restore
 
-    - name: Build Garnet net80
+    - name: Build Garnet net8.0
       if: ${{ matrix.build-mode == 'manual' }}
       run: dotnet build -f net8.0
 
-    - name: Build Garnet net90
+    - name: Build Garnet net10.0
       if: ${{ matrix.build-mode == 'manual' }}
-      run: dotnet build -f net9.0
+      run: dotnet build -f net10.0
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3

@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -97,12 +97,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref StringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
+            // We know namespaces aren't present in string functions, so don't populate
             var cmd = input.header.cmd;
             var fieldInfo = new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = 0,
                 HasETag = input.header.CheckWithETagFlag()
             };
@@ -177,6 +182,11 @@ namespace Garnet.server
                     fieldInfo.ValueSize = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
                     return fieldInfo;
 
+                case RespCommand.VADD:
+                    fieldInfo.ValueSize = VectorManager.IndexSizeBytes;
+                    fieldInfo.RecordType = VectorManager.RecordType;
+                    return fieldInfo;
+
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -216,12 +226,10 @@ namespace Garnet.server
                         var value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
                                                  // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
-                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out var curr) : IsValidNumber(value, out curr))
                         {
-                            // TODO Consider adding a way to cache curr for the IPU call
-                            var curr = NumUtils.ReadInt64(value);
+                            // TODO Consider adding a way to cache curr/next for the IPU call
                             var next = curr + incrByValue;
-
                             fieldInfo.ValueSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
                         }
                         return fieldInfo;
@@ -232,11 +240,10 @@ namespace Garnet.server
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead).
-                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out curr) : IsValidNumber(value, out curr))
                         {
-                            var curr = NumUtils.ReadInt64(value);
+                            // TODO Consider adding a way to cache curr/next for the IPU call
                             var next = curr - decrByValue;
-
                             fieldInfo.ValueSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
                         }
                         return fieldInfo;
@@ -245,11 +252,10 @@ namespace Garnet.server
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
-                        if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidDouble(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out var currVal) : IsValidDouble(value, out currVal))
                         {
-                            _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan, out var currVal);
+                            // TODO Consider adding a way to cache currVal/nextVal for the IPU call
                             var nextVal = currVal + incrByFloat;
-
                             fieldInfo.ValueSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
                         }
                         return fieldInfo;
@@ -334,6 +340,10 @@ namespace Garnet.server
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return fieldInfo;
 
+                    case RespCommand.VADD:
+                    case RespCommand.VREM:
+                        return fieldInfo;
+
                     default:
                         if (cmd > RespCommandExtensions.LastValidCommand)
                         {
@@ -351,11 +361,16 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
+            // We know namespaces aren't present in string functions, so don't populate
             var fieldInfo = new RecordFieldInfo()
             {
-                KeySize = key.Length,
+                KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 HasETag = input.header.CheckWithETagFlag()
             };
@@ -371,10 +386,18 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             => throw new GarnetException("String store should not be called with IHeapObject");
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref StringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref StringInput input)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
         {
             if (inputLogRecord.Info.ValueIsObject)

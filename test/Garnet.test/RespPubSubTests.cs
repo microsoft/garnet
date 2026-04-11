@@ -5,14 +5,16 @@ using System;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    class RespPubSubTests
+    class RespPubSubTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -28,7 +30,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

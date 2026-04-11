@@ -3,14 +3,13 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Storage Session - the internal layer that Garnet uses to perform storage operations
     /// </summary>
@@ -23,8 +22,8 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
-        public BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
-        public TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringTransactionalContext;
+        public StringBasicContext stringBasicContext;
+        public StringTransactionalContext stringTransactionalContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -36,18 +35,25 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
-        public BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
-        public TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectTransactionalContext;
+        public ObjectBasicContext objectBasicContext;
+        public ObjectTransactionalContext objectTransactionalContext;
+
+        /// <summary>
+        /// Session Contexts for vector store
+        /// </summary>
+        public VectorBasicContext vectorBasicContext;
+        public VectorTransactionalContext vectorTransactionalContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
-        public BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
-        public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
+        public UnifiedBasicContext unifiedBasicContext;
+        public UnifiedTransactionalContext unifiedTransactionalContext;
 
-        public readonly ScratchBufferBuilder scratchBufferBuilder;
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
         public readonly StreamManager streamManager;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
@@ -59,20 +65,26 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        public readonly VectorManager vectorManager;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
+            ScratchBufferAllocator scratchBufferAllocator,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            VectorManager vectorManager,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferBuilder = scratchBufferBuilder;
+            this.scratchBufferAllocator = scratchBufferAllocator;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();
+            this.vectorManager = vectorManager;
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 
@@ -82,19 +94,22 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var session = db.Store.NewSession<StringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var session = db.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions);
 
             if (!storeWrapper.serverOptions.DisableObjects)
             {
                 var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-                var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
+                var objectStoreSession = db.Store.NewSession<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
                 objectBasicContext = objectStoreSession.BasicContext;
                 objectTransactionalContext = objectStoreSession.TransactionalContext;
             }
 
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
-            var unifiedStoreSession = db.Store.NewSession<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
+            var unifiedStoreSession = db.Store.NewSession<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
+
+            var vectorFunctions = new VectorSessionFunctions(functionsState);
+            var vectorSession = db.Store.NewSession<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions>(vectorFunctions);
 
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;
@@ -103,6 +118,9 @@ namespace Garnet.server
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
 
             streamManager = storeWrapper.streamManager;
+
+            vectorBasicContext = vectorSession.BasicContext;
+            vectorTransactionalContext = vectorSession.TransactionalContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
@@ -115,13 +133,17 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            _zcollectTaskLock.CloseLock();
-            _hcollectTaskLock.CloseLock();
+            while (!_zcollectTaskLock.TryWriteLock())
+                _ = Thread.Yield();
+
+            while (!_hcollectTaskLock.TryWriteLock())
+                _ = Thread.Yield();
 
             sectorAlignedMemoryBitmap?.Dispose();
             stringBasicContext.Session.Dispose();
             objectBasicContext.Session?.Dispose();
             unifiedBasicContext.Session?.Dispose();
+            vectorBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }

@@ -3,14 +3,16 @@
 
 #if DEBUG
 using System.Threading;
+using Allure.NUnit;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class NetworkTests
+    public class NetworkTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -26,7 +28,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]

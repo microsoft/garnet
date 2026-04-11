@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,14 +6,16 @@ using System.Buffers;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class UnixSocketTests
+    public class UnixSocketTests : AllureTestBase
     {
         [SetUp]
         public void Setup()
@@ -24,7 +26,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -42,7 +44,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath, unixSocketPermission: unixSocketPermission);
             server.Start();
 
-            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
+            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls)).ConfigureAwait(false);
             var db = client.GetDatabase(0);
 
             ClassicAssert.IsTrue(client.IsConnected);
@@ -58,7 +60,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath);
             server.Start();
 
-            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
+            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls)).ConfigureAwait(false);
             var db = client.GetDatabase(0);
 
             ClassicAssert.IsTrue(client.IsConnected);
@@ -74,16 +76,16 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath);
             server.Start();
 
-            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
+            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls)).ConfigureAwait(false);
             var db = client.GetDatabase(0);
 
             var buffer = ArrayPool<byte>.Shared.Rent(valueBufferLength);
             buffer.AsSpan().Fill(0x42);
 
-            var result = await db.StringSetAsync("mykey", buffer);
+            var result = await db.StringSetAsync("mykey", buffer).ConfigureAwait(false);
             ClassicAssert.IsTrue(result);
 
-            var actualValue = (byte[])await db.StringGetAsync("mykey");
+            var actualValue = (byte[])await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(buffer.AsSpan().SequenceEqual(actualValue));
 

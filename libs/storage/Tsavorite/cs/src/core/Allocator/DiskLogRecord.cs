@@ -31,7 +31,12 @@ namespace Tsavorite.core
         internal Action<IHeapObject> objectDisposer;
 
         public override readonly string ToString()
-            => $"logRec [{logRecord}], recordBuffer [{(recordBuffer.ToString() ?? "<null>")}], objDisp [{(objectDisposer.ToString() ?? "<null>")}]";
+        {
+            var disposerDescription = objectDisposer is null
+                ? "<null>"
+                : $"{objectDisposer.Method.DeclaringType?.FullName}.{objectDisposer.Method.Name}";
+            return $"logRec [{logRecord}], recordBuffer [{recordBuffer?.ToString() ?? "<null>"}], objDisp [{disposerDescription}]";
+        }
 
         /// <summary>
         /// Constructor taking the record buffer and out-of-line objects. Private; use either CopyFrom or TransferFrom.
@@ -248,7 +253,26 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly int ActualSize => logRecord.ActualSize;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly long CalculateHeapMemorySize() => logRecord.CalculateHeapMemorySize();
         #endregion //ISourceLogRecord
+
+        #region IKey
+        /// <inheritdoc/>
+        public readonly bool IsPinned => IsPinnedKey;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> KeyBytes => Key;
+
+        /// <inheritdoc/>
+        public readonly bool HasNamespace => logRecord.HasNamespace;
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> NamespaceBytes => logRecord.NamespaceBytes;
+        #endregion
+
 
         #region Serialization to and from expanded record format
         /// <summary>

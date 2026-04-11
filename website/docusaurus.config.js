@@ -59,7 +59,7 @@ const config = {
             'https://github.com/microsoft/garnet/tree/main/website/',
         },
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: require.resolve('./src/css/custom.css'),
         },
       }),
     ],

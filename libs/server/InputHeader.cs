@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -302,7 +303,7 @@ namespace Garnet.server
             var len = parseState.DeserializeFrom(curr);
             curr += len;
 
-            return (int)(src - curr);
+            return (int)(curr - src);
         }
     }
 
@@ -332,6 +333,7 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public StringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
             this.header = new RespInputHeader(cmd, flags);
@@ -344,9 +346,9 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0)
+            : this((RespCommand)cmd, (RespInputFlags)flags, arg1)
         {
         }
 
@@ -357,7 +359,9 @@ namespace Garnet.server
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
         }
@@ -370,7 +374,9 @@ namespace Garnet.server
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }
@@ -614,5 +620,35 @@ namespace Garnet.server
 
             return len;
         }
+    }
+
+    /// <summary>
+    /// Header for Garnet Main Store inputs but for Vector element r/w/d ops
+    /// </summary>
+    public struct VectorInput : IStoreInput
+    {
+        public int SerializedLength => throw new NotImplementedException();
+
+        public int ReadDesiredSize { get; set; }
+
+        public int WriteDesiredSize { get; set; }
+
+        public int Index { get; set; }
+        public nint CallbackContext { get; set; }
+        public nint Callback { get; set; }
+
+        public bool AlignmentExpected { get; set; }
+
+        [MemberNotNullWhen(returnValue: true, member: nameof(MaxMigrationHeapAllocationSize))]
+        public bool IsMigrationRead => MaxMigrationHeapAllocationSize != null;
+
+        public int? MaxMigrationHeapAllocationSize { get; set; }
+
+        public VectorInput()
+        {
+        }
+
+        public unsafe int CopyTo(byte* dest, int length) => throw new NotImplementedException();
+        public unsafe int DeserializeFrom(byte* src) => throw new NotImplementedException();
     }
 }

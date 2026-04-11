@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #region License
 
 // Copyright (c) 2007 James Newton-King
@@ -29,14 +32,16 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Allure.NUnit;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test.JSONPath
 {
+    [AllureNUnit]
     [TestFixture]
-    public class JsonPathParseTests
+    public class JsonPathParseTests : AllureTestBase
     {
         [Test]
         public void BooleanQuery_TwoValues()

@@ -1,8 +1,12 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -11,8 +15,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class MultiDatabaseTests
+    public class MultiDatabaseTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -1287,6 +1292,45 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseAofObjectMutationRecoverTest()
+        {
+            // Verify that object mutation operations (LPOP, HDEL) that empty collections
+            // are persisted correctly across multiple databases during AOF recovery
+            var listKey = "list:key1";
+            var hashKey = "hash:key1";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                // DB 0: push and pop a list element (empties the list)
+                var db0 = redis.GetDatabase(0);
+                db0.ListLeftPush(listKey, "value1");
+                db0.ListLeftPop(listKey);
+                ClassicAssert.IsFalse(db0.KeyExists(listKey));
+
+                // DB 1: add and delete hash fields (empties the hash)
+                var db1 = redis.GetDatabase(1);
+                db1.HashSet(hashKey, [new HashEntry("f1", "v1"), new HashEntry("f2", "v2")]);
+                db1.HashDelete(hashKey, ["f1", "f2"]);
+                ClassicAssert.IsFalse(db1.KeyExists(hashKey));
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                // After recovery, both keys should remain absent
+                var db0 = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db0.KeyExists(listKey));
+
+                var db1 = redis.GetDatabase(1);
+                ClassicAssert.IsFalse(db1.KeyExists(hashKey));
+            }
+        }
+
+        [Test]
         public void MultiDatabaseSaveInProgressTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -1341,13 +1385,14 @@ namespace Garnet.test
                 Assert.Throws<RedisServerException>(() => db1.Execute("BGSAVE", "0"),
                     Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS));
 
+                int lastsave_old = lastsave;
                 // Wait for save to complete
                 do
                 {
                     Thread.Sleep(10);
                     lastsave = (int)db1.Execute("LASTSAVE");
                 }
-                while (lastsave == 0);
+                while (lastsave <= lastsave_old);
             }
         }
 

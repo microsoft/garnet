@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Threading;
+using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -131,7 +132,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, MigrationRecordSpanType.LogRecord, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -184,7 +185,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), MigrationRecordSpanType.LogRecord, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;

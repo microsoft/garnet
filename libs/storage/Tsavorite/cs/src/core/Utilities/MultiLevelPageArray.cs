@@ -90,11 +90,16 @@ namespace Tsavorite.core
 
                 // If we are here, our first test indicated we did not need to allocate a new chapter (but that may have changed), or we are a candidate to
                 // be the first to allocate it and thus own the new-chapter "latch". Increment tail and we'll return the prior-to-increment value once we have
-                // done any needed allocation.
+                // done any needed allocation. Because there is a gap between incrementing tail and checking for a null chapter, we need to track whether
+                // the next chapter is allocated; if not, we should not return the first index in the next chapter (that is done by the chapter-allocating thread).
+                var nextChapterWasNotAllocated = originalChapter + 1 >= book.Length || book[originalChapter + 1] is null;
                 var returnTail = Interlocked.Increment(ref tail) - 1;
-                var newChapter = returnTail >> MultiLevelPageArray.ChapterSizeBits;
-                Debug.Assert(newChapter >= originalChapter, $"newChapter {newChapter} must not be < originalChapter {originalChapter}");
-                if (newChapter < book.Length && book[newChapter] is not null)
+                var returnChapter = returnTail >> MultiLevelPageArray.ChapterSizeBits;
+                Debug.Assert(returnChapter >= originalChapter, $"newChapter {returnChapter} must not be < originalChapter {originalChapter}");
+
+                // If returnChapter is allocated and we are not returning trying to return the first page in a newly-allocated chapter (that should be only be
+                // done by the allocating thread, and we're not it), we can return returnTail.
+                if (returnChapter < book.Length && book[returnChapter] is not null && (returnChapter == originalChapter || !nextChapterWasNotAllocated || returnTail > 0))
                     return returnTail;
 
                 // Multiple threads might have seen the initial "first page in chapter" condition and incremented tail. We only want to stay if we're the
@@ -109,7 +114,7 @@ namespace Tsavorite.core
 
                 // We are allocating the first page on a new chapter so we "own the latch" on this newChapter, but it's (barely) possible that tail was incremented
                 // so many times it went to a second page. Therefore only try to allocate newChapter if it is the first in the book or the previous chapter is allocated.
-                if (newChapter > 0 && book[newChapter - 1] is null)
+                if (returnChapter > 0 && book[returnChapter - 1] is null)
                 {
                     _ = Thread.Yield();
                     continue;
@@ -117,7 +122,7 @@ namespace Tsavorite.core
 
                 // We still own the latch and are allocating the new chapter, and possibly need to grow the book. If this returns false, tail is reset to the first page
                 // in the chapter; otherwise it is set to the second and we return the first. These are per tail's "next item to return" definition.
-                AddChapter(newChapter, out returnTail);
+                AddChapter(returnChapter, out returnTail);
                 Debug.Assert(returnTail >= originalTail, $"returnTail {returnTail} must be >= originalTail after AddChapter");
                 return returnTail;
             }

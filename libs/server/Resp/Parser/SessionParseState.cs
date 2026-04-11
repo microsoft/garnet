@@ -27,6 +27,11 @@ namespace Garnet.server
         public int Count;
 
         /// <summary>
+        /// Get a Span of the parsed parameters in the form an PinnedSpanByte
+        /// </summary>
+        public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
+
+        /// <summary>
         /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
         /// </summary>
         PinnedSpanByte* bufferPtr;
@@ -40,11 +45,6 @@ namespace Garnet.server
         /// Arguments original buffer (always pinned)
         /// </summary>
         PinnedSpanByte[] rootBuffer;
-
-        /// <summary>
-        /// Get a Span of the parsed parameters in the form an PinnedSpanByte
-        /// </summary>
-        public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
 
         private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, ref PinnedSpanByte* bufferPtr, int count) : this()
         {
@@ -178,6 +178,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Ensure the argument buffer can hold at least <paramref name="capacity"/> entries
+        /// from the current slice offset, preserving existing contents. No-op if already large enough.
+        /// </summary>
+        public void EnsureCapacity(int capacity)
+        {
+            var oldBuffer = rootBuffer;
+
+            // Compute slice offset (bufferPtr may point into the middle of rootBuffer)
+            var sliceOffset = oldBuffer != null
+                ? (int)(bufferPtr - (PinnedSpanByte*)Unsafe.AsPointer(ref oldBuffer[0]))
+                : 0;
+
+            // Total buffer size needed = slice offset + requested capacity
+            var requiredLength = sliceOffset + capacity;
+
+            if (oldBuffer != null && requiredLength <= oldBuffer.Length)
+                return;
+
+            var oldCount = Count;
+            Initialize(requiredLength);
+
+            if (oldBuffer != null)
+            {
+                // Copy all data up to the end of the current slice
+                var copyLength = sliceOffset + oldCount;
+                if (copyLength > 0)
+                    oldBuffer.AsSpan(0, copyLength).CopyTo(rootBuffer);
+            }
+
+            // Restore slice offset and count
+            bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]) + sliceOffset;
+            Count = oldCount;
+        }
+
+        /// <summary>
         /// Limit access to the argument buffer to start at a specified index.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
@@ -226,20 +261,13 @@ namespace Garnet.server
         /// <param name="arg">Argument to set</param>
         public void SetArgument(int i, PinnedSpanByte arg)
         {
-            Debug.Assert(i < Count);
+            Debug.Assert(i < rootBuffer.Length);
             *(bufferPtr + i) = arg;
-        }
 
-        /// <summary>
-        /// Set arguments starting at a specific index
-        /// </summary>
-        /// <param name="i">Index of buffer at which to start setting arguments</param>
-        /// <param name="args">Arguments to set</param>
-        public void SetArguments(int i, params PinnedSpanByte[] args)
-        {
-            Debug.Assert(i + args.Length - 1 < Count);
-            for (var j = 0; j < args.Length; j++)
-                *(bufferPtr + i + j) = args[j];
+            if (i >= Count)
+            {
+                Count = i + 1;
+            }
         }
 
         /// <summary>
@@ -290,7 +318,7 @@ namespace Garnet.server
                 curr += argument.TotalSize;
             }
 
-            return (int)(dest - curr);
+            return (int)(curr - dest);
         }
 
         /// <summary>
@@ -314,7 +342,7 @@ namespace Garnet.server
                 curr += argument.TotalSize;
             }
 
-            return (int)(src - curr);
+            return (int)(curr - src);
         }
 
         /// <summary>
@@ -416,6 +444,28 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
+        }
+
+        /// <summary>
+        /// Get float argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float GetFloat(int i, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.ReadFloat(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
+        }
+
+        /// <summary>
+        /// Try to get double argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadFloat(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
         }
 
         /// <summary>

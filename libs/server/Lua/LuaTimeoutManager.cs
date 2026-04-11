@@ -263,7 +263,7 @@ namespace Garnet.server.Lua
                 goto tryAgain;
             }
 
-        // Other threads might update registrations, so check that before returning
+            // Other threads might update registrations, so check that before returning
         checkUnmodified:
             if ((updatedRegistrations = Interlocked.CompareExchange(ref registrations, curRegistrations, curRegistrations)) != curRegistrations)
             {

@@ -29,6 +29,7 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="KeraLua" />
+		<PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
   <ItemGroup>
@@ -38,12 +39,22 @@
   <ItemGroup>
     <Content Include="..\host\bin\Release\net8.0\*.dll" Exclude="..\host\bin\Release\net8.0\Garnet.host.dll" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\*.xml" Exclude="..\host\bin\Release\net8.0\Garnet.host.dll" Pack="true" PackagePath="lib\net8.0" />
-    <Content Include="..\host\bin\Release\net9.0\*.dll" Exclude="..\host\bin\Release\net9.0\Garnet.host.dll" Pack="true" PackagePath="lib\net9.0" />
-    <Content Include="..\host\bin\Release\net9.0\*.xml" Exclude="..\host\bin\Release\net9.0\Garnet.host.dll" Pack="true" PackagePath="lib\net9.0" />
+    <Content Include="..\host\bin\Release\net10.0\*.dll" Exclude="..\host\bin\Release\net10.0\Garnet.host.dll" Pack="true" PackagePath="lib\net10.0" />
+    <Content Include="..\host\bin\Release\net10.0\*.xml" Exclude="..\host\bin\Release\net10.0\Garnet.host.dll" Pack="true" PackagePath="lib\net10.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
 		<None Include="..\..\README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
+
+	<!-- Define compilation symbol for server project -->
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);HOST_PROJECT</DefineConstants>
+	</PropertyGroup>
+
+	<!-- Include shared global usings file for server projects -->
+	<ItemGroup>
+		<Compile Include="$(MSBuildThisFileDirectory)../../libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
+	</ItemGroup>	
 
 	<PropertyGroup>
 		<NoWarn>$(NoWarn);NU5118</NoWarn>

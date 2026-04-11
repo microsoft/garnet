@@ -1,4 +1,7 @@
-﻿using System.Text.Json.Nodes;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System.Text.Json.Nodes;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using GarnetJSON.JSONPath;

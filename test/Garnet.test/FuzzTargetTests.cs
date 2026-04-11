@@ -4,6 +4,7 @@
 using System;
 using System.Reflection;
 using System.Text;
+using Allure.NUnit;
 using Garnet.fuzz;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,8 +14,16 @@ namespace Garnet.test
     /// <summary>
     /// Tests that assert the basics of Garnet.fuzz still work, so they aren't broken between fuzzing runs.
     /// </summary>
-    public class FuzzTargetTests
+    [AllureNUnit]
+    [TestFixture]
+    public class FuzzTargetTests : AllureTestBase
     {
+        [TearDown]
+        public void TearDown()
+        {
+            TestUtils.OnTearDown();
+        }
+
         [Test]
         public void TestsForAllTargets()
         {

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -49,8 +48,13 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus InternalRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var latchOperation = LatchOperation.None;
@@ -67,6 +71,12 @@ namespace Tsavorite.core
                 return status;
 
             LogRecord srcLogRecord = default;
+
+            RMWInfo rmwInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
@@ -110,13 +120,8 @@ namespace Tsavorite.core
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
 
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
-                    RMWInfo rmwInfo = new()
-                    {
-                        Version = sessionFunctions.Ctx.version,
-                        SessionID = sessionFunctions.Ctx.sessionID,
-                        Address = stackCtx.recSrc.LogicalAddress,
-                        KeyHash = stackCtx.hei.hash,
-                    };
+                    rmwInfo.Address = stackCtx.recSrc.LogicalAddress;
+                    rmwInfo.KeyHash = stackCtx.hei.hash;
 
                     if (srcLogRecord.Info.Tombstone)
                     {
@@ -136,7 +141,8 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = hlog.GetRMWCopyRecordSize(in srcLogRecord, ref input, sessionFunctions);
+                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
+
                     if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -213,7 +219,7 @@ namespace Tsavorite.core
                 {
                     // Here, the input* data for 'doingCU' is the same as recSrc.
                     status = CreateNewRecordRMW(key, in srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx,
-                                                doingCU: stackCtx.recSrc.HasInMemorySrc && !srcLogRecord.Info.Tombstone);
+                                                doingCU: stackCtx.recSrc.HasInMemorySrc && !srcLogRecord.Info.Tombstone, ref rmwInfo);
 
                     // OperationStatus.SUCCESS is OK here even if !OperationStatusUtils.IsAppend(status); it means NeedCopyUpdate or NeedInitialUpdate returned false
                     goto LatchRelease;
@@ -222,6 +228,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
+                sessionFunctions.PostRMWOperation(key, ref input, ref rmwInfo, epoch);
                 EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
 
@@ -244,8 +251,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void CreatePendingRMWContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
+        private void CreatePendingRMWContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.RMW;
@@ -264,7 +275,7 @@ namespace Tsavorite.core
             var ok = false;
             try
             {
-                var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
+                var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord, ref input, sessionFunctions);
                 ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
                 if (logRecord.TrySetContentLengths(in sizeInfo))
                 {
@@ -353,10 +364,15 @@ namespace Tsavorite.core
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions. If called from pending IO,
         ///     this is populated from the data read from disk.</param>
         /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO.</param>
+        /// <param name="rmwInfo">RMWInfo</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
+        private OperationStatus CreateNewRecordRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
                                                                                           ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
-                                                                                          ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool doingCU)
+                                                                                          ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool doingCU, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -365,13 +381,8 @@ namespace Tsavorite.core
 
         RetryNow:
 
-            RMWInfo rmwInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : kInvalidAddress,
-                KeyHash = stackCtx.hei.hash,
-            };
+            rmwInfo.Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : kInvalidAddress;
+            rmwInfo.KeyHash = stackCtx.hei.hash;
 
             AllocateOptions allocOptions = new()
             {
@@ -526,7 +537,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(!addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
+                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
                 newLogRecord.InfoRef.SetDirtyAndModified();
                 newLogRecord.InfoRef.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
@@ -593,8 +604,12 @@ namespace Tsavorite.core
                         else
                             DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
                     }
-                    else if (stackCtx.recSrc.HasMainLogSrc)
-                        srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                    else
+                    {
+                        // If it is in mutable or fuzzy region, we must Seal
+                        if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress > hlogBase.SafeReadOnlyAddress)
+                            srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+                    }
                 }
 
             Done:
@@ -619,7 +634,7 @@ namespace Tsavorite.core
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
             advancedStatusCode |= StatusCode.Expired;
-            if (!sessionFunctions.NeedInitialUpdate(logRecord.Key, ref input, ref output, ref rmwInfo))
+            if (!sessionFunctions.NeedInitialUpdate(logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
@@ -634,7 +649,7 @@ namespace Tsavorite.core
             }
 
             // Try to reinitialize in place
-            var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
+            var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord, ref input, sessionFunctions);
 
             if (logRecord.TryReinitializeValueLength(in sizeInfo))
             {

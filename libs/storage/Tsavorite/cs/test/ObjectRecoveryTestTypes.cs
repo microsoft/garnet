@@ -58,7 +58,7 @@ namespace Tsavorite.test.recovery.objects
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
             => dstLogRecord.TrySetValueObject(input.numClicks);
 
-        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref Input input, ref Output output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Add(ref ((NumClicksObj)logRecord.ValueObject).numClicks, input.numClicks.numClicks);
             return true;
@@ -70,7 +70,7 @@ namespace Tsavorite.test.recovery.objects
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref Input input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref Input input)
-            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref Input input)
+            => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 }

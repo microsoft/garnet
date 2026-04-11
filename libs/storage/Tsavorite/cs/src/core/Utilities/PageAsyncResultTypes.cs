@@ -63,60 +63,31 @@ namespace Tsavorite.core
         public void DisposeHandle()
         {
             handle?.Dispose();
+            handle = null;
+            readBuffers?.Dispose();
+            readBuffers = null;
         }
     }
 
     /// <summary>
     /// Shared flush completion tracker, when bulk-flushing many pages
     /// </summary>
-    internal sealed class FlushCompletionTracker
+    internal enum FlushRequestState : byte
     {
-        /// <summary>
-        /// Semaphore to set on flush completion
-        /// </summary>
-        readonly SemaphoreSlim completedSemaphore;
+        /// <summary>The default; we are here for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForReadOnly"/> flush. This
+        /// includes FoldOver checkpoints</summary>
+        ReadOnly = 0,
 
-        /// <summary>
-        /// Semaphore to wait on for flush completion
-        /// </summary>
-        readonly SemaphoreSlim flushSemaphore;
+        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForRecovery"/>, so the object log files have
+        /// already been written; we must reuse the deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
+        Recovery,
 
-        /// <summary>
-        /// Number of pages being flushed
-        /// </summary>
-        int count;
+        /// <summary>The flush is for <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncFlushPagesForSnapshot"/>, so we do not hold the epoch
+        /// initially and thus must check to handle the case where HeadAddress increases out of the range of the flush</summary>
+        Snapshot,
 
-        public override string ToString()
-        {
-            var compSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
-            var flushSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
-            return $"count {count}, compSemCount {compSemCount}, flushSemCount {flushSemCount}";
-        }
-
-        /// <summary>
-        /// Create a flush completion tracker
-        /// </summary>
-        /// <param name="completedSemaphore">Semaphpore to release when all flushes completed</param>
-        /// <param name="flushSemaphore">Semaphpore to release when each flush completes</param>
-        /// <param name="count">Number of pages to flush</param>
-        public FlushCompletionTracker(SemaphoreSlim completedSemaphore, SemaphoreSlim flushSemaphore, int count)
-        {
-            this.completedSemaphore = completedSemaphore;
-            this.flushSemaphore = flushSemaphore;
-            this.count = count;
-        }
-
-        /// <summary>
-        /// Complete flush of one page
-        /// </summary>
-        public void CompleteFlush()
-        {
-            flushSemaphore?.Release();
-            if (Interlocked.Decrement(ref count) == 0)
-                completedSemaphore.Release();
-        }
-
-        public void WaitOneFlush() => flushSemaphore?.Wait();
+        /// <summary>The flush operation did not issue a write, likely because <see cref="Snapshot"/> is true and HeadAddress advanced beyond the page</summary>
+        WriteNotIssued
     }
 
     /// <summary>
@@ -143,9 +114,8 @@ namespace Tsavorite.core
         internal long fromAddress;
         internal long untilAddress;
 
-        /// <summary>If true, we are called from recovery via AsyncFlushPagesForRecovery, so the object log files have already been written; we must reuse the
-        /// deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
-        internal bool isForRecovery;
+        /// <summary>Identifes the operation that triggered the flush.</summary>
+        internal FlushRequestState flushRequestState;
 
         /// <summary>The record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.</summary>
         internal SectorAlignedMemory freeBuffer1;
@@ -158,25 +128,31 @@ namespace Tsavorite.core
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
 
+        /// <inheritdoc/>
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
+            return $"page {page}, isFor {flushRequestState}, ctx {context}, count {count}, partial {bstr(partial)},"
+                 + $" fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
                  + $" flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
         }
 
         /// <summary>
-        /// Free
+        /// Release our <see cref="count"/> and if it is zero, clear buffers.
         /// </summary>
-        public void Free()
+        /// <returns>The decremented count</returns>
+        /// <remarks>There is currently no AddRef(); count is assigned 1 at creation</remarks>
+        internal int Release()
         {
-            if (freeBuffer1 != null)
+            var result = Interlocked.Decrement(ref count);
+            if (result == 0)
             {
-                freeBuffer1.Return();
+                freeBuffer1?.Return();
                 freeBuffer1 = null;
+                flushCompletionTracker?.CompleteFlush();
+                flushCompletionTracker = null;
             }
-
-            flushCompletionTracker?.CompleteFlush();
+            return result;
         }
     }
 
@@ -274,7 +250,7 @@ namespace Tsavorite.core
         {
             var callbackString = callback is null ? "null" : callback.ToString();
             var contextString = callback is null ? "null" : context.ToString();
-            return $"numBytes {numBytes}, count {count}, callback {callbackString}, context {context}";
+            return $"numBytes {numBytes}, count {count}, callback {callbackString}, context {contextString}";
         }
 
         public void Set(DeviceIOCompletionCallback callback, object context, uint numBytes)

@@ -20,25 +20,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-    using TransactionalGarnetApi = GarnetApi<TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
     /// <summary>
     /// RESP server session
     /// </summary>
@@ -290,7 +271,7 @@ namespace Garnet.server
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
             var cp = clusterProvider ?? storeWrapper.clusterProvider;
-            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
@@ -968,6 +949,20 @@ namespace Garnet.server
                 RespCommand.XREVRANGE => StreamRange(respProtocolVersion, isReverse: true),
                 RespCommand.XTRIM => StreamTrim(),
                 RespCommand.XLAST => StreamLast(respProtocolVersion),
+                // Vector Commands
+                RespCommand.VADD => NetworkVADD(ref storageApi),
+                RespCommand.VCARD => NetworkVCARD(ref storageApi),
+                RespCommand.VDIM => NetworkVDIM(ref storageApi),
+                RespCommand.VEMB => NetworkVEMB(ref storageApi),
+                RespCommand.VGETATTR => NetworkVGETATTR(ref storageApi),
+                RespCommand.VINFO => NetworkVINFO(ref storageApi),
+                RespCommand.VISMEMBER => NetworkVISMEMBER(ref storageApi),
+                RespCommand.VLINKS => NetworkVLINKS(ref storageApi),
+                RespCommand.VRANDMEMBER => NetworkVRANDMEMBER(ref storageApi),
+                RespCommand.VREM => NetworkVREM(ref storageApi),
+                RespCommand.VSETATTR => NetworkVSETATTR(ref storageApi),
+                RespCommand.VSIM => NetworkVSIM(ref storageApi),
+                // Everything else
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;
@@ -1514,7 +1509,11 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
+            var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
+            Debug.Assert(dbRes, "Should always find database if we're switching to it");
+
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId, database.VectorManager, logger, respProtocolVersion);
+
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
@@ -1542,5 +1541,17 @@ namespace Garnet.server
 
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private StringOutput GetStringOutput()
+            => StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ObjectOutput GetObjectOutput()
+            => ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private UnifiedOutput GetUnifiedOutput()
+            => UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
     }
 }

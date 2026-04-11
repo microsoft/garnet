@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -13,8 +15,9 @@ namespace Tsavorite.test
     using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class BasicStorageTests
+    internal class BasicStorageTests : AllureTestBase
     {
         [Test]
         [Category("TsavoriteKV")]
@@ -102,13 +105,13 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1L << 15,
+                    LogMemorySize = 1L << 15,
                     PageSize = 1L << 10,
                 }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             InputStruct input = default;
@@ -117,7 +120,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                _ = bContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
             _ = bContext.CompletePending(true);
 
@@ -126,7 +129,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
-                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
+                var status = bContext.RMW(key1, ref input, Empty.Default);
                 if (status.IsPending)
                     _ = bContext.CompletePending(true);
             }
@@ -138,7 +141,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(key1, ref input, ref output, Empty.Default).IsPending)
                 {
                     _ = bContext.CompletePending(true);
                 }

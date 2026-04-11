@@ -48,6 +48,11 @@ namespace Garnet.cluster
         int flushCount = 0;
 
         /// <summary>
+        /// Shared epoch instance for connection store
+        /// </summary>
+        readonly client.LightEpoch epoch;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
@@ -93,12 +98,14 @@ namespace Garnet.cluster
                 currentConfig = new();
             }
 
-            clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
+            this.epoch = new client.LightEpoch();
+            clusterConnectionStore = new GarnetClusterConnectionStore(epoch, logger: logger);
             InitLocal(clusterEndpoint.Address.ToString(), clusterEndpoint.Port, recoverConfig);
             logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(serverOptions.GossipDelay);
             clusterTimeout = serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(serverOptions.ClusterTimeout);
             numActiveTasks = 0;
+            activeMergeLock = new();
             GossipSamplePercent = serverOptions.GossipSamplePercent;
 
             // Run Background task
@@ -135,9 +142,10 @@ namespace Garnet.cluster
         public void Dispose()
         {
             DisposeBackgroundTasks();
-
+            activeMergeLock?.Dispose();
             clusterConfigDevice.Dispose();
             pool.Free();
+            epoch?.Dispose();
         }
 
         /// <summary>
@@ -184,6 +192,7 @@ namespace Garnet.cluster
         /// <param name="recoverConfig"></param>
         private void InitLocal(string address, int port, bool recoverConfig)
         {
+            var hostname = serverOptions.ClusterAnnounceHostname;
             if (recoverConfig)
             {
                 var conf = currentConfig;
@@ -194,7 +203,7 @@ namespace Garnet.cluster
                     configEpoch: conf.LocalNodeConfigEpoch,
                     role: conf.LocalNodeRole,
                     replicaOfNodeId: conf.LocalNodePrimaryId,
-                    hostname: Format.GetHostName());
+                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
             }
             else
             {
@@ -205,7 +214,7 @@ namespace Garnet.cluster
                     configEpoch: 0,
                     NodeRole.PRIMARY,
                     null,
-                    Format.GetHostName());
+                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
             }
         }
 

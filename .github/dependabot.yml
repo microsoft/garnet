@@ -4,11 +4,23 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      dotnet-deps:
+        patterns:
+          - "*"
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      nuget-deps:
+        patterns:
+          - "*"
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:
       interval: "monthly"
+    groups:
+      website-deps:
+        patterns:
+          - "*"

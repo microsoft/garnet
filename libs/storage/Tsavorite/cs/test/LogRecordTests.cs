@@ -3,6 +3,8 @@
 
 using System;
 using System.Runtime.InteropServices;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -16,8 +18,9 @@ namespace Tsavorite.test.LogRecordTests
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
     /// which in turn tests <see cref="MultiLevelPageArray{_int_}"/>.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
-    unsafe class LogRecordTests
+    unsafe class LogRecordTests : AllureTestBase
     {
         long nativePointer;
         ObjectIdMap objectIdMap;
@@ -152,7 +155,7 @@ namespace Tsavorite.test.LogRecordTests
 
                 var dataHeader = new RecordDataHeader((byte*)nativePointer);
                 var recordInfo = RecordInfo.InitialValid;
-                var headerLength = dataHeader.Initialize(ref recordInfo, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);
+                var headerLength = dataHeader.Initialize(ref recordInfo, in sizeInfo, out var keyAddress, out var namespaceAddress, out var valueAddress);
                 (keyLengthBytes, recordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var deconstructHeaderLength);
                 Assert.That(headerLength, Is.EqualTo(RecordDataHeader.NumIndicatorBytes + keyLengthBytes + recordLengthBytes));
                 Assert.That(deconstructHeaderLength, Is.EqualTo(headerLength));
@@ -164,6 +167,9 @@ namespace Tsavorite.test.LogRecordTests
                 var (valueLengthBack, valueAddressBack) = dataHeader.GetValueFieldInfo(recordInfo);
                 Assert.That(valueLengthBack, Is.EqualTo(valueLength));
                 Assert.That(valueAddressBack, Is.EqualTo(valueAddress));
+
+                // TODO: Will need to change for variable length namespaces
+                Assert.That(namespaceAddress, Is.EqualTo((long)nativePointer + RecordDataHeader.NamespaceOffsetInHeader));
             }
         }
 
@@ -179,13 +185,13 @@ namespace Tsavorite.test.LogRecordTests
             value.Fill(0x43);
 
             var sizeInfo = new RecordSizeInfo();
-            InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
+            InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
 
             // Shrink
             var offset = 12;
             sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.True);
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength + offset));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
@@ -194,7 +200,7 @@ namespace Tsavorite.test.LogRecordTests
             offset = 6;
             sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.True);
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength + offset));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
@@ -207,7 +213,7 @@ namespace Tsavorite.test.LogRecordTests
             // Restore to original
             sizeInfo.FieldInfo.ValueSize = initialValueLen;
             Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.True);
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
@@ -216,7 +222,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.RemoveETag(), Is.True);
             Assert.That(logRecord.Info.HasETag, Is.False);
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + LogRecord.ETagSize));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength + LogRecord.ETagSize));
 
             // Restore ETag and verify Expiration is the same and filler has grown.
             eTag += 10;
@@ -224,13 +230,13 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.Info.HasETag, Is.True);
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength));
 
             // Remove Expiration and verify ETag is the same and filler has grown.
             Assert.That(logRecord.RemoveExpiration(), Is.True);
             Assert.That(logRecord.Info.HasExpiration, Is.False);
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + LogRecord.ExpirationSize));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength + LogRecord.ExpirationSize));
 
             // Restore Expiration and verify ETag is the same and filler has grown.
             expiration += 20;
@@ -238,7 +244,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.Info.HasExpiration, Is.True);
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength));
         }
 
         [Test]
@@ -255,7 +261,7 @@ namespace Tsavorite.test.LogRecordTests
             overflowValue.Fill(0x53);
 
             var sizeInfo = new RecordSizeInfo();
-            InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
+            InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out long eTag, out long expiration);
 
             // Convert to overflow. Because objectIdSize is 4 bytes our value space will shrink by the original value data size less 4 bytes, but we will use 8 bytes for ObjectLogLogPosition.
             var offset = value.Length - 4 - LogRecord.ObjectLogPositionSize;
@@ -275,6 +281,7 @@ namespace Tsavorite.test.LogRecordTests
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        [Explicit("TODO CopyDiskLogRecordToLogRecord")]
         public void CopyDiskLogRecordToLogRecord()
         {
             Assert.Ignore("TODO CopyDiskLogRecordToLogRecord");
@@ -282,12 +289,17 @@ namespace Tsavorite.test.LogRecordTests
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        [Explicit("TODO SerializeToMemoryPool")]
         public void SerializeToMemoryPool()
         {
             Assert.Ignore("TODO SerializeToMemoryPool");
         }
 
-        private void InitializeRecord(Span<byte> key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
+        private void InitializeRecord<TKey>(TKey key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             sizeInfo.FieldInfo = new()
             {
@@ -311,13 +323,13 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(initialValueLen));
 
             expectedFillerLength = logRecord.AllocatedSize - logRecord.ActualSize;
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength));
 
             Assert.That(logRecord.TrySetValueSpanAndPrepareOptionals(value, in sizeInfo), Is.True);
 
             // Now that we have set the ValueSpan it includes optionals, so FillerLength should have been adjusted for them
             expectedFillerLength -= LogRecord.ETagSize + LogRecord.ExpirationSize;
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength));
 
             Assert.That(logRecord.Info.ValueIsInline, Is.True);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
@@ -327,11 +339,11 @@ namespace Tsavorite.test.LogRecordTests
 
             eTag = initialETag;
             Assert.That(logRecord.TrySetETag(eTag), Is.True);
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength)); // Should not have changed
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength)); // Should not have changed
 
             expiration = initialExpiration;
             Assert.That(logRecord.TrySetExpiration(expiration), Is.True);
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength)); // Should not have changed
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength)); // Should not have changed
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
@@ -350,7 +362,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(overflowValue.Length));
             Assert.That(logRecord.ValueSpan.Slice(0, sizeof(int)).AsRef<int>(), Is.EqualTo(0x53535353));
 
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength + offset));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
@@ -370,7 +382,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.Info.ValueIsObject, Is.True);
             Assert.That(((TestObjectValue)logRecord.ValueObject).value, Is.EqualTo(0x63636363));
 
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength + offset));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
@@ -389,7 +401,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(value.Length));
             Assert.That(logRecord.ValueSpan.Slice(0, sizeof(int)).AsRef<int>(), Is.EqualTo(0x43434343));
 
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.RecordDataHeader.GetFillerLength(logRecord.Info, out _), Is.EqualTo(expectedFillerLength));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));

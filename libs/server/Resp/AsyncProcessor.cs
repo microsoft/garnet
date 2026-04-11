@@ -112,9 +112,9 @@ namespace Garnet.server
                                     SendAndReset();
                                 if (completedOutputs.Current.Status.Found)
                                 {
-                                    Debug.Assert(!o.IsSpanByte);
+                                    Debug.Assert(!o.SpanByteAndMemory.IsSpanByte);
                                     sessionMetrics?.incr_total_found();
-                                    SendAndReset(o.Memory, o.Length);
+                                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
                                 }
                                 else
                                 {

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -20,7 +21,7 @@ namespace Tsavorite.core
                 ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 out OperationStatus internalStatus)
         {
-            pendingContext.flushEvent = allocator.FlushEvent;
+            pendingContext.flushEvent = allocator.flushEvent;
             if (allocator.TryAllocateRetryNow(recordSize, out logicalAddress))
             {
                 pendingContext.flushEvent = default;
@@ -29,6 +30,7 @@ namespace Tsavorite.core
             }
 
             // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
+            Debug.Assert(logicalAddress == 0, "Expected RETRY_LATER");
             internalStatus = OperationStatus.ALLOCATE_FAILED;
             return false;
         }
@@ -59,7 +61,7 @@ namespace Tsavorite.core
                 minRevivAddress = stackCtx.hei.Address;
 
             if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
-                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
+                    && GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress))
             {
                 new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo);
                 return true;
@@ -144,13 +146,13 @@ namespace Tsavorite.core
                         return true;
 
                     // This allocation is below the necessary address so abandon it and repeat the loop.
-                    ReadCacheAbandonRecord(newPhysicalAddress);
+                    TsavoriteKV<TStoreFunctions, TAllocator>.ReadCacheAbandonRecord(newPhysicalAddress);
                     _ = Thread.Yield();
                     continue;
                 }
 
                 // The in-memory source dropped below HeadAddress during BlockAllocate. Abandon the record (TODO: reuse readcache records) and return RETRY_LATER.
-                ReadCacheAbandonRecord(newPhysicalAddress);
+                TsavoriteKV<TStoreFunctions, TAllocator>.ReadCacheAbandonRecord(newPhysicalAddress);
                 status = OperationStatus.RETRY_LATER;
                 break;
             }

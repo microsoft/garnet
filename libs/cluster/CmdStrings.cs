@@ -27,6 +27,7 @@ namespace Garnet.cluster
         /// </summary>
         public static ReadOnlySpan<byte> RESP_OK => "+OK\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_RETURN_NULL => "$-1\r\n"u8;
 
         /// <summary>
         /// Generic error respone strings, i.e. these are sent in the form "-ERR responseString\r\n"
@@ -64,6 +65,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_FAILEDTOADDKEY => "ERR Failed to add key for migration tracking"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_PARSING => "ERR Parsing error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOT_STATE => "ERR Invalid slot state"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_HOSTNAME_RESOLUTION_FAILED => "ERR hostname resolution failed"u8;
 
         /// <summary>
         /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
@@ -81,5 +83,7 @@ namespace Garnet.cluster
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
 
         public const string GenericErrInvalidPort = "ERR Invalid TCP base port specified: {0}";
+
+        public const string GenericNullValue = "$-1\r\n";
     }
 }

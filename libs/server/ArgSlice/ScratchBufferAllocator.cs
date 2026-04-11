@@ -100,9 +100,9 @@ namespace Garnet.server
         /// <summary>
         /// Creates an instance of <see cref="ScratchBufferAllocator"/>
         /// </summary>
-        /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 2)</param>
+        /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 64)</param>
         /// <param name="maxInitialCapacity">Max size of previously allocated unused buffer to keep upon reset (Default: no limit)</param>
-        public ScratchBufferAllocator(int minSizeBuffer = 2, int maxInitialCapacity = int.MaxValue)
+        public ScratchBufferAllocator(int minSizeBuffer = 64, int maxInitialCapacity = int.MaxValue)
         {
             this.minSizeBuffer = minSizeBuffer;
             this.maxInitialCapacity = maxInitialCapacity;
@@ -254,6 +254,20 @@ namespace Garnet.server
             return retVal;
         }
 
+        /// <summary>
+        /// View remaining scratch space (of specified minimum length) as a <see cref="PinnedSpanByte"/>.
+        /// Does NOT move the offset forward.
+        /// </summary>
+        /// <param name="minLength">Minimum length of remaining space</param>
+        /// <returns>A <see cref="PinnedSpanByte"/> covering the remaining space</returns>
+        public PinnedSpanByte ViewRemainingArgSlice(int minLength = 0)
+        {
+            ExpandScratchBufferIfNeeded(minLength);
+            return PinnedSpanByte.FromPinnedPointer(
+                currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset,
+                currScratchBuffer.Length - currScratchBuffer.scratchBufferOffset);
+        }
+
         void ExpandScratchBufferIfNeeded(int requiredLength)
         {
             if (currScratchBuffer.IsDefault || requiredLength > currScratchBuffer.Length - currScratchBuffer.scratchBufferOffset)
@@ -265,8 +279,8 @@ namespace Garnet.server
             var currLength = currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length;
 
             ScratchBuffer newScratchBuffer = default;
-            InitializeScratchBuffer(ref newScratchBuffer, requiredLength: Math.Max(minSizeBuffer, requiredLength),
-                currentLength: currLength);
+            InitializeScratchBuffer(ref newScratchBuffer, requiredLength,
+                currentLength: currLength, minSizeBuffer);
 
             totalLength += newScratchBuffer.Length;
 
@@ -288,7 +302,7 @@ namespace Garnet.server
             currScratchBuffer = newScratchBuffer;
         }
 
-        private static void InitializeScratchBuffer(ref ScratchBuffer buffer, int requiredLength, int currentLength = 0)
+        private static void InitializeScratchBuffer(ref ScratchBuffer buffer, int requiredLength, int currentLength, int minSizeBuffer)
         {
             // Length of new buffer is:
             // If there is no current buffer - the closest power of 2 to the data length
@@ -296,6 +310,9 @@ namespace Garnet.server
             var newLength = currentLength == 0
                 ? (int)BitOperations.RoundUpToPowerOf2((uint)requiredLength + 1)
                 : (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(currentLength, requiredLength) + 1);
+
+            // Ensure minimum buffer size
+            newLength = Math.Max(newLength, minSizeBuffer);
 
             buffer.Initialize(newLength);
         }

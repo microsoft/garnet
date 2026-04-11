@@ -2,14 +2,16 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
+    public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc />
         public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
@@ -19,7 +21,7 @@ namespace Garnet.server
             // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
             return true;
         }
 
@@ -31,7 +33,7 @@ namespace Garnet.server
             // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
             return true;
         }
 
@@ -43,20 +45,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            // TODO: This is called by readcache directly, but is the only ISessionFunctions call for that; the rest is internal. Clean this up, maybe as a new PostReadCacheInsert method.
-            if (upsertInfo.Address == LogAddress.kInvalidAddress)
-            {
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
-                return;
-            }
-
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            // TODO: Need to track lengths written to readcache, which is now internal in Tsavorite
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -65,10 +59,10 @@ namespace Garnet.server
             var garnetObject = (IGarnetObject)srcValue;
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -78,90 +72,67 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                if (!inputLogRecord.Info.ValueIsObject)
-                    WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
-                else
-                    WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+            if (logRecord.Info.RecordHasObjects)
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            var oldSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-
-            _ = logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
-            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, srcValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
-
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
-
-            // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            if (logRecord.Info.ValueIsOverflow)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Length - oldSize);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
         }
 
         /// <inheritdoc />
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceWriter(ref LogRecord logRecord, ref ObjectInput input, IHeapObject srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            var garnetObject = (IGarnetObject)srcValue;
-
-            var oldSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-
-            _ = logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
-            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+            if (!InPlaceWriterForHeapObjectValue(ref logRecord, ref input, srcValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
-
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
-
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.HeapMemorySize - oldSize);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
         }
 
         /// <inheritdoc />
-        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, in TSourceLogRecord inputLogRecord, ref ObjectOutput output, ref UpsertInfo upsertInfo)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref ObjectInput input, in TSourceLogRecord inputLogRecord, ref ObjectOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var oldSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-
-            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
-
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-            {
-                if (!inputLogRecord.Info.ValueIsObject)
-                    WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
-                else
-                    WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID);
-            }
-
-            var newSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogUpsert(key.KeyBytes, ref input, valueSpan, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+        }
+
+        /// <inheritdoc />
+        public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogUpsert(key.KeyBytes, ref input, (IGarnetObject)valueObject, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
         }
     }
 }

@@ -8,8 +8,9 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
+    public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
+        const byte NeedAofLog = 0x1;
         readonly FunctionsState functionsState;
 
         /// <summary>

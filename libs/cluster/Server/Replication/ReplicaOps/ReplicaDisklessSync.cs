@@ -36,7 +36,7 @@ namespace Garnet.cluster
                     return false;
 
                 // Wait for threads to agree configuration change of this node
-                session.UnsafeBumpAndWaitForEpochTransition();
+                session?.UnsafeBumpAndWaitForEpochTransition();
                 if (options.Background)
                     _ = Task.Run(() => TryBeginReplicaSync(options.UpgradeLock));
                 else
@@ -52,7 +52,9 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
+                return false;
             }
+
             return true;
 
             async Task<string> TryBeginReplicaSync(bool downgradeLock)
@@ -76,6 +78,9 @@ namespace Garnet.cluster
                     // otherwise the replica will receive a reset message from primary if needed
                     if (!disklessSync)
                         storeWrapper.Reset();
+
+                    // Suspend background tasks that may interfere with AOF
+                    await storeWrapper.SuspendPrimaryOnlyTasks();
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
@@ -123,7 +128,7 @@ namespace Garnet.cluster
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
 
                     // Exception injection point for testing cluster reset during diskless replication
-                    await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
 
                     var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }

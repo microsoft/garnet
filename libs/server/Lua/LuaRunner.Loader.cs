@@ -330,8 +330,7 @@ end
             // Intentionally not supporting getfenv, as it's too weird to backport to Lua 5.4
             "getmetatable",
             "ipairs",
-            "load",
-            "loadstring",
+            // Intentionally not exposing load/loadstring to user scripts
             "math",
             "next",
             "pairs",

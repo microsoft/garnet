@@ -58,8 +58,8 @@ namespace Tsavorite.core
         RETRY_LATER,
 
         /// <summary>
-        /// I/O has been enqueued and the caller must go through <see cref="ITsavoriteContext{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePending(bool, bool)"/> or
-        /// <see cref="ITsavoriteContext{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePendingWithOutputs(out CompletedOutputIterator{TInput, TOutput, TContext}, bool, bool)"/>,
+        /// I/O has been enqueued and the caller must go through <see cref="ITsavoriteContext{TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePending(bool, bool)"/> or
+        /// <see cref="ITsavoriteContext{TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePendingWithOutputs(out CompletedOutputIterator{TInput, TOutput, TContext}, bool, bool)"/>,
         /// or one of the Async forms.
         /// </summary>
         RECORD_ON_DISK,

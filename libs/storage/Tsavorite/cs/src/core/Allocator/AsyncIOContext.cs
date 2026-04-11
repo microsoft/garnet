@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext
+    public struct AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -22,13 +22,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Key; this is a shallow copy of the key in pendingContext, pointing to its requestKey.
         /// </summary>
-        public PinnedSpanByte requestKey;
+        public ConditionallyHoistedKey requestKey;
 
         /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
         public DiskLogRecord diskLogRecord;
 
         /// <summary>
-        /// Logical address
+        /// Logical address that was requested
         /// </summary>
         public long logicalAddress;
 
@@ -100,10 +100,16 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="requestKey"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
         /// </remarks>
-        internal void Prepare(PinnedSpanByte requestKey, long logicalAddress)
+        internal void Prepare<TKey>(TKey requestKey, long logicalAddress, SectorAlignedBufferPool bufferPool)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             request.DisposeRecord();
-            request.requestKey = requestKey;
+            request.requestKey.Dispose();
+
+            request.requestKey = ConditionallyHoistedKey.Create(requestKey, bufferPool);
             request.logicalAddress = logicalAddress;
         }
 
@@ -111,6 +117,7 @@ namespace Tsavorite.core
         internal void Set(ref AsyncIOContext ctx)
         {
             request.DisposeRecord();
+
             request = ctx;
             exception = null;
             _ = semaphore.Release(1);
@@ -120,6 +127,8 @@ namespace Tsavorite.core
         internal void SetException(Exception ex)
         {
             request.DisposeRecord();
+            request.requestKey.Dispose();
+
             request = default;
             exception = ex;
             _ = semaphore.Release(1);
@@ -131,6 +140,7 @@ namespace Tsavorite.core
         public void Dispose()
         {
             request.DisposeRecord();
+            request.requestKey.Dispose();
             semaphore?.Dispose();
         }
     }

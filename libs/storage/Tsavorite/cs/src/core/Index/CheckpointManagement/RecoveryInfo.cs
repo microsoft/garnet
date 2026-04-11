@@ -3,7 +3,7 @@
 
 using System;
 using System.IO;
-using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -57,7 +57,8 @@ namespace Tsavorite.core
         /// </summary>
         public long snapshotFinalLogicalAddress;
         /// <summary>
-        /// hlog HeadAddress at the start of the WAIT_FLUSH phase
+        /// hlog HeadAddress at the start of the WAIT_FLUSH phase. This is the initial address to start scanning from; the lowest address at which we will bring pages
+        /// into the circular buffer (may be in the middle of a page)
         /// </summary>
         public long headAddress;
         /// <summary>
@@ -337,7 +338,7 @@ namespace Tsavorite.core
         public IDevice snapshotFileObjectLogDevice;
         public IDevice deltaFileDevice;
         public DeltaLog deltaLog;
-        public SemaphoreSlim flushedSemaphore;
+        public Task flushedTask;
         public long prevVersion;
         internal CircularDiskWriteBuffer objectLogFlushBuffers;
 
@@ -353,6 +354,7 @@ namespace Tsavorite.core
             snapshotFileObjectLogDevice?.Dispose();
             deltaLog?.Dispose();
             deltaFileDevice?.Dispose();
+            objectLogFlushBuffers?.Dispose();
             this = default;
         }
 

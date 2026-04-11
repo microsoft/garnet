@@ -8,20 +8,9 @@ using Garnet.server;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         readonly ClusterProvider clusterProvider;
@@ -60,7 +49,10 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public IGarnetServer Server { get; set; }
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+        private StringBasicContext stringBasicContext;
+        private VectorBasicContext vectorBasicContext;
+
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -68,11 +60,13 @@ namespace Garnet.cluster
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
+            this.stringBasicContext = stringBasicContext;
+            this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
             this.logger = logger;
         }
 
-        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
+        public void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
             this.dcurr = dcurr;
             this.dend = dend;
@@ -81,18 +75,18 @@ namespace Garnet.cluster
 
             try
             {
-                RespCommandsInfo commandInfo = null;
                 if (command.IsClusterSubCommand())
                 {
-                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo) && commandInfo.KeySpecifications != null)
+                    if (RespCommandsInfo.TryGetSimpleRespCommandInfo(command, out var cmdInfo) && cmdInfo.KeySpecs?.Length > 0)
                     {
-                        csvi.keyNumOffset = -1;
-                        clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
+                        csvi.keySpecs = cmdInfo.KeySpecs;
+                        csvi.isSubCommand = cmdInfo.IsSubCommand;
+                        csvi.readOnly = command.IsReadOnly();
                         if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
                             return;
                     }
 
-                    ProcessClusterCommands(command, out invalidParameters);
+                    ProcessClusterCommands(command, vectorManager, out invalidParameters);
                 }
                 else
                 {
@@ -107,7 +101,7 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var cmdName = commandInfo?.Name ?? RespCommandsInfo.GetRespCommandName(command);
+                    var cmdName = RespCommandsInfo.GetRespCommandName(command);
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName.ToLowerInvariant());
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();

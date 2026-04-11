@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
@@ -27,11 +28,18 @@ namespace Tsavorite.core
 
         internal readonly int StartOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).startOffset + OverflowHeader.Size;
 
+        /// <summary>The total size of the array allocated (includes space for offset values)</summary>
         public readonly int TotalSize => Array.Length;
+
+        /// <summary>The total heap size of the array (includes space for offset values and .net array overhead)</summary>
+        public readonly int HeapMemorySize => Array is null ? 0 : Array.Length + MemoryUtils.ByteArrayOverhead;
 
         readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset;
 
         internal readonly int Length => Array.Length - StartOffset - EndOffset;
+
+        /// <inheritdoc/>
+        public override string ToString() => $"Len {Length}, IsEmpty {IsEmpty}, sOffset {StartOffset}, eOffset {EndOffset}, HeapMemSize {HeapMemorySize}, TotSize {TotalSize}";
 
         /// <summary>ReadOnlySpan of data between offsets</summary>
         internal readonly ReadOnlySpan<byte> ReadOnlySpan => Array.AsSpan(StartOffset, Length);
@@ -100,6 +108,10 @@ namespace Tsavorite.core
             header.startOffset = offsetFromStart;
             header.endOffset = offsetFromEnd;
         }
+
+        /// <summary>Pin the underlying heap object.  It is the caller's responsibility to release the returned <see cref="GCHandle"/>.</summary>
+        public readonly GCHandle Pin()
+        => GCHandle.Alloc(Array, GCHandleType.Pinned);
 
         /// <summary>Get the <see cref="ReadOnlySpan{_byte_}"/> of a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/> constructor.</summary>
         internal static ReadOnlySpan<byte> AsReadOnlySpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).ReadOnlySpan;

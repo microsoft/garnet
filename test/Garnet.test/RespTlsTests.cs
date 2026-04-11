@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -15,8 +16,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespTlsTests
+    public class RespTlsTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -32,7 +34,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -56,9 +58,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "abcdefg";
-            await db.StringSetAsync("mykey", origValue);
+            await db.StringSetAsync("mykey", origValue).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -70,9 +72,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "笑い男";
-            await db.StringSetAsync("mykey", origValue);
+            await db.StringSetAsync("mykey", origValue).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }

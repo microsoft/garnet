@@ -11,6 +11,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\..\..\..\test\Garnet.test\AllureTestBase.cs" Link="AllureTestBase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Allure.Net.Commons" />
+    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter">
@@ -23,4 +29,10 @@
     <ProjectReference Include="..\src\core\Tsavorite.core.csproj" />
     <ProjectReference Include="..\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
   </ItemGroup>
+
+	<PropertyGroup>
+		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+	</PropertyGroup>
+
 </Project>

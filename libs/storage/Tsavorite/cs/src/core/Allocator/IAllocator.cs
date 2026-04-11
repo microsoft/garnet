@@ -6,10 +6,21 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// Non-generic interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
     /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
     /// </summary>
-    public interface IAllocator<TStoreFunctions> : IAllocatorCallbacks<TStoreFunctions>
+    public interface IAllocator
+    {
+        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
+        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
+        void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
+    }
+
+    /// <summary>
+    /// Genric interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// </summary>
+    public interface IAllocator<TStoreFunctions> : IAllocator, IAllocatorCallbacks<TStoreFunctions>
         where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The base class instance of the allocator implementation</summary>
@@ -24,7 +35,12 @@ namespace Tsavorite.core
         /// <param name="logicalAddress">The logical address of the new record</param>
         /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>
         /// <param name="logRecord">The new log record being initialized</param>
-        void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord);
+        void InitializeRecord<TKey>(TKey key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
@@ -32,28 +48,45 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get initial record size for RMW, given the <paramref name="key"/> and <paramref name="input"/></summary>
-        RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetRMWInitialRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
-        RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
-        RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="inputLogRecord"/>, and <paramref name="input"/></summary>
-        RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for a new tombstone record</summary>
-        RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key);
-
-        /// <summary>Get record size required to allocate a new record. Includes allocator-specific information such as key and value overflow.</summary>
-        /// <remarks>Requires <see cref="RecordSizeInfo.FieldInfo"/> to be populated already.</remarks>
-        void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo);
+        RecordSizeInfo GetDeleteRecordSize<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
         void MarkPage(long logicalAddress, long version);
@@ -78,5 +111,12 @@ namespace Tsavorite.core
 
         /// <summary>Dispose an on-disk log record</summary>
         void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason);
+
+        /// <summary>
+        /// Iterate records in the given logical address range and invoke the application-level
+        /// <see cref="IRecordDisposer.DisposeRecord"/> hook for each non-null record.
+        /// Used during page eviction to allow disposal of external resources.
+        /// </summary>
+        void DisposeRecordsInRangeForEviction(long startAddress, long endAddress);
     }
 }

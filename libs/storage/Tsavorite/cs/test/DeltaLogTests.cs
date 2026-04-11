@@ -3,14 +3,17 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class DeltaLogStandAloneTests
+    internal class DeltaLogStandAloneTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;
@@ -31,7 +34,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            TestUtils.OnTearDown(waitForDelete: true);
         }
 
         [Test]

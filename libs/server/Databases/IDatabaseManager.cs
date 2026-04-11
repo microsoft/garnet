@@ -10,9 +10,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Interface for logical database management
     /// </summary>
@@ -265,5 +262,12 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         public (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
+
+        /// <summary>
+        /// Perform any recovery necessary for Vector Sets.
+        /// 
+        /// Must be called after checkpoints and AOF are recovered, as Vector Sets may make modifications to the log.
+        /// </summary>
+        public void RecoverVectorSets();
     }
 }

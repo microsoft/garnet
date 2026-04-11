@@ -8,8 +8,8 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Transactional context functions. Useful when doing generic locking across diverse 
-    /// <see cref="TransactionalUnsafeContext{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> and 
-    /// <see cref="TransactionalContext{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> specializations.
+    /// <see cref="TransactionalUnsafeContext{TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> and 
+    /// <see cref="TransactionalContext{TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> specializations.
     /// </summary>
     public interface ITransactionalContext
     {

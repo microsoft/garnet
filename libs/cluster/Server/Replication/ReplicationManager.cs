@@ -102,7 +102,7 @@ namespace Garnet.cluster
             this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
 
             networkBufferSettings.Log(logger, nameof(ReplicationManager));
-            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Replication, logger: logger);
             ValidateNetworkBufferSettings();
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, clusterProvider: clusterProvider, logger: logger);
@@ -187,6 +187,20 @@ namespace Garnet.cluster
             // the connection it has open to its Replica
             if (allClusterSessions.Any(static x => x.IsReplicating))
             {
+                return;
+            }
+
+            // Suppress auto-resync while a failover is in progress.
+            // Without this guard, EnsureReplication would acquire a ReadRole lock that blocks
+            // TakeOverAsPrimary from obtaining its ClusterFailover write lock, aborting the failover.
+            var failoverStatus = clusterProvider.failoverManager.lastFailoverStatus;
+            if (failoverStatus is FailoverStatus.BEGIN_FAILOVER
+                              or FailoverStatus.ISSUING_PAUSE_WRITES
+                              or FailoverStatus.WAITING_FOR_SYNC
+                              or FailoverStatus.FAILOVER_IN_PROGRESS
+                              or FailoverStatus.TAKING_OVER_AS_PRIMARY)
+            {
+                logger?.LogDebug("Suppressing auto-resync during active failover (status: {failoverStatus})", failoverStatus);
                 return;
             }
 

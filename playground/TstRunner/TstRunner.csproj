@@ -9,6 +9,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Allure.Net.Commons" />
+    <PackageReference Include="Allure.NUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

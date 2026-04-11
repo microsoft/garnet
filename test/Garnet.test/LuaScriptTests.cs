@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -14,6 +14,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -22,6 +23,7 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     // Limits chosen here to allow completion - if you have to bump them up, consider that you might have introduced a regression
     [TestFixture(LuaMemoryManagementMode.Native, "", "")]
     [TestFixture(LuaMemoryManagementMode.Native, "", "00:00:02")]
@@ -29,7 +31,7 @@ namespace Garnet.test
     [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
     [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
     [TestFixture(LuaMemoryManagementMode.Managed, "17m", "")]
-    public class LuaScriptTests
+    public class LuaScriptTests : AllureTestBase
     {
         /// <summary>
         /// Writes it's parameter directly into the response stream, followed by a \r\n.
@@ -148,7 +150,6 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             try
             {
                 if (aclFile != null)
@@ -160,6 +161,7 @@ namespace Garnet.test
             {
                 // Best effort
             }
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -398,7 +400,7 @@ namespace Garnet.test
                     for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
+                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50)).ConfigureAwait(false);
                     }
                 });
             }
@@ -414,7 +416,7 @@ namespace Garnet.test
                     for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
+                        await Task.Delay(millisecondsDelay: rnd.Next(10, 50)).ConfigureAwait(false);
                     }
                 });
             }
@@ -3218,11 +3220,12 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var basic = (int)db.ScriptEvaluate("local x = loadstring('return 123'); return x()");
-            ClassicAssert.AreEqual(123, basic);
+            // load and loadstring are not part of the sandbox allowed functions
+            var loadExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = load('return 123'); return x()"));
+            ClassicAssert.True(loadExc.Message.Contains("attempt to call a nil value"));
 
-            var rejectNullExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return \"\\0\"'); return x()"));
-            ClassicAssert.True(rejectNullExc.Message.Contains("bad argument to loadstring, interior null byte"));
+            var loadstringExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return 123'); return x()"));
+            ClassicAssert.True(loadstringExc.Message.Contains("attempt to call a nil value"));
         }
 
         [Test]

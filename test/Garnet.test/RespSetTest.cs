@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,8 +15,9 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespSetTest
+    public class RespSetTest : AllureTestBase
     {
         GarnetServer server;
 
@@ -31,7 +33,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         #region SEClientTests
@@ -1200,34 +1202,34 @@ namespace Garnet.test
             db.Connect();
 
             //If set doesn't exist, then return 0.
-            var response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "value"]);
+            var response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "value"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(response, 0);
-            await db.ExecuteForStringResultAsync("SADD", ["sourceSet", "sourceValue", "commonValue"]);
-            await db.ExecuteForStringResultAsync("SADD", ["destinationSet", "destinationValue", "commonValue"]);
+            await db.ExecuteForStringResultAsync("SADD", ["sourceSet", "sourceValue", "commonValue"]).ConfigureAwait(false);
+            await db.ExecuteForStringResultAsync("SADD", ["destinationSet", "destinationValue", "commonValue"]).ConfigureAwait(false);
 
             //Same key.
-            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "sourceSet", "sourceValue"]);
+            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "sourceSet", "sourceValue"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(response, 0);
 
             //Move non-common member.
-            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "sourceValue"]);
+            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "sourceValue"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(response, 1);
-            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]), 1);
-            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["destinationSet"]), 3);
+            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]).ConfigureAwait(false), 1);
+            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["destinationSet"]).ConfigureAwait(false), 3);
 
-            var sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["sourceSet"]);
-            var destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["destinationSet"]);
+            var sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["sourceSet"]).ConfigureAwait(false);
+            var destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["destinationSet"]).ConfigureAwait(false);
             ClassicAssert.IsFalse(sourceSetMembers.Contains("sourceValue"));
             ClassicAssert.IsTrue(destinationSetMembers.Contains("sourceValue"));
 
             //Move common member.
-            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "commonValue"]);
+            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "commonValue"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(response, 1);
-            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]), 0);
-            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["destinationSet"]), 3);
+            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]).ConfigureAwait(false), 0);
+            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["destinationSet"]).ConfigureAwait(false), 3);
 
-            sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["sourceSet"]);
-            destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["destinationSet"]);
+            sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["sourceSet"]).ConfigureAwait(false);
+            destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["destinationSet"]).ConfigureAwait(false);
             ClassicAssert.IsFalse(sourceSetMembers.Contains("commonValue"));
             ClassicAssert.IsTrue(destinationSetMembers.Contains("commonValue"));
         }

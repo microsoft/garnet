@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 using System.Text.Json.Nodes;
 
 namespace GarnetJSON.JSONPath

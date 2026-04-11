@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -79,10 +80,10 @@ namespace Garnet.cluster
         /// Try to write the span of an entire record.
         /// </summary>
         /// <returns></returns>
-        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, MigrationRecordSpanType recordSpanType, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.TryWriteRecordSpan(recordSpan, out task);
+            return AofSyncTask.garnetClient.TryWriteRecordSpan(recordSpan, recordSpanType, out task);
         }
 
         /// <summary>
@@ -109,7 +110,7 @@ namespace Garnet.cluster
         /// <param name="error"></param>
         public void SetStatus(SyncStatus status, string error = null)
         {
-            ssInfo.error = error;
+            ssInfo.error ??= error;
             // NOTE: set this after error to signal complete state change
             ssInfo.syncStatus = status;
 

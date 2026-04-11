@@ -23,7 +23,7 @@ namespace Garnet
         public override bool Reader(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
+        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
             => false;
         /// <inheritdoc />
         public override int GetInitialLength(ref StringInput input)

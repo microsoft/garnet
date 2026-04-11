@@ -252,7 +252,7 @@ namespace Garnet.common
 
         unsafe void AllocateNetworkReceiveBuffer()
         {
-            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize);
+            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize, PoolEntryBufferType.NetworkReceiveBuffer);
             networkReceiveBuffer = networkReceiveBufferEntry.entry;
             networkReceiveBufferPtr = networkReceiveBufferEntry.entryPtr;
         }

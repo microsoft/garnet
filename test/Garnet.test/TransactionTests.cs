@@ -1,9 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,8 +12,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class TransactionTests
+    public class TransactionTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -28,7 +30,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         public void SetUpWithLowMemory()
@@ -388,7 +390,7 @@ namespace Garnet.test
                     using var client = TestUtils.GetGarnetClientSession();
                     client.Connect();
                     client.Execute("MULTI");
-                    var result = await client.ExecuteAsync([.. command]);
+                    var result = await client.ExecuteAsync([.. command]).ConfigureAwait(false);
                     ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " failed transaction coverage");
                     client.Execute("DISCARD");
                 }
@@ -420,7 +422,7 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SET key2 value2");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => updateKey("key1", "value1_updated"));
+            await Task.Run(() => updateKey("key1", "value1_updated")).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -464,7 +466,7 @@ namespace Garnet.test
                 using var lightClientRequestCopy = TestUtils.CreateRequest();
                 string command = "SET key1 value1_updated WITHETAG";
                 lightClientRequestCopy.SendCommand(command);
-            });
+            }).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -516,7 +518,7 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SET key3 value3");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => updateKey("key1", "value1"));
+            await Task.Run(() => updateKey("key1", "value1")).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -560,7 +562,7 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SET key901 value901_updated");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => updateKey("key1", "value1_updated"));
+            await Task.Run(() => updateKey("key1", "value1_updated")).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
@@ -583,6 +585,46 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand(command);
 
             var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void WatchFailsWhenListEmptiedByLPop()
+        {
+            // WATCH a list key, then LPOP all elements on the same connection.
+            // The LPOP that empties the list should increment the watch version,
+            // causing the subsequent EXEC to fail.
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var key = "watchlist";
+
+            // Create a single-element list
+            var response = lightClientRequest.SendCommand($"LPUSH {key} value1");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // WATCH the list key
+            response = lightClientRequest.SendCommand($"WATCH {key}");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // LPOP the only element (empties and deletes the list) — same connection, before MULTI
+            response = lightClientRequest.SendCommand($"LPOP {key}");
+            expectedResponse = "$6\r\nvalue1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Start a transaction
+            response = lightClientRequest.SendCommand("MULTI");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Queue a command
+            response = lightClientRequest.SendCommand($"LPUSH {key} value2");
+            expectedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // EXEC should fail because the watched key was modified by LPOP
+            response = lightClientRequest.SendCommand("EXEC");
+            expectedResponse = "*-1";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }

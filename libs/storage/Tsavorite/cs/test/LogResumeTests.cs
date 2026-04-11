@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,14 +6,17 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class LogResumeTests
+    internal class LogResumeTests : AllureTestBase
     {
         private IDevice device;
 
@@ -30,7 +33,7 @@ namespace Tsavorite.test
         {
             device?.Dispose();
             device = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -45,16 +48,16 @@ namespace Tsavorite.test
 
             using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
-                await l.EnqueueAsync(input1, cancellationToken);
-                await l.EnqueueAsync(input2);
-                await l.EnqueueAsync(input3);
-                await l.CommitAsync();
+                await l.EnqueueAsync(input1, cancellationToken).ConfigureAwait(false);
+                await l.EnqueueAsync(input2).ConfigureAwait(false);
+                await l.EnqueueAsync(input3).ConfigureAwait(false);
+                await l.CommitAsync().ConfigureAwait(false);
 
                 using var originalIterator = l.Scan(0, long.MaxValue);
                 ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
                 ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
                 // convert recoveryAddress to byte[] for cookie
-                await l.CommitAsync(cookie: BitConverter.GetBytes(recoveryAddress));
+                await l.CommitAsync(cookie: BitConverter.GetBytes(recoveryAddress)).ConfigureAwait(false);
             }
 
             using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
@@ -78,15 +81,15 @@ namespace Tsavorite.test
 
             using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
-                await l.EnqueueAsync(input1, cancellationToken);
-                await l.EnqueueAsync(input2);
-                await l.EnqueueAsync(input3);
-                await l.CommitAsync();
+                await l.EnqueueAsync(input1, cancellationToken).ConfigureAwait(false);
+                await l.EnqueueAsync(input2).ConfigureAwait(false);
+                await l.EnqueueAsync(input3).ConfigureAwait(false);
+                await l.CommitAsync().ConfigureAwait(false);
 
                 using var originalIterator = l.Scan(0, long.MaxValue);
                 ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out long recordAddress, out long nextAddress));
                 ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
-                await l.CommitAsync(cookie: BitConverter.GetBytes(nextAddress));
+                await l.CommitAsync(cookie: BitConverter.GetBytes(nextAddress)).ConfigureAwait(false);
             }
 
             using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
@@ -110,17 +113,17 @@ namespace Tsavorite.test
             {
                 using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
-                    await l.EnqueueAsync(input1);
-                    await l.CommitAsync();
-                    await l.EnqueueAsync(input2);
-                    await l.CommitAsync();
-                    await l.EnqueueAsync(input3);
-                    await l.CommitAsync();
+                    await l.EnqueueAsync(input1).ConfigureAwait(false);
+                    await l.CommitAsync().ConfigureAwait(false);
+                    await l.EnqueueAsync(input2).ConfigureAwait(false);
+                    await l.CommitAsync().ConfigureAwait(false);
+                    await l.EnqueueAsync(input3).ConfigureAwait(false);
+                    await l.CommitAsync().ConfigureAwait(false);
 
                     using var originalIterator = l.Scan(0, long.MaxValue);
                     ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
                     ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
-                    await l.CommitAsync(cookie: BitConverter.GetBytes(recoveryAddress));
+                    await l.CommitAsync(cookie: BitConverter.GetBytes(recoveryAddress)).ConfigureAwait(false);
                 }
 
                 using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
@@ -149,20 +152,20 @@ namespace Tsavorite.test
             {
                 using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
-                    await l.EnqueueAsync(input1);
-                    await l.CommitAsync();
-                    await l.EnqueueAsync(input2);
-                    await l.CommitAsync();
-                    await l.EnqueueAsync(input3);
-                    await l.CommitAsync();
+                    await l.EnqueueAsync(input1).ConfigureAwait(false);
+                    await l.CommitAsync().ConfigureAwait(false);
+                    await l.EnqueueAsync(input2).ConfigureAwait(false);
+                    await l.CommitAsync().ConfigureAwait(false);
+                    await l.EnqueueAsync(input3).ConfigureAwait(false);
+                    await l.CommitAsync().ConfigureAwait(false);
 
                     using var originalIterator = l.Scan(0, l.TailAddress);
 
                     int count = 0;
-                    await foreach (var item in originalIterator.GetAsyncEnumerable())
+                    await foreach (var item in originalIterator.GetAsyncEnumerable().ConfigureAwait(false))
                     {
                         if (count < 1) // we commit only 1st item read
-                            await l.CommitAsync(cookie: BitConverter.GetBytes(item.nextAddress));
+                            await l.CommitAsync(cookie: BitConverter.GetBytes(item.nextAddress)).ConfigureAwait(false);
 
                         count++;
                     }
@@ -174,7 +177,7 @@ namespace Tsavorite.test
                     using var recoveredIterator = l.Scan(recoveredAddress, l.TailAddress);
 
                     int count = 0;
-                    await foreach (var item in recoveredIterator.GetAsyncEnumerable())
+                    await foreach (var item in recoveredIterator.GetAsyncEnumerable().ConfigureAwait(false))
                     {
                         if (count == 0) // resumed iterator will start at item2
                             ClassicAssert.True(input2.SequenceEqual(item.entry), $"Original: {input2[0]}, Recovered: {item.entry[0]}");

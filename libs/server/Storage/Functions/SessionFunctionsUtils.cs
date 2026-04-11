@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -85,6 +87,112 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"{nameof(EvaluateExpire)} exception when HasExpiration is false. optionType: {optionType}");
             }
+        }
+
+        internal static bool InPlaceWriterForSpanValue<TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> newValue,
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+        {
+            RecordSizeInfo sizeInfo = new();
+            var oldSize = logRecord.GetValueHeapMemorySize();
+
+            if (logRecord.Info.ValueIsInline && (!inputHasETag || logRecord.Info.HasETag) && (expiration == 0 || logRecord.Info.HasExpiration))
+            {
+                var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
+                if (!logRecord.TrySetPinnedValueSpan(newValue, valueAddress, ref valueLength))
+                    return false;
+            }
+            else
+            {
+                // Create local sizeInfo
+                sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
+                functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
+                    return false;
+            }
+
+            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
+            if (sizeChange != 0)
+                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
+
+            UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
+            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+
+            if (!logRecord.Info.Modified)
+                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            return true;
+        }
+
+        internal static bool InPlaceWriterForHeapObjectValue<TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, IHeapObject newValue,
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+        {
+            var oldSize = logRecord.GetValueHeapMemorySize();
+
+            // Create local sizeInfo
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
+            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+
+            if (!logRecord.TrySetValueObjectAndPrepareOptionals(newValue, in sizeInfo))
+                return false;
+
+            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
+            if (sizeChange != 0)
+                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
+
+            UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
+            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+
+            if (!logRecord.Info.Modified)
+                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            return true;
+        }
+
+        /// <inheritdoc />
+        internal static bool InPlaceWriterForLogRecordValue<TSourceLogRecord, TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord,
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+        {
+            var oldSize = logRecord.GetValueHeapMemorySize();
+
+            // Create local sizeInfo
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, inputLogRecord, ref input) };
+            functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
+            _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+
+            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
+            if (sizeChange != 0)
+                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
+
+            UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
+            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+
+            if (!logRecord.Info.Modified)
+                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            return true;
+        }
+
+        private static void UpdateExpirationAndETag(LogRecord logRecord, ref SpanByteAndMemory output, FunctionsState functionsState, bool inputHasETag, long expiration)
+        {
+            if (expiration != 0)
+            {
+                if (!logRecord.TrySetExpiration(expiration))
+                    Debug.Fail("Should have succeeded in setting Expiration as we should have ensured there was space there already");
+            }
+            else if (logRecord.Info.HasExpiration)
+                _ = logRecord.RemoveExpiration();
+
+            if (inputHasETag)
+            {
+                var newETag = functionsState.etagState.ETag + 1;
+                if (!logRecord.TrySetETag(newETag))
+                    Debug.Fail("Should have succeeded in setting ETag as we should have ensured there was space there already");
+                functionsState.CopyRespNumber(newETag, ref output);
+            }
+            else
+                _ = logRecord.RemoveETag();
         }
     }
 }

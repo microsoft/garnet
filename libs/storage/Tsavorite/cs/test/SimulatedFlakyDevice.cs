@@ -30,7 +30,7 @@ namespace Tsavorite.test
             this.options = options;
             permanentlyFailedRangesStart = new List<long>();
             permanentlyFailedRangesEnd = new List<long>();
-            versionScheme = new EpochProtectedVersionScheme(new LightEpoch());
+            versionScheme = new EpochProtectedVersionScheme();
             random = new ThreadLocal<Random>(() => new Random());
         }
 
@@ -166,6 +166,7 @@ namespace Tsavorite.test
         public override void Dispose()
         {
             underlying.Dispose();
+            versionScheme.Dispose();
         }
     }
 }

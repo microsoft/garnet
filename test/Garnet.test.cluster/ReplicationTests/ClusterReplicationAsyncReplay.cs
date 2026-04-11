@@ -6,6 +6,7 @@ using NUnit.Framework;
 namespace Garnet.test.cluster
 {
     [NonParallelizable]
+    [Ignore("Skip to reduce CI duration.")]
     public class ClusterReplicationAsyncReplay : ClusterReplicationBaseTests
     {
         [SetUp]

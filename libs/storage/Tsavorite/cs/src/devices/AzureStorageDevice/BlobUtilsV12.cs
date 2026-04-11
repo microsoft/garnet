@@ -168,7 +168,8 @@ namespace Tsavorite.devices
             public async Task<List<string>> GetBlobsAsync(CancellationToken cancellationToken)
             {
                 var list = new List<string>();
-                await foreach (var blob in client.WithRetries.GetBlobsAsync(prefix: prefix, cancellationToken: cancellationToken))
+                var options = new GetBlobsOptions() { Prefix = prefix };
+                await foreach (var blob in client.WithRetries.GetBlobsAsync(options, cancellationToken: cancellationToken))
                 {
                     list.Add(blob.Name);
                 }
@@ -178,7 +179,8 @@ namespace Tsavorite.devices
             public async Task<List<string>> GetBlobsAsync(string filePrefix, CancellationToken cancellationToken = default)
             {
                 var list = new List<string>();
-                await foreach (var blob in client.WithRetries.GetBlobsAsync(prefix: $"{prefix}/{filePrefix}", cancellationToken: cancellationToken))
+                var options = new GetBlobsOptions() { Prefix = $"{prefix}/{filePrefix}" };
+                await foreach (var blob in client.WithRetries.GetBlobsAsync(options, cancellationToken: cancellationToken))
                 {
                     list.Add(blob.Name);
                 }

@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
 
 namespace Tsavorite.core
@@ -40,6 +41,7 @@ namespace Tsavorite.core
         private static uint sectorSize = 0;
         private bool _disposed;
         readonly bool readOnly;
+        readonly ILogger logger;
 
         /// <summary>
         /// Number of pending reads on device
@@ -65,6 +67,8 @@ namespace Tsavorite.core
         /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
+        /// <param name="readOnly">Indicate if this is a readonly device</param>
+        /// <param name="logger">ILogger instance</param>
         public LocalStorageDevice(string filename,
                                   bool preallocateFile = false,
                                   bool deleteOnClose = false,
@@ -72,7 +76,8 @@ namespace Tsavorite.core
                                   long capacity = Devices.CAPACITY_UNSPECIFIED,
                                   bool recoverDevice = false,
                                   bool useIoCompletionPort = false,
-                                  bool readOnly = false)
+                                  bool readOnly = false,
+                                  ILogger logger = null)
             : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort, readOnly: readOnly)
         {
         }
@@ -99,6 +104,8 @@ namespace Tsavorite.core
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="initialLogFileHandles">Optional set of preloaded safe file handles, which can speed up hydration of preexisting log file handles</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
+        /// <param name="readOnly">Indicate if this is a readonly device</param>
+        /// <param name="logger">ILogger instance</param>
         protected internal LocalStorageDevice(string filename,
                                       bool preallocateFile = false,
                                       bool deleteOnClose = false,
@@ -107,7 +114,8 @@ namespace Tsavorite.core
                                       bool recoverDevice = false,
                                       IEnumerable<KeyValuePair<int, SafeFileHandle>> initialLogFileHandles = null,
                                       bool useIoCompletionPort = true,
-                                      bool readOnly = false)
+                                      bool readOnly = false,
+                                      ILogger logger = null)
                 : base(filename, GetSectorSize(filename), capacity)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -146,6 +154,7 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.readOnly = readOnly;
+            this.logger = logger;
             results = new ConcurrentQueue<SimpleAsyncResult>();
 
             logHandles = initialLogFileHandles != null
@@ -255,12 +264,14 @@ namespace Tsavorite.core
             }
             catch (IOException e)
             {
+                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
             }
-            catch
+            catch (Exception e)
             {
+                logger?.LogCritical(e, $"{nameof(ReadAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);
@@ -322,12 +333,14 @@ namespace Tsavorite.core
             }
             catch (IOException e)
             {
+                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback((uint)(e.HResult & 0x0000FFFF), 0, context);
                 results.Enqueue(result);
             }
-            catch
+            catch (Exception e)
             {
+                logger?.LogCritical(e, $"{nameof(WriteAsync)}");
                 Interlocked.Decrement(ref numPending);
                 callback(uint.MaxValue, 0, context);
                 results.Enqueue(result);

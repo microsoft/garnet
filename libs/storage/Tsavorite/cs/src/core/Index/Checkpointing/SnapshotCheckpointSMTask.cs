@@ -62,14 +62,15 @@ namespace Tsavorite.core
                     // only read safe pages during recovery.
                     store.hlogBase.AsyncFlushPagesForSnapshot(ObjectLog_OnWaitFlush(),
                         startPage, endPage,
-                        store._hybridLogCheckpoint.info.finalLogicalAddress,
-                        store._hybridLogCheckpoint.info.startLogicalAddress,
-                        store._hybridLogCheckpoint.snapshotFileDevice,
-                        store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
-                        out store._hybridLogCheckpoint.flushedSemaphore,
+                        startLogicalAddress: store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress,
+                        endLogicalAddress: store._hybridLogCheckpoint.info.finalLogicalAddress,
+                        fuzzyStartLogicalAddress: store._hybridLogCheckpoint.info.startLogicalAddress,
+                        logDevice: store._hybridLogCheckpoint.snapshotFileDevice,
+                        objectLogDevice: store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
+                        out store._hybridLogCheckpoint.flushedTask,
                         store.ThrottleCheckpointFlushDelayMs);
-                    if (store._hybridLogCheckpoint.flushedSemaphore != null)
-                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
+                    if (store._hybridLogCheckpoint.flushedTask != null)
+                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedTask, StateMachineTaskType.SnapshotCheckpointSMTaskHybridLogFlushed);
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:

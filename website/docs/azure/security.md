@@ -41,7 +41,7 @@ In addition to the tags table, you need to add the following address prefixes be
 
 ## Authentication and Access Control
 
-Azure Cosmos DB Garnet Cache uses Azure RBAC to secure your data by granting permissions for supported Redis commands. Microsoft Entra ID RBAC roles define fine-grained permissions and are required to use data plane operations. No roles are assigned by default, including to the resource creator. You can assign roles to users, groups, service principals or managed identities for data access.
+Azure Cosmos DB Garnet Cache uses Azure RBAC to secure your data by granting permissions for supported Redis commands. Microsoft Entra ID RBAC roles define fine-grained permissions and are required to use data plane operations. No roles are assigned by default, including to the resource creator. You can assign roles to users, groups, service principals or managed identities for data access. Note that role assignments can take several minutes to propagate after being created or modified.
 
 ### Built-in Roles
 

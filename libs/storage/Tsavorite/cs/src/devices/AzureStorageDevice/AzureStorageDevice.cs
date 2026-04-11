@@ -180,8 +180,9 @@ namespace Tsavorite.devices
                         {
                             var client = pageBlobDirectory.Client.WithRetries;
 
+                            var options = new GetBlobsOptions() { Prefix = prefix };
                             await using var asEnum = client.GetBlobsAsync(
-                                prefix: prefix,
+                                options,
                                 cancellationToken: StorageErrorHandler.Token)
                                 .AsPages(continuationToken, 100)
                                 .ConfigureAwait(false).GetAsyncEnumerator();

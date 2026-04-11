@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.server;
+using Tsavorite.core;
 
 namespace NoOpModule
 {

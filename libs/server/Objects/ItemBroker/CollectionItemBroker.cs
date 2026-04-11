@@ -668,6 +668,7 @@ namespace Garnet.server
             }
             finally
             {
+                storageSession.scratchBufferBuilder.RewindScratchBuffer(asKey);
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
             }

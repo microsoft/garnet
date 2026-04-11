@@ -4,6 +4,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -19,12 +21,25 @@ namespace Tsavorite.test
 
         internal HashModuloKeyStructComparer(HashModulo mod) => modRange = mod;
 
-        public readonly bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<KeyStruct>().kfield1 == k2.AsRef<KeyStruct>().kfield1;
+        public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            => k1.KeyBytes.AsRef<KeyStruct>().kfield1 == k2.KeyBytes.AsRef<KeyStruct>().kfield1;
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(ReadOnlySpan<byte> k)
+        public readonly long GetHashCode64<TKey>(TKey k)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
-            var value = Utility.GetHashCode(k.AsRef<KeyStruct>().kfield1);
+            var value = Utility.GetHashCode(k.KeyBytes.AsRef<KeyStruct>().kfield1);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
         }
     }
@@ -35,8 +50,9 @@ namespace Tsavorite.test
     using StructAllocator = SpanByteAllocator<StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordDisposer>>;
     using StructStoreFunctions = StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class SpanByteLogCompactionTests
+    public class SpanByteLogCompactionTests : AllureTestBase
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log;
@@ -61,7 +77,7 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 9
             }, StoreFunctions.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -75,10 +91,10 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
-        static void VerifyRead(ClientSession<InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
+        static void VerifyRead(ClientSession<KeyStruct, InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
         {
             InputStruct input = default;
             int numPending = 0;
@@ -91,14 +107,14 @@ namespace Tsavorite.test
                 {
                     for (; outputs.Next(); --numPending)
                     {
-                        if (isDeleted((int)outputs.Current.Key.AsRef<KeyStruct>().kfield1))
+                        if (isDeleted((int)outputs.Current.Key.KeyBytes.AsRef<KeyStruct>().kfield1))
                         {
                             ClassicAssert.IsFalse(outputs.Current.Status.Found);
                             continue;
                         }
                         ClassicAssert.IsTrue(outputs.Current.Status.Found);
-                        ClassicAssert.AreEqual(outputs.Current.Key.AsRef<KeyStruct>().kfield1, outputs.Current.Output.value.vfield1);
-                        ClassicAssert.AreEqual(outputs.Current.Key.AsRef<KeyStruct>().kfield2, outputs.Current.Output.value.vfield2);
+                        ClassicAssert.AreEqual(outputs.Current.Key.KeyBytes.AsRef<KeyStruct>().kfield1, outputs.Current.Output.value.vfield1);
+                        ClassicAssert.AreEqual(outputs.Current.Key.KeyBytes.AsRef<KeyStruct>().kfield2, outputs.Current.Output.value.vfield2);
                     }
                 }
                 ClassicAssert.AreEqual(numPending, 0);
@@ -110,7 +126,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, isDeleted(i) ? 1 : 0);
+                var status = bContext.Read(key1, ref input, ref output, isDeleted(i) ? 1 : 0);
                 if (!status.IsPending)
                 {
                     if (isDeleted(i))
@@ -137,7 +153,7 @@ namespace Tsavorite.test
 
         public void SpanByteLogCompactionTest1([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
 
             const int totalRecords = 2_000;
@@ -149,9 +165,9 @@ namespace Tsavorite.test
                 if (i == totalRecords - 1000)
                     compactUntil = store.Log.TailAddress;
 
-                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+                var value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -170,7 +186,7 @@ namespace Tsavorite.test
         [Category("Compaction")]
         public void SpanByteLogCompactionTest2([Values] CompactionType compactionType, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
-            using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
 
             const int totalRecords = 2_000;
@@ -182,9 +198,9 @@ namespace Tsavorite.test
                 if (i == totalRecords - 1000)
                     compactUntil = store.Log.TailAddress;
 
-                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+                var value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -201,9 +217,9 @@ namespace Tsavorite.test
             // test that the address is < minAddress, so no IO is needed.
             for (int i = 0; i < totalRecords / 2; i++)
             {
-                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+                var value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -220,7 +236,7 @@ namespace Tsavorite.test
         [Category("Compaction")]
         public void SpanByteLogCompactionTest3([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
 
             const int totalRecords = 2_000;
@@ -232,15 +248,15 @@ namespace Tsavorite.test
                 if (i == totalRecords / 2)
                     compactUntil = store.Log.TailAddress;
 
-                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+                var value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
-                    keyStruct = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
+                    key = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
                     _ = bContext.Delete(key, 0);
                 }
             }
@@ -261,7 +277,7 @@ namespace Tsavorite.test
 
         public void SpanByteLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
 
             InputStruct input = default;
@@ -275,9 +291,9 @@ namespace Tsavorite.test
                 if (i == totalRecords / 2)
                     compactUntil = store.Log.TailAddress;
 
-                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+                var value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -292,9 +308,9 @@ namespace Tsavorite.test
             for (var i = 0; i < totalRecords; i++)
             {
                 OutputStruct output = default;
-                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+                var value = SpanByte.FromPinnedVariable(ref valueStruct);
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
@@ -326,12 +342,12 @@ namespace Tsavorite.test
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
 
-            using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            using var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
 
-            var keyStruct = new KeyStruct { kfield1 = 100, kfield2 = 101 };
+            var key = new KeyStruct { kfield1 = 100, kfield2 = 101 };
             var valueStruct = new ValueStruct { vfield1 = 10, vfield2 = 20 };
-            ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
+            var value = SpanByte.FromPinnedVariable(ref valueStruct);
 
             var input = default(InputStruct);
             var output = default(OutputStruct);

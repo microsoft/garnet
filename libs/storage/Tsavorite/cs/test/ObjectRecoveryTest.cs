@@ -1,9 +1,11 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;
@@ -20,8 +22,9 @@ namespace Tsavorite.test.recovery.objects
         public T2 Item2;
     }
 
+    [AllureNUnit]
     [TestFixture]
-    internal class ObjectRecoveryTests
+    internal class ObjectRecoveryTests : AllureTestBase
     {
         const long NumUniqueKeys = 1L << 14;
         const long KeySpace = 1L << 14;
@@ -67,7 +70,7 @@ namespace Tsavorite.test.recovery.objects
             objlog = null;
 
             if (deleteDir)
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+                TestUtils.OnTearDown();
         }
 
         private void PrepareToRecover()
@@ -84,7 +87,7 @@ namespace Tsavorite.test.recovery.objects
             PrepareToRecover();
 
             if (syncMode == CompletionSyncMode.Async)
-                _ = await store.RecoverAsync(token, token);
+                _ = await store.RecoverAsync(token, token).ConfigureAwait(false);
             else
                 _ = store.Recover(token, token);
 
@@ -105,14 +108,14 @@ namespace Tsavorite.test.recovery.objects
             }
 
             // Register thread with Tsavorite
-            var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var session = store.NewSession<AdId, Input, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Process the batch of input data
             bool first = true;
             for (int i = 0; i < NumOps; i++)
             {
-                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref inputArray[i].Item1), ref inputArray[i].Item2, Empty.Default);
+                _ = bContext.RMW(inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
 
                 if ((i + 1) % CheckpointInterval == 0)
                 {
@@ -148,7 +151,7 @@ namespace Tsavorite.test.recovery.objects
                 };
             }
 
-            var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var session = store.NewSession<AdId, Input, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             Input input = default;
@@ -156,7 +159,7 @@ namespace Tsavorite.test.recovery.objects
             for (var i = 0; i < NumUniqueKeys; i++)
             {
                 Output output = new();
-                _ = bContext.Read(SpanByte.FromPinnedVariable(ref inputArray[i].Item1), ref input, ref output, Empty.Default);
+                _ = bContext.Read(inputArray[i].Item1, ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests

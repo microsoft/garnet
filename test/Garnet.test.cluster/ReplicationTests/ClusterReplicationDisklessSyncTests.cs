@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using Allure.NUnit;
 #if DEBUG
 using Garnet.common;
 #endif
@@ -21,8 +22,10 @@ namespace Garnet.test.cluster
     /// 3. Replica same history and different version and AOF
     /// 4. Replica different history, version and AOF
     /// </summary>
+    [AllureNUnit]
+    [TestFixture]
     [NonParallelizable]
-    public class ClusterReplicationDisklessSyncTests
+    public class ClusterReplicationDisklessSyncTests : AllureTestBase
     {
         ClusterTestContext context;
         readonly int keyCount = 256;
@@ -418,7 +421,7 @@ namespace Garnet.test.cluster
             {
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
                 var _resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-                ClassicAssert.AreEqual("Wait for sync task faulted", _resp);
+                ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts}", _resp);
             }
             finally
             {

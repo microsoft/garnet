@@ -18,7 +18,7 @@ namespace NoOpModule
             => throw new InvalidOperationException();
 
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
+        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
             => false;
 
         /// <inheritdoc />

@@ -1,0 +1,42 @@
+name: Squash Benchmark Branches
+
+# The continuousbenchmark and continuousbenchmark_net80 branches accumulate
+# commits from the benchmark-action/github-action-benchmark action (one per
+# benchmark run). Each commit rewrites a ~37 MiB data.js file, which bloats
+# the repository pack file and slows git clone. This workflow periodically
+# squashes each branch to a single orphan commit, keeping only the latest
+# file contents.
+
+on:
+  schedule:
+    - cron: '0 12 * * *' # Daily at noon UTC (offset from benchmark runs)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  squash:
+    name: Squash ${{ matrix.branch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch: [ continuousbenchmark, continuousbenchmark_net80 ]
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Squash to orphan commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Create orphan branch — the working tree and index are preserved
+          # from the current branch, so all files stay as-is and are ready
+          # to be committed without any temp-dir copying.
+          git checkout --orphan squashed-temp
+          git add -A
+          git commit -m "Squash ${{ matrix.branch }} to single commit [CI]"
+          git push origin squashed-temp:${{ matrix.branch }} --force-with-lease

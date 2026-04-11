@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -44,11 +45,26 @@ namespace Garnet.cluster
             return true;
         }
 
+        public bool TryHashAndStore(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> key)
+        {
+            Debug.Assert(ns.Length == 1, "Longer namespaces not yet supported");
+
+            if (!argSliceVector.TryAddItem(ns, key))
+                return false;
+
+            var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)ns[0]) & (size - 1);
+            var byteOffset = slot >> 3;
+            var bitOffset = slot & 7;
+            bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
+
+            return true;
+        }
+
         /// <summary>
         /// Hash key to bloomfilter and store it for future use (NOTE: Use only with KEYS option)
         /// </summary>
         /// <param name="key"></param>
-        public unsafe void HashAndStore(PinnedSpanByte key)
+        public void HashAndStore(PinnedSpanByte key)
         {
             var slot = (int)HashUtils.MurmurHash2x64A(key.ReadOnlySpan) & (size - 1);
             var byteOffset = slot >> 3;

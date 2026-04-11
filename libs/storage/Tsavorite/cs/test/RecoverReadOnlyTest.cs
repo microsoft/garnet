@@ -1,13 +1,13 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
-#if LOGRECORD_TODO
 
 using System;
 using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -15,8 +15,9 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class BasicRecoverReadOnly
+    internal class BasicRecoverReadOnly : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;
@@ -52,14 +53,14 @@ namespace Tsavorite.test
             deviceReadOnly = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
 
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void RecoverReadOnlyAsyncBasicTest()
+        public async Task RecoverReadOnlyAsyncBasicTest()
         {
             using var cts = new CancellationTokenSource();
 
@@ -72,36 +73,49 @@ namespace Tsavorite.test
             //** Give it some time to run a bit
             //** Acceptable use of using sleep for this spot
             //** Similar to waiting for things to run before manually hitting cancel from a command prompt
-            Thread.Sleep(3000);
+            await Task.Delay(3000, cts.Token).ConfigureAwait(false);
             cts.Cancel();
 
-            producer.Wait();
-            // commiter.Wait();  // cancel token took care of this one
-            // consumer.Wait();  // cancel token took care of this one
-
+            await producer.ConfigureAwait(false);
+            await commiter.ConfigureAwait(false);
+            await consumer.ConfigureAwait(false);
         }
 
 
         //**** Helper Functions - based off of TsavoriteLogPubSub sample ***
         static async Task CommitterAsync(TsavoriteLog log, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken);
-                await log.CommitAsync(token: cancellationToken);
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(commitPeriodMs), cancellationToken).ConfigureAwait(false);
+                    await log.CommitAsync(token: cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancellationToken is canceled, just exit the loop and let the test finish.
             }
         }
 
         static async Task ProducerAsync(TsavoriteLog log, CancellationToken cancellationToken)
         {
-            var i = 0L;
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
+                var i = 0L;
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    log.Enqueue(Encoding.UTF8.GetBytes(i.ToString()));
 
-                i++;
+                    i++;
 
-                await Task.Delay(TimeSpan.FromMilliseconds(10));
+                    await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancellationToken is canceled, just exit the loop and let the test finish.
             }
         }
 
@@ -109,26 +123,44 @@ namespace Tsavorite.test
         // to the primary TsavoriteLog's commits.
         public async Task SeparateConsumerAsync(CancellationToken cancellationToken)
         {
-            var _ = BeginRecoverReadOnlyLoop(logReadOnly, cancellationToken);
+            var recoverLoop = BeginRecoverReadOnlyLoop(logReadOnly, cancellationToken);
 
             // This enumerator waits asynchronously when we have reached the committed tail of the duplicate TsavoriteLog. When RecoverReadOnly
             // reads new data committed by the primary TsavoriteLog, it signals commit completion to let iter continue to the new tail.
-            using var iter = logReadOnly.Scan(logReadOnly.BeginAddress, long.MaxValue);
-            await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
+            try
             {
+                using (var iter = logReadOnly.Scan(logReadOnly.BeginAddress, long.MaxValue))
+                {
+                    await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken).ConfigureAwait(false))
+                    {
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancellationToken is canceled, just exit the loop and let the test finish.
+            }
+            finally
+            {
+                await recoverLoop.ConfigureAwait(false);
             }
         }
 
         static async Task BeginRecoverReadOnlyLoop(TsavoriteLog log, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                // Delay for a while before checking again.
-                await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken);
-                await log.RecoverReadOnlyAsync(cancellationToken);
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    // Delay for a while before checking again.
+                    await Task.Delay(TimeSpan.FromMilliseconds(restorePeriodMs), cancellationToken).ConfigureAwait(false);
+                    await log.RecoverReadOnlyAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancellationToken is canceled, just exit the loop and let the test finish.
             }
         }
     }
 }
-
-#endif // LOGRECORD_TODO

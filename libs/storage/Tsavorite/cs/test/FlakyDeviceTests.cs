@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -10,12 +8,14 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
     internal class FlakyDeviceTests : TsavoriteLogTestBase
     {
@@ -27,6 +27,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
+        //[Repeat(3000)]
         public async ValueTask FlakyLogTestCleanFailure([Values] bool isAsync)
         {
             var errorOptions = new ErrorSimulationOptions
@@ -52,12 +53,10 @@ namespace Tsavorite.test
                 for (int j = 0; j < 100; j++)
                 {
                     for (int i = 0; i < numEntries; i++)
-                    {
-                        log.Enqueue(entry);
-                    }
+                        _ = log.Enqueue(entry);
 
                     if (isAsync)
-                        await log.CommitAsync();
+                        await log.CommitAsync().ConfigureAwait(false);
                     else
                         log.Commit();
                 }
@@ -106,7 +105,7 @@ namespace Tsavorite.test
                     {
                         for (int i = 0; i < numEntries; i++)
                         {
-                            log.Enqueue(entry);
+                            _ = log.Enqueue(entry);
                             // create randomly interleaved concurrent writes
                             if (random.NextDouble() < 0.1)
                                 log.Commit();
@@ -164,11 +163,11 @@ namespace Tsavorite.test
             // Ensure we write enough to trigger errors
             for (int i = 0; i < 1000; i++)
             {
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
                 try
                 {
                     if (IsAsync(iteratorType))
-                        await log.CommitAsync();
+                        await log.CommitAsync().ConfigureAwait(false);
                     else
                         log.Commit();
                 }
@@ -186,11 +185,11 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable().ConfigureAwait(false))
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                     break;
                 case IteratorType.AsyncMemoryOwner:
-                    await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                    await foreach ((IMemoryOwner<byte> result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared).ConfigureAwait(false))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                         result.Dispose();
@@ -209,5 +208,3 @@ namespace Tsavorite.test
 
     }
 }
-
-#endif // LOGRECORD_TODO

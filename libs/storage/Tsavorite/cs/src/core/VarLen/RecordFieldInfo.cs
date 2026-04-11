@@ -35,13 +35,18 @@ namespace Tsavorite.core
         public bool ValueIsObject;
 
         /// <summary>Whether the new record will have an ETag.</summary>
-        public bool HasETag;
+        public bool HasETag { get => eTagSize > 0; set => eTagSize = (byte)(value ? LogRecord.ETagSize : 0); }
+        internal byte eTagSize;
 
         /// <summary>Whether the new record will have an Expiration.</summary>
-        public bool HasExpiration;
+        public bool HasExpiration { get => expirationSize > 0; set => expirationSize = (byte)(value ? LogRecord.ExpirationSize : 0); }
+        internal byte expirationSize;
+
+        /// <summary><see cref="RecordDataHeader.RecordType"/> for the record - defaults to 0.</summary>
+        public byte RecordType;
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"KeySize {KeySize}, ValSize {ValueSize}, ValIsObj {ValueIsObject}, HasETag {HasETag}, HasExpir {HasExpiration}";
+            => $"KeySize {KeySize}, ValSize {ValueSize}, ValIsObj {ValueIsObject}, HasETag {HasETag}, HasExpir {HasExpiration}, RecType: {RecordType}";
     }
 }

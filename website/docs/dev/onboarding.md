@@ -16,12 +16,12 @@ For an introduction to Garnet and its capabilities, you can start with [Welcome 
 
 - [RESP specification](https://redis.io/docs/reference/protocol-spec/)
 - [Redis data types](https://redis.io/docs/data-types/)
-- [FASTER](https://microsoft.github.io/FASTER/docs/fasterkv-basics/), which we forked for use in Garnet
+- [FASTER](https://microsoft.github.io/FASTER/docs/fasterkv-basics/), which we forked for use in Garnet as [Tsavorite](tsavorite/intro.md)
 
 ### Tools
 
-- Visual Studio 2022 (Preview version recommended)
-- .NET 8.x
+- Visual Studio 2026 (Preview version recommended)
+- .NET 10 SDK
 - Git
 - Azure Windows VM
 - Azure Linux VM
@@ -44,7 +44,7 @@ After cloning the repository you can either run the unit tests or run the server
 2. Run the tests suite
 
 ```bash
-    dotnet test -c Release -l "console;verbosity=detailed"
+dotnet test -c Release -f net10.0 -l "console;verbosity=detailed"
 ```
 
 3. Run the server
@@ -53,7 +53,7 @@ Using a size memory of 4 GB and index size of 64 MB:
 
 ```bash
 cd <root>/main/GarnetServer/
-dotnet run -c Debug -f net8.0 -- --logger-level Trace -m 4g -i 64m
+dotnet run -c Debug -f net10.0 -- --logger-level Trace -m 4g -i 64m
 ```
 
 4. Use the Memurai client in Windows to send commands to Garnet. A guide about how to install Memurai on Windows can be found [here](https://docs.memurai.com/en/installation.html).
@@ -126,7 +126,14 @@ Any new feature, change to existing functionality or bug fixing needs to be done
 
     `<username>`/branch-name
 
-3. Include Unit Tests to test the new commands or feature. 
+3. Include Unit Tests for any new commands or feature. Allure enabled tests are required.  
+
+   Full documentation about Allure can be found [here](https://allurereport.org/docs/).  
+
+   Each test class must:  
+    * Apply [AllureNUnit] custom attribute  
+    * Apply [TestFixture] attribute 
+    * Inherit from the AllureTestBase base class 
 
 4. Once it is ready for review, create a [Pull Request](https://github.com/microsoft/Garnet/pulls). Make sure to link it to your issue item in the development section.
 
@@ -165,7 +172,7 @@ public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeC
 
 * As a good practice, follow the <b>camel case C# naming convention.</b>
 
-## Structure of the Garnet.sln Visual Studio Solution File
+## Garnet project structure
 
 * Refer to the Code Structure page for details [here](../dev/code-structure.md).
 
@@ -179,11 +186,11 @@ public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeC
 
 ## Test
 
-As a sanity check, you can run the Garnet test suite. The command to run tests in Release mode for .NET 8 is shown below (make sure you are in the root folder of the repo).
+As a sanity check, you can run the Garnet test suite. The command to run tests in Release mode for .NET 10 is shown below (make sure you are in the root folder of the repo).
 
 ``` bash
-    dotnet test -c Release -f net8.0 -l "console;verbosity=detailed"
-``` 
+dotnet test -c Release -f net10.0 -l "console;verbosity=detailed"
+```
 
 Note that Tsavorite has its own solution file and test suite in the folder `<root>`/Garnet/libs/storage/Tsavorite.
 

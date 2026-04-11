@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,8 +12,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespScanCommandsTests
+    public class RespScanCommandsTests : AllureTestBase
     {
         GarnetServer server;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
@@ -31,7 +33,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -95,7 +97,7 @@ namespace Garnet.test
             for (int i = 0; i < KeyCount; i++)
                 db.StringSet($"try:{i}", i);
 
-            // get and count keys using SE Redis, using the default pageSize of 250
+            // get and count keys using SE Redis, using the default pageSizeStr of 250
             var server = redis.GetServers()[db.Database];
             var keyCount1 = server.Keys().ToArray().Length;
             ClassicAssert.AreEqual(KeyCount, keyCount1, "IServer.Keys()");

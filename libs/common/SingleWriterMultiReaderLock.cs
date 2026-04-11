@@ -122,9 +122,12 @@ namespace Garnet.common
         /// Try acquire write lock and spin wait until isWriteLocked
         /// NOTE: once closed this lock should never be unlocked because is considered disposed
         /// </summary>
-        /// <returns>Return true if current thread is the one that acquired write lock</returns>
+        /// <returns>
+        /// Return true if current thread acquired write lock.
+        /// Return false if some other thread acquired write lock.
+        /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CloseLock()
+        public bool TryCloseLock()
         {
             while (true)
             {

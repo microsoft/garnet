@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -16,8 +17,9 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class LuaScriptRunnerTests
+    internal class LuaScriptRunnerTests : AllureTestBase
     {
         [Test]
         public void CannotRunUnsafeScript()
@@ -68,6 +70,71 @@ namespace Garnet.test
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
                 ClassicAssert.AreEqual("ERR Lua encountered an error: [string \"import ('System.Diagnostics');\"]:1: attempt to call a nil value (global 'import')", ex.Message);
+            }
+        }
+
+        [Test]
+        public void LoadAndLoadStringNotExposed()
+        {
+            // load and loadstring are not exposed in the sandbox
+            using (var runner = new LuaRunner(new(), "return type(load)"))
+            {
+                runner.CompileForRunner();
+                var result = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("nil", result, "load should not be available in sandbox");
+            }
+
+            using (var runner = new LuaRunner(new(), "return type(loadstring)"))
+            {
+                runner.CompileForRunner();
+                var result = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("nil", result, "loadstring should not be available in sandbox");
+            }
+
+            // Calling load should error since it's nil
+            using (var runner = new LuaRunner(new(), "local f = load('return io') return f()"))
+            {
+                runner.CompileForRunner();
+                var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
+                ClassicAssert.IsTrue(ex.Message.Contains("attempt to call a nil value (global 'load')"), $"Unexpected error: {ex.Message}");
+            }
+
+            // Calling loadstring should error since it's nil
+            using (var runner = new LuaRunner(new(), "local f = loadstring('return io') return f()"))
+            {
+                runner.CompileForRunner();
+                var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
+                ClassicAssert.IsTrue(ex.Message.Contains("attempt to call a nil value (global 'loadstring')"), $"Unexpected error: {ex.Message}");
+            }
+
+            // io, debug, and other dangerous modules remain inaccessible
+            using (var runner = new LuaRunner(new(), "return type(io)"))
+            {
+                runner.CompileForRunner();
+                var result = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("nil", result, "io should not be available in sandbox");
+            }
+
+            using (var runner = new LuaRunner(new(), "return type(debug)"))
+            {
+                runner.CompileForRunner();
+                var result = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("nil", result, "debug should not be available in sandbox");
+            }
+
+            // Internal garnet_* functions should not be reachable from sandbox
+            using (var runner = new LuaRunner(new(), "return type(garnet_loadstring)"))
+            {
+                runner.CompileForRunner();
+                var result = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("nil", result, "garnet_loadstring should not be accessible from sandbox");
+            }
+
+            using (var runner = new LuaRunner(new(), "return type(garnet_call)"))
+            {
+                runner.CompileForRunner();
+                var result = (string)runner.RunForRunner();
+                ClassicAssert.AreEqual("nil", result, "garnet_call should not be accessible from sandbox");
             }
         }
 
@@ -536,7 +603,7 @@ namespace Garnet.test
         [Test]
         public void AllowedFunctions()
         {
-            List<string> globalFuncs = ["xpcall", "tostring", "setmetatable", "next", "assert", "tonumber", "rawequal", "collectgarbage", "getmetatable", "rawset", "pcall", "coroutine", "type", "_G", "select", "unpack", "gcinfo", "pairs", "rawget", "loadstring", "ipairs", "_VERSION", "load", "error"];
+            List<string> globalFuncs = ["xpcall", "tostring", "setmetatable", "next", "assert", "tonumber", "rawequal", "collectgarbage", "getmetatable", "rawset", "pcall", "coroutine", "type", "_G", "select", "unpack", "gcinfo", "pairs", "rawget", "ipairs", "_VERSION", "error"];
             var exportedFuncs =
                 new Dictionary<string, List<string>>
                 {

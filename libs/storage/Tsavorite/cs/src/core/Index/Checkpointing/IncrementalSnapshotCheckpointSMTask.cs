@@ -56,10 +56,10 @@ namespace Tsavorite.core
                         store._lastSnapshotCheckpoint.info.finalLogicalAddress,
                         store._hybridLogCheckpoint.prevVersion,
                         store._hybridLogCheckpoint.deltaLog,
-                        out store._hybridLogCheckpoint.flushedSemaphore,
+                        out store._hybridLogCheckpoint.flushedTask,
                         store.ThrottleCheckpointFlushDelayMs);
-                    if (store._hybridLogCheckpoint.flushedSemaphore != null)
-                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
+                    if (store._hybridLogCheckpoint.flushedTask != null)
+                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedTask, StateMachineTaskType.IncrementalSnapshotCheckpointSMTaskHybridLogFlushed);
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:

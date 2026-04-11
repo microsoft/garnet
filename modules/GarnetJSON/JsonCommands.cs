@@ -30,7 +30,7 @@ namespace GarnetJSON
         /// <param name="input">The input data.</param>
         /// <param name="writer">The output data.</param>
         /// <returns>Always returns true.</returns>
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
+        public override bool NeedInitialUpdate(scoped ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
 
         /// <summary>
         /// Updates the JSON object with the specified key and input.

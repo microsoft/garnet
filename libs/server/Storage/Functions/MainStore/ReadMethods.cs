@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -10,10 +10,10 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
         /// <inheritdoc />
-        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.Info.ValueIsObject)
@@ -26,6 +26,37 @@ namespace Garnet.server
                 return false;
 
             var cmd = input.header.cmd;
+
+            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
+            if (cmd != RespCommand.NONE)
+            {
+                // Vector sets are reachable (key not mangled) and hidden.
+                // So we can use that to detect type mismatches.
+                if (srcLogRecord.RecordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
+                {
+                    // Attempted an illegal op on a VectorSet
+                    readInfo.Action = ReadAction.WrongType;
+                    return false;
+                }
+                else if (srcLogRecord.RecordType != VectorManager.RecordType && cmd.IsLegalOnVectorSet())
+                {
+                    // Attempted a vector set op on a non-VectorSet
+                    readInfo.Action = ReadAction.WrongType;
+                    return false;
+                }
+            }
+
+            // GET is used in a number of non-RESP contexts, which messes up existing logic
+            //
+            // Easiest to mark the actually-RESP commands with a < 0 arg1 and roll back to old logic
+            // after the Vector Set checks
+            //
+            // TODO: This is quite hacky, but requires a bunch of non-Vector Set changes - do those and remove
+            if (input.arg1 < 0 && cmd == RespCommand.GET)
+            {
+                cmd = RespCommand.NONE;
+            }
+
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
@@ -36,13 +67,13 @@ namespace Garnet.server
             {
                 if (srcLogRecord.Info.HasETag)
                 {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                     return true;
                 }
 
                 var valueLength = value.Length;
 
-                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
                     var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
@@ -78,7 +109,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool handleGetIfNotMatch<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        private bool handleGetIfNotMatch<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput dst, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // Any value without an etag is treated the same as a value with an etag

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #region License
 
 // Copyright (c) 2007 James Newton-King
@@ -24,21 +27,22 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 
 #endregion
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Allure.NUnit;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test.JSONPath
 {
+    [AllureNUnit]
     [TestFixture]
-    public class JsonPathExecuteTests
+    public class JsonPathExecuteTests : AllureTestBase
     {
         [Test]
         public void GreaterThanIssue1518()

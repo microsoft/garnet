@@ -2,19 +2,17 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus Read_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = unifiedContext.Read(key, ref input, ref output);
+            var status = unifiedContext.Read((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
@@ -23,9 +21,9 @@ namespace Garnet.server
         }
 
         public GarnetStatus RMW_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext context)
-            where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(key, ref input, ref output);
+            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);

@@ -110,41 +110,70 @@ namespace Tsavorite.core
         /// Concurrent writer; called on an Upsert that is in-place updating a record in the mutable range.
         /// </summary>
         /// <param name="logRecord">The destination log record</param>
-        /// <param name="sizeInfo">The size information for this record's fields</param>
         /// <param name="input">The user input to be used for computing the destination record's value</param>
         /// <param name="newValue">The Span value passed to Upsert, to be copied to the destination record</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// 
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> newValue, ref TOutput output, ref UpsertInfo upsertInfo);
+        bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> newValue, ref TOutput output, ref UpsertInfo upsertInfo);
 
         /// <summary>
         /// Concurrent writer; called on an Upsert that is in-place updating a record in the mutable range.
         /// </summary>
         /// <param name="logRecord">The destination log record</param>
-        /// <param name="sizeInfo">The size information for this record's fields</param>
         /// <param name="input">The user input to be used for computing the destination record's value</param>
         /// <param name="newValue">The value passed to Upsert, to be copied to the destination record</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// 
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject newValue, ref TOutput output, ref UpsertInfo upsertInfo);
+        bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, IHeapObject newValue, ref TOutput output, ref UpsertInfo upsertInfo);
 
         /// <summary>
         /// Concurrent writer; called on an Upsert that is in-place updating a record in the mutable range. The caller should be aware of ETag and Expiration in the source record.
         /// </summary>
         /// <param name="logRecord">The destination log record</param>
-        /// <param name="sizeInfo">The size information for this record's fields</param>
         /// <param name="input">The user input to be used for computing the destination record's value</param>
         /// <param name="inputLogRecord">The log record passed to Upsert, to be copied to the destination record</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// 
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+        bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
+        /// Called after the Upsert operation but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not (including when it has gone pending), so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
+        /// </remarks>
+        void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor;
+
+        /// <summary>
+        /// Called after the Upsert operation but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not, so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
+        /// </remarks>
+        void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor;
+
         #endregion Upserts
 
         #region RMWs
@@ -156,7 +185,12 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
 
         /// <summary>
         /// Initial update for RMW (insert at the tail of the log).
@@ -225,14 +259,28 @@ namespace Tsavorite.core
         /// In-place update for RMW
         /// </summary>
         /// <param name="logRecord">The log record that is being updated</param>
-        /// <param name="sizeInfo">The size information for this record's fields</param>
         /// <param name="input">The user input to be used to create the destination record's value</param>
         /// <param name="output">The location where the output of the operation, if any, is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
+        /// 
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
+        bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion InPlaceUpdater
+
+        /// <summary>
+        /// Called after the RMW operation, but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not (including when it has gone pending), so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="RMWInfo.UserData"/>
+        /// </remarks>
+        void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
         /// RMW completion
@@ -252,7 +300,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The log record that is being created with a tombstone</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated,
+        /// but could not be appended at the end of the log.</remarks>
         /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
         bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
 
@@ -270,9 +319,24 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The log record that is being deleted in-place</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <remarks>For Object Value types, Dispose() can be called here. If logRecord.Info.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <remarks>For Object Value types, Dispose() can be called here. If logRecord.Info.Invalid is true, this is called after the record was allocated and populated,
+        /// but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
         bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
+
+        /// <summary>
+        /// Called after the Delete operation but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not, so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="DeleteInfo.UserData"/>
+        /// </remarks>
+        void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+             where TKey : IKey
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 
         #region Utilities

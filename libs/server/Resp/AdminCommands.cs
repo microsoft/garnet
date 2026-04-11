@@ -703,7 +703,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
-            clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
+            clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend);
             return true;
         }
 

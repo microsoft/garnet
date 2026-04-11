@@ -18,10 +18,26 @@ namespace BenchmarkDotNetTests
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
     public class IterationTests
     {
-        const int NumRecords = 1_000_000;
+        public int NumRecords => BenchmarkDotNetTestsApp.NumRecords;
 
-        [Params(true, false)]
-        public bool FlushAndEvict;
+        public static bool? FlushAndEvictConfig;
+
+        [ParamsSource(nameof(FlushAndEvictProvider))]
+        public bool FlushAndEvict { get; set; }
+
+        /// <summary>
+        /// Operation parameters provider
+        /// </summary>
+        public IEnumerable<bool> FlushAndEvictProvider()
+        {
+            if (FlushAndEvictConfig.HasValue)
+            {
+                yield return FlushAndEvictConfig.Value;
+                yield break;
+            }
+            yield return false;
+            yield return true;
+        }
 
         TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;
@@ -44,7 +60,7 @@ namespace BenchmarkDotNetTests
 
         unsafe void PopulateStore()
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
             long keyNum = 0, valueNum = 0;
@@ -55,7 +71,7 @@ namespace BenchmarkDotNetTests
             {
                 keyNum = ii;
                 valueNum = ii + NumRecords;
-                _ = bContext.Upsert(key, value);
+                _ = bContext.Upsert(new SpanByteKey(key), value);
             }
 
             if (FlushAndEvict)
@@ -86,7 +102,7 @@ namespace BenchmarkDotNetTests
         [BenchmarkCategory("Cursor"), Benchmark]
         public void Cursor()
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
 
             var scanFunctions = new ScanFunctions();
             var cursor = 0L;

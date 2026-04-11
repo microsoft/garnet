@@ -25,14 +25,10 @@ namespace Garnet.server
 
         readonly GarnetDatabase defaultDatabase;
 
-        readonly StoreWrapper storeWrapper;
-
-
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :
             base(createDatabaseDelegate, storeWrapper)
         {
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
-            this.storeWrapper = storeWrapper;
 
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
@@ -90,6 +86,9 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
+
+            // Once everything is setup, initialize the VectorManager
+            defaultDatabase.VectorManager.Initialize();
         }
 
         /// <inheritdoc/>
@@ -195,7 +194,7 @@ namespace Garnet.server
             try
             {
                 // Checkpoint will be triggered from AOF replay
-                if (storeWrapper.clusterProvider.IsReplica())
+                if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
                 {
                     logger?.LogInformation("Replica skipping {method}", nameof(TaskCheckpointBasedOnAofSizeLimitAsync));
                     return;
@@ -204,10 +203,7 @@ namespace Garnet.server
                 logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
                     aofSize, aofSizeLimit);
 
-                var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
-
-                var storeTailAddress = result;
-
+                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
 
@@ -357,7 +353,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, SizeTracker, Logger, respProtocolVersion);
+            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, SizeTracker, DefaultDatabase.VectorManager, Logger, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
@@ -399,6 +395,12 @@ namespace Garnet.server
                 };
                 AppendOnlyFile?.Enqueue(header, out _);
             }
+        }
+
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            defaultDatabase.VectorManager.ResumePostRecovery();
         }
 
         public override void Dispose()

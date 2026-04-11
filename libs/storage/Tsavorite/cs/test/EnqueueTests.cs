@@ -1,19 +1,21 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
-
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class EnqueueTests
+    internal class EnqueueTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;
@@ -63,7 +65,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -180,13 +182,13 @@ namespace Tsavorite.test
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
 
-            await log.EnqueueAsync(input1, cancellationToken);
-            await log.EnqueueAsync(input2);
-            await log.EnqueueAsync(input3);
-            await log.EnqueueAsync(readOnlyMemoryEntry);
-            await log.EnqueueAsync(ientry);
-            await log.EnqueueAsync(spanBatch);
-            await log.CommitAsync();
+            await log.EnqueueAsync(input1, cancellationToken).ConfigureAwait(false);
+            await log.EnqueueAsync(input2).ConfigureAwait(false);
+            await log.EnqueueAsync(input3).ConfigureAwait(false);
+            await log.EnqueueAsync(readOnlyMemoryEntry).ConfigureAwait(false);
+            await log.EnqueueAsync(ientry).ConfigureAwait(false);
+            await log.EnqueueAsync(spanBatch).ConfigureAwait(false);
+            await log.CommitAsync().ConfigureAwait(false);
 
             // Read the log to make sure all entries are put in
             int currentEntry = 1;

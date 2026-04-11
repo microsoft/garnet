@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,8 +16,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespETagTests
+    public class RespETagTests : AllureTestBase
     {
         private GarnetServer server;
         private Random r;
@@ -45,7 +47,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         #region ETAG SET Happy Paths
@@ -900,9 +902,9 @@ namespace Garnet.test
             db.Connect();
 
             string origValue = "笑い男";
-            await db.ExecuteForLongResultAsync("SET", ["mykey", origValue, "WITHETAG"]);
+            await db.ExecuteForLongResultAsync("SET", ["mykey", origValue, "WITHETAG"]).ConfigureAwait(false);
 
-            string retValue = await db.StringGetAsync("mykey");
+            string retValue = await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.AreEqual(origValue, retValue);
         }
@@ -919,12 +921,12 @@ namespace Garnet.test
             for (int i = 0; i < length; i++)
                 value[i] = (byte)((byte)'a' + ((byte)i % 26));
 
-            RedisResult res = await db.ExecuteAsync("SET", ["mykey", value, "WITHETAG"]);
+            RedisResult res = await db.ExecuteAsync("SET", ["mykey", value, "WITHETAG"]).ConfigureAwait(false);
             long initalEtag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(1, initalEtag);
 
             // Backwards compatability of data set with etag and plain GET call
-            var retvalue = (byte[])await db.StringGetAsync("mykey");
+            var retvalue = (byte[])await db.StringGetAsync("mykey").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(new ReadOnlySpan<byte>(value).SequenceEqual(new ReadOnlySpan<byte>(retvalue)));
         }
@@ -1646,11 +1648,11 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (long)ttl);
 
             db.Execute("SET", [key, val, "WITHETAG"]);
             ttl = db.Execute("TTL", key);
-            ClassicAssert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (long)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
@@ -2051,11 +2053,11 @@ namespace Garnet.test
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             db.KeyExpire(keyB, TimeSpan.FromSeconds(expire));
 
-            db.StringSet(keyA, keyA, keepTtl: true);
+            db.StringSet(keyA, keyA, null, keepTtl: true);
             var time = db.KeyTimeToLive(keyA);
             ClassicAssert.IsTrue(time.Value.Ticks > 0);
 
-            db.StringSet(keyB, keyB, keepTtl: false);
+            db.StringSet(keyB, keyB, null, keepTtl: false);
             time = db.KeyTimeToLive(keyB);
             ClassicAssert.IsTrue(time == null);
 
@@ -2094,12 +2096,12 @@ namespace Garnet.test
             var expireTimeInMilliseconds = 3000;
 
             var pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-2, (int)pttl);
+            ClassicAssert.AreEqual(-2, (long)pttl);
 
             db.Execute("SET", [key, val, "WITHETAG"]);
 
             pttl = db.Execute("PTTL", key);
-            ClassicAssert.AreEqual(-1, (int)pttl);
+            ClassicAssert.AreEqual(-1, (long)pttl);
 
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
@@ -2412,18 +2414,18 @@ namespace Garnet.test
             var key = "mewo";
             var key2 = "dude";
 
-            db.Execute("SET", [key, "mars", "WITHETAG"]);
-            db.Execute("SET", [key2, "marsrover", "WITHETAG"]);
+            _ = db.Execute("SET", [key, "mars", "WITHETAG"]);
+            _ = db.Execute("SET", [key2, "marsrover", "WITHETAG"]);
 
-            RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("PFADD", [key, "woohoo"]));
+            // TODO: This is RedisServerException in the InPlaceUpdater call, but GetRMWModifiedFieldInfo currently throws RedisConnectionException.
+            // This can be different in CIs vs. locally.
+            Assert.That(() => db.Execute("PFADD", [key, "woohoo"]),
+                    Throws.TypeOf<RedisServerException>().With.Message.EndsWith(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL))
+                    .Or.TypeOf<RedisConnectionException>());
 
-            ClassicAssert.IsNotNull(ex);
-            Assert.That(ex.Message, Does.EndWith(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL)));
-
-            ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", [key, key2]));
-
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL), ex.Message);
+            Assert.That(() => db.Execute("PFMERGE", [key, key2]),
+                    Throws.TypeOf<RedisServerException>().With.Message.EndsWith(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL))
+                    .Or.TypeOf<RedisConnectionException>());
         }
 
         [Test]

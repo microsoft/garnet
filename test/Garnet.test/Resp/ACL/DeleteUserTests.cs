@@ -1,8 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -11,6 +12,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for ACL DELUSER operations.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     class DeleteUserTests : AclTest
     {
@@ -34,23 +36,23 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add two new users
-            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
+            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
-            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
+            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
-            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
 
             // Try to delete test user A
-            response = await c.ExecuteAsync("ACL", "deluser", TestUserA);
+            response = await c.ExecuteAsync("ACL", "deluser", TestUserA).ConfigureAwait(false);
             ClassicAssert.AreEqual("1", response);
 
             // Ensure test user A is not listed, but test user B still exists
-            usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Not.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
         }
@@ -65,23 +67,23 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add two new users
-            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
+            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
-            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
+            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
-            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
 
             // Try to delete both users in a single command
-            response = await c.ExecuteAsync("ACL", "deluser", TestUserA, TestUserB);
+            response = await c.ExecuteAsync("ACL", "deluser", TestUserA, TestUserB).ConfigureAwait(false);
             ClassicAssert.AreEqual("2", response);
 
             // Ensure both users have been deleted
-            usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Not.Contain(TestUserA));
             Assert.That(usernames, Does.Not.Contain(TestUserB));
         }
@@ -96,23 +98,23 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add two new users
-            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
+            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
-            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
+            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
-            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
 
             // Try to delete both users in a single command
-            response = await c.ExecuteAsync("ACL", "deluser", TestUserUnknown);
+            response = await c.ExecuteAsync("ACL", "deluser", TestUserUnknown).ConfigureAwait(false);
             ClassicAssert.AreEqual("0", response);
 
             // Ensure both users still exist
-            usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
         }
@@ -127,13 +129,13 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Verify that default user exists
-            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain("default"));
 
             // Try to delete the default user
             try
             {
-                var response = await c.ExecuteAsync("ACL", "deluser", "default");
+                var response = await c.ExecuteAsync("ACL", "deluser", "default").ConfigureAwait(false);
                 Assert.Fail("Attempting to delete the default user should raise an error.");
             }
             catch (Exception exception)
@@ -142,7 +144,7 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Verify that default user still exists
-            usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain("default"));
         }
 
@@ -156,21 +158,21 @@ namespace Garnet.test.Resp.ACL
             c.Connect();
 
             // Add two new users
-            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
+            var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
-            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
+            response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
-            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            string[] usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
 
             // Try to delete both users in a single command
             try
             {
-                response = await c.ExecuteAsync("ACL", "deluser");
+                response = await c.ExecuteAsync("ACL", "deluser").ConfigureAwait(false);
                 Assert.Fail("Shouldn't succeed, DELUSER requires arguments");
             }
             catch (Exception e)
@@ -179,7 +181,7 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Ensure both users still exist
-            usernames = await c.ExecuteForArrayAsync("ACL", "users");
+            usernames = await c.ExecuteForArrayAsync("ACL", "users").ConfigureAwait(false);
             Assert.That(usernames, Does.Contain(TestUserA));
             Assert.That(usernames, Does.Contain(TestUserB));
         }

@@ -5,6 +5,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -14,8 +16,9 @@ namespace Tsavorite.test.LockTests
 {
     using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class BasicLockTests
+    public class BasicLockTests : AllureTestBase
     {
         internal class Functions : SimpleLongSimpleFunctions
         {
@@ -28,12 +31,12 @@ namespace Tsavorite.test.LockTests
                 return true;
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
             {
                 return Increment(logRecord.ValueSpan);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 return Increment(logRecord.ValueSpan);
             }
@@ -70,8 +73,8 @@ namespace Tsavorite.test.LockTests
         }
 
         private TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
-        private ClientSession<long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
-        private BasicContext<long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
+        private ClientSession<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
+        private BasicContext<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
         private IDevice log;
         private LongKeyComparerModulo keyComparer = new(NumRecords);
 
@@ -82,7 +85,7 @@ namespace Tsavorite.test.LockTests
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectStringTests.log"), deleteOnClose: true);
             store = new(new()
             {
                 IndexSize = 1L << 26,
@@ -90,7 +93,7 @@ namespace Tsavorite.test.LockTests
             }, StoreFunctions.Create(keyComparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<long, long, Empty, Functions>(new Functions());
+            session = store.NewSession<TestSpanByteKey, long, long, Empty, Functions>(new Functions());
             bContext = session.BasicContext;
         }
 
@@ -104,7 +107,7 @@ namespace Tsavorite.test.LockTests
             log?.Dispose();
             log = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         [Test]
@@ -116,7 +119,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 long valueNum = key * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             // Update
@@ -129,24 +132,26 @@ namespace Tsavorite.test.LockTests
             {
                 var expectedOutput = key * ValueMult + numThreads * numIters;
                 long output = 0;
-                ClassicAssert.IsFalse(bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output).IsPending);
+                ClassicAssert.IsFalse(bContext.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output).IsPending);
                 ClassicAssert.AreEqual(expectedOutput, output);
             }
         }
 
         void UpdateFunc(bool useRMW, int numRecords, int numIters)
         {
+            using var localSession = store.NewSession<TestSpanByteKey, long, long, Empty, Functions>(new Functions());
+            var localBContext = localSession.BasicContext;
             for (long keyNum = 0; keyNum < numRecords; ++keyNum)
             {
-                var key = SpanByte.FromPinnedVariable(ref keyNum);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
                 for (var iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
-                        ClassicAssert.IsFalse(bContext.Read(key).status.IsPending);
+                        ClassicAssert.IsFalse(localBContext.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
                     long input = default;
-                    _ = useRMW ? bContext.RMW(key, ref input) : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref input));
+                    _ = useRMW ? localBContext.RMW(key, ref input) : localBContext.Upsert(key, SpanByte.FromPinnedVariable(ref input));
                 }
             }
         }
@@ -161,7 +166,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 valueNum = keyNum * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
@@ -169,7 +174,9 @@ namespace Tsavorite.test.LockTests
             long collidingKeyNum = deleteKeyNum + NumRecords;
             keyNum = collidingKeyNum;
             valueNum = collidingKeyNum * ValueMult;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum), deleteKey = SpanByte.FromPinnedVariable(ref deleteKeyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
+            var value = SpanByte.FromPinnedVariable(ref valueNum);
+            var deleteKey = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref deleteKeyNum));
             ClassicAssert.IsFalse(bContext.Upsert(key, value).IsPending);
 
             // Now make sure we did collide
@@ -217,7 +224,7 @@ namespace Tsavorite.test.LockTests
             {
                 // For this test we should be in-memory, so no pending
                 long valueNum = keyNum * ValueMult;
-                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             var expectedThrowAddress = store.Log.TailAddress;
@@ -236,9 +243,9 @@ namespace Tsavorite.test.LockTests
                 long input = 0;
                 var status = updateOp switch
                 {
-                    UpdateOp.RMW => bContext.RMW(SpanByte.FromPinnedVariable(ref insertKeyNum), ref input),
-                    UpdateOp.Upsert => bContext.Upsert(SpanByte.FromPinnedVariable(ref insertKeyNum), SpanByte.FromPinnedVariable(ref input)),
-                    UpdateOp.Delete => bContext.Delete(SpanByte.FromPinnedVariable(ref deleteKeyNum)),
+                    UpdateOp.RMW => bContext.RMW(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), ref input),
+                    UpdateOp.Upsert => bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref insertKeyNum)), SpanByte.FromPinnedVariable(ref input)),
+                    UpdateOp.Delete => bContext.Delete(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref deleteKeyNum))),
                     _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
                 };
                 ClassicAssert.IsFalse(status.IsPending);

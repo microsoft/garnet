@@ -1,17 +1,20 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery
 {
+    [AllureNUnit]
     [TestFixture]
-    public class ComponentRecoveryTests
+    public class ComponentRecoveryTests : AllureTestBase
     {
         private static unsafe void Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten)
         {
@@ -88,7 +91,7 @@ namespace Tsavorite.test.recovery
             Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten);
 
             var recoveredAllocator = new MallocFixedPageSize<HashBucket>();
-            ulong numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten, cancellationToken: default);
+            ulong numBytesRead = await recoveredAllocator.RecoverAsync(device, 0, numBucketsToAdd, numBytesWritten, cancellationToken: default).ConfigureAwait(false);
 
             Finish_MallocFixedPageSizeRecoveryTest(seed, device, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
         }
@@ -184,7 +187,7 @@ namespace Tsavorite.test.recovery
             var hash_table2 = new TsavoriteBase();
             hash_table2.Initialize(size, 512);
 
-            await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, cancellationToken: default);
+            await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, cancellationToken: default).ConfigureAwait(false);
 
             Finish_FuzzyIndexRecoveryTest(seed, numAdds, ht_device, ofb_device, hash_table1, hash_table2);
         }

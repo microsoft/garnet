@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -108,6 +109,17 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Span<byte> AsSpan(int start, int len) => ((ulong)(uint)start + (uint)len <= (uint)length) ? new(ptr + start, len) : throw new ArgumentOutOfRangeException($"start {nameof(start)} + len {len} exceeds length {length}");
+
+        /// <summary>
+        /// Reinterprets the pinned memory as a reference to an unmanaged value of type <typeparamref name="T"/>.
+        /// The length of the slice must exactly match the size of <typeparamref name="T"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref T AsRef<T>() where T : unmanaged
+        {
+            Debug.Assert(length == Unsafe.SizeOf<T>());
+            return ref Unsafe.AsRef<T>((T*)ptr);
+        }
 
         /// <summary>
         /// Copies the contents of this slice into a new array.

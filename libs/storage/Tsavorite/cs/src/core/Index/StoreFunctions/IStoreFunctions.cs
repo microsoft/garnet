@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -13,10 +13,24 @@ namespace Tsavorite.core
     {
         #region Key Comparer
         /// <summary>Get a 64-bit hash code for a key</summary>
-        long GetKeyHashCode64(ReadOnlySpan<byte> key);
+        long GetKeyHashCode64<TKey>(TKey key)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
 
         /// <summary>Compare two keys for equality</summary>
-        bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
+        bool KeysEqual<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TSecondKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            ;
         #endregion Key Comparer
 
         #region Value Serializer
@@ -37,14 +51,16 @@ namespace Tsavorite.core
 
         #region Record Disposer
         /// <summary>
-        /// If true, <see cref="DisposeValueObject(IHeapObject, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
-        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
-        /// do any needed disposal there.
+        /// If true, <see cref="DisposeRecord(ref LogRecord, DisposeReason)"/> is called per record
+        /// during page evictions from both readcache and main log, allowing cleanup of external resources.
         /// </summary>
         bool DisposeOnPageEviction { get; }
 
         /// <summary>Dispose the Value of a record, if necessary.</summary>
         void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
+
+        /// <summary>Called during page eviction to allow the application to clean up external resources.</summary>
+        void DisposeRecord(ref LogRecord logRecord, DisposeReason reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion

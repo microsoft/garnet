@@ -20,9 +20,6 @@ using Tsavorite.core;
 
 namespace Garnet
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Implementation Garnet server
     /// </summary>
@@ -51,6 +48,7 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
+        protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -134,6 +132,11 @@ namespace Garnet
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
             this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
             this.InitializeServer();
         }
 
@@ -150,7 +153,22 @@ namespace Garnet
             this.opts = opts;
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
-            this.InitializeServer();
+            this.storeEpoch = new LightEpoch();
+            if (this.opts.EnableAOF)
+                this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
+            try
+            {
+                this.InitializeServer();
+            }
+            catch
+            {
+                storeEpoch?.Dispose();
+                aofEpoch?.Dispose();
+                pubSubEpoch?.Dispose();
+                throw;
+            }
         }
 
         private void InitializeServer()
@@ -228,7 +246,7 @@ namespace Garnet
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, startFresh: true, logger);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, startFresh: true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
@@ -292,10 +310,17 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, out var epoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var (aofDevice, aof) = CreateAOF(dbId);
 
-            return new GarnetDatabase(kvSettings, dbId, store, epoch, stateMachineDriver, sizeTracker, aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0);
+            var vectorManager = new VectorManager(
+                serverOptions.EnableVectorSetPreview,
+                dbId,
+                () => Provider.GetSession(WireFormat.ASCII, null),
+                loggerFactory
+            );
+
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -322,14 +347,13 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            out LightEpoch epoch, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
-            epoch = new LightEpoch();
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
-            kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory, out var heapMemorySize, out var readCacheHeapMemorySize);
+            kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -341,14 +365,14 @@ namespace Garnet
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
-            var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings: kvSettings,
-                storeFunctions: Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(),
-                    valueSerializerCreator: () => new GarnetObjectSerializer(customCommandManager)),
-                allocatorFactory: (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
+                , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
+                    () => new GarnetObjectSerializer(customCommandManager),
+                    new GarnetRecordDisposer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-            if (heapMemorySize > 0 || readCacheHeapMemorySize > 0)
-                sizeTracker = new CacheSizeTracker(store, heapMemorySize, readCacheHeapMemorySize, this.loggerFactory);
-
+            if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
+                sizeTracker = new CacheSizeTracker(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
             return store;
         }
 
@@ -364,7 +388,7 @@ namespace Garnet
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
-            opts.GetAofSettings(dbId, out var aofSettings);
+            opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
             var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
 
@@ -414,10 +438,20 @@ namespace Garnet
 
         private void InternalDispose()
         {
+            // Phase 1: Stop listening on all servers to free ports immediately.
+            for (var i = 0; i < servers.Length; i++)
+                servers[i]?.Close();
+
+            // Phase 2: Dispose the provider (storage engine shutdown — may take time).
             Provider?.Dispose();
+
+            // Phase 3: Drain active handlers and clean up remaining resources.
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Dispose();
             subscribeBroker?.Dispose();
+            storeEpoch?.Dispose();
+            aofEpoch?.Dispose();
+            pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();
@@ -431,14 +465,10 @@ namespace Garnet
             try
             {
                 foreach (string directory in Directory.GetDirectories(path))
-                {
                     DeleteDirectory(directory);
-                }
-
                 Directory.Delete(path, true);
             }
-            catch (Exception ex) when (ex is IOException ||
-                                       ex is UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 try
                 {

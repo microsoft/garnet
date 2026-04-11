@@ -47,7 +47,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Called when one or more records are to be read via ReadAsync.
+        /// Called when one or more records with Objects have been read via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback.
         /// </summary>
         /// <param name="filePosition">The initial file position to read</param>
         /// <param name="totalLength">The cumulative length of all object-log entries for the span of records to be read. We read ahead for all record
@@ -58,6 +58,12 @@ namespace Tsavorite.core
             deserializedLength = 0UL;
             readBuffers.OnBeginReadRecords(filePosition, totalLength);
         }
+
+        /// <summary>
+        /// Called when one or more records with Objects have been read and via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback,
+        /// and we have completed reading and deserializing those objects.
+        /// </summary>
+        internal void OnEndReadRecords() => readBuffers.OnEndReadRecords();
 
         /// <inheritdoc/>
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("FlushAndReset is not supported for DiskStreamReadBuffer");
@@ -80,7 +86,11 @@ namespace Tsavorite.core
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+        public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
             if (readBuffers is null)
@@ -103,7 +113,7 @@ namespace Tsavorite.core
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
-                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
+                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
                         return false;
                 }
 
@@ -190,7 +200,7 @@ namespace Tsavorite.core
             // TODO add size tracking; do not track deserialization size changes if we are deserializing to a frame
 
             inDeserialize = false;
-            deserializedLength = 0;
+            deserializedLength = 0UL;
         }
 
         /// <inheritdoc/>

@@ -1,15 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
+using Allure.NUnit;
 using NUnit.Framework;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public partial class DocsTests
+    public partial class DocsTests : AllureTestBase
     {
         [GeneratedRegex(@"^\s*\|\s*\|\s*\[(?<cmd>[^\]]+)\]\(.+?\)\s*\|\s*(?<sig>[➖])")]
         private static partial Regex CommandLinkAndMinusRegex();

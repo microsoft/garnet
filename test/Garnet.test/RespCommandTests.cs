@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -18,8 +19,9 @@ namespace Garnet.test
     /// <summary>
     /// This test class tests the RESP COMMAND and COMMAND INFO commands
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
-    public class RespCommandTests
+    public class RespCommandTests : AllureTestBase
     {
         GarnetServer server;
         private string extTestDir;
@@ -87,7 +89,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            TestUtils.OnTearDown(waitForDelete: true);
             TestUtils.DeleteDirectory(Directory.GetParent(extTestDir)?.FullName);
         }
 

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -36,6 +35,27 @@ namespace Tsavorite.core
             Initialize();
         }
 
+        /// <summary>
+        /// Allocate memory page, pinned in memory
+        /// </summary>
+        /// <param name="index"></param>
+        internal void AllocatePage(int index)
+        {
+            IncrementAllocatedPageCount();
+
+            if (freePagePool.TryGet(out var item))
+            {
+                pageArrays[index] = item.array;
+                pagePointers[index] = item.pointer;
+            }
+            else
+            {
+                // No free pages are available so allocate new
+                AllocatePinnedPageArray(index);
+            }
+            PageHeader.Initialize(pagePointers[index]);
+        }
+
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
@@ -43,12 +63,23 @@ namespace Tsavorite.core
             {
                 _ = freePagePool.TryAdd(new()
                 {
+                    array = pageArrays[index],
                     pointer = pagePointers[index],
                     value = Empty.Default
                 });
+                pageArrays[index] = default;
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
+        }
+
+        internal void FreePage(long page)
+        {
+            ClearPage(page, 0);
+
+            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
+            if (logSizeTracker is not null)
+                ReturnPage((int)(page % BufferSize));
         }
 
         /// <summary>
@@ -60,29 +91,10 @@ namespace Tsavorite.core
             freePagePool.Dispose();
         }
 
-        /// <summary>
-        /// Allocate memory page, pinned in memory
-        /// </summary>
-        /// <param name="index"></param>
-        internal void AllocatePage(int index)
-        {
-            IncrementAllocatedPageCount();
-
-            if (freePagePool.TryGet(out var item))
-                pagePointers[index] = item.pointer;
-            else
-            {
-                // No free pages are available so allocate new
-                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-                NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
-            }
-            PageHeader.Initialize(pagePointers[index]);
-        }
-
         internal int OverflowPageCount => freePagePool.Count;
 
         /// <inheritdoc/>
-        protected override void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -92,7 +104,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        protected override void WriteAsyncToDevice<TContext>(CircularDiskWriteBuffer flushBuffers, long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDeviceForSnapshot<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -104,14 +116,7 @@ namespace Tsavorite.core
                         device);
         }
 
-        internal void FreePage(long page)
-        {
-            ClearPage(page, 0);
-            if (EmptyPageCount > 0)
-                ReturnPage((int)(page % BufferSize));
-        }
-
-        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, callback, asyncResult);
 
@@ -143,7 +148,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, ReadOnlySpan<byte> key,
+        internal override bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, TKey key,
                 long beginAddress, ref TScanFunctions scanFunctions)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 
@@ -154,9 +159,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Read pages from specified device
         /// </summary>
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
-                                        long readPageStart,
-                                        int numPages,
+        internal void AsyncReadPageFromDeviceToFrame<TContext>(
+                                        long readPage,
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
@@ -169,39 +173,37 @@ namespace Tsavorite.core
         {
             var usedDevice = device ?? this.device;
 
-            completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            completed = new CountdownEvent(1);
+
+            int pageIndex = (int)(readPage % frame.frameSize);
+            if (frame.frame[pageIndex] == null)
+                frame.Allocate(pageIndex);
+            else
+                frame.Clear(pageIndex);
+
+            var asyncResult = new PageAsyncReadResult<TContext>()
             {
-                int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
-                    frame.Allocate(pageIndex);
-                else
-                    frame.Clear(pageIndex);
+                page = readPage,
+                context = context,
+                handle = completed,
+                cts = cts
+            };
 
-                var asyncResult = new PageAsyncReadResult<TContext>()
-                {
-                    page = readPage,
-                    context = context,
-                    handle = completed,
-                    cts = cts
-                };
+            ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
 
-                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+            uint readLength = (uint)AlignedPageSizeBytes;
+            long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
 
-                uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
-
-                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-                {
-                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-                }
-
-                if (device != null)
-                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
-
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
+            if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+            {
+                readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
             }
+
+            if (device != null)
+                offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+            usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
         }
     }
 }

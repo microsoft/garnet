@@ -1,16 +1,18 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.client;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespListGarnetClientTests
+    public class RespListGarnetClientTests : AllureTestBase
     {
         private GarnetServer server;
 
@@ -56,7 +58,7 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             using ManualResetEventSlim e = new();
 
@@ -77,7 +79,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(isResultSet);
             ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
-            await ValidateListContentAsync(db, testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList).ConfigureAwait(false);
         }
 
         [Test]
@@ -86,7 +88,7 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             using ManualResetEventSlim e = new();
 
@@ -112,7 +114,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(isResultSet);
             ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
-            await ValidateListContentAsync(db, testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList).ConfigureAwait(false);
         }
 
         [Test]
@@ -121,15 +123,15 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             // Act & Assert
             var testKey = GetTestKey(key);
 
-            var actualListLength = await db.ListLeftPushAsync(testKey, elements);
+            var actualListLength = await db.ListLeftPushAsync(testKey, elements).ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
-            await ValidateListContentAsync(db, testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList).ConfigureAwait(false);
         }
 
         [Test]
@@ -138,7 +140,7 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             using ManualResetEventSlim e = new();
 
@@ -159,7 +161,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(isResultSet);
             ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
-            await ValidateListContentAsync(db, testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList).ConfigureAwait(false);
         }
 
         [Test]
@@ -168,7 +170,7 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             using ManualResetEventSlim e = new();
 
@@ -194,7 +196,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(isResultSet);
             ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
-            await ValidateListContentAsync(db, testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList).ConfigureAwait(false);
         }
 
         [Test]
@@ -203,15 +205,15 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             // Act & Assert
             var testKey = GetTestKey(key);
 
-            var actualListLength = await db.ListRightPushAsync(testKey, [.. elements]);
+            var actualListLength = await db.ListRightPushAsync(testKey, [.. elements]).ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
-            await ValidateListContentAsync(db, testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList).ConfigureAwait(false);
         }
 
         [Test]
@@ -221,13 +223,13 @@ namespace Garnet.test
             // Arrange
             var testKey = GetTestKey("list1");
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
-            await db.KeyDeleteAsync([testKey]);
-            await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]);
+            await db.KeyDeleteAsync([testKey]).ConfigureAwait(false);
+            await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]).ConfigureAwait(false);
 
             // Act
-            var values = await db.ListRangeAsync(testKey, start, stop);
+            var values = await db.ListRangeAsync(testKey, start, stop).ConfigureAwait(false);
 
             // Assert
             ClassicAssert.False(expectedValues.Length == 0);
@@ -240,13 +242,13 @@ namespace Garnet.test
             // Arrange
             var testKey = GetTestKey("list1");
             using var db = new GarnetClient(TestUtils.EndPoint);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
-            await db.KeyDeleteAsync([testKey]);
-            await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]);
+            await db.KeyDeleteAsync([testKey]).ConfigureAwait(false);
+            await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]).ConfigureAwait(false);
 
             // Act
-            var length = await db.ListLengthAsync(testKey);
+            var length = await db.ListLengthAsync(testKey).ConfigureAwait(false);
 
             // Assert
             ClassicAssert.AreEqual(3, length);
@@ -260,7 +262,7 @@ namespace Garnet.test
 
         private static async Task ValidateListContentAsync(GarnetClient db, string key, string[] expectedList)
         {
-            var actualElements = await db.ListRangeAsync(key, 0, -1);
+            var actualElements = await db.ListRangeAsync(key, 0, -1).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(expectedList.Length, actualElements.Length);
 

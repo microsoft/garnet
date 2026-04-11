@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -12,8 +14,9 @@ namespace Tsavorite.test.Objects
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class ObjectInlineTests
+    internal class ObjectInlineTests : AllureTestBase
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
@@ -31,7 +34,7 @@ namespace Tsavorite.test.Objects
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -53,11 +56,10 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectAsInlineStructUpsertTest()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
             var bContext = session.BasicContext;
 
-            TestObjectKey keyStruct = new() { key = 9999999 };
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyStruct);
+            TestObjectKey key = new() { key = 9999999 };
             TestObjectInput input = new() { value = 23 };
             TestObjectOutput output = default;
 
@@ -167,11 +169,10 @@ namespace Tsavorite.test.Objects
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectAsInlineStructRMWTest()
         {
-            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
+            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestInlineObjectFunctions>(new TestInlineObjectFunctions());
             var bContext = session.BasicContext;
 
-            TestObjectKey keyStruct = new() { key = 9999999 };
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyStruct);
+            TestObjectKey key = new() { key = 9999999 };
             TestObjectInput input = new() { value = 23 };
             TestObjectOutput output = default;
 
@@ -299,9 +300,11 @@ namespace Tsavorite.test.Objects
                 return DoWriter(ref logRecord, in sizeInfo, ref input, srcValue: null, ref output);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
                 // Use the same record for source and dest; DoUpdater does not modify dest until all source info is processed.
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 return DoUpdater(in logRecord, ref logRecord, in sizeInfo, input, ref output);
             }
 
@@ -356,9 +359,11 @@ namespace Tsavorite.test.Objects
                 return result;
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Set(ref output.srcValueStyle, logRecord.Info);
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, srcValue, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
             }
 
@@ -426,10 +431,14 @@ namespace Tsavorite.test.Objects
                 Assert.That(input.wantValueStyle, Is.EqualTo(style));
             }
 
-            static RecordFieldInfo GetFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
+            static RecordFieldInfo GetFieldInfo<TKey>(TKey key, ref TestObjectInput input)
+                where TKey : IKey
+#if NET9_0_OR_GREATER
+                    , allows ref struct
+#endif
                 => new()
                 {
-                    KeySize = key.Length,
+                    KeySize = key.KeyBytes.Length,
                     ValueSize = input.wantValueStyle switch
                     {
                         TestValueStyle.Inline => ValueStruct.AsSpanByteDataSize,
@@ -441,10 +450,10 @@ namespace Tsavorite.test.Objects
                 };
 
             public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-                => GetFieldInfo(srcLogRecord.Key, ref input);
-            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
+                => GetFieldInfo(srcLogRecord, ref input);
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
-            public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
         }
     }

@@ -310,6 +310,7 @@ namespace Garnet.cluster
             const int maxOdcAttempts = 2;
             while (true)
             {
+                cts.Token.ThrowIfCancellationRequested();
                 logger?.LogInformation("AcquireCheckpointEntry iteration {iteration}", iteration);
                 iteration++;
 
@@ -338,7 +339,7 @@ namespace Garnet.cluster
 
 #if DEBUG
                 // Only on Debug mode
-                await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition).ConfigureAwait(false);
 #endif
 
                 // Calculate the minimum start address covered by this checkpoint

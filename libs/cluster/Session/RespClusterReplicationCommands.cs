@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using Garnet.client;
 using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.server;
@@ -110,6 +111,59 @@ namespace Garnet.cluster
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER reserve command (only for internode use).
+        /// 
+        /// Allows for pre-migration reservation of certain resources.
+        /// 
+        /// For now, this is only used for Vector Sets.
+        /// </summary>
+        private bool NetworkClusterReserve(VectorManager vectorManager, out bool invalidParameters)
+        {
+            if (parseState.Count < 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var kind = parseState.GetArgSliceByRef(0);
+            if (!kind.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("VECTOR_SET_CONTEXTS"u8))
+            {
+                while (!RespWriteUtils.TryWriteError("Unrecognized reservation type"u8, ref dcurr, dend))
+                    SendAndReset();
+
+                invalidParameters = false;
+                return true;
+            }
+
+            if (!parseState.TryGetInt(1, out var numVectorSetContexts) || numVectorSetContexts <= 0)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            invalidParameters = false;
+
+            if (!vectorManager.TryReserveContextsForMigration(ref vectorBasicContext, numVectorSetContexts, out var newContexts))
+            {
+                while (!RespWriteUtils.TryWriteError("Insufficients contexts available to reserve"u8, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            while (!RespWriteUtils.TryWriteArrayLength(newContexts.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var ctx in newContexts)
+            {
+                while (!RespWriteUtils.TryWriteInt64AsSimpleString((long)ctx, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -471,12 +525,24 @@ namespace Garnet.cluster
             {
                 while (i < recordCount)
                 {
-                    if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
-                        return false;
+                    var kind = (MigrationRecordSpanType)(*payloadPtr);
+                    payloadPtr++;
 
-                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
-                    _ = basicGarnetApi.SET(in diskLogRecord);
-                    diskLogRecord.Dispose();
+                    if (kind == MigrationRecordSpanType.LogRecord)
+                    {
+
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord);
+                        diskLogRecord.Dispose();
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unexpected {nameof(MigrationRecordSpanType)}: {kind}");
+                    }
+
                     i++;
                 }
             }

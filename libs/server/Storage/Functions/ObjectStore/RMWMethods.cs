@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -12,10 +11,14 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
+    public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate<TKey>(TKey key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
         {
             var type = input.header.type;
 
@@ -28,7 +31,8 @@ namespace Garnet.server
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
             try
             {
-                return customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
+                // Deliberately hiding key type complexity from custom object commands
+                return customObjectCommand.NeedInitialUpdate(key.KeyBytes, ref input, ref writer);
             }
             finally
             {
@@ -60,7 +64,7 @@ namespace Garnet.server
                 var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref writer, ref rmwInfo);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 if (result)
-                    sizeInfo.AssertOptionals(logRecord.Info);
+                    sizeInfo.AssertOptionalsIfSet(logRecord.Info);
                 return result;
             }
             finally
@@ -76,42 +80,42 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
-                WriteLogRMW(dstLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(dstLogRecord.ValueObject.HeapMemorySize);
+            functionsState.cacheSizeTracker?.AddHeapSize(dstLogRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
             if (!logRecord.Info.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
-                output.OutputFlags |= OutputFlags.WrongType;
+                output.OutputFlags |= ObjectOutputFlags.WrongType;
                 return true;
             }
 
-            if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out long sizeChange))
+            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out long sizeChange))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
-                    WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
+                    rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                 return true;
             }
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
 
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
 
                 // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
@@ -127,23 +131,26 @@ namespace Garnet.server
                     return true;
                 if (output.HasRemoveKey)
                 {
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                    functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
                     logRecord.ClearValueIfHeap(obj => { });
+                    if (!logRecord.Info.Modified)
+                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    if (functionsState.appendOnlyFile != null)
+                        rmwInfo.UserData |= NeedAofLog;
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
 
-                sizeInfo.AssertOptionals(logRecord.Info);
                 return operateSuccessful;
             }
 
             var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
             if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
             {
-                output.OutputFlags |= OutputFlags.WrongType;
+                output.OutputFlags |= ObjectOutputFlags.WrongType;
                 return true;
             }
 
@@ -160,7 +167,6 @@ namespace Garnet.server
                 writer.Dispose();
             }
 
-            sizeInfo.AssertOptionals(logRecord.Info);
             return true;
         }
 
@@ -208,6 +214,10 @@ namespace Garnet.server
                     return true;
                 if (output.HasRemoveKey)
                 {
+                    // Log to AOF before returning, so the mutation that emptied the collection
+                    // is persisted and replayed correctly on recovery.
+                    if (functionsState.appendOnlyFile != null)
+                        rmwInfo.UserData |= NeedAofLog;
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
@@ -218,7 +228,7 @@ namespace Garnet.server
                 // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
                 if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
                 {
-                    output.OutputFlags |= OutputFlags.WrongType;
+                    output.OutputFlags |= ObjectOutputFlags.WrongType;
                     return true;
                 }
 
@@ -235,15 +245,28 @@ namespace Garnet.server
                 }
             }
 
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
             var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
+            functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(srcLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
+        }
+
+
+        /// <inheritdoc />
+        public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogRMW(key.KeyBytes, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
         }
     }
 }

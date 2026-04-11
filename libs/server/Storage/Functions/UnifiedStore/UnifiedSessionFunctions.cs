@@ -8,8 +8,9 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
+    public readonly partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
+        const byte NeedAofLog = 0x1;
         readonly FunctionsState functionsState;
 
         /// <summary>

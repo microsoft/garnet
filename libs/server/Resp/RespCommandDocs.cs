@@ -330,6 +330,8 @@ namespace Garnet.server
         String,
         [Description("transactions")]
         Transactions,
+        [Description("vector")]
+        Vector,
     }
 
     /// <summary>

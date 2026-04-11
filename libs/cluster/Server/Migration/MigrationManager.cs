@@ -43,7 +43,7 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.Migration, logger: logger);
 
             logger?.LogInformation("NetworkBufferSettings.sendBufferSize:{sendBufferSize}", networkBufferSettings.sendBufferSize);
             logger?.LogInformation("NetworkBufferSettings.initialReceiveBufferSize:{initialReceiveBufferSize}", networkBufferSettings.initialReceiveBufferSize);

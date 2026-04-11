@@ -10,6 +10,8 @@ namespace Garnet.server
     {
         internal const string HELP = "HELP";
         internal const string ALL = "ALL";
+        internal const string DEFAULT = "DEFAULT";
+        internal const string EVERYTHING = "EVERYTHING";
         internal const string RESET = "RESET";
 
         public static List<string> GetInfoTypeHelpMessage()
@@ -30,7 +32,9 @@ namespace Garnet.server
                 $"{nameof(InfoMetricsType.KEYSPACE)}: Database related statistics.",
                 $"{nameof(InfoMetricsType.MODULES)}: Information related to loaded modules.",
                 $"{nameof(InfoMetricsType.HLOGSCAN)}: Distribution of records in main store's hybrid log in-memory portion.",
-                $"{nameof(ALL)}: Return all informational sections.",
+                $"{nameof(ALL)}: Return all informational sections (excluding module generated ones).",
+                $"{nameof(DEFAULT)}: Return the default set of informational sections.",
+                $"{nameof(EVERYTHING)}: Return all informational sections including module generated ones.",
                 $"{nameof(HELP)}: Print this help message.",
                 $"{nameof(RESET)}: Reset stats.",
                 "\r\n",

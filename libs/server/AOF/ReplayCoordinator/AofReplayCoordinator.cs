@@ -9,9 +9,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     public sealed unsafe partial class AofProcessor
     {
         /// <summary>
@@ -242,9 +239,9 @@ namespace Garnet.server
                 static void ProcessTransactionGroupOperations<TStringContext, TObjectContext, TUnifiedContext>(AofProcessor aofProcessor,
                         TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
                         TransactionGroup txnGroup, bool asReplica)
-                    where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-                    where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-                    where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
                     foreach (var entry in txnGroup.operations)
                     {
@@ -273,7 +270,7 @@ namespace Garnet.server
 
                     // Run the stored procedure with the reconstructed input                    
                     var output = aofReplayContext.output;
-                    _ = aofProcessor.respServerSession.RunTransactionProc(id, ref aofReplayContext.customProcInput, ref output, isRecovering: true);
+                    _ = aofProcessor.respServerSession.RunTransactionProc(id, ref aofReplayContext.customProcInput, ref output, isReplaying: true);
                 }
             }
         }

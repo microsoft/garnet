@@ -43,6 +43,7 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private bool HandleRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             OperationStatus internalStatus,
             TSessionFunctionsWrapper sessionFunctions,
@@ -90,15 +91,11 @@ namespace Tsavorite.core
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status HandleOperationStatus<TInput, TOutput, TContext>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext,
-            OperationStatus operationStatus)
-        {
-            if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out Status status))
-                return status;
-            return HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
-        }
+        internal Status HandleOperationStatus<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus)
+            => OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status)
+                ? status
+                : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
@@ -108,7 +105,7 @@ namespace Tsavorite.core
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <param name="request">IO request, if operation went pending</param>
         /// <returns>Operation status</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
             TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
@@ -121,7 +118,7 @@ namespace Tsavorite.core
 
             request = default;
 
-            if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out Status status))
+            if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status))
                 return status;
 
             if (operationStatus == OperationStatus.ALLOCATE_FAILED)
@@ -150,7 +147,7 @@ namespace Tsavorite.core
                 request.id = pendingContext.id;
 
                 // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
-                request.requestKey = pendingContext.requestKey is null ? default : pendingContext.requestKey.Get();
+                request.requestKey = pendingContext.requestKey;
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;

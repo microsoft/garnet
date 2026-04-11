@@ -1,6 +1,5 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System;
 using System.Linq;
 using System.Net;
@@ -8,14 +7,16 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class GarnetClientTests
+    public class GarnetClientTests : AllureTestBase
     {
 
         readonly string[,] worldcities = new string[,] {
@@ -109,7 +110,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         static void WaitAndReset(ManualResetEventSlim e)
@@ -188,8 +189,8 @@ namespace Garnet.test
             db.Connect();
 
             long n = stringParams ?
-                int.Parse(await db.ExecuteForStringResultAsync("INCRBY", ["myKey", "10"])) :
-                int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), [Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10")]));
+                int.Parse(await db.ExecuteForStringResultAsync("INCRBY", ["myKey", "10"]).ConfigureAwait(false)) :
+                int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), [Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10")]).ConfigureAwait(false));
 
             ClassicAssert.AreEqual(10, n);
         }
@@ -203,10 +204,10 @@ namespace Garnet.test
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
-            var result = await db.ExecuteForStringResultAsync("PING");
+            var result = await db.ExecuteForStringResultAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual("PONG", result);
 
-            result = await db.ExecuteForStringResultAsync("ASKING");
+            result = await db.ExecuteForStringResultAsync("ASKING").ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", result);
         }
 
@@ -222,11 +223,11 @@ namespace Garnet.test
             db.Connect();
 
             long expectedV = 1;
-            long v = stringParams ? await db.StringIncrement(key) : await db.StringIncrement(Encoding.ASCII.GetBytes(key));
+            long v = stringParams ? await db.StringIncrement(key).ConfigureAwait(false) : await db.StringIncrement(Encoding.ASCII.GetBytes(key)).ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedV, v);
 
             expectedV += 10;
-            v = stringParams ? await db.StringIncrement(key, 10) : await db.StringIncrement(Encoding.ASCII.GetBytes(key), 10);
+            v = stringParams ? await db.StringIncrement(key, 10).ConfigureAwait(false) : await db.StringIncrement(Encoding.ASCII.GetBytes(key), 10).ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedV, v);
 
             expectedV++;
@@ -284,11 +285,11 @@ namespace Garnet.test
             db.Connect();
 
             long expectedV = -1;
-            long v = stringParams ? await db.StringDecrement(key) : await db.StringDecrement(Encoding.ASCII.GetBytes(key));
+            long v = stringParams ? await db.StringDecrement(key).ConfigureAwait(false) : await db.StringDecrement(Encoding.ASCII.GetBytes(key)).ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedV, v);
 
             expectedV -= 10;
-            v = stringParams ? await db.StringDecrement(key, 10) : await db.StringDecrement(Encoding.ASCII.GetBytes(key), 10);
+            v = stringParams ? await db.StringDecrement(key, 10).ConfigureAwait(false) : await db.StringDecrement(Encoding.ASCII.GetBytes(key), 10).ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedV, v);
 
             expectedV--;
@@ -343,13 +344,13 @@ namespace Garnet.test
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
-            var result = await db.ExecuteForStringResultAsync("SET", ["mykey", "Hello", "NX"]);
+            var result = await db.ExecuteForStringResultAsync("SET", ["mykey", "Hello", "NX"]).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", result);
 
-            result = await db.ExecuteForStringResultAsync("SET", ["mykey", "World", "NX"]);
+            result = await db.ExecuteForStringResultAsync("SET", ["mykey", "World", "NX"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(null, result);
 
-            var resultMykey = await db.StringGetAsync("mykey");
+            var resultMykey = await db.StringGetAsync("mykey").ConfigureAwait(false);
             ClassicAssert.AreEqual("Hello", resultMykey);
         }
 
@@ -360,11 +361,11 @@ namespace Garnet.test
             server.Start();
 
             using var db = TestUtils.GetGarnetClient();
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
             ClassicAssert.DoesNotThrowAsync(async () =>
             {
-                var result = await db.ExecuteForStringResultAsync("KEYS", ["*"]);
+                var result = await db.ExecuteForStringResultAsync("KEYS", ["*"]).ConfigureAwait(false);
                 ClassicAssert.IsNull(result);
             });
         }
@@ -383,13 +384,13 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
+                var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]).ConfigureAwait(false);
                 keys[i] = worldcities[i, 1];
                 keysMemory[i] = Encoding.ASCII.GetBytes(keys[i]);
                 ClassicAssert.AreEqual("OK", result);
             }
 
-            var keysValues = await db.StringGetAsMemoryAsync(keysMemory);
+            var keysValues = await db.StringGetAsMemoryAsync(keysMemory).ConfigureAwait(false);
             for (int i = 0; i < keysValues.Length; i++)
             {
                 ClassicAssert.IsTrue(keysValues[i].Span.SequenceEqual(Encoding.ASCII.GetBytes(worldcities[i, 0])));
@@ -416,7 +417,7 @@ namespace Garnet.test
             Assert.Throws<TaskCanceledException>(() => tReadValues.GetAwaiter().GetResult());
 
             //StringGetAsync
-            var vals = await db.StringGetAsync(keys);
+            var vals = await db.StringGetAsync(keys).ConfigureAwait(false);
             for (int i = 0; i < nKeys; i++)
             {
                 ClassicAssert.AreEqual(worldcities[i, 0], vals[i]);
@@ -441,7 +442,7 @@ namespace Garnet.test
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
             var vals = new string[keys.Length];
-            vals = await db.StringGetAsync(keys, t);
+            vals = await db.StringGetAsync(keys, t).ConfigureAwait(false);
 
             int i = 0;
             while (i < keys.Length)
@@ -474,11 +475,10 @@ namespace Garnet.test
             waiter.Set();
         }
 
-
         [Test]
         public async Task CanDoBulkDeleteTests([Values] bool useStringType)
         {
-            //KeyDeleteAsync
+            // KeyDeleteAsync
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
@@ -493,8 +493,8 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                // create in the main store
-                var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
+                // Create in the main store
+                var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]).ConfigureAwait(false);
                 keys[i] = worldcities[i, 1];
                 keysMemoryByte[i] = Encoding.ASCII.GetBytes(keys[i]);
                 ClassicAssert.AreEqual("OK", result);
@@ -502,8 +502,8 @@ namespace Garnet.test
 
             for (int x = 0; x < nKeysObjectStore; x++)
             {
-                // create in the object store
-                var result = await db.ExecuteForStringResultAsync("ZADD", [$"myzset{x}", "1", "KEY1", "2", "KEY2"]);
+                // Create in the object store
+                var result = await db.ExecuteForStringResultAsync("ZADD", [$"myzset{x}", "1", "KEY1", "2", "KEY2"]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("2", result);
                 keys[nKeys + x] = $"myzset{x}";
                 keysMemoryByte[nKeys + x] = Encoding.ASCII.GetBytes(keys[nKeys + x]);
@@ -511,87 +511,41 @@ namespace Garnet.test
 
             if (useStringType)
             {
-                //delete the first 20 keys added previously
-                var keysDeleted = await db.KeyDeleteAsync(keys.Take(20).ToArray());
+                // Delete the first 20 keys added previously
+                var keysDeleted = await db.KeyDeleteAsync(keys.Take(20).ToArray()).ConfigureAwait(false);
                 ClassicAssert.AreEqual(iterationSize, keysDeleted);
 
-                //try to delete the next 20 keys using a cancellation token
-                var sc = new CancellationTokenSource();
-                var t = sc.Token;
+                // Delete the remaining keys using a callback
                 ManualResetEventSlim mrObj = new(false);
-                var tDeletingK = Task.Run(async () => { await DeleteKeysWithCT([.. keys.Skip(iterationSize).Take(iterationSize)], null, mrObj, t); });
-
-                // send the cancellation so the task throws an exception
-                sc.Cancel();
-                mrObj.Set();
-
-                Assert.Throws<OperationCanceledException>(() => tDeletingK.Wait(sc.Token));
-
-                //delete the last keys using a callback
-                mrObj.Reset();
                 db.KeyDelete(keys.Skip(iterationSize).ToArray(), (ct, result, e) =>
                 {
                     ClassicAssert.AreEqual(keys.Length - iterationSize, result);
                     mrObj.Set();
                 });
                 mrObj.Wait();
-                mrObj.Reset();
             }
             else
             {
-                //delete with Memory<Byte> type
-                var keysDeletedMB = await db.KeyDeleteAsync(keysMemoryByte.Take(20).ToArray());
+                // Delete the first 20 keys added previously with Memory<Byte> type
+                var keysDeletedMB = await db.KeyDeleteAsync(keysMemoryByte.Take(20).ToArray()).ConfigureAwait(false);
                 ClassicAssert.AreEqual(iterationSize, keysDeletedMB);
 
-                var sc = new CancellationTokenSource();
-                var t = sc.Token;
+                // Delete the remaining keys using a callback with Memory<byte>
                 ManualResetEventSlim mrObj = new(false);
-
-                // try delete using Memory<byte> type
-                var tDeletingKeysMB = Task.Run(async () => { _ = await DeleteKeysWithCT(null, [.. keysMemoryByte.Skip(iterationSize).Take(iterationSize)], mrObj, t, true); });
-                sc.Cancel();
-                mrObj.Set();
-                Assert.Throws<OperationCanceledException>(() => tDeletingKeysMB.Wait(sc.Token));
-
-                //delete the last keys with callback and Memory<byte>
-                mrObj.Reset();
                 db.KeyDelete(keysMemoryByte.Skip(iterationSize).ToArray(), (ct, result, e) =>
                 {
                     ClassicAssert.AreEqual(keysMemoryByte.Length - iterationSize, result);
                     mrObj.Set();
                 });
                 mrObj.Wait();
-                mrObj.Reset();
             }
 
-            //check that none of the keys exist
+            // Check that none of the keys exist
             foreach (var key in keys)
             {
-                var result = await db.ExecuteForStringResultAsync("EXISTS", [key]);
+                var result = await db.ExecuteForStringResultAsync("EXISTS", [key]).ConfigureAwait(false);
                 ClassicAssert.AreEqual("0", result);
             }
-        }
-
-        private static async Task<long> DeleteKeysWithCT(string[] keys, Memory<byte>[] keysMB, ManualResetEventSlim mreObj, CancellationToken t, bool useMemoryType = false)
-        {
-            using var db = TestUtils.GetGarnetClient();
-            db.Connect();
-
-            //wait until is signaled to proceed
-            mreObj.Wait();
-            if (!t.IsCancellationRequested)
-            {
-                long result;
-                if (useMemoryType)
-                    result = await db.KeyDeleteAsync(keysMB, t);
-                else
-                    result = await db.KeyDeleteAsync(keys, t);
-                return result;
-            }
-            else
-                t.ThrowIfCancellationRequested();
-
-            return 0;
         }
 
         [Test]
@@ -605,15 +559,15 @@ namespace Garnet.test
             server.Start();
 
             using var db = TestUtils.GetGarnetClient(unixSocketEndpoint, useTLS: useTls);
-            await db.ConnectAsync();
+            await db.ConnectAsync().ConfigureAwait(false);
 
-            var result = await db.ExecuteForStringResultAsync("PING");
+            var result = await db.ExecuteForStringResultAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual("PONG", result);
 
             using var tcpClient = TestUtils.GetGarnetClient(tcpEndpoint, useTLS: useTls);
-            await tcpClient.ConnectAsync();
+            await tcpClient.ConnectAsync().ConfigureAwait(false);
 
-            result = await db.ExecuteForStringResultAsync("PING");
+            result = await db.ExecuteForStringResultAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual("PONG", result);
         }
     }

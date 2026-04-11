@@ -22,6 +22,16 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="System.Numerics.Tensors" />
     <PackageReference Include="KeraLua" />
+		<PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
+	<!-- Define compilation symbol for server project -->
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);SERVER_PROJECT</DefineConstants>
+	</PropertyGroup>
+
+	<!-- Include shared global usings file for server projects -->
+	<ItemGroup>
+		<Compile Include="$(MSBuildThisFileDirectory)../GlobalUsings.cs" Link="GlobalUsings.cs" />
+	</ItemGroup>
 </Project>

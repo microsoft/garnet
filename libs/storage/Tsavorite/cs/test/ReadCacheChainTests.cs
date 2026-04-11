@@ -3,10 +3,11 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -28,7 +29,9 @@ namespace Tsavorite.test.ReadCacheTests
         internal const int PendingMod = 16;
     }
 
-    class ChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class ChainTests : AllureTestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
@@ -64,7 +67,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10,
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 9,
@@ -81,14 +84,14 @@ namespace Tsavorite.test.ReadCacheTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         public enum RecordRegion { Immutable, OnDisk, Mutable };
 
         void PopulateAndEvict(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             long keyVal = 0, valueVal = 0;
@@ -97,7 +100,7 @@ namespace Tsavorite.test.ReadCacheTests
             if (recordRegion != RecordRegion.Immutable)
             {
                 for (int keyNum = 0; keyNum < NumKeys; keyNum++)
-                    _ = bContext.Upsert(key.SetSlice(keyNum), value.SetSlice(keyNum + ValueAdd));
+                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), value.SetSlice(keyNum + ValueAdd));
                 _ = bContext.CompletePending(true);
                 if (recordRegion == RecordRegion.OnDisk)
                     store.Log.FlushAndEvict(true);
@@ -106,26 +109,27 @@ namespace Tsavorite.test.ReadCacheTests
 
             // Two parts, so we can have some evicted (and bring them into the readcache), and some in immutable (readonly).
             for (int keyNum = 0; keyNum < ImmutableSplitKey; keyNum++)
-                _ = bContext.Upsert(key.SetSlice(keyNum), value.SetSlice(keyNum + ValueAdd));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), value.SetSlice(keyNum + ValueAdd));
             _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
 
             for (long keyNum = ImmutableSplitKey; keyNum < NumKeys; keyNum++)
-                _ = bContext.Upsert(key.SetSlice(keyNum), value.SetSlice(keyNum + ValueAdd));
+                _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key.SetSlice(keyNum)), value.SetSlice(keyNum + ValueAdd));
             _ = bContext.CompletePending(true);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
         }
 
         void CreateChain(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             long output = -1;
             bool expectPending(long key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < ImmutableSplitKey);
 
             long keyVal = 0, valueVal = 0;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
+            var value = SpanByte.FromPinnedVariable(ref valueVal);
 
             // Pass1: PENDING reads and populate the cache
             for (long ii = 0; ii < ChainLen; ++ii)
@@ -175,7 +179,7 @@ namespace Tsavorite.test.ReadCacheTests
         unsafe bool GetRecordInInMemoryHashChain(long keyNum, out bool isReadCache)
         {
             // returns whether the key was found before we'd go pending
-            var (la, pa) = GetHashChain(store, SpanByte.FromPinnedVariable(ref keyNum), out var recordKey, out bool invalid, out isReadCache);
+            var (la, pa) = GetHashChain(store, TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum)), out var recordKey, out bool invalid, out isReadCache);
             while (isReadCache || la >= store.hlogBase.HeadAddress)
             {
                 if (recordKey.ReadOnlySpan.AsRef<long>() == keyNum && !invalid)
@@ -185,7 +189,7 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
-        internal bool FindRecordInReadCache(ReadOnlySpan<byte> key, out bool invalid, out long logicalAddress, out long physicalAddress)
+        internal bool FindRecordInReadCache(TestSpanByteKey key, out bool invalid, out long logicalAddress, out long physicalAddress)
         {
             // returns whether the key was found before we'd go pending
             (logicalAddress, physicalAddress) = GetHashChain(store, key, out var recordKey, out invalid, out bool isReadCache);
@@ -198,7 +202,7 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
-        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, out PinnedSpanByte recordKey, out bool invalid, out bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, TestSpanByteKey key, out PinnedSpanByte recordKey, out bool invalid, out bool isReadCache)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -238,7 +242,8 @@ namespace Tsavorite.test.ReadCacheTests
             omitted ??= [];
 
             long keyVal = 0, valueVal = 0;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
+            var value = SpanByte.FromPinnedVariable(ref valueVal);
 
             var (la, pa) = GetHashChain(store, key.Set((long)LowChainKey), out var actualKey, out bool invalid, out bool isReadCache);
             for (long expectedKey = HighChainKey; expectedKey >= LowChainKey; expectedKey -= HashMod)
@@ -266,10 +271,10 @@ namespace Tsavorite.test.ReadCacheTests
             return (la, pa);
         }
 
-        (long logicalAddress, long physicalAddress) SkipReadCacheChain(ReadOnlySpan<byte> key)
+        (long logicalAddress, long physicalAddress) SkipReadCacheChain(TestSpanByteKey key)
             => SkipReadCacheChain(store, key);
 
-        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key)
+        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, TestSpanByteKey key)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -279,7 +284,7 @@ namespace Tsavorite.test.ReadCacheTests
             return (la, pa);
         }
 
-        void VerifySplicedInKey(ReadOnlySpan<byte> expectedKey)
+        void VerifySplicedInKey(TestSpanByteKey expectedKey)
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
@@ -287,7 +292,7 @@ namespace Tsavorite.test.ReadCacheTests
             ClassicAssert.AreEqual(expectedKey.AsRef<long>(), storedKey.AsRef<long>());
         }
 
-        static void ClearCountsOnError(ClientSession<long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> luContext)
+        static void ClearCountsOnError(ClientSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -315,13 +320,14 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             void doTest(long keyNum)
             {
                 long keyVal = 0, valueVal = 0;
-                Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
+                var value = SpanByte.FromPinnedVariable(ref valueVal);
 
                 key.Set((long)keyNum);
                 var status = bContext.Delete(key);
@@ -348,13 +354,14 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             void doTest(long keyNum)
             {
                 long keyVal = 0, valueVal = 0;
-                Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
+                var value = SpanByte.FromPinnedVariable(ref valueVal);
 
                 key.Set((long)keyNum);
                 var status = bContext.Delete(key);
@@ -419,13 +426,14 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             void doTest(long keyNum)
             {
                 long keyVal = 0, valueVal = 0;
-                Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
+                var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyVal));
+                var value = SpanByte.FromPinnedVariable(ref valueVal);
 
                 key.Set((long)keyNum);
                 var status = bContext.Read(key, ref valueVal);
@@ -470,11 +478,11 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict();
             CreateChain();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             long input = 0, output = 0, keyNum = LowChainKey - HashMod; // key must be in evicted region for this test
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             var status = bContext.Read(key, ref input, ref output, ref readOptions, out _);
@@ -493,11 +501,12 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             long keyNum = -1, valueNum = 0;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
+            var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
@@ -524,11 +533,12 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
             long keyNum = -1, valueNum = 0, output = -1;
 
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
+            var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             long input = keyNum + ValueAdd;
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
@@ -575,10 +585,10 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
             long keyNum = -1;
-            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum);
+            var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
 
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
@@ -605,7 +615,7 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict();
             CreateChain();
 
-            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var luContext = session.TransactionalUnsafeContext;
 
             var keyNums = GC.AllocateArray<long>(3, pinned: true);
@@ -645,7 +655,7 @@ namespace Tsavorite.test.ReadCacheTests
                 foreach (var idx in TransactionalUnsafeContextTests.EnumActionKeyIndices(keys, TransactionalUnsafeContextTests.LockOperationType.Unlock))
                 {
                     ref var key = ref keys[idx];
-                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key.Key.ReadOnlySpan));
+                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key.Key));
                     OverflowBucketLockTableTests.PopulateHei(store, ref hei);
 
                     var lockState = store.LockTable.GetLockState(ref hei);
@@ -675,7 +685,9 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 
-    class LongStressChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class LongStressChainTests : AllureTestBase
     {
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
@@ -717,7 +729,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10,
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 9,
@@ -734,7 +746,7 @@ namespace Tsavorite.test.ReadCacheTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal class RmwLongFunctions : SimpleLongSimpleFunctions
@@ -749,13 +761,13 @@ namespace Tsavorite.test.ReadCacheTests
 
         unsafe void PopulateAndEvict()
         {
-            using var session = store.NewSession<long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
+            using var session = store.NewSession<TestSpanByteKey, long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
             var bContext = session.BasicContext;
 
             for (long ii = 0; ii < NumKeys; ii++)
             {
                 long key = ii;
-                var status = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
                 ClassicAssert.IsFalse(status.IsPending);
                 ClassicAssert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
@@ -768,7 +780,6 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(10000)]
-        [Explicit("TODO: requestKey being cleared unexpectedly")]
 #pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
         public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                           [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
@@ -778,15 +789,13 @@ namespace Tsavorite.test.ReadCacheTests
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
 
             PopulateAndEvict();
 
             const int numIterations = 1;
             unsafe void runReadThread(int tid)
             {
-                using var session = store.NewSession<long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
+                using var session = store.NewSession<TestSpanByteKey, long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
                 var bContext = session.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -795,7 +804,7 @@ namespace Tsavorite.test.ReadCacheTests
                     for (var ii = 0; ii < NumKeys; ++ii)
                     {
                         long key = ii, output = 0;
-                        var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                        var status = bContext.Read(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -818,7 +827,7 @@ namespace Tsavorite.test.ReadCacheTests
 
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
-                                    key = completedOutputs.Current.Key.AsRef<long>();
+                                    key = completedOutputs.Current.Key.KeyBytes.AsRef<long>();
 
                                     ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
                                     ClassicAssert.AreEqual(key, output % ValueAdd);
@@ -832,7 +841,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             unsafe void runUpdateThread(int tid)
             {
-                using var session = store.NewSession<long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
+                using var session = store.NewSession<TestSpanByteKey, long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
                 var bContext = session.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -842,8 +851,8 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         long key = ii, input = ii + ValueAdd * tid, output = 0;
                         var status = updateOp == UpdateOp.RMW
-                                        ? bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input, ref output)
-                                        : bContext.Upsert(SpanByte.FromPinnedVariable(ref key), ref input, SpanByte.FromPinnedVariable(ref input), ref output);
+                                        ? bContext.RMW(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref input, ref output)
+                                        : bContext.Upsert(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref input, SpanByte.FromPinnedVariable(ref input), ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -868,8 +877,8 @@ namespace Tsavorite.test.ReadCacheTests
                                 {
                                     ++numCompleted;
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key.ToShortString()}, status {completedOutputs.Current.Status}, wasPending {true}");
-                                    ClassicAssert.AreEqual(completedOutputs.Current.Key.AsRef<long>() + ValueAdd * tid, completedOutputs.Current.Output);
+                                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key.KeyBytes.ToShortString()}, status {completedOutputs.Current.Status}, wasPending {true}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.Key.KeyBytes.AsRef<long>() + ValueAdd * tid, completedOutputs.Current.Output);
                                 }
                             }
                         }
@@ -892,7 +901,9 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 
-    class SpanByteStressChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class SpanByteStressChainTests : AllureTestBase
     {
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
@@ -935,7 +946,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 10,
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 9,
@@ -952,15 +963,15 @@ namespace Tsavorite.test.ReadCacheTests
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!base.InPlaceWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+                if (!base.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                     return false;
                 srcValue.CopyTo(ref output, memoryPool);
                 return true;
@@ -985,8 +996,10 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = GetRMWModifiedFieldInfo(logRecord, ref input) };
+                logRecord.PopulateRecordSizeInfoForIPU(ref sizeInfo);
                 if (!logRecord.TrySetValueSpanAndPrepareOptionals(input, in sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
@@ -1003,7 +1016,7 @@ namespace Tsavorite.test.ReadCacheTests
 
         unsafe void PopulateAndEvict()
         {
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
             var bContext = session.BasicContext;
 
             Span<byte> key = stackalloc byte[sizeof(long)];
@@ -1011,7 +1024,7 @@ namespace Tsavorite.test.ReadCacheTests
             for (long ii = 0; ii < NumKeys; ii++)
             {
                 ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
-                var status = bContext.Upsert(key, key);
+                var status = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(key), key);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             bContext.CompletePending(true);
@@ -1022,8 +1035,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        //[Repeat(300)]
-        [Explicit("TODO: requestKey being cleared unexpectedly")]
+        //[Repeat(10000)]
         public void SpanByteRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
@@ -1031,15 +1043,13 @@ namespace Tsavorite.test.ReadCacheTests
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
-            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
             PopulateAndEvict();
 
             const int numIterations = 1;
             unsafe void runReadThread(int tid)
             {
-                using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
                 Span<byte> key = stackalloc byte[sizeof(long)];
@@ -1052,7 +1062,7 @@ namespace Tsavorite.test.ReadCacheTests
                         SpanByteAndMemory output = default;
 
                         ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
-                        var status = bContext.Read(key, ref output);
+                        var status = bContext.Read(TestSpanByteKey.CopySpan(key), ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -1080,7 +1090,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
-                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.KeyBytes);
 
                                     ClassicAssert.IsTrue(status.Found, $"pending: tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     ClassicAssert.IsNotNull(output.Memory, $"pending: tid {tid}, key {keyLong}, wasPending {true}, pt 2");
@@ -1097,7 +1107,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             unsafe void runUpdateThread(int tid)
             {
-                using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
                 var bContext = session.BasicContext;
 
                 Span<byte> key = stackalloc byte[sizeof(long)];
@@ -1114,8 +1124,8 @@ namespace Tsavorite.test.ReadCacheTests
                         ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
                         ClassicAssert.IsTrue(BitConverter.TryWriteBytes(input, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
-                                        ? bContext.RMW(key, ref pinnedInputSpan, ref output)
-                                        : bContext.Upsert(key, ref pinnedInputSpan, input, ref output);
+                                        ? bContext.RMW(TestSpanByteKey.CopySpan(key), ref pinnedInputSpan, ref output)
+                                        : bContext.Upsert(TestSpanByteKey.CopySpan(key), ref pinnedInputSpan, input, ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -1147,7 +1157,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
-                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.KeyBytes);
 
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                         ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");

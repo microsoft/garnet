@@ -1,9 +1,10 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using Garnet.server.Auth;
 using Garnet.server.Auth.Settings;
@@ -15,7 +16,9 @@ namespace Garnet.test.Resp
     /// <summary>
     /// Tests generic to all <see cref="IGarnetAuthenticator"/>s.
     /// </summary>
-    public class GarnetAuthenticatorTests
+    [AllureNUnit]
+    [TestFixture]
+    public class GarnetAuthenticatorTests : AllureTestBase
     {
         private delegate bool AuthenticateDelegate(ReadOnlySpan<byte> password, ReadOnlySpan<byte> username);
 
@@ -57,11 +60,18 @@ namespace Garnet.test.Resp
             auth.HasACLSupport = false;
             auth.IsAuthenticated = false;
 
+            var serverStarted = false;
             int authCalls = 0;
 
             auth.AuthenticateCallback =
                 (p, u) =>
                 {
+                    if (!serverStarted)
+                    {
+                        auth.IsAuthenticated = true;
+                        return true;
+                    }
+
                     if (authCalls == 0)
                     {
                         ClassicAssert.AreEqual("default", Encoding.UTF8.GetString(u));
@@ -80,25 +90,27 @@ namespace Garnet.test.Resp
             using GarnetServer server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, authenticationSettings: authSettings);
             server.Start();
 
+            serverStarted = true;
+
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 
             // Initial command runs under default user
-            await c.ExecuteAsync("PING");
+            _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual(1, authCalls);
 
             // Auth as proper user, should get another call
-            await c.ExecuteAsync("AUTH", "foo", "bar");
+            _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
             ClassicAssert.AreEqual(2, authCalls);
 
-            await c.ExecuteAsync("PING");
+            _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual(2, authCalls);
 
             // Command after auth invalidation fails as no auth
             auth.IsAuthenticated = false;
             try
             {
-                await c.ExecuteAsync("PING");
+                _ = await c.ExecuteAsync("PING").ConfigureAwait(false);
                 Assert.Fail("Should be denied, user is not authed");
             }
             catch (Exception e)
@@ -106,7 +118,7 @@ namespace Garnet.test.Resp
                 ClassicAssert.AreEqual("NOAUTH Authentication required.", e.Message);
             }
 
-            await c.ExecuteAsync("AUTH", "foo", "bar");
+            _ = await c.ExecuteAsync("AUTH", "foo", "bar").ConfigureAwait(false);
             ClassicAssert.AreEqual(3, authCalls);
         }
     }

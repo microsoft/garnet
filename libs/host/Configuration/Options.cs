@@ -53,13 +53,23 @@ namespace Garnet
         [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
         public string ClusterAnnounceIp { get; set; }
 
-        [MemorySizeValidation]
-        [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
-        public string MemorySize { get; set; }
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
+        public string ClusterAnnounceHostname { get; set; }
+
+        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
+        public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]
-        [Option('p', "page", Required = false, HelpText = "Size of each page in bytes (rounds down to power of 2)")]
+        [Option('m', "memory", Required = false, HelpText = "Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2")]
+        public string LogMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option('p', "page", Required = false, HelpText = "Size of each main-log page in bytes (rounds down to power of 2).")]
         public string PageSize { get; set; }
+
+        [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
+        [Option("pagecount", Required = false, HelpText = "Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than LogMemorySize divided by PageSize.")]
+        public int PageCount { get; set; }
 
         [MemorySizeValidation]
         [Option('s', "segment", Required = false, HelpText = "Size of each main-log segment in bytes on disk (rounds down to power of 2)")]
@@ -71,11 +81,11 @@ namespace Garnet
 
         [MemorySizeValidation]
         [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexSize { get; set; }
+        public string IndexMemorySize { get; set; }
 
         [MemorySizeValidation(false)]
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
-        public string IndexMaxSize { get; set; }
+        public string IndexMaxMemorySize { get; set; }
 
         [PercentageValidation(false)]
         [Option("mutable-percent", Required = false, HelpText = "Percentage of log memory that is kept mutable")]
@@ -86,20 +96,16 @@ namespace Garnet
         public bool? EnableReadCache { get; set; }
 
         [MemorySizeValidation]
-        [Option("readcache-memory", Required = false, HelpText = "Total read cache log memory used in bytes (rounds down to power of 2)")]
+        [Option("readcache-memory", Required = false, HelpText = "Total readcache-log memory (inline and heap) to use if readcache is enabled, in bytes. Does not need to be a power of 2")]
         public string ReadCacheMemorySize { get; set; }
 
         [MemorySizeValidation]
         [Option("readcache-page", Required = false, HelpText = "Size of each read cache page in bytes (rounds down to power of 2)")]
         public string ReadCachePageSize { get; set; }
 
-        [MemorySizeValidation(false)]
-        [Option("heap-memory", Required = false, HelpText = "Heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string HeapMemorySize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("readcache-heap-memory", Required = false, HelpText = "Read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ReadCacheHeapMemorySize { get; set; }
+        [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
+        [Option("readcache-pagecount", Required = false, HelpText = "Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.")]
+        public int ReadCachePageCount { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -558,10 +564,6 @@ namespace Garnet
         public bool? FailOnRecoveryError { get; set; }
 
         [OptionValidation]
-        [Option("skip-rdb-restore-checksum-validation", Required = false, HelpText = "Skip RDB restore checksum validation")]
-        public bool? SkipRDBRestoreChecksumValidation { get; set; }
-
-        [OptionValidation]
         [Option("lua-memory-management-mode", Required = false, HelpText = "Memory management mode for Lua scripts, must be set to Tracked or Managed to impose script limits")]
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
 
@@ -626,6 +628,10 @@ namespace Garnet
 
         [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
         public bool ClusterReplicaResumeWithData { get; set; }
+
+        [RequiresMinimumMemory(nameof(PageSize), minimumValue: "16K")]
+        [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableVectorSetPreview { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -711,7 +717,12 @@ namespace Garnet
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
                 clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
-                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
+                    endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
+                    listenEp.Port == announceEp.Port &&
+                    (listenEp.Address.Equals(announceEp.Address) ||
+                     listenEp.Address.Equals(IPAddress.Any) ||
+                     listenEp.Address.Equals(IPAddress.IPv6Any))))
                     throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
             }
 
@@ -736,7 +747,7 @@ namespace Garnet
             }
             if (hasRecordCounts)
             {
-                if (enableRevivification)
+                if (useRevivBinsPowerOf2)
                     throw new Exception("Revivification cannot specify both record counts and powerof2 bins.");
                 if (!hasRecordSizes)
                     throw new Exception("Revivification bin counts require bin sizes.");
@@ -786,18 +797,20 @@ namespace Garnet
             {
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
-                MemorySize = MemorySize,
+                ClusterAnnounceHostname = ClusterAnnounceHostname,
+                ClusterPreferredEndpointType = ClusterPreferredEndpointType,
+                LogMemorySize = LogMemorySize,
                 PageSize = PageSize,
+                PageCount = PageCount,
                 SegmentSize = SegmentSize,
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
-                IndexSize = IndexSize,
-                IndexMaxSize = IndexMaxSize,
+                IndexMemorySize = IndexMemorySize,
+                IndexMaxMemorySize = IndexMaxMemorySize,
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
                 ReadCachePageSize = ReadCachePageSize,
-                HeapMemorySize = HeapMemorySize,
-                ReadCacheHeapMemorySize = ReadCacheHeapMemorySize,
+                ReadCachePageCount = ReadCachePageCount,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
                 LogDir = logDir,
@@ -891,7 +904,6 @@ namespace Garnet
                 ValueOverflowThreshold = ValueOverflowThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
-                SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
@@ -900,6 +912,7 @@ namespace Garnet
                 EnableStreams = EnableStreams.GetValueOrDefault(),
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
+                EnableVectorSetPreview = EnableVectorSetPreview,
             };
         }
 

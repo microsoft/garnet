@@ -35,10 +35,17 @@ jobs:
       - name: Install helm-docs
         env:
           HELM_DOCS_VERSION: "1.14.2"
+          HELM_DOCS_SHA256: "a8cf72ada34fad93285ba2a452b38bdc5bd52cc9a571236244ec31022928d6cc"
         run: |
+          set -euo pipefail
+
           cd /tmp
-          wget https://github.com/norwoodj/helm-docs/releases/download/v"${HELM_DOCS_VERSION}"/helm-docs_"${HELM_DOCS_VERSION}"_Linux_x86_64.tar.gz
-          tar -xvf helm-docs_"${HELM_DOCS_VERSION}"_Linux_x86_64.tar.gz
+          FILENAME="helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
+          wget "https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/${FILENAME}"
+          
+          echo "${HELM_DOCS_SHA256}  ${FILENAME}" | sha256sum -c -
+          
+          tar -xvf "${FILENAME}"
           sudo mv helm-docs /usr/local/bin
 
       - name: Set helm chart appVersion from Version.props

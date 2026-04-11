@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using Allure.NUnit;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -22,8 +23,9 @@ using Garnet.common;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class ClusterNegativeTests
+    public class ClusterNegativeTests : AllureTestBase
     {
         ClusterTestContext context;
 
@@ -289,7 +291,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(7), CancelAfter(testTimeout)]
         public void ClusterReplicaAttachIntenseWrite(CancellationToken cancellationToken)
         {
             var primaryIndex = 0;
@@ -310,6 +312,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex, logger: context.logger);
 
             var keyLength = 32;
             var kvpairCount = 32;
@@ -367,7 +371,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(8), CancelAfter(testTimeout)]
         public void ClusterFailedToAddAofSyncTask()
         {
             var primaryIndex = 0;
@@ -417,7 +421,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
 
-        [Test, Order(6), CancelAfter(testTimeout)]
+        [Test, Order(9), CancelAfter(testTimeout)]
         public void ClusterReplicaSyncTimeoutTest()
         {
             var primaryIndex = 0;
@@ -466,7 +470,7 @@ namespace Garnet.test.cluster
         }
 #endif
 
-        [Test, CancelAfter(60_000)]
+        [Test, Order(10), CancelAfter(60_000)]
         public async Task ClusterParallelFailoverOnDistinctShards(CancellationToken cancellationToken)
         {
             var nodes_count = 4;
@@ -511,7 +515,7 @@ namespace Garnet.test.cluster
 
             for (var i = 0; i < 10; i++)
             {
-                await Task.Delay(500);
+                await Task.Delay(500).ConfigureAwait(false);
                 var cluster = context.clusterTestUtils.ClusterNodes(3);
                 var replicaWithHashSlots = cluster.Nodes.FirstOrDefault(x => x.IsReplica && x.Slots.Count > 0);
                 if (replicaWithHashSlots != null)
@@ -521,8 +525,7 @@ namespace Garnet.test.cluster
             }
         }
 
-
-        [Test, CancelAfter(60_000)]
+        [Test, Order(11), CancelAfter(60_000)]
         public void ClusterMeetFromReplica(CancellationToken cancellationToken)
         {
             var nodes_count = 3;
@@ -557,5 +560,283 @@ namespace Garnet.test.cluster
                 Assert.That(nodes_count, Is.EqualTo(context.clusterTestUtils.ClusterNodes(i).Nodes.Count));
             }
         }
+
+        [Test, Order(12)]
+        [Category("REPLICATION")]
+        public void ClusterDontKnowReplicaFailTest([Values] bool useReplicaOf)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            ClassicAssert.IsTrue(primary_count > 0);
+            context.CreateInstances(nodes_count, disableObjects: true, FastAofTruncate: false, OnDemandCheckpoint: false, CommitFrequencyMs: -1, enableAOF: true, useTLS: false, asyncReplay: false);
+            context.CreateConnection(useTLS: false);
+
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, 2, logger: context.logger);
+
+            var primaryId = context.clusterTestUtils.ClusterMyId(primaryNodeIndex, logger: context.logger);
+            string resp;
+            if (!useReplicaOf)
+            {
+                resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual($"ERR I don't know about node {primaryId}.", resp);
+            }
+            else
+            {
+                resp = context.clusterTestUtils.ReplicaOf(replicaNodeIndex, primaryNodeIndex, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual($"ERR I don't know about node {context.clusterTestUtils.GetEndPoint(primaryNodeIndex)}.", resp);
+            }
+        }
+
+        [Test, Order(13)]
+        [Category("REPLICATION")]
+        public void ClusterReplicateFails()
+        {
+            const string UserName = "temp-user";
+            const string Password = "temp-password";
+
+            const string ClusterUserName = "cluster-user";
+            const string ClusterPassword = "cluster-password";
+
+            // Setup a cluster (mimicking the style in which this bug was first found)
+            ServerCredential clusterCreds = new(ClusterUserName, ClusterPassword, IsAdmin: true, UsedForClusterAuth: true, IsClearText: true);
+            ServerCredential userCreds = new(UserName, Password, IsAdmin: true, UsedForClusterAuth: false, IsClearText: true);
+
+            context.GenerateCredentials([userCreds, clusterCreds]);
+            context.CreateInstances(2, disableObjects: true, disablePubSub: true, enableAOF: true, clusterCreds: clusterCreds, useAcl: true, FastAofTruncate: true, CommitFrequencyMs: -1, asyncReplay: false);
+            var primaryEndpoint = (IPEndPoint)context.endpoints.First();
+            var replicaEndpoint = (IPEndPoint)context.endpoints.Last();
+
+            ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
+
+            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password}");
+            var primaryServer = primaryConnection.GetServer(primaryEndpoint);
+
+            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
+
+            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
+            var replicaServer = replicaConnection.GetServer(replicaEndpoint);
+
+            // Try to replicate from a server that doesn't exist
+            var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
+        }
+
+        [Test, Order(14), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverSucceedsDuringEnsureReplication(CancellationToken cancellationToken)
+        {
+            // Verify that EnsureReplication does not block an in-flight failover.
+            // EnsureReplication polls for dropped replication sessions and attempts auto-resync.
+            // Without the failover status guard, it could acquire a ReadRole lock that blocks
+            // TakeOverAsPrimary from obtaining its ClusterFailover write lock, aborting the failover.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            // Enable EnsureReplication by setting clusterReplicationReestablishmentTimeout to 1 second
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+                timeout: timeout, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Set up replication
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+
+            // Populate primary and wait for sync
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Issue failover — with EnsureReplication enabled (polling every 1s),
+            // the guard should prevent it from interfering with the failover
+            resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Wait for failover to complete — without the guard this could hang or abort
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
+
+            // The old primary should become a replica
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, context.logger);
+
+            // Verify the new primary (formerly replica) is functional
+            var role = context.clusterTestUtils.RoleCommand(replicaIndex, context.logger);
+            ClassicAssert.AreEqual("master", role.Value);
+
+            var oldPrimaryRole = context.clusterTestUtils.RoleCommand(primaryIndex, context.logger);
+            ClassicAssert.AreEqual("slave", oldPrimaryRole.Value);
+
+            // Verify last failover state
+            var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+            ClassicAssert.AreEqual("failover-completed", infoItem[0].Item2);
+        }
+
+        [Test, Order(15), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterEnsureReplicationWorksAfterFailover(CancellationToken cancellationToken)
+        {
+            // Verify that EnsureReplication still functions after a failover completes.
+            // The failover guard should only suppress auto-resync during active failover states,
+            // not after failover has completed or aborted.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            // Enable EnsureReplication with a 1-second poll frequency
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true,
+                timeout: timeout, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Set up replication
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+
+            // Populate primary data and sync
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Run failover
+            resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
+
+            // Old primary should now be a replica of the new primary
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, context.logger);
+
+            // Verify last_failover_state is "failover-completed" — this should NOT suppress EnsureReplication
+            var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+            ClassicAssert.AreEqual("failover-completed", infoItem[0].Item2);
+
+            // Verify replication is working in the new topology
+            // The old primary (index 0) is now a replica of the new primary (index 1)
+            // Write to new primary and verify it replicates to old primary (now replica)
+            var slotMap = new int[16384];
+            for (var i = 0; i < 16384; i++)
+                slotMap[i] = replicaIndex;
+
+            var newKvPairs = new Dictionary<string, int>();
+            context.PopulatePrimary(ref newKvPairs, keyLength: 32, kvpairCount: 8, replicaIndex, slotMap: slotMap);
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, primaryIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref newKvPairs, primaryIndex);
+        }
+
+#if DEBUG
+        [Test, Order(16), CancelAfter(testTimeout)]
+        [Category("REPLICATION")]
+        public void ClusterFailoverResetsPrimaryOnTakeOverFailure(CancellationToken cancellationToken)
+        {
+            // Verify that when TakeOverAsPrimary fails after PauseWritesAndWaitForSync
+            // has already sent failstopwrites to the primary, the primary is reset back
+            // to its original state (owns slots, is a primary).
+            //
+            // Without the reset in BeginAsyncReplicaFailover's finally block, the primary
+            // would have given up its slots (via TryStopWrites) but the replica never
+            // claimed them, leaving the cluster in an incoherent state.
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Set up replication
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, 1, context.logger);
+
+            // Populate data and sync
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength: 32, kvpairCount: 16, primaryIndex);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            // Verify primary owns all slots before failover
+            var slotsBefore = context.clusterTestUtils.GetOwnedSlotsFromNode(primaryIndex, context.logger);
+            ClassicAssert.AreEqual(16384, slotsBefore.Count, "Primary should own all slots before failover");
+
+            try
+            {
+                // Enable exception injection to make TakeOverAsPrimary fail.
+                // This simulates the scenario where PauseWritesAndWaitForSync succeeds
+                // (failstopwrites sent to primary, primary gives up slots) but the
+                // subsequent TakeOverAsPrimary fails (e.g., due to lock contention from
+                // EnsureReplication holding the ReadRole lock).
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Failover_Fail_TakeOverAsPrimary);
+
+                // Issue DEFAULT failover — this will:
+                // 1. Send failstopwrites to primary (primary gives up slots)
+                // 2. Wait for sync
+                // 3. TakeOverAsPrimary — FAILS due to injected exception
+                // 4. finally block sends failstopwrites([]) to reset primary
+                resp = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                // Wait for failover to be aborted
+                while (true)
+                {
+                    var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex,
+                        [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                    if (infoItem[0].Item2.Equals("failover-aborted"))
+                        break;
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for failover to abort");
+                }
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Failover_Fail_TakeOverAsPrimary);
+            }
+
+            // Verify primary has been reset: it should own all slots again
+            // Without the reset fix, the primary would have 0 slots here.
+            while (true)
+            {
+                var slotsAfter = context.clusterTestUtils.GetOwnedSlotsFromNode(primaryIndex, context.logger);
+                if (slotsAfter.Count == 16384)
+                    break;
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"Waiting for primary to reclaim slots (current: {slotsAfter.Count})");
+            }
+
+            // Verify primary is still a primary
+            var role = context.clusterTestUtils.RoleCommand(primaryIndex, logger: context.logger);
+            ClassicAssert.AreEqual("master", role.Value, "Primary should be reset back to master role");
+
+            // Verify replica is still a replica (failover was aborted)
+            role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("slave", role.Value, "Replica should remain a slave after aborted failover");
+
+            // Verify data is still accessible from the primary
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, primaryIndex);
+        }
+#endif
     }
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -6,14 +6,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespInfoTests
+    public class RespInfoTests : AllureTestBase
     {
         GarnetServer server;
 
@@ -29,7 +31,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -74,6 +76,86 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("ALL")]
+        [TestCase("DEFAULT")]
+        [TestCase("EVERYTHING")]
+        public void InfoSectionOptionsTest(string option)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var infoResult = db.Execute("INFO", option).ToString();
+            ClassicAssert.IsNotNull(infoResult);
+            ClassicAssert.IsNotEmpty(infoResult);
+
+            // All options should include these core sections
+            ClassicAssert.IsTrue(infoResult.Contains("# Server"), $"INFO {option} should contain Server section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Memory"), $"INFO {option} should contain Memory section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Stats"), $"INFO {option} should contain Stats section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Clients"), $"INFO {option} should contain Clients section");
+            ClassicAssert.IsTrue(infoResult.Contains("# Keyspace"), $"INFO {option} should contain Keyspace section");
+
+            // ALL excludes Modules section; DEFAULT and EVERYTHING include it
+            if (option == "ALL")
+            {
+                ClassicAssert.IsFalse(infoResult.Contains("# Modules"), "INFO ALL should not contain Modules section");
+            }
+            else
+            {
+                ClassicAssert.IsTrue(infoResult.Contains("# Modules"), $"INFO {option} should contain Modules section");
+            }
+
+            // All three options are based on DefaultInfo which excludes expensive sections
+            ClassicAssert.IsFalse(infoResult.Contains("MainStoreHashTableDistribution"), $"INFO {option} should not contain StoreHashTable section");
+            ClassicAssert.IsFalse(infoResult.Contains("MainStoreDeletedRecordRevivification"), $"INFO {option} should not contain StoreReviv section");
+        }
+
+        [Test]
+        public void InfoDefaultMatchesNoArgsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var infoNoArgs = db.Execute("INFO").ToString();
+            var infoDefault = db.Execute("INFO", "DEFAULT").ToString();
+
+            // Both should return the same set of section headers
+            var noArgsSections = GetSectionHeaders(infoNoArgs);
+            var defaultSections = GetSectionHeaders(infoDefault);
+
+            CollectionAssert.AreEquivalent(noArgsSections, defaultSections,
+                "INFO (no args) and INFO DEFAULT should return the same sections");
+        }
+
+        [Test]
+        public void InfoAllWithModulesEqualsEverythingTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var infoEverything = db.Execute("INFO", "EVERYTHING").ToString();
+            var infoAllModules = db.Execute("INFO", "ALL", "MODULES").ToString();
+
+            var everythingSections = GetSectionHeaders(infoEverything);
+            var allModulesSections = GetSectionHeaders(infoAllModules);
+
+            CollectionAssert.AreEquivalent(everythingSections, allModulesSections,
+                "INFO EVERYTHING and INFO ALL MODULES should return the same sections");
+        }
+
+        private static List<string> GetSectionHeaders(string infoOutput)
+        {
+            ClassicAssert.IsNotNull(infoOutput, "INFO output should not be null");
+            ClassicAssert.IsNotEmpty(infoOutput, "INFO output should not be empty");
+
+            return infoOutput.Split("\r\n")
+                .Where(line => line.StartsWith("# "))
+                .Select(line => line.TrimStart('#', ' '))
+                .OrderBy(s => s)
+                .ToList();
+        }
+
+        [Test]
         public async Task InfoHlogScanTest()
         {
             var metricsUpdateDelay = TimeSpan.FromSeconds(1.1);
@@ -83,13 +165,13 @@ namespace Garnet.test
             // hydrate
             var startingHA = server.Provider.StoreWrapper.store.Log.HeadAddress;
             await HydrateStore(db, (db, key, value) => db.StringSetAsync(key, value),
-                () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress);
+                () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress).ConfigureAwait(false);
 
             // Wait for the immediate expirations to kick in
-            await Task.Delay(500);
+            await Task.Delay(500).ConfigureAwait(false);
 
             // now we have a differentiated region for mutable and immutable region in object store and main store
-            var result = await db.ExecuteAsync("INFO", "HLOGSCAN");
+            var result = await db.ExecuteAsync("INFO", "HLOGSCAN").ConfigureAwait(false);
 
             ClassicAssert.IsTrue(!result.IsNull);
         }
@@ -118,19 +200,19 @@ namespace Garnet.test
 
                 if (chance < percentKeysWithExpirationsButNotExpired)
                 {
-                    await setAction(db, key, value);
-                    _ = await db.KeyExpireAsync(key, TimeSpan.FromHours(2));
+                    await setAction(db, key, value).ConfigureAwait(false);
+                    _ = await db.KeyExpireAsync(key, TimeSpan.FromHours(2)).ConfigureAwait(false);
                 }
                 else if (chance > percentKeysWithExpirationsButNotExpired &&
                     chance < percentKeysWithExpirationsButNotExpired + percentKeysWithExpirationAndExpired)
                 {
-                    await setAction(db, key, value);
-                    _ = await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(2));
+                    await setAction(db, key, value).ConfigureAwait(false);
+                    _ = await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(2)).ConfigureAwait(false);
                     eligibleForTombstoning = false; // will be expired already
                 }
                 else
                 {
-                    await setAction(db, key, value);
+                    await setAction(db, key, value).ConfigureAwait(false);
                 }
 
                 if (eligibleForTombstoning)
@@ -150,12 +232,12 @@ namespace Garnet.test
 
             foreach (var keyTodel in keysWeDelete)
             {
-                _ = await db.KeyDeleteAsync(keyTodel);
+                _ = await db.KeyDeleteAsync(keyTodel).ConfigureAwait(false);
             }
 
             foreach (var keyToRcu in keysWeRcuOn)
             {
-                await setAction(db, keyToRcu, Guid.NewGuid().ToString());
+                await setAction(db, keyToRcu, Guid.NewGuid().ToString()).ConfigureAwait(false);
             }
         }
     }

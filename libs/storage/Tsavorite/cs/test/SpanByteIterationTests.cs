@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -15,8 +17,9 @@ namespace Tsavorite.test
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class SpanByteIterationTests
+    internal class SpanByteIterationTests : AllureTestBase
     {
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
@@ -38,7 +41,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         internal struct SpanBytePushIterationTestFunctions : IScanIteratorFunctions
@@ -93,14 +96,14 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 9,
                 SegmentSize = 1L << 22
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
             SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
@@ -127,7 +130,7 @@ namespace Tsavorite.test
             // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
             Span<long> keySpan = stackalloc long[1];
             Span<int> valueSpan = stackalloc int[1];
-            var key = MemoryMarshal.Cast<long, byte>(keySpan);
+            var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(keySpan));
             var value = MemoryMarshal.Cast<int, byte>(valueSpan);
 
             // Initial population
@@ -192,14 +195,14 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 9,
                 SegmentSize = 1L << 22
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
             SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
 
@@ -220,7 +223,7 @@ namespace Tsavorite.test
             // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
             Span<long> keySpan = stackalloc long[1];
             Span<int> valueSpan = stackalloc int[1];
-            var key = MemoryMarshal.Cast<long, byte>(keySpan);
+            var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(keySpan));
             var value = MemoryMarshal.Cast<int, byte>(valueSpan);
 
             // Initial population
@@ -247,7 +250,7 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,
-                MemorySize = 1L << 25,
+                LogMemorySize = 1L << 25,
                 PageSize = 1L << 19,
                 SegmentSize = 1L << 22
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
@@ -259,7 +262,7 @@ namespace Tsavorite.test
 
             void LocalScan(int i)
             {
-                using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
                 SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
                 if (scanMode == ScanMode.Scan)
                     ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
@@ -273,10 +276,10 @@ namespace Tsavorite.test
                 // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
                 Span<long> keySpan = stackalloc long[1];
                 Span<int> valueSpan = stackalloc int[1];
-                var key = MemoryMarshal.Cast<long, byte>(keySpan);
+                var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(keySpan));
                 var value = MemoryMarshal.Cast<int, byte>(valueSpan);
 
-                using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
                 var bContext = session.BasicContext;
                 for (int i = 0; i < totalRecords; i++)
                 {
@@ -291,10 +294,10 @@ namespace Tsavorite.test
                 // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
                 Span<long> keySpan = stackalloc long[1];
                 Span<int> valueSpan = stackalloc int[1];
-                var key = MemoryMarshal.Cast<long, byte>(keySpan);
+                var key = TestSpanByteKey.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(keySpan));
                 var value = MemoryMarshal.Cast<int, byte>(valueSpan);
 
-                using var session = store.NewSession<PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+                using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
                 var bContext = session.BasicContext;
                 for (int i = 0; i < totalRecords; i++)
                 {

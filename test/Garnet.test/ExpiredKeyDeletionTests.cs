@@ -1,17 +1,18 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    class ExpiredKeyDeletionTests
+    class ExpiredKeyDeletionTests : AllureTestBase
     {
         private const int ExpiredKeyDeletionScanFrequencySecs = 10;
 
@@ -29,7 +30,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
 
@@ -52,7 +53,7 @@ namespace Garnet.test
             return TestExpiredKeyDeletionScanAsync(async (db, expectedKeysToExpire) =>
             {
                 // wait for the expiration of the items that were put in.
-                await Task.Delay(TimeSpan.FromSeconds(ExpiredKeyDeletionScanFrequencySecs));
+                await Task.Delay(TimeSpan.FromSeconds(ExpiredKeyDeletionScanFrequencySecs)).ConfigureAwait(false);
 
                 RedisResult[] res = (RedisResult[])db.Execute("EXPDELSCAN");
 
@@ -97,7 +98,7 @@ namespace Garnet.test
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, true, "All to be expired should still exist");
                 CheckExistenceConditionOnAllKeys(db, untombstonedRecords, true, "All to be not expired should still exist");
 
-                await expiredKeyDeletionScanInvocation(db, totalKeysThatWillExpire);
+                await expiredKeyDeletionScanInvocation(db, totalKeysThatWillExpire).ConfigureAwait(false);
 
                 // Merge reviv stats across sessions
                 server.Provider.StoreWrapper.store.DumpRevivificationStats();

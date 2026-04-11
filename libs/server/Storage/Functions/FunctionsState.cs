@@ -19,33 +19,39 @@ namespace Garnet.server
         public readonly TsavoriteLog appendOnlyFile;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
-        public readonly CacheSizeTracker objectStoreSizeTracker;
+        public readonly CacheSizeTracker cacheSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public IStoreFunctions storeFunctions;
         public ObjectIdMap transientObjectIdMap;
         public ETagState etagState;
+        public StoreWrapper storeWrapper;
         public readonly ILogger logger;
         public byte respProtocolVersion;
         public bool StoredProcMode;
+        public readonly VectorManager vectorManager;
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
-            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, ILogger logger,
+            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, VectorManager vectorManager, ILogger logger,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
             this.customCommandManager = storeWrapper.customCommandManager;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
-            this.objectStoreSizeTracker = objectStoreSizeTracker;
+            this.cacheSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
             this.storeFunctions = storeWrapper.storeFunctions;
             this.transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;
 
+            // Hang onto this for access to storeWrapper.store.Log
+            this.storeWrapper = storeWrapper;
+
             this.etagState = new ETagState();
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;
+            this.vectorManager = vectorManager;
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)

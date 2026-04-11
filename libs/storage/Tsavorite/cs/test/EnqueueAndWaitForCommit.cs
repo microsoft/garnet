@@ -1,16 +1,19 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class EnqWaitCommitTest
+    internal class EnqWaitCommitTest : AllureTestBase
     {
         const int entryLength = 500;
         const int numEntries = 100;
@@ -58,7 +61,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         [Test]
@@ -73,11 +76,11 @@ namespace Tsavorite.test
             var currentTask = Task.Run(() => LogWriter(log, entry, iteratorType));
 
             // Delay so LogWriter's call to EnqueueAndWaitForCommit gets into its spinwait for the Commit.
-            await Task.Delay(100);
+            await Task.Delay(100).ConfigureAwait(false);
 
             // Commit to the log and wait for task to finish
             log.Commit(true);
-            await currentTask;
+            await currentTask.ConfigureAwait(false);
 
             // Read the log - Look for the flag so know each entry is unique
             using var iter = log.Scan(0, LogAddress.MaxValidAddress);

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -18,7 +19,7 @@ namespace Garnet.cluster
     /// <summary>
     /// MigrateSession
     /// </summary>
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         static readonly Memory<byte> IMPORTING = "IMPORTING"u8.ToArray();
         static readonly Memory<byte> NODE = "NODE"u8.ToArray();
@@ -47,6 +48,9 @@ namespace Garnet.cluster
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
+
+        HashSet<ulong> _namespaces;
+        FrozenDictionary<ulong, ulong> _namespaceMap;
 
         /// <summary>
         /// Get endpoint of target node

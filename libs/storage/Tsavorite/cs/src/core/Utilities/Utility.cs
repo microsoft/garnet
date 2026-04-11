@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -145,7 +146,7 @@ namespace Tsavorite.core
 
         /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long RoundUp(long value, int alignment)
+        internal static long RoundUp(long value, long alignment)
         {
             Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(long) alignment must be a power of two");
             return (value + (alignment - 1)) & ~(alignment - 1);
@@ -153,7 +154,7 @@ namespace Tsavorite.core
 
         /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ulong RoundUp(ulong value, int alignment)
+        internal static ulong RoundUp(ulong value, ulong alignment)
         {
             Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(ulong) alignment must be a power of two");
             return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
@@ -240,22 +241,31 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
-            const long magicno = 40343;
+            unsafe
+            {
+                fixed (byte* pbString = byteSpan)
+                {
+                    const long magicno = 40343;
 
-            // Convert to char for faster enumeration (two bytes per iteration)
-            var charSpan = byteSpan.UncheckedCast<char>();
-            var hashState = (ulong)byteSpan.Length;
+                    // Convert to char for faster enumeration (two bytes per iteration)
+                    char* pwString = (char*)pbString;
+                    int len = byteSpan.Length;
+                    int cbBuf = len / 2;
+                    ulong hashState = (ulong)len;
 
-            // Explicit enumerator calls are faster than foreach
-            var charEnumerator = charSpan.GetEnumerator();
-            while (charEnumerator.MoveNext())
-                hashState = (magicno * hashState) + charEnumerator.Current;
+                    for (int i = 0; i < cbBuf; i++, pwString++)
+                        hashState = magicno * hashState + *pwString;
 
-            // If we had an odd number of bytes, get the last byte
-            if ((byteSpan.Length & 1) > 0)
-                hashState = magicno * hashState + byteSpan[^1];
+                    // If we had an odd number of bytes, get the last byte
+                    if ((len & 1) > 0)
+                    {
+                        byte* pC = (byte*)pwString;
+                        hashState = magicno * hashState + *pC;
+                    }
 
-            return (long)Rotr64(magicno * hashState, 4);
+                    return (long)Rotr64(magicno * hashState, 4);
+                }
+            }
         }
 
         /// <summary>
@@ -296,9 +306,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong Rotr64(ulong x, int n) => BitOperations.RotateRight(x, n);
 
-        /// <inheritdoc cref="BitOperations.IsPow2(ulong)"/>
+        /// <inheritdoc cref="BitOperations.IsPow2(long)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsPowerOfTwo(long x) => BitOperations.IsPow2(x);
+
+        /// <inheritdoc cref="BitOperations.IsPow2(ulong)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsPowerOfTwo(ulong x) => BitOperations.IsPow2(x);
 
         /// <inheritdoc cref="BitOperations.Log2(uint)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -475,5 +489,10 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static string GetCurrentMethodName([CallerMemberName] string memberName = "") => memberName;
+
+        /// <summary>Throw Tsavorite exception with message. We use a method wrapper so that the caller method can execute inlined.</summary>
+        [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static void ThrowTsavoriteException(string message) => throw new TsavoriteException(message);
     }
 }

@@ -14,6 +14,7 @@ using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -120,22 +121,70 @@ namespace Garnet.test.cluster
 
         public void TearDown()
         {
+            // Capture test outcome before any teardown work to distinguish
+            // primary teardown failures from secondary ones caused by a hung/failed test.
+            var testOutcome = TestContext.CurrentContext.Result.Outcome;
+            var testAlreadyFailed = testOutcome.Status == TestStatus.Failed;
+
+            if (testAlreadyFailed)
+            {
+                logger?.LogError(
+                    "TearDown: test already failed ({label}): {message}",
+                    testOutcome.Label,
+                    TestContext.CurrentContext.Result.Message);
+            }
+
             cts.Cancel();
             cts.Dispose();
-            logger.LogDebug("0. Dispose <<<<<<<<<<<");
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
-            loggerFactory?.Dispose();
-            var timeoutSeconds = 5;
-            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+
+            var timeoutSeconds = 60;
+            string failureReason = null;
+
+            // Phase 1: Dispose cluster nodes (may timeout if handlers are stuck)
+            try
             {
-                logger?.LogError("Timed out waiting for DisposeCluster");
-                Assert.Fail("Timed out waiting for DisposeCluster");
+                if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    failureReason = "Timed out waiting for DisposeCluster";
+                    logger?.LogError("Timed out waiting for DisposeCluster");
+                }
             }
-            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+            catch (Exception ex)
             {
-                logger?.LogError("Timed out DeleteDirectory");
-                Assert.Fail("Timed out DeleteDirectory");
+                failureReason = $"DisposeCluster threw: {ex.Message}";
+                logger?.LogError(ex, "DisposeCluster failed");
+            }
+
+            // Phase 2: Dispose logger factory (always, even after timeout)
+            loggerFactory?.Dispose();
+
+            // Phase 3: Delete test directory (may timeout if files locked from Phase 1 timeout)
+            try
+            {
+                if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    failureReason ??= "Timed out DeleteDirectory";
+                    logger?.LogError("Timed out DeleteDirectory");
+                }
+            }
+            catch (Exception ex)
+            {
+                failureReason ??= $"DeleteDirectory threw: {ex.Message}";
+                logger?.LogError(ex, "DeleteDirectory failed");
+            }
+
+            // Phase 4: Always runs — resets LightEpoch instances to prevent cross-test contamination
+            TestUtils.OnTearDown();
+
+            // Fail the test at the end, after all cleanup is done
+            if (failureReason != null)
+            {
+                var context = testAlreadyFailed
+                    ? $" (secondary failure — test already failed with '{testOutcome.Label}')"
+                    : " (primary failure — test itself passed)";
+                Assert.Fail(failureReason + context);
             }
         }
 
@@ -162,6 +211,7 @@ namespace Garnet.test.cluster
         /// <param name="OnDemandCheckpoint"></param>
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
+        /// <param name="useAofNullDevice"></param>
         /// <param name="DisableStorageTier"></param>
         /// <param name="EnableIncrementalSnapshots"></param>
         /// <param name="FastCommit"></param>
@@ -176,10 +226,25 @@ namespace Garnet.test.cluster
         /// <param name="enableLua"></param>
         /// <param name="asyncReplay"></param>
         /// <param name="enableDisklessSync"></param>
+        /// <param name="replicaDisklessSyncDelay"></param>
+        /// <param name="replicaDisklessSyncFullSyncAofThreshold"></param>
         /// <param name="luaMemoryMode"></param>
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
+        /// <param name="deviceType"></param>
+        /// <param name="clusterReplicationReestablishmentTimeout"></param>
+        /// <param name="aofSizeLimit"></param>
+        /// <param name="compactionFrequencySecs"></param>
+        /// <param name="compactionType"></param>
+        /// <param name="latencyMonitory"></param>
+        /// <param name="loggingFrequencySecs"></param>
+        /// <param name="checkpointThrottleFlushDelayMs"></param>
+        /// <param name="clusterReplicaResumeWithData"></param>
+        /// <param name="replicaSyncTimeout"></param>
+        /// <param name="expiredObjectCollectionFrequencySecs"></param>
+        /// <param name="clusterPreferredEndpointType"></param>
+        /// <param name="useClusterAnnounceHostname"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -225,7 +290,10 @@ namespace Garnet.test.cluster
             int loggingFrequencySecs = 5,
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
-            int replicaSyncTimeout = 60)
+            int replicaSyncTimeout = 60,
+            int expiredObjectCollectionFrequencySecs = 0,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            bool useClusterAnnounceHostname = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -279,7 +347,10 @@ namespace Garnet.test.cluster
                 loggingFrequencySecs: loggingFrequencySecs,
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
-                replicaSyncTimeout: replicaSyncTimeout);
+                replicaSyncTimeout: replicaSyncTimeout,
+                expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
+                clusterPreferredEndpointType: clusterPreferredEndpointType,
+                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
 
             foreach (var node in nodes)
                 node.Start();
@@ -475,6 +546,20 @@ namespace Garnet.test.cluster
                 if (incrementalSnapshots && i == kvpairCount / 2)
                     clusterTestUtils.Checkpoint(ckptNode, logger: logger);
             }
+        }
+
+        public void SimplePrimaryReplicaSetup()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            // Setup cluster
+            var resp = clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], true, logger);
+            ClassicAssert.AreEqual("OK", resp);
+            clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger);
+            clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger);
+            clusterTestUtils.Meet(primaryIndex, replicaIndex, logger);
+            clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex);
+            clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex);
         }
 
         public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool performRMW = false)
@@ -684,37 +769,31 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
+        public void AttachAndWaitForSync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
         {
-            var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
-            // Issue meet to replicas
-            for (var i = primary_count; i < primary_count + replica_count; i++)
-                clusterTestUtils.Meet(i, 0);
+            var primaryId = clusterTestUtils.GetNodeIdFromNode(primaryIndex, logger);
 
             // Wait until primary node is known so as not to fail replicate
-            for (var i = primary_count; i < primary_count + replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
                 clusterTestUtils.WaitUntilNodeIdIsKnown(i, primaryId, logger: logger);
 
             // Issue cluster replicate and bump epoch manually to capture config.
-            for (var i = primary_count; i < primary_count + replica_count; i++)
-            {
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
                 _ = clusterTestUtils.ClusterReplicate(i, primaryId, async: true, logger: logger);
-                clusterTestUtils.BumpEpoch(i, logger: logger);
-            }
 
             if (!checkpointTask.Wait(TimeSpan.FromSeconds(100))) Assert.Fail("Checkpoint task timeout");
 
             // Wait for recovery and AofSync
-            for (var i = primary_count; i < replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
             {
                 clusterTestUtils.WaitForReplicaRecovery(i, logger);
-                clusterTestUtils.WaitForReplicaAofSync(0, i, logger);
+                clusterTestUtils.WaitForReplicaAofSync(primaryIndex, i, logger);
             }
 
-            clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, logger: logger);
+            clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, replicaCount, logger: logger);
 
             // Validate data on replicas
-            for (var i = primary_count; i < replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
             {
                 if (disableObjects)
                     ValidateKVCollectionAgainstReplica(ref kvPairs, i);

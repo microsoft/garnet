@@ -3,14 +3,17 @@
 
 using System.IO;
 using System.Threading;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class ManageLocalStorageTests
+    internal class ManageLocalStorageTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;
@@ -46,7 +49,7 @@ namespace Tsavorite.test
             deviceFullParams = null;
 
             // Clean up log 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
 
@@ -63,18 +66,14 @@ namespace Tsavorite.test
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
-            {
                 entry[i] = (byte)i;
-            }
 
             bool disposeCommitThread = false;
             var commit =
                 new Thread(() =>
                 {
                     while (!disposeCommitThread)
-                    {
                         log.Commit(true);
-                    }
                 });
 
             if (commitThread)

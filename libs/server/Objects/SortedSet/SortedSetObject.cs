@@ -324,7 +324,7 @@ namespace Garnet.server
             if (header.type != GarnetObjectType.SortedSet)
             {
                 // Indicates an incorrect type of key
-                output.OutputFlags |= OutputFlags.WrongType;
+                output.OutputFlags |= ObjectOutputFlags.WrongType;
                 output.SpanByteAndMemory.Length = 0;
                 return true;
             }
@@ -418,7 +418,7 @@ namespace Garnet.server
             memorySizeChange = HeapMemorySize - prevMemorySize;
 
             if (sortedSetDict.Count == 0)
-                output.OutputFlags |= OutputFlags.RemoveKey;
+                output.OutputFlags |= ObjectOutputFlags.RemoveKey;
 
             return true;
         }
@@ -635,7 +635,7 @@ namespace Garnet.server
             if (expirationTimes.Count != 0)
                 return;
 
-            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead) * expirationQueue.Count;
             HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
             expirationTimes = null;
             expirationQueue = null;
@@ -705,7 +705,7 @@ namespace Garnet.server
                 expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);
 
-                // MemorySize of dictionary entry already accounted for as the key already exists.
+                // LogMemorySize of dictionary entry already accounted for as the key already exists.
                 // DiskSize of expiration already accounted for as the key already exists in expirationTimes.
                 HeapMemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
             }

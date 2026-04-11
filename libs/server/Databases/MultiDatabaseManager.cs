@@ -94,7 +94,7 @@ namespace Garnet.server
                     $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpoint)} with {nameof(replicaRecover)} == true.");
 
             var checkpointParentDir = StoreWrapper.serverOptions.StoreCheckpointBaseDirectory;
-            var checkpointDirBaseName = StoreWrapper.serverOptions.GetCheckpointDirectoryName(0);
+            var checkpointDirBaseName = GarnetServerOptions.GetCheckpointDirectoryName(0);
 
             int[] dbIdsToRecover;
             try
@@ -139,6 +139,9 @@ namespace Garnet.server
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw;
                 }
+
+                // Once everything is setup, initialize the VectorManager
+                db.VectorManager.Initialize();
             }
         }
 
@@ -403,7 +406,7 @@ namespace Garnet.server
         public override void RecoverAOF()
         {
             var aofParentDir = StoreWrapper.serverOptions.AppendOnlyFileBaseDirectory;
-            var aofDirBaseName = StoreWrapper.serverOptions.GetAppendOnlyFileDirectoryName(0);
+            var aofDirBaseName = GarnetServerOptions.GetAppendOnlyFileDirectoryName(0);
 
             int[] dbIdsToRecover;
             try
@@ -514,7 +517,6 @@ namespace Garnet.server
             {
                 var activeDbIdsMapSize = activeDbIds.ActualSize;
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
-
                 var databasesMapSnapshot = databases.Map;
 
                 for (var i = 0; i < activeDbIdsMapSize; i++)
@@ -700,7 +702,7 @@ namespace Garnet.server
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, Logger, respProtocolVersion);
+            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, db.VectorManager, Logger, respProtocolVersion);
         }
 
         /// <inheritdoc/>
@@ -948,12 +950,14 @@ namespace Garnet.server
             {
                 case SingleDatabaseManager sdbm:
                     var defaultDbCopy = new GarnetDatabase(0, sdbm.DefaultDatabase, enableAof);
+                    sizeTrackersStarted = sdbm.SizeTracker?.IsStarted ?? false;
                     TryAddDatabase(0, defaultDbCopy);
                     return;
                 case MultiDatabaseManager mdbm:
                     var activeDbIdsMapSize = mdbm.activeDbIds.ActualSize;
                     var activeDbIdsMapSnapshot = mdbm.activeDbIds.Map;
                     var databasesMapSnapshot = mdbm.databases.Map;
+                    sizeTrackersStarted = mdbm.sizeTrackersStarted;
 
                     for (var i = 0; i < activeDbIdsMapSize; i++)
                     {
@@ -1039,6 +1043,21 @@ namespace Garnet.server
             }
         }
 
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                databasesMapSnapshot[dbId].VectorManager.ResumePostRecovery();
+            }
+        }
+
         public override void Dispose()
         {
             if (Disposed) return;
@@ -1046,12 +1065,17 @@ namespace Garnet.server
             Disposed = true;
 
             // Disable changes to databases map and dispose all databases
-            databases.mapLock.CloseLock();
+            while (!databases.mapLock.TryWriteLock())
+                _ = Thread.Yield();
+
             foreach (var db in databases.Map)
                 db?.Dispose();
 
-            databasesContentLock.CloseLock();
-            activeDbIds.mapLock.CloseLock();
+            while (!databasesContentLock.TryWriteLock())
+                _ = Thread.Yield();
+
+            while (!activeDbIds.mapLock.TryWriteLock())
+                _ = Thread.Yield();
         }
 
         public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)

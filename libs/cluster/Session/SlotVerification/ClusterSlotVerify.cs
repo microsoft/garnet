@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
@@ -16,9 +16,11 @@ namespace Garnet.cluster
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot, int slot = -1)
         {
-            return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(ref config, ref keySlice);
+            Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
+
+            return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(waitForStableSlot, ref config, ref keySlice);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice)
@@ -62,11 +64,19 @@ namespace Garnet.cluster
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice)
+            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(bool waitForStableSlot, ref ClusterConfig config, ref PinnedSpanByte keySlice)
             {
                 var _slot = slot == -1 ? HashSlotUtils.HashSlot(keySlice) : (ushort)slot;
+
+            tryAgain:
                 var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
                 var state = config.GetState(_slot);
+
+                if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
+                {
+                    WaitForSlotToStabalize(_slot, keySlice, ref config);
+                    goto tryAgain;
+                }
 
                 // Redirect r/w requests towards primary
                 if (config.LocalNodeRole == NodeRole.REPLICA && !readWriteSession)
@@ -116,56 +126,81 @@ namespace Garnet.cluster
                 }
                 return Exists(key);
             }
-        }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, int count)
-        {
-            var _end = count < 0 ? keys.Length : count;
-            var slot = HashSlotUtils.HashSlot(keys[0]);
-            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, slot);
 
-            for (var i = 1; i < _end; i++)
+            void WaitForSlotToStabalize(ushort slot, PinnedSpanByte keySlice, ref ClusterConfig config)
             {
-                var _slot = HashSlotUtils.HashSlot(keys[i]);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, _slot);
+                // For Vector Set ops specifically, we need a slot to be stable (or faulted, but not migrating) before writes can proceed
+                //
+                // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving
 
-                // Check if slot changes between keys
-                if (_slot != slot)
-                    return new(SlotVerifiedState.CROSSSLOT, slot);
+                do
+                {
+                    ReleaseCurrentEpoch();
+                    _ = Thread.Yield();
+                    AcquireCurrentEpoch();
 
-                // Check if state of key changes
-                if (_verifyResult.state != verifyResult.state)
-                    return new(SlotVerifiedState.TRYAGAIN, slot);
+                    config = clusterProvider.clusterManager.CurrentConfig;
+                }
+                while (config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING);
             }
-
-            return verifyResult;
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, bool isTxn, bool waitForStableSlot)
         {
-            ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
-            var slot = HashSlotUtils.HashSlot(key);
-            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
-            var secondKey = csvi.firstKey + csvi.step;
+            // Find the first valid key and initialize slot/result
+            var specIndex = 0;
+            // If slot verification is called from transaction manager, parse state contains consecutive keys so we can skip key search
+            (int firstIdx, int lastIdx, int step) searchArgs = isTxn ? (0, parseState.Count - 1, 1) : default;
+            while (specIndex < csvi.keySpecs?.Length &&
+                   !parseState.TryGetKeySearchArgsFromSimpleKeySpec(csvi.keySpecs[specIndex], csvi.isSubCommand, out searchArgs))
+                specIndex++;
 
-            for (var i = secondKey; i < csvi.lastKey; i += csvi.step)
+            if (specIndex == csvi.keySpecs?.Length && !isTxn)
+                return default;
+
+            ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
+            var firstSlot = HashSlotUtils.HashSlot(firstKey);
+            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking, waitForStableSlot, firstSlot);
+
+            // Verify remaining keys from the first spec (starting from second key)
+            var verifyResult = VerifyKeysInRange(ref config, ref parseState, ref csvi, searchArgs.firstIdx + searchArgs.step,
+                searchArgs.lastIdx, searchArgs.step, firstSlot, waitForStableSlot, ref firstSlotVerifyResult);
+            if (verifyResult.state != SlotVerifiedState.OK)
+                return verifyResult;
+
+            // Verify keys from remaining specs
+            for (specIndex++; specIndex < csvi.keySpecs?.Length; specIndex++)
             {
-                if (csvi.keyNumOffset == i)
+                if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(csvi.keySpecs[specIndex], csvi.isSubCommand, out searchArgs))
                     continue;
-                key = ref parseState.GetArgSliceByRef(i);
-                var _slot = HashSlotUtils.HashSlot(key);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, _slot);
 
-                // Check if slot changes between keys
-                if (_slot != slot)
-                    return new(SlotVerifiedState.CROSSSLOT, slot);
-
-                // Check if any key might have moved
-                if (_verifyResult.state != verifyResult.state)
-                    return new(SlotVerifiedState.TRYAGAIN, slot);
+                verifyResult = VerifyKeysInRange(ref config, ref parseState, ref csvi, searchArgs.firstIdx,
+                    searchArgs.lastIdx, searchArgs.step, firstSlot, waitForStableSlot, ref firstSlotVerifyResult);
+                if (verifyResult.state != SlotVerifiedState.OK)
+                    return verifyResult;
             }
 
-            return verifyResult;
+            return firstSlotVerifyResult;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        ClusterSlotVerificationResult VerifyKeysInRange(ref ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi,
+            int startIdx, int lastIdx, int step, ushort firstSlot, bool waitForStableSlot, ref ClusterSlotVerificationResult verifyResult)
+        {
+            for (var i = startIdx; i <= lastIdx; i += step)
+            {
+                ref var key = ref parseState.GetArgSliceByRef(i);
+                var slot = HashSlotUtils.HashSlot(key);
+                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, waitForStableSlot, slot);
+
+                if (slot != firstSlot)
+                    return new(SlotVerifiedState.CROSSSLOT, firstSlot);
+                if (result.state != verifyResult.state)
+                    return new(SlotVerifiedState.TRYAGAIN, firstSlot);
+            }
+
+            return default;
         }
     }
 }

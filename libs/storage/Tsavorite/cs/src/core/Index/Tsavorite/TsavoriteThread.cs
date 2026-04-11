@@ -61,7 +61,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                InternalCompletePendingRequests(sessionFunctions, completedOutputs);
+                InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, completedOutputs);
                 if (wait)
                     sessionFunctions.Ctx.WaitPending(epoch);
 
@@ -103,7 +103,7 @@ namespace Tsavorite.core
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
-                    completedOutputs.TransferFrom(ref pendingContext, status, hlogBase.bufferPool);
+                    completedOutputs.TransferFrom(ref pendingContext, status);
                 }
                 if (!status.IsPending)
                 {

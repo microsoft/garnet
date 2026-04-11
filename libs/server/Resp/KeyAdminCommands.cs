@@ -69,21 +69,18 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.serverOptions.SkipRDBRestoreChecksumValidation)
+            // crc is calculated over the encoded payload length, payload and the rdb version bytes
+            // skip's the value type byte and crc64 bytes
+            var calculatedCrc = new ReadOnlySpan<byte>(Crc64.Hash(valueSpan.Slice(0, valueSpan.Length - 8)));
+
+            // skip's rdb version bytes
+            var payloadCrc = footer[2..];
+
+            if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
             {
-                // crc is calculated over the encoded payload length, payload and the rdb version bytes
-                // skip's the value type byte and crc64 bytes
-                var calculatedCrc = new ReadOnlySpan<byte>(Crc64.Hash(valueSpan.Slice(0, valueSpan.Length - 8)));
-
-                // skip's rdb version bytes
-                var payloadCrc = footer[2..];
-
-                if (calculatedCrc.SequenceCompareTo(payloadCrc) != 0)
-                {
-                    while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
+                while (!RespWriteUtils.TryWriteError("ERR DUMP payload version or checksum are wrong", ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             // decode the length of payload
@@ -114,6 +111,8 @@ namespace Garnet.server
 
             var status = storageApi.SET_Conditional(key, ref input);
 
+            scratchBufferBuilder.RewindScratchBuffer(valArgSlice);
+
             if (status is GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -142,7 +141,7 @@ namespace Garnet.server
 
             var status = storageApi.GET(key, out PinnedSpanByte value);
 
-            if (status is GarnetStatus.NOTFOUND)
+            if (status is GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE)
             {
                 WriteNull();
                 return true;
@@ -312,19 +311,16 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL(sbKey, ref o);
+            var output = GetStringOutput();
+            var status = garnetApi.GETDEL(sbKey, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
-                else
-                    dcurr += o.Length;
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
-                Debug.Assert(o.IsSpanByte);
+                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
                 WriteNull();
             }
 
@@ -452,7 +448,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
 
@@ -489,7 +485,7 @@ namespace Garnet.server
             var input = new UnifiedInput(RespCommand.PERSIST);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.PERSIST(key, ref input, ref output);
 
@@ -526,7 +522,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.TTL(key, ref input, ref output);
 
@@ -563,7 +559,7 @@ namespace Garnet.server
             var input = new UnifiedInput(command);
 
             // Prepare UnifiedOutput output
-            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetUnifiedOutput();
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
 

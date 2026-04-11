@@ -8,15 +8,12 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref SpanByteAndMemory output, long ctx, out bool pending, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus GET_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(key, ref input, ref output, ctx);
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output, ctx);
 
             if (status.IsPending)
             {
@@ -38,8 +35,8 @@ namespace Garnet.server
             }
         }
 
-        public bool GET_CompletePending<TStringContext>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        public bool GET_CompletePending<TStringContext>((GarnetStatus, StringOutput)[] outputArr, bool wait, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Debug.Assert(outputArr != null);
 
@@ -62,8 +59,8 @@ namespace Garnet.server
             return ret;
         }
 
-        public bool GET_CompletePending<TStringContext>(out CompletedOutputIterator<StringInput, SpanByteAndMemory, long> completedOutputs, bool wait, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        public bool GET_CompletePending<TStringContext>(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
             var ret = context.CompletePendingWithOutputs(out completedOutputs, wait);
@@ -71,10 +68,10 @@ namespace Garnet.server
             return ret;
         }
 
-        public GarnetStatus RMW_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref SpanByteAndMemory output, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus RMW_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.RMW(key, ref input, ref output);
+            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
@@ -85,27 +82,29 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref SpanByteAndMemory output, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus Read_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Read(key, ref input, ref output);
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output);
 
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
             if (status.Found)
                 return GarnetStatus.OK;
+            else if (status.IsWrongType)
+                return GarnetStatus.WRONGTYPE;
             else
                 return GarnetStatus.NOTFOUND;
         }
 
 
         public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
-            where TBatch : IReadArgBatch<StringInput, SpanByteAndMemory>
+            where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
-            where TContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         => context.ReadWithPrefetch(ref batch, userContext);
     }
 }

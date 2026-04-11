@@ -7,11 +7,17 @@ namespace Tsavorite.core
 {
     struct PageUnit<TValuePage>
     {
-        public TValuePage value;
+        /// <summary>The byte array of this circular buffer page</summary>
+        public byte[] array;
+
+        /// <summary>The pinned pointer to this circular buffer page</summary>
         public long pointer;
 
+        /// <summary>The specific allocator's associated value for this circular buffer page</summary>
+        public TValuePage value;
+
         /// <inheritdoc/>
-        public override string ToString() => $"Value {value}, Pointer {pointer}";
+        public override readonly string ToString() => $"Value {value}, Pointer {pointer}, Array.Length {array.Length}";
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -23,7 +29,7 @@ namespace Tsavorite.core
         public long Dirty;
 
         /// <inheritdoc/>
-        public override string ToString() => $"LastFUA {LastFlushedUntilAddress}, Dirty {Dirty}";
+        public override readonly string ToString() => $"LastFUA {LastFlushedUntilAddress}, Dirty {Dirty}";
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -37,6 +43,6 @@ namespace Tsavorite.core
         public long PageAndOffset;
 
         /// <inheritdoc/>
-        public override string ToString() => $"Page {Page}, Offset {Offset}";
+        public override readonly string ToString() => $"Page {Page}, Offset {Offset}";
     }
 }

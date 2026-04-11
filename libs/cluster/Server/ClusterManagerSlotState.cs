@@ -6,22 +6,11 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using Garnet.common;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
     /// <summary>
     /// Cluster manager
     /// </summary>
@@ -382,7 +371,7 @@ namespace Garnet.cluster
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
-                logger?.LogWarning("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
+                logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
                 FlushConfig();
                 return true;
             }
@@ -428,7 +417,7 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-            logger?.LogWarning("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
+            logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
             FlushConfig();
             return true;
         }
@@ -477,7 +466,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="basicGarnetApi"></param>
         /// <param name="slots">Slot list</param>
-        public static unsafe void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
+        public static void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
         {
             using var iter = basicGarnetApi.IterateStore();
             while (iter.GetNext())

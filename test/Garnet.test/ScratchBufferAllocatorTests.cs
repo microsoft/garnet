@@ -1,13 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    public class ScratchBufferAllocatorTests
+    [AllureNUnit]
+    [TestFixture]
+    public class ScratchBufferAllocatorTests : AllureTestBase
     {
         [Test]
 
@@ -17,7 +20,7 @@ namespace Garnet.test
             var string2 = new string('b', 65);
             var string3 = new string('c', 6000);
 
-            var sam = new ScratchBufferAllocator(maxInitialCapacity: maxInitialCapacity);
+            var sam = new ScratchBufferAllocator(minSizeBuffer: 2, maxInitialCapacity: maxInitialCapacity);
 
             // Data of length 5 - SAM creates a buffer of size 8
             var as1 = sam.CreateArgSlice(string1);

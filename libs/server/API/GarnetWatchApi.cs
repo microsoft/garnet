@@ -23,7 +23,7 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.GET(key, ref input, ref output);
@@ -51,7 +51,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+        public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
             garnetApi.WATCH(key1, StoreType.Object);
             garnetApi.WATCH(key2, StoreType.Object);
@@ -61,7 +61,7 @@ namespace Garnet.server
 
         #region GETRANGE
         /// <inheritdoc />
-        public GarnetStatus GETRANGE(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus GETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.GETRANGE(key, ref input, ref output);
@@ -99,10 +99,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLength(key, ref input, out output);
+            return garnetApi.SortedSetLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -120,10 +120,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLengthByValue(key, ref input, out output);
+            return garnetApi.SortedSetLengthByValue(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -263,10 +263,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListLength(key, ref input, out output);
+            return garnetApi.ListLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -295,10 +295,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetLength(key, ref input, out output);
+            return garnetApi.SetLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -454,17 +454,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashStrLength(key, ref input, out output);
+            return garnetApi.HashStrLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashExists(key, ref input, out output);
+            return garnetApi.HashExists(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -482,10 +482,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashLength(key, ref input, out output);
+            return garnetApi.HashLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -507,7 +507,7 @@ namespace Garnet.server
         #region Bitmap Methods
 
         /// <inheritdoc />
-        public GarnetStatus StringGetBit(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringGetBit(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringGetBit(key, ref input, ref output);
@@ -521,7 +521,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitCount(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitCount(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringBitCount(key, ref input, ref output);
@@ -535,14 +535,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitPosition(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitPosition(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringBitPosition(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus StringBitFieldReadOnly(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitFieldReadOnly(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.StringBitFieldReadOnly(key, ref input, secondaryCommand, ref output);
@@ -616,12 +616,53 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public int GetScratchBufferOffset()
-            => garnetApi.GetScratchBufferOffset();
+        public void ResetScratchBuffer()
+            => garnetApi.ResetScratchBuffer();
 
-        /// <inheritdoc />
-        public bool ResetScratchBuffer(int offset)
-            => garnetApi.ResetScratchBuffer(offset);
+        #endregion
+
+        #region Vector Sets
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetValueSimilarity(key, valueType, value, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result, ref filterBitmap);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, PinnedSpanByte element, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result, ref filterBitmap);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetDimensions(key, out dimensions);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes);
+        }
 
         #endregion
     }

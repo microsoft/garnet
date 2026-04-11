@@ -41,9 +41,10 @@ namespace Garnet.common
         /// Writes 64-bit signed integer as ASCII.
         /// </summary>
         /// <param name="value">The value to write</param>
-        /// <param name="length"></param>
+        /// <param name="length">Number of digits in <paramref name="value"/>; does *not* include space for the negative sign if <paramref name="value"/> is negative.
+        ///     The space pointed to by <paramref name="result"/> must include sufficient space including sign if negative.</param>
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
-        public static unsafe void WriteInt64(long value, int length, ref byte* result)
+        public static void WriteInt64(long value, int length, ref byte* result)
         {
             var isNegative = value < 0;
             if (value == long.MinValue)
@@ -85,7 +86,6 @@ namespace Garnet.common
         public static int WriteDouble(double value, Span<byte> destination)
         {
             var totalLen = CountCharsInDouble(value, out var integerDigits, out var signSize, out var fractionalDigits);
-            var isNegative = value < 0;
             if (totalLen > destination.Length)
                 return 0;
             fixed (byte* ptr = destination)
@@ -101,10 +101,24 @@ namespace Garnet.common
         /// Writes <see langword="double"/> as ASCII.
         /// </summary>
         /// <param name="value">The value to write</param>
+        /// <param name="length">Size of the destination at <paramref name="result"/>; includes space for the negative sign if present</param>
+        /// <param name="result">Byte pointer, will be updated to point after the written number</param>
+        public static void WriteDouble(double value, int length, ref byte* result)
+        {
+            Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
+            var totalLen = CountCharsInDouble(value, out var integerDigits, out var signSize, out var fractionalDigits);
+            if (totalLen <= length)
+                WriteDouble(value, integerDigits, fractionalDigits, ref result);
+        }
+
+        /// <summary>
+        /// Writes <see langword="double"/> as ASCII.
+        /// </summary>
+        /// <param name="value">The value to write</param>
         /// <param name="integerDigits">Number of digits in the integer part of the double value</param>
         /// <param name="fractionalDigits">Number of digits in the fractional part of the double value</param>
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
-        public static unsafe void WriteDouble(double value, int integerDigits, int fractionalDigits, ref byte* result)
+        public static void WriteDouble(double value, int integerDigits, int fractionalDigits, ref byte* result)
         {
             Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
 

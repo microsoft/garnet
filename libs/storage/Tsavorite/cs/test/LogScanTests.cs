@@ -3,6 +3,8 @@
 
 using System.IO;
 using System.Threading;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -11,8 +13,9 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class LogScanTests
+    internal class LogScanTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;
@@ -46,7 +49,7 @@ namespace Tsavorite.test
             logUncommitted = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         public void PopulateLog(TsavoriteLog log)

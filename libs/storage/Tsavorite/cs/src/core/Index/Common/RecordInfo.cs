@@ -302,6 +302,7 @@ namespace Tsavorite.core
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
         public readonly bool HasOptionalFields => (word & (kHasETagBitMask | kHasExpirationBitMask)) != 0;
+        public readonly bool HasOptionalOrObjectFields => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask | kHasETagBitMask | kHasExpirationBitMask)) != (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
         // Note: KeyIsOveflow bit is not needed as it is the negation of KeyIsInline
         public readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;

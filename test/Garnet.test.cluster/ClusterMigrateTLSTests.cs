@@ -1,14 +1,16 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class ClusterTLSMT
+    public class ClusterTLSMT : AllureTestBase
     {
         ClusterMigrateTests tests;
 
@@ -79,6 +81,6 @@ namespace Garnet.test.cluster
         [Test, Order(11)]
         [Category("CLUSTER"), CancelAfter(100000)]
         public async Task ClusterTLSMigrateContinuousReadWrite(CancellationToken cancellationToken)
-            => await tests.ClusterSimpleMigrateContinuousReadWrite(cancellationToken);
+            => await tests.ClusterSimpleMigrateContinuousReadWrite(cancellationToken).ConfigureAwait(false);
     }
 }

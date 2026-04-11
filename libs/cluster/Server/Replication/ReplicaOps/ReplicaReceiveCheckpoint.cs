@@ -122,6 +122,9 @@ namespace Garnet.cluster
                     // Reset the database in preparation for connecting to primary
                     storeWrapper.Reset();
 
+                    // Suspend background tasks that may interfere with AOF
+                    await storeWrapper.SuspendPrimaryOnlyTasks();
+
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
                     //
@@ -145,7 +148,7 @@ namespace Garnet.cluster
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
 
                     // Exception injection point for testing cluster reset during disk-based replication
-                    await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                     var resp = await gcs.ExecuteReplicaSync(
                         nodeId,
                         PrimaryReplId,

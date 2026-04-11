@@ -39,7 +39,7 @@ namespace Tsavorite.core
         internal static bool IsBlittable => Utility.IsBlittable<T>();
 
         private int checkpointCallbackCount;
-        private SemaphoreSlim checkpointSemaphore;
+        private TaskCompletionSource<bool> checkpointTcs;
 
         private readonly ConcurrentQueue<long> freeList;
 
@@ -267,12 +267,10 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async ValueTask IsCheckpointCompletedAsync(CancellationToken token = default)
         {
-            var s = checkpointSemaphore;
-            await s.WaitAsync(token).ConfigureAwait(false);
-            s.Release();
+            await checkpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
-        public SemaphoreSlim GetCheckpointSemaphore() => checkpointSemaphore;
+        public Task GetCheckpointTask() => checkpointTcs.Task;
 
         /// <summary>
         /// Public facing persistence API
@@ -299,7 +297,7 @@ namespace Tsavorite.core
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
             checkpointCallbackCount = numLevels;
-            checkpointSemaphore = new SemaphoreSlim(0);
+            checkpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
@@ -353,7 +351,7 @@ namespace Tsavorite.core
 
             if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
             {
-                checkpointSemaphore.Release();
+                checkpointTcs.TrySetResult(true);
             }
         }
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -50,7 +51,7 @@ namespace Tsavorite.core
         private long[] nextLoadedPages;
 
         /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
-        CircularDiskReadBuffer[] readBuffers;
+        CircularDiskReadBuffer[] objectReadBuffers;
 
         /// <summary>Number of bits in the size of the log page</summary>
         private readonly int logPageSizeBits;
@@ -142,40 +143,48 @@ namespace Tsavorite.core
         /// <summary>Initialize read buffers</summary>
         public virtual void InitializeReadBuffers(AllocatorBase allocatorBase = default)
         {
-            readBuffers = new CircularDiskReadBuffer[frameSize];
+            objectReadBuffers = new CircularDiskReadBuffer[frameSize];
             for (var i = 0; i < frameSize; i++)
-                readBuffers[i] = allocatorBase?.CreateCircularReadBuffers();
+                objectReadBuffers[i] = allocatorBase?.CreateCircularReadBuffers();
         }
 
         /// <summary>
         /// Buffer and load
         /// </summary>
-        /// <param name="currentAddress">The current logical address</param>
+        /// <param name="currentIterationAddress">The current logical address</param>
         /// <param name="currentPage">The page containing the current logical address</param>
         /// <param name="currentFrame">The frame index of the current page (the page modulo the number of frames)</param>
         /// <param name="headAddress">Head address of the log</param>
-        /// <param name="endAddress">Address to stop the scan at</param>
+        /// <param name="endIterationAddress">Address to stop the scan at</param>
         /// <returns>True we had to await the event here; </returns>
         /// <returns></returns>
-        protected unsafe bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool BufferAndLoad(long currentIterationAddress, long currentPage, long currentFrame, long headAddress, long endIterationAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
+                // Read the next page. If i == 0 this is the page we are about to iterate; if i > 0, then we are issuing read-ahead for efficiency.
                 var nextPage = currentPage + i;
 
-                // Cannot load page if it is entirely in memory or beyond the end address
+                // Cannot load nextPage if it is entirely in memory or beyond the end address
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
-                if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
+                if (pageStartAddress >= headAddress || pageStartAddress >= endIterationAddress)
                     continue;
 
+                // Determine the endAddress on nextPage, which may be limited by endAddress or headAddress to be before end of page.
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
-                if (endAddress < pageEndAddress)
-                    pageEndAddress = endAddress;
-                if (headAddress < pageEndAddress)
-                    pageEndAddress = headAddress;
+                if (endIterationAddress < pageEndAddress)
+                    pageEndAddress = endIterationAddress;
 
+                // With HeadAddress now possibly in the middle of the page, we have to ensure we handle re-entering with the same currentFrame while
+                // a previous request on currentFrame is ongoing; this is ensured by CalculateReadOnlyAddress. So just read the entire page regardless
+                // of headAddress; the entire page will have been flushed to disk already. TODO Leaving this here in case we change to record-aligned ReadOnlyAddress.
+                //if (headAddress < pageEndAddress)
+                //    pageEndAddress = headAddress;
+
+                // Calculate the nextFrame we will load nextPage into
                 var nextFrame = (currentFrame + i) % frameSize;
 
+                // Loop using CAS as a latch-free way to ensure only one thread issues the load for nextPage into nextFrame.
                 while (true)
                 {
                     // Get the endAddress of the next page being loaded for this frame. If it is already loaded, as indicated by being >= the required endAddress, we're done.
@@ -187,65 +196,87 @@ namespace Tsavorite.core
                     // try to atomically exchange it with the endAddress we need. If successful, issue the load.
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPages[nextFrame], pageEndAddress, val) == val)
                     {
-                        var tmp_page = i;
-                        var readBuffer = readBuffers is not null ? readBuffers[nextFrame] : default;
+                        Debug.Assert(loadCompletionEvents[nextFrame] is null || loadCompletionEvents[nextFrame].IsSet,
+                            $"i {i}, currentAddress {currentIterationAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
+                        var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
+
+                        var frameIndex = i;
                         if (epoch != null)
-                        {
-                            epoch.BumpCurrentEpoch(() =>
-                            {
-                                AsyncReadPagesFromDeviceToFrame(readBuffer, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
-                                        Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
-                                loadedPages[nextFrame] = pageEndAddress;
-                            });
-                        }
+                            epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
                         else
+                            DoReadPage(frameIndex);
+
+                        void DoReadPage(int frameIndex)
                         {
-                            AsyncReadPagesFromDeviceToFrame(readBuffer, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
-                                    Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
+                                context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
                     else
                     {
-                        // Someone else already incremented nextLoadedPage[nextFrame], so give them a chance to work, then try again.
+                        // Someone else incremented nextLoadedPage[nextFrame] or the BumpCE has not completed and set loadedPages, so give things a chance to work and try again.
                         epoch?.ProtectAndDrain();
                     }
                 }
             }
-            return WaitForFrameLoad(currentAddress, currentFrame);
+
+            // Wait only for currentFrame; nextFrame(s, if we ever have frameSize > 2) will process in the background until we actually need its data,
+            // in which case it will come in here as currentFrame, see that nextLoadedPage is already set, and then this line will wait for it.
+            // WaitForFrameLoad returns immediately if the wait has already been satisfied.
+            return WaitForFrameLoad(currentIterationAddress, currentFrame);
         }
 
         /// <summary>
         /// Whether we need to buffer new page from disk
         /// </summary>
-        protected unsafe bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
+                // Read the next page. If i == 0 this is the page we are about to iterate; if i > 0, then we are issuing read-ahead for efficiency.
                 var nextPage = currentPage + i;
 
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
 
-                // Cannot load page if it is entirely in memory or beyond the end address
+                // Cannot load nextPage if it is entirely in memory or beyond the end address
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
                     continue;
 
+                // Determine the endAddress on nextPage, which may be limited by endAddress or headAddress to be before end of page.
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
                 if (endAddress < pageEndAddress)
                     pageEndAddress = endAddress;
                 if (headAddress < pageEndAddress)
                     pageEndAddress = headAddress;
 
+                // Calculate the nextFrame we will load nextPage into
                 var nextFrame = (currentFrame + i) % frameSize;
 
+                // If the endAddress of the next page being loaded for this frame is already loaded, as indicated by being >= the required endAddress,
+                // we don't need to load.
                 if (nextLoadedPages[nextFrame] < pageEndAddress || loadedPages[nextFrame] < pageEndAddress)
                     return true;
             }
             return false;
         }
 
-        internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
+
+        protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context)
+        {
+            var result = (PageAsyncReadResult<Empty>)context;
+
+            if (errorCode == 0)
+                _ = result.handle?.Signal();
+            else
+            {
+                logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
+                result.cts?.Cancel();
+            }
+            Interlocked.MemoryBarrier();
+        }
 
         /// <summary>
         /// Wait for the current frame to complete loading
@@ -287,30 +318,25 @@ namespace Tsavorite.core
         {
             for (var i = 0; i < frameSize; i++)
             {
+                // Wait for ongoing reads to complete/fail; if the wait throws (e.g. due to cancellation), we still
+                // need to dispose the event, CTS, and read buffers below.
                 try
                 {
-                    // Wait for ongoing reads to complete/fail
-                    if (loadCompletionEvents != null)
-                    {
-                        if (loadedPages[i] != -1)
-                            loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
-                        loadCompletionEvents[i]?.Dispose();
-                        loadCompletionEvents = default;
-                    }
-                    if (loadCTSs is not null)
-                    {
-                        loadCTSs[i]?.Dispose();
-                        loadCTSs[i] = null;
-                    }
-                    if (readBuffers is not null)
-                    {
-                        // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
-                        // things and leaves it in an "initialized" state.
-                        readBuffers[i]?.Dispose();
-                    }
+                    if (loadCompletionEvents != null && loadedPages[i] != -1)
+                        loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
                 }
                 catch { }
+
+                // Always dispose resources regardless of whether the wait succeeded.
+                loadCompletionEvents?[i]?.Dispose();
+                loadCTSs?[i]?.Dispose();
+                loadCTSs?[i] = null;
+
+                // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
+                // things and leaves it in an "initialized" state.
+                objectReadBuffers?[i]?.Dispose();
             }
+            loadCompletionEvents = default;
         }
 
         /// <summary>

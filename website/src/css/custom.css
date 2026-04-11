@@ -54,3 +54,43 @@ html[data-theme="dark"] {
     background-repeat: no-repeat;
     background-size: cover;
 }
+
+/* Strongest possible overrides for Prism inline colors */
+html[data-theme='light'] .theme-code-block pre code .token.function,
+html[data-theme='light'] .theme-code-block pre code .token.string,
+html[data-theme='light'] .theme-code-block pre code .token.generic-method {
+  color: #cc3745 !important;
+}
+
+html[data-theme='light'] .theme-code-block pre code .token.keyword,
+html[data-theme='light'] .theme-code-block pre code .token.boolean,
+html[data-theme='light'] .theme-code-block pre code .token.number {
+  color: #257c7a !important;
+}
+
+html[data-theme='light'] .theme-code-block pre code .token.comment,
+html[data-theme='light'] .theme-code-block pre code .token.prolog,
+html[data-theme='light'] .theme-code-block pre code .token.doctype,
+html[data-theme='light'] .theme-code-block pre code .token.cdata {
+  color: #6e6e61 !important;
+}
+
+/* Fallback for code blocks without .theme-code-block */
+html[data-theme='light'] pre code .token.function,
+html[data-theme='light'] pre code .token.string,
+html[data-theme='light'] pre code .token.generic-method {
+  color: #cc3745 !important;
+}
+
+html[data-theme='light'] pre code .token.keyword,
+html[data-theme='light'] pre code .token.number,
+html[data-theme='light'] pre code .token.boolean {
+  color: #257c7a !important;
+}
+
+html[data-theme='light'] pre code .token.comment,
+html[data-theme='light'] pre code .token.prolog,
+html[data-theme='light'] pre code .token.doctype,
+html[data-theme='light'] pre code .token.cdata {
+  color: #6e6e61 !important;
+}

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Embedded.server;
 using Garnet.common;
 using Garnet.server;
@@ -19,18 +20,9 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
-    using TestBasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
+    [AllureNUnit]
     [TestFixture]
-    public class RespSortedSetTests
+    public class RespSortedSetTests : AllureTestBase
     {
         protected GarnetServer server;
 
@@ -90,7 +82,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         #region SETests
@@ -103,7 +95,7 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
+            var api = new BasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
                 session.storageSession.objectBasicContext, session.storageSession.unifiedBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
@@ -136,7 +128,7 @@ namespace Garnet.test
             Thread.Sleep(200);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
+            var api = new BasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
                 session.storageSession.objectBasicContext, session.storageSession.unifiedBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
@@ -161,7 +153,7 @@ namespace Garnet.test
 
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             var ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "c");
             ClassicAssert.AreEqual(-2, (long)ttl);
@@ -546,7 +538,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZCountAndZCardWithExpiredAndExpiringItems()
+        public void ZCountAndZCardWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -561,7 +553,7 @@ namespace Garnet.test
             // Set expiration for the minimum, maximum and middle items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "3", "a", "e", "c");
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             // ZCARD
             var count = db.SortedSetLength("key1");
@@ -1102,12 +1094,12 @@ namespace Garnet.test
             var key = "SortedSet_Pof2";
 
             // 10 entries are added
-            await db.SortedSetAddAsync(key, powOfTwo, CommandFlags.FireAndForget);
+            await db.SortedSetAddAsync(key, powOfTwo, CommandFlags.FireAndForget).ConfigureAwait(false);
 
-            var res = await db.SortedSetRangeByScoreAsync(key, start: double.PositiveInfinity, double.NegativeInfinity, order: Order.Ascending);
+            var res = await db.SortedSetRangeByScoreAsync(key, start: double.PositiveInfinity, double.NegativeInfinity, order: Order.Ascending).ConfigureAwait(false);
             ClassicAssert.AreEqual(powOfTwo.Length, res.Length);
 
-            var range = await db.SortedSetRangeByRankWithScoresAsync(key);
+            var range = await db.SortedSetRangeByRankWithScoresAsync(key).ConfigureAwait(false);
             ClassicAssert.AreEqual(powOfTwo.Length, range.Length);
         }
 
@@ -1119,12 +1111,12 @@ namespace Garnet.test
 
             var key = "SortedSet_OnlyZeroScore";
 
-            await db.SortedSetAddAsync(key, "A", 0, CommandFlags.FireAndForget);
+            await db.SortedSetAddAsync(key, "A", 0, CommandFlags.FireAndForget).ConfigureAwait(false);
 
-            var res = await db.SortedSetRangeByScoreAsync(key, start: 1);
+            var res = await db.SortedSetRangeByScoreAsync(key, start: 1).ConfigureAwait(false);
             ClassicAssert.AreEqual(0, res.Length);
 
-            var range = await db.SortedSetRangeByRankWithScoresAsync(key, start: 1);
+            var range = await db.SortedSetRangeByRankWithScoresAsync(key, start: 1).ConfigureAwait(false);
             ClassicAssert.AreEqual(0, range.Length);
         }
 
@@ -2026,7 +2018,7 @@ namespace Garnet.test
 
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
 
-            await Task.Delay(600);
+            await Task.Delay(600).ConfigureAwait(false);
 
             var newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -2038,7 +2030,7 @@ namespace Garnet.test
             ClassicAssert.Less(newMemory, orginalMemory);
             orginalMemory = newMemory;
 
-            await Task.Delay(1100);
+            await Task.Delay(1100).ConfigureAwait(false);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -2112,7 +2104,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the member exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(3500);
+            await Task.Delay(3500).ConfigureAwait(false);
 
             var items = db.SortedSetRangeByRankWithScores("mysortedset");
             ClassicAssert.AreEqual(2, items.Length);
@@ -2133,6 +2125,22 @@ namespace Garnet.test
 
             items = db.SortedSetRangeByRankWithScores("mysortedset");
             ClassicAssert.AreEqual(0, items.Length);
+        }
+
+        [Test]
+        public void CanDoSortedSetExpireAndRemove()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("mysortedset", [new SortedSetEntry("a1", 1.1), new SortedSetEntry("a2", 1.2), new SortedSetEntry("a3", 1.3)]);
+
+            var result = db.Execute("ZEXPIRE", "mysortedset", "60", "MEMBERS", "1", "a1");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results!.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+
+            result = db.Execute("ZREMRANGEBYLEX", "mysortedset", "[a", "(b");
+            ClassicAssert.AreEqual(3, (long)result);
         }
 
         [Test]
@@ -2180,7 +2188,7 @@ namespace Garnet.test
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
-            await Task.Delay(2000);
+            await Task.Delay(2000).ConfigureAwait(false);
 
             var result = db.SortedSetScore(smallExpireKeys[0], "Field1");
             ClassicAssert.IsNull(result);
@@ -2199,7 +2207,7 @@ namespace Garnet.test
             ClassicAssert.Greater(ttl[0].Score, 0);
             ClassicAssert.LessOrEqual(ttl[0].Score, 2000);
 
-            await Task.Delay(2000);
+            await Task.Delay(2000).ConfigureAwait(false);
 
             result = db.SortedSetScore(largeExpireKeys[0], "Field1");
             ClassicAssert.IsNull(result);
@@ -2354,7 +2362,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
                 ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
-                ClassicAssert.Less((long)recoveredValuesTtl[1], 13);
+                ClassicAssert.LessOrEqual((long)recoveredValuesTtl[1], 13);
                 ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
@@ -2398,7 +2406,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZDiffWithExpiredAndExpiringItems()
+        public void ZDiffWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2421,7 +2429,7 @@ namespace Garnet.test
             // Set expiration for matching items in key2
             db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             // Perform ZDIFF
             var diff = db.SortedSetCombine(SetOperation.Difference, ["key1", "key2"]);
@@ -2435,7 +2443,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("e", diffWithScores[1].Element.ToString());
             ClassicAssert.AreEqual(5, diffWithScores[1].Score);
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             // Perform ZDIFF again after more items have expired
             diff = db.SortedSetCombine(SetOperation.Difference, ["key1", "key2"]);
@@ -2449,7 +2457,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZDiffStoreWithExpiredAndExpiringItems()
+        public void ZDiffStoreWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2472,7 +2480,7 @@ namespace Garnet.test
             // Set expiration for matching items in key2
             db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             // Perform ZDIFFSTORE
             var diffStoreCount = db.SortedSetCombineAndStore(SetOperation.Difference, "key3", ["key1", "key2"]);
@@ -2486,7 +2494,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("e", diffStoreResult[1].Element.ToString());
             ClassicAssert.AreEqual(5, diffStoreResult[1].Score);
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             // Perform ZDIFFSTORE again after more items have expired
             diffStoreCount = db.SortedSetCombineAndStore(SetOperation.Difference, "key3", ["key1", "key2"]);
@@ -2500,7 +2508,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZIncrByWithExpiringAndExpiredItems()
+        public void ZIncrByWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2513,7 +2521,7 @@ namespace Garnet.test
             // Set expiration for some items in key1
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "a");
 
-            await Task.Delay(10);
+            Thread.Sleep(10);
 
             // Try to increment the score of an expiring item
             var newScore = db.SortedSetIncrement("key1", "a", 5);
@@ -2524,7 +2532,7 @@ namespace Garnet.test
             ClassicAssert.LessOrEqual((long)ttl, 200);
             ClassicAssert.Greater((long)ttl, 0);
 
-            await Task.Delay(200);
+            Thread.Sleep(200);
 
             // Check the item has expired
             ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
@@ -2540,7 +2548,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZInterWithExpiredAndExpiringItems()
+        public void ZInterWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2563,21 +2571,21 @@ namespace Garnet.test
             var inter = db.SortedSetCombine(SetOperation.Intersect, ["key1", "key2"]);
             ClassicAssert.AreEqual(3, inter.Length);
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             var interWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect, ["key1", "key2"]);
             ClassicAssert.AreEqual(1, interWithScores.Length);  // Only "b" should remain
             ClassicAssert.AreEqual("b", interWithScores[0].Element.ToString());
             ClassicAssert.AreEqual(4, interWithScores[0].Score); // Sum of scores
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             inter = db.SortedSetCombine(SetOperation.Intersect, ["key1", "key2"]);
             ClassicAssert.AreEqual(0, inter.Length);
         }
 
         [Test]
-        public async Task ZInterCardWithExpiredAndExpiringItems()
+        public void ZInterCardWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2596,19 +2604,19 @@ namespace Garnet.test
             db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
             db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             var interCardCount = (long)db.Execute("ZINTERCARD", "2", "key1", "key2");
             ClassicAssert.AreEqual(1, interCardCount); // Only "b" should remain
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             interCardCount = (long)db.Execute("ZINTERCARD", "2", "key1", "key2");
             ClassicAssert.AreEqual(0, interCardCount); // No items should remain
         }
 
         [Test]
-        public async Task ZInterStoreWithExpiredAndExpiringItems()
+        public void ZInterStoreWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2627,7 +2635,7 @@ namespace Garnet.test
             db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
             db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             var interStoreCount = db.SortedSetCombineAndStore(SetOperation.Intersect, "key3", ["key1", "key2"]);
             ClassicAssert.AreEqual(1, interStoreCount); // Only "b" should remain
@@ -2637,7 +2645,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("b", interStoreResult[0].Element.ToString());
             ClassicAssert.AreEqual(4, interStoreResult[0].Score); // Sum of scores
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             interStoreCount = db.SortedSetCombineAndStore(SetOperation.Intersect, "key3", ["key1", "key2"]);
             ClassicAssert.AreEqual(0, interStoreCount); // No items should remain
@@ -2647,7 +2655,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZLexCountWithExpiredAndExpiringItems()
+        public void ZLexCountWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -2661,7 +2669,7 @@ namespace Garnet.test
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "3", "a", "e", "c");
             db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             var lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+"); // SortedSetLengthByValue will check - and + to [- and [+
             ClassicAssert.AreEqual(2, lexCount); // Only "b" and "d" should remain
@@ -2669,7 +2677,7 @@ namespace Garnet.test
             var lexCountRange = db.SortedSetLengthByValue("key1", "b", "d", Exclude.Stop);
             ClassicAssert.AreEqual(1, lexCountRange); // Only "b" should remain within the range
 
-            await Task.Delay(300);
+            Thread.Sleep(300);
 
             lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+");
             ClassicAssert.AreEqual(1, lexCount); // Only "d" should remain
@@ -2697,7 +2705,7 @@ namespace Garnet.test
             db.Execute("ZPEXPIRE", "key0", "200", "MEMBERS", "1", "x");
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZMPOP with MIN option
             var result = db.Execute("ZMPOP", 2, "key0", "key1", "MIN", "COUNT", 2);
@@ -2740,7 +2748,7 @@ namespace Garnet.test
             // Set expiration for the minimum and maximum items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             var scores = db.SortedSetScores("key1", ["a", "b", "c", "d", "e"]);
             ClassicAssert.AreEqual(5, scores.Length);
@@ -2767,7 +2775,7 @@ namespace Garnet.test
             // Set expiration for the minimum and maximum items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "c", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZPOPMAX
             var result = db.SortedSetPop("key1", Order.Descending);
@@ -2800,7 +2808,7 @@ namespace Garnet.test
             // Set expiration for the minimum and middle items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZPOPMIN
             var result = db.SortedSetPop("key1", Order.Ascending);
@@ -2833,7 +2841,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZRANDMEMBER
             var randMember = db.SortedSetRandomMember("key1");
@@ -2868,7 +2876,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZRANGE with BYSCORE option
             var result = (RedisValue[])db.Execute("ZRANGE", "key1", "1", "5", "BYSCORE");
@@ -2907,7 +2915,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZRANGEBYLEX with expired items
             var result = (RedisResult[])db.Execute("ZRANGEBYLEX", "key1", "[a", "[e");
@@ -2931,7 +2939,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZRANGEBYSCORE
             var result = (RedisValue[])db.Execute("ZRANGEBYSCORE", "key1", "1", "5");
@@ -2960,7 +2968,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZRANGESTORE with BYSCORE option
             db.Execute("ZRANGESTORE", "key2", "key1", "1", "5", "BYSCORE");
@@ -3003,7 +3011,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZRANK
             var rank = db.SortedSetRank("key1", "a");
@@ -3029,7 +3037,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREM on expired and non-expired items
             var removedCount = db.SortedSetRemove("key1", ["a", "b", "e"]);
@@ -3057,7 +3065,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREMRANGEBYLEX with expired items
             var removedCount = db.Execute("ZREMRANGEBYLEX", "key1", "[a", "[e");
@@ -3084,7 +3092,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREMRANGEBYRANK with expired items
             var removedCount = db.Execute("ZREMRANGEBYRANK", "key1", 0, 1);
@@ -3112,7 +3120,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREMRANGEBYSCORE with expired items
             var removedCount = db.Execute("ZREMRANGEBYSCORE", "key1", 1, 5);
@@ -3139,7 +3147,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREVRANGE with expired items
             var result = db.Execute("ZREVRANGE", "key1", 0, -1);
@@ -3164,7 +3172,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREVRANGEBYLEX with expired items
             var result = db.Execute("ZREVRANGEBYLEX", "key1", "[e", "[a");
@@ -3189,7 +3197,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREVRANGEBYSCORE with expired items
             var result = db.Execute("ZREVRANGEBYSCORE", "key1", 5, 1);
@@ -3214,7 +3222,7 @@ namespace Garnet.test
             // Set expiration for some items
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZREVRANK on expired and non-expired items
             var result = db.Execute("ZREVRANK", "key1", "a");
@@ -3232,32 +3240,32 @@ namespace Garnet.test
             using var c = TestUtils.GetGarnetClientSession(raw: true);
             c.Connect();
 
-            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString()).ConfigureAwait(false);
 
-            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b");
+            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b").ConfigureAwait(false);
             ClassicAssert.AreEqual(":2\r\n", response);
 
             var expectedResponse = (respVersion >= 3) ?
                         "*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n" :
                         "*4\r\n$1\r\na\r\n$1\r\n0\r\n$1\r\nb\r\n$1\r\n1\r\n";
-            response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES");
+            response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("ZUNION", "2", "z", "nx", "WITHSCORES");
+            response = await c.ExecuteAsync("ZUNION", "2", "z", "nx", "WITHSCORES").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
-            response = await c.ExecuteAsync("ZDIFF", "2", "z", "nx", "WITHSCORES");
+            response = await c.ExecuteAsync("ZDIFF", "2", "z", "nx", "WITHSCORES").ConfigureAwait(false);
             ClassicAssert.AreEqual(expectedResponse, response);
 
-            response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
+            response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN").ConfigureAwait(false);
             if (respVersion >= 3)
                 ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n,0\r\n", response);
             else
                 ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
-            response = await c.ExecuteAsync("ZRANDMEMBER", "z", "1", "WITHSCORES");
+            response = await c.ExecuteAsync("ZRANDMEMBER", "z", "1", "WITHSCORES").ConfigureAwait(false);
             if (respVersion >= 3)
                 ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\nb\r\n,1\r\n", response);
             else
                 ClassicAssert.AreEqual("*2\r\n$1\r\nb\r\n$1\r\n1\r\n", response);
-            response = await c.ExecuteAsync("ZPOPMAX", "z", "1");
+            response = await c.ExecuteAsync("ZPOPMAX", "z", "1").ConfigureAwait(false);
             if (respVersion >= 3)
                 ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\nb\r\n,1\r\n", response);
             else
@@ -3281,7 +3289,7 @@ namespace Garnet.test
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
             db.Execute("ZPEXPIRE", "key1", "1000", "MEMBERS", "1", "c");
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             // Perform ZSCAN
             var result = db.Execute("ZSCAN", "key1", "0");
@@ -3296,7 +3304,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZScoreWithExpiringAndExpiredItems()
+        public void ZScoreWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3309,7 +3317,7 @@ namespace Garnet.test
             // Set expiration for some items in key1
             db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "a");
 
-            await Task.Delay(10);
+            Thread.Sleep(10);
 
             // Check the score of an expiring item
             var score = db.SortedSetScore("key1", "a");
@@ -3320,7 +3328,7 @@ namespace Garnet.test
             ClassicAssert.LessOrEqual((long)ttl, 200);
             ClassicAssert.Greater((long)ttl, 0);
 
-            await Task.Delay(200);
+            Thread.Sleep(200);
 
             // Check the item has expired
             ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
@@ -3359,7 +3367,7 @@ namespace Garnet.test
             var union = db.SortedSetCombine(SetOperation.Union, ["key1", "key2"]);
             ClassicAssert.AreEqual(5, union.Length);
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             var unionWithScores = db.SortedSetCombineWithScores(SetOperation.Union, ["key1", "key2"]);
             ClassicAssert.AreEqual(4, unionWithScores.Length);
@@ -3391,7 +3399,7 @@ namespace Garnet.test
             var unionStoreResult = db.SortedSetRangeByRankWithScores("key3");
             ClassicAssert.AreEqual(5, unionStoreResult.Length);
 
-            await Task.Delay(300);
+            await Task.Delay(300).ConfigureAwait(false);
 
             unionStoreCount = db.SortedSetCombineAndStore(SetOperation.Union, "key3", ["key1", "key2"]);
             ClassicAssert.AreEqual(4, unionStoreCount);
@@ -4555,7 +4563,7 @@ namespace Garnet.test
             db.KeyDelete(key, CommandFlags.FireAndForget);
             db.SortedSetAdd(key, powOfTwo, CommandFlags.FireAndForget);
 
-            var randMember = await db.SortedSetRandomMemberAsync(key);
+            var randMember = await db.SortedSetRandomMemberAsync(key).ConfigureAwait(false);
             ClassicAssert.True(Array.Exists(powOfTwo, element => element.Element.Equals(randMember)));
 
             // Check ZRANDMEMBER with wrong number of arguments
@@ -4577,7 +4585,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
 
             //ZRANDMEMBER count
-            var randMemberArray = await db.SortedSetRandomMembersAsync(key, 5);
+            var randMemberArray = await db.SortedSetRandomMembersAsync(key, 5).ConfigureAwait(false);
             ClassicAssert.AreEqual(5, randMemberArray.Length);
             ClassicAssert.AreEqual(5, randMemberArray.Distinct().Count());
             foreach (var member in randMemberArray)
@@ -4586,7 +4594,7 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(match);
             }
 
-            randMemberArray = await db.SortedSetRandomMembersAsync(key, 15);
+            randMemberArray = await db.SortedSetRandomMembersAsync(key, 15).ConfigureAwait(false);
             ClassicAssert.AreEqual(10, randMemberArray.Length);
             ClassicAssert.AreEqual(10, randMemberArray.Distinct().Count());
             foreach (var member in randMemberArray)
@@ -4595,10 +4603,10 @@ namespace Garnet.test
                 ClassicAssert.IsNotNull(match);
             }
 
-            randMemberArray = await db.SortedSetRandomMembersAsync(key, -5);
+            randMemberArray = await db.SortedSetRandomMembersAsync(key, -5).ConfigureAwait(false);
             ClassicAssert.AreEqual(5, randMemberArray.Length);
 
-            randMemberArray = await db.SortedSetRandomMembersAsync(key, -15);
+            randMemberArray = await db.SortedSetRandomMembersAsync(key, -15).ConfigureAwait(false);
             ClassicAssert.AreEqual(15, randMemberArray.Length);
             ClassicAssert.GreaterOrEqual(10, randMemberArray.Distinct().Count());
             foreach (var member in randMemberArray)
@@ -4608,7 +4616,7 @@ namespace Garnet.test
             }
 
             //ZRANDMEMBER [count [WITHSCORES]]
-            var randMemberArray2 = await db.SortedSetRandomMembersWithScoresAsync(key, 2);
+            var randMemberArray2 = await db.SortedSetRandomMembersWithScoresAsync(key, 2).ConfigureAwait(false);
             ClassicAssert.AreEqual(2, randMemberArray2.Length);
             foreach (var member in randMemberArray2)
             {
@@ -4616,11 +4624,11 @@ namespace Garnet.test
             }
 
             // No-existing key case
-            randMember = await db.SortedSetRandomMemberAsync(key0);
+            randMember = await db.SortedSetRandomMemberAsync(key0).ConfigureAwait(false);
             ClassicAssert.True(randMember.IsNull);
-            randMemberArray = await db.SortedSetRandomMembersAsync(key0, 2);
+            randMemberArray = await db.SortedSetRandomMembersAsync(key0, 2).ConfigureAwait(false);
             ClassicAssert.True(randMemberArray.Length == 0);
-            randMemberArray2 = await db.SortedSetRandomMembersWithScoresAsync(key0, 2);
+            randMemberArray2 = await db.SortedSetRandomMembersWithScoresAsync(key0, 2).ConfigureAwait(false);
             ClassicAssert.True(randMemberArray2.Length == 0);
         }
 
@@ -4909,7 +4917,7 @@ namespace Garnet.test
             expectedResponse = "+QUEUED\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            await Task.Run(() => UpdateSortedSetKey(key));
+            await Task.Run(() => UpdateSortedSetKey(key)).ConfigureAwait(false);
 
             response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";

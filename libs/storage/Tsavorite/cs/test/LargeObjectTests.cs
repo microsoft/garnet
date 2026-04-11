@@ -1,9 +1,11 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -13,14 +15,15 @@ namespace Tsavorite.test.LargeObjects
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class LargeObjectTests
+    internal class LargeObjectTests : AllureTestBase
     {
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);
 
         [TearDown]
-        public void TearDown() => DeleteDirectory(MethodTestDir);
+        public void TearDown() => OnTearDown();
 
         [Test]
         [Category("TsavoriteKV")]
@@ -42,7 +45,7 @@ namespace Tsavorite.test.LargeObjects
             using (var store = new TsavoriteKV<ClassStoreFunctions, ClassAllocator>(CreateKVSettings(log, objlog)
                 , StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
-            using (var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+            using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
             {
                 var bContext = session.BasicContext;
                 Random rng = new Random(33);
@@ -51,14 +54,14 @@ namespace Tsavorite.test.LargeObjects
                 {
                     var mykey = new TestObjectKey { key = key };
                     var value = new TestLargeObjectValue(rngMode == RandomMode.Rng ? 1 + rng.Next(numItems) : numItems);
-                    _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref mykey), value, Empty.Default);
+                    _ = bContext.Upsert(mykey, value, Empty.Default);
                 }
 
                 // Validate read before checkpoint
                 DoRead(session, numObjects, store);
 
                 _ = store.TryInitiateFullCheckpoint(out token, checkpointType);
-                await store.CompleteCheckpointAsync();
+                await store.CompleteCheckpointAsync().ConfigureAwait(false);
             }
 
             // Step 1: Create and recover store.
@@ -70,11 +73,11 @@ namespace Tsavorite.test.LargeObjects
             {
                 _ = store.Recover(token);
 
-                using (var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
                     DoRead(session, numObjects, store);
             }
 
-            static void DoRead(ClientSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
+            static void DoRead(ClientSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
                 int numObjects, TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
             {
                 TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
@@ -84,7 +87,7 @@ namespace Tsavorite.test.LargeObjects
                 for (int keycnt = 0; keycnt < numObjects; keycnt++)
                 {
                     var key = new TestObjectKey { key = keycnt };
-                    var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
 
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult();
@@ -106,7 +109,7 @@ namespace Tsavorite.test.LargeObjects
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 PageSize = 1L << 13,                // 8 KB
-                MemorySize = 1L << 16,              // 64 KB
+                LogMemorySize = 1L << 16,           // 64 KB
                 SegmentSize = 1L << 17,             // 128 KB
                 ObjectLogSegmentSize = 1L << 22,    // 4 MB
                 CheckpointDir = MethodTestDir
@@ -130,7 +133,7 @@ namespace Tsavorite.test.LargeObjects
             using (var store = new TsavoriteKV<ClassStoreFunctions, ClassAllocator>(CreateKVSettings(log, objlog)
                 , StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestMultiListObjectValue.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
-            using (var session = store.NewSession<TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions>(new TestMultiListObjectFunctions()))
+            using (var session = store.NewSession<TestObjectKey, TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions>(new TestMultiListObjectFunctions()))
             {
                 var bContext = session.BasicContext;
                 Random rng = new Random(33);
@@ -140,7 +143,7 @@ namespace Tsavorite.test.LargeObjects
                 {
                     var mykey = new TestObjectKey { key = key };
                     var value = new TestMultiListObjectValue(key, numLists, numItems, rngMode == RandomMode.Rng ? rng : null);
-                    _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref mykey), value, Empty.Default);
+                    _ = bContext.Upsert(mykey, value, Empty.Default);
                 }
 
                 // Validate read before checkpoint
@@ -159,11 +162,11 @@ namespace Tsavorite.test.LargeObjects
             {
                 _ = store.Recover(token);
 
-                using (var session = store.NewSession<TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions>(new TestMultiListObjectFunctions()))
+                using (var session = store.NewSession<TestObjectKey, TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions>(new TestMultiListObjectFunctions()))
                     DoRead(session, numObjects, store);
             }
 
-            static void DoRead(ClientSession<TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
+            static void DoRead(ClientSession<TestObjectKey, TestMultiListObjectInput, TestMultiListObjectOutput, Empty, TestMultiListObjectFunctions, ClassStoreFunctions, ClassAllocator> session,
                 int numOps, TsavoriteKV<ClassStoreFunctions, ClassAllocator> store)
             {
                 var bContext = session.BasicContext;
@@ -179,7 +182,7 @@ namespace Tsavorite.test.LargeObjects
                     TestMultiListObjectOutput output = new();
 
                     var key = new TestObjectKey { key = keycnt };
-                    var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
 
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult();
@@ -205,7 +208,7 @@ namespace Tsavorite.test.LargeObjects
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 PageSize = 1L << 13,                // 8 KB
-                MemorySize = 1L << 16,              // 64 KB
+                LogMemorySize = 1L << 16,              // 64 KB
                 SegmentSize = 1L << 17,             // 128 KB
                 ObjectLogSegmentSize = 1L << 30,    // 1 GB
                 CheckpointDir = MethodTestDir

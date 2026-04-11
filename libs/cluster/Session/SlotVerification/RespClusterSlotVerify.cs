@@ -7,7 +7,6 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -21,10 +20,11 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Redirect(ushort slot, ClusterConfig config)
         {
-            var (address, port) = config.GetEndpointFromSlot(slot);
+            var type = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            var (endpoint, port) = config.GetEndpointFromSlot(slot, type);
             ReadOnlySpan<byte> errorMessage;
             if (port != 0)
-                errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
+                errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {endpoint}:{port}");
             else
                 errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
 
@@ -45,20 +45,20 @@ namespace Garnet.cluster
             ReadOnlySpan<byte> errorMessage;
             var state = vres.state;
             var slot = vres.slot;
-            string address;
+            string endpoint;
             int port;
             switch (state)
             {
                 case SlotVerifiedState.MOVED:
-                    (address, port) = config.GetEndpointFromSlot(slot);
-                    errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
+                    (endpoint, port) = config.GetEndpointFromSlot(slot, clusterProvider.serverOptions.ClusterPreferredEndpointType);
+                    errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {endpoint}:{port}");
                     break;
                 case SlotVerifiedState.CLUSTERDOWN:
                     errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
                     break;
                 case SlotVerifiedState.ASK:
-                    (address, port) = config.AskEndpointFromSlot(slot);
-                    errorMessage = Encoding.ASCII.GetBytes($"ASK {slot} {address}:{port}");
+                    (endpoint, port) = config.AskEndpointFromSlot(slot, clusterProvider.serverOptions.ClusterPreferredEndpointType);
+                    errorMessage = Encoding.ASCII.GetBytes($"ASK {slot} {endpoint}:{port}");
                     break;
                 case SlotVerifiedState.CROSSSLOT:
                     errorMessage = CmdStrings.RESP_ERR_CROSSSLOT;
@@ -87,32 +87,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Check if read/write is permitted on an array of keys and generate appropriate resp response.
-        /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="sessionAsking"></param>
-        /// <param name="dcurr"></param>
-        /// <param name="dend"></param>
-        /// <param name="count"></param>
-        /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
-        {
-            // If cluster is not enabled or a transaction is running skip slot check
-            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running)
-                return false;
-
-            var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, count);
-
-            if (vres.state == SlotVerifiedState.OK)
-                return false;
-            else
-                WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
-            return true;
-        }
-
-        /// <summary>
         /// Verify multi-key slot ownership
         /// </summary>
         /// <param name="parseState"></param>
@@ -120,13 +94,13 @@ namespace Garnet.cluster
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <returns></returns>
-        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn, csvi.waitForStableSlot);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
@@ -142,14 +116,15 @@ namespace Garnet.cluster
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
+        /// <param name="isTxn"></param>
         /// <returns></returns>
-        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi, isTxn, csvi.waitForStableSlot);
 
             return vres.state != SlotVerifiedState.OK;
         }

@@ -3004,7 +3004,7 @@ namespace Garnet.server
             static (RespCommand Parsed, bool BadArg) PrepareAndCheckRespRequest(
                 ref LuaStateWrapper state,
                 RespServerSession respServerSession,
-                ScratchBufferBuilder scratchBufferManager,
+                ScratchBufferBuilder scratchBufferBuilder,
                 RespCommandsInfo cmdInfo,
                 ReadOnlySpan<byte> cmdSpan,
                 int luaArgCount
@@ -3019,8 +3019,8 @@ namespace Garnet.server
 
                 // RESP format the args so we can parse the command (and sub-command, and maybe keys down the line?)
 
-                scratchBufferManager.Reset();
-                scratchBufferManager.StartCommand(cmdSpan, actualRespArgCount);
+                scratchBufferBuilder.Reset();
+                scratchBufferBuilder.StartCommand(cmdSpan, actualRespArgCount);
 
                 for (var i = 0; i < actualRespArgCount; i++)
                 {
@@ -3032,7 +3032,7 @@ namespace Garnet.server
                         var argType = state.Type(stackIx);
                         if (argType == LuaType.Nil)
                         {
-                            scratchBufferManager.WriteNullArgument();
+                            scratchBufferBuilder.WriteNullArgument();
                         }
                         else if (argType is LuaType.String or LuaType.Number)
                         {
@@ -3042,7 +3042,7 @@ namespace Garnet.server
                             state.KnownStringToBuffer(stackIx, out var span);
 
                             // Span remains pinned so long as we don't pop the stack
-                            scratchBufferManager.WriteArgument(span);
+                            scratchBufferBuilder.WriteArgument(span);
                         }
                         else
                         {
@@ -3052,11 +3052,11 @@ namespace Garnet.server
                     else
                     {
                         // For args we don't have, shove in an empty string
-                        scratchBufferManager.WriteArgument(default);
+                        scratchBufferBuilder.WriteArgument(default);
                     }
                 }
 
-                var request = scratchBufferManager.ViewFullArgSlice();
+                var request = scratchBufferBuilder.ViewFullArgSlice();
                 var parsedCommand = respServerSession.ParseRespCommandBuffer(request.ReadOnlySpan);
 
                 return (parsedCommand, false);

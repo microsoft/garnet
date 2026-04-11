@@ -46,5 +46,11 @@ namespace Garnet.server
         /// Start server
         /// </summary>
         public void Start();
+
+        /// <summary>
+        /// Stop listening for new connections. Frees the listening port
+        /// without waiting for active connections to drain.
+        /// </summary>
+        public void Close();
     }
 }

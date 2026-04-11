@@ -8,9 +8,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Represents a logical database in Garnet
     /// </summary>
@@ -83,6 +80,14 @@ namespace Garnet.server
         public SingleWriterMultiReaderLock CheckpointingLock;
 
         /// <summary>
+        /// Per-DB VectorManager
+        /// 
+        /// Contexts, metadata, and associated namespaces are DB-specific, and meaningless
+        /// outside of the container DB.
+        /// </summary>
+        public readonly VectorManager VectorManager;
+
+        /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
         internal StorageSession StoreCollectionDbStorageSession;
@@ -94,36 +99,38 @@ namespace Garnet.server
 
         internal StorageSession HybridLogStatScanStorageSession;
 
-        private KVSettings kvSettings;
+        private KVSettings KvSettings;
 
         bool disposed = false;
 
-        public GarnetDatabase(KVSettings kvSettings, int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, LightEpoch epoch, StateMachineDriver stateMachineDriver,
-                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut)
+        public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager)
             : this()
         {
-            this.kvSettings = kvSettings;
             Id = id;
             Store = store;
+            KvSettings = kvSettings;
             Epoch = epoch;
             StateMachineDriver = stateMachineDriver;
             SizeTracker = sizeTracker;
             AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
             StoreIndexMaxedOut = storeIndexMaxedOut;
+            VectorManager = vectorManager;
         }
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
         {
-            kvSettings = srcDb.kvSettings;
             Id = id;
             Store = srcDb.Store;
+            KvSettings = srcDb.KvSettings;
             Epoch = srcDb.Epoch;
             StateMachineDriver = srcDb.StateMachineDriver;
             SizeTracker = srcDb.SizeTracker;
             AofDevice = enableAof ? srcDb.AofDevice : null;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             StoreIndexMaxedOut = srcDb.StoreIndexMaxedOut;
+            VectorManager = srcDb.VectorManager;
 
             if (copyLastSaveData)
             {
@@ -148,27 +155,22 @@ namespace Garnet.server
                 return;
             disposed = true;
 
+            // Shutdown vector replays and cleanup operations
+            VectorManager?.Dispose();
+
             // Wait for checkpoints to complete and disable checkpointing
-            CheckpointingLock.CloseLock();
+            while (!CheckpointingLock.TryWriteLock())
+                _ = Thread.Yield();
 
             Store?.Dispose();
+            KvSettings?.LogDevice?.Dispose();
+            KvSettings?.ObjectLogDevice?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
             StoreCollectionDbStorageSession?.Dispose();
             StoreExpiredKeyDeletionDbStorageSession?.Dispose();
 
-            kvSettings?.LogDevice?.Dispose();
-            kvSettings?.ObjectLogDevice?.Dispose();
-
-            if (SizeTracker != null)
-            {
-                // If tracker has previously started, wait for it to stop
-                if (!SizeTracker.TryPreventStart())
-                {
-                    while (!SizeTracker.Stopped)
-                        Thread.Yield();
-                }
-            }
+            SizeTracker?.Stop();
         }
     }
 }

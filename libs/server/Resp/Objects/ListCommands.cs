@@ -39,10 +39,11 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
-                ? storageApi.ListLeftPush(key, ref input, out var output)
-                : storageApi.ListRightPush(key, ref input, out output);
+                ? storageApi.ListLeftPush(key, ref input, ref output)
+                : storageApi.ListRightPush(key, ref input, ref output);
 
             if (status == GarnetStatus.WRONGTYPE)
             {
@@ -96,7 +97,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(key, ref input, ref output)
@@ -141,7 +142,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListPosition(key, ref input, ref output);
 
@@ -415,8 +416,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
             var input = new ObjectInput(header);
+            var output = new ObjectOutput();
 
-            var status = storageApi.ListLength(key, ref input, out var output);
+            var status = storageApi.ListLength(key, ref input, ref output);
 
             switch (status)
             {
@@ -516,7 +518,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListRange(key, ref input, ref output);
 
@@ -567,7 +569,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListIndex(key, ref input, ref output);
 
@@ -576,7 +578,7 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     //process output
                     ProcessOutput(output.SpanByteAndMemory);
-                    if (output.Header.result1 == -1)
+                    if (output.result1 == -1)
                         WriteNull();
                     break;
                 case GarnetStatus.NOTFOUND:
@@ -610,8 +612,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINSERT };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var output = new ObjectOutput();
 
-            var statusOp = storageApi.ListInsert(key, ref input, out var output);
+            var statusOp = storageApi.ListInsert(key, ref input, ref output);
 
             switch (statusOp)
             {
@@ -663,8 +666,9 @@ namespace Garnet.server
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LREM };
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: nCount);
+            var output = new ObjectOutput();
 
-            var statusOp = storageApi.ListRemove(key, ref input, out var output);
+            var statusOp = storageApi.ListRemove(key, ref input, ref output);
 
             switch (statusOp)
             {
@@ -816,7 +820,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = GetObjectOutput();
 
             var statusOp = storageApi.ListSet(key, ref input, ref output);
 

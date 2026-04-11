@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +14,9 @@ namespace Tsavorite.test.LowMemory
     using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
     using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class LowMemoryTests
+    public class LowMemoryTests : AllureTestBase
     {
         IDevice log;
         TsavoriteKV<LongStoreFunctions, LongAllocator> store1;
@@ -31,7 +34,7 @@ namespace Tsavorite.test.LowMemory
                 LogDevice = log,
                 MutableFraction = 1,
                 PageSize = 1L << 10,
-                MemorySize = 1L << 12,
+                LogMemorySize = 1L << 12,
                 SegmentSize = 1L << 26,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
@@ -46,14 +49,14 @@ namespace Tsavorite.test.LowMemory
             store1 = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
-        private static void Populate(ClientSession<long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> s1)
+        private static void Populate(ClientSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> s1)
         {
             var bContext1 = s1.BasicContext;
             for (long key = 0; key < NumOps; key++)
-                _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
+                _ = bContext1.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref key));
         }
 
         [Test]
@@ -61,7 +64,7 @@ namespace Tsavorite.test.LowMemory
         [Category(StressTestCategory)]
         public void LowMemConcurrentUpsertReadTest()
         {
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
+            using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
             var bContext1 = s1.BasicContext;
 
             Populate(s1);
@@ -70,7 +73,7 @@ namespace Tsavorite.test.LowMemory
             var numCompleted = 0;
             for (long key = 0; key < NumOps; key++)
             {
-                var (status, output) = bContext1.Read(SpanByte.FromPinnedVariable(ref key));
+                var (status, output) = bContext1.Read(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)));
                 if (!status.IsPending)
                 {
                     ++numCompleted;
@@ -86,7 +89,7 @@ namespace Tsavorite.test.LowMemory
                 {
                     ++numCompleted;
                     ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
-                    ClassicAssert.AreEqual(completedOutputs.Current.Key.AsRef<long>(), completedOutputs.Current.Output);
+                    ClassicAssert.AreEqual(completedOutputs.Current.Key.KeyBytes.AsRef<long>(), completedOutputs.Current.Output);
                 }
             }
             ClassicAssert.AreEqual(NumOps, numCompleted, "numCompleted");
@@ -97,7 +100,7 @@ namespace Tsavorite.test.LowMemory
         [Category(StressTestCategory)]
         public void LowMemConcurrentUpsertRMWReadTest()
         {
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
+            using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
             var bContext1 = s1.BasicContext;
 
             Populate(s1);
@@ -106,7 +109,7 @@ namespace Tsavorite.test.LowMemory
             int numPending = 0;
             for (long key = 0; key < NumOps; key++)
             {
-                var status = bContext1.RMW(SpanByte.FromPinnedVariable(ref key), ref key);
+                var status = bContext1.RMW(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)), ref key);
                 if (status.IsPending && (++numPending % 256) == 0)
                 {
                     _ = bContext1.CompletePending(wait: true);
@@ -120,7 +123,7 @@ namespace Tsavorite.test.LowMemory
             var numCompleted = 0;
             for (long key = 0; key < NumOps; key++)
             {
-                var (status, output) = bContext1.Read(SpanByte.FromPinnedVariable(ref key));
+                var (status, output) = bContext1.Read(TestSpanByteKey.CopySpan(SpanByte.FromPinnedVariable(ref key)));
                 if (!status.IsPending)
                 {
                     ++numCompleted;
@@ -136,7 +139,7 @@ namespace Tsavorite.test.LowMemory
                 {
                     ++numCompleted;
                     ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
-                    ClassicAssert.AreEqual(completedOutputs.Current.Key.AsRef<long>() * 2, completedOutputs.Current.Output);
+                    ClassicAssert.AreEqual(completedOutputs.Current.Key.KeyBytes.AsRef<long>() * 2, completedOutputs.Current.Output);
                 }
             }
             ClassicAssert.AreEqual(NumOps, numCompleted, "numCompleted");

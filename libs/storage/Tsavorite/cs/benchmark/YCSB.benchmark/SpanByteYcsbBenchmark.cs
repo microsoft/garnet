@@ -16,7 +16,7 @@ namespace Tsavorite.benchmark
 
     internal static class SpanByteYcsbConstants
     {
-        internal const int kValueDataSize = 100;
+        internal const int kValueDataSize = 96;
     }
 
     internal class SpanByteYcsbBenchmark<TAllocator>
@@ -37,13 +37,15 @@ namespace Tsavorite.benchmark
         readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        readonly TsavoriteKV<SpanByteStoreFunctions, TAllocator> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
+        internal const int kValueDataSize = SpanByteYcsbConstants.kValueDataSize;
+
+        internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader, Func<AllocatorSettings, SpanByteStoreFunctions, TAllocator> allocatorFactory)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -76,7 +78,7 @@ namespace Tsavorite.benchmark
                         [
                             new RevivificationBin()
                             {
-                                RecordSize = RecordInfo.Size + KeySpanByte.TotalSize + SpanByteYcsbConstants.kValueDataSize + 8,    // extra to ensure rounding up of value
+                                RecordSize = RecordInfo.Size + KeySpanByte.DataSize + kValueDataSize + 8,   // extra to ensure rounding up of value
                                 NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                                 BestFitScanLimit = RevivificationBin.UseFirstFit
                             }
@@ -98,7 +100,7 @@ namespace Tsavorite.benchmark
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,
                 PreallocateLog = true,
-                MemorySize = 1L << 35,
+                LogMemorySize = 1L << 35,
                 RevivificationSettings = revivificationSettings,
                 CheckpointDir = testLoader.BackupPath
             };
@@ -107,12 +109,12 @@ namespace Tsavorite.benchmark
             {
                 kvSettings.PageSize = 1L << 22;
                 kvSettings.SegmentSize = 1L << 26;
-                kvSettings.MemorySize = 1L << 26;
+                kvSettings.LogMemorySize = 1L << 26;
             }
 
             store = new(kvSettings
-                , StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordDisposer())
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                , StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordDisposer())
+                , allocatorFactory
             );
         }
 
@@ -137,9 +139,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
-            Span<byte> input = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
-            Span<byte> output = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
+            Span<byte> input = stackalloc byte[kValueDataSize];
+            Span<byte> output = stackalloc byte[kValueDataSize];
 
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
@@ -149,7 +151,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -176,7 +178,7 @@ namespace Tsavorite.benchmark
                         unsafe
                         {
                             // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                            var key = txn_keys_[idx].AsReadOnlySpan();
+                            var key = txn_keys_[idx];
 
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
@@ -233,9 +235,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
-            Span<byte> input = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
-            Span<byte> output = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
+            Span<byte> input = stackalloc byte[kValueDataSize];
+            Span<byte> output = stackalloc byte[kValueDataSize];
 
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
@@ -245,7 +247,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
             while (!done)
@@ -270,7 +272,7 @@ namespace Tsavorite.benchmark
                     unsafe
                     {
                         // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                        var key = txn_keys_[idx].AsReadOnlySpan();
+                        var key = txn_keys_[idx];
 
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
@@ -431,11 +433,11 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
-            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
 
             try
             {
@@ -453,7 +455,7 @@ namespace Tsavorite.benchmark
                         }
 
                         // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                        uContext.Upsert(init_keys_[idx].AsReadOnlySpan(), value, Empty.Default);
+                        _ = uContext.Upsert(init_keys_[idx], value, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -475,10 +477,10 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<KeySpanByte, PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
-            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -494,7 +496,7 @@ namespace Tsavorite.benchmark
                     }
 
                     // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
-                    bContext.Upsert(init_keys_[idx].AsReadOnlySpan(), value, Empty.Default);
+                    _ = bContext.Upsert(init_keys_[idx], value, Empty.Default);
                 }
             }
 

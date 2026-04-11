@@ -20,7 +20,6 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
         readonly int logPageSizeBits, logPageSizeMask;
-        readonly long TruncateLagAddress;
 
         AofSyncTaskInfo[] tasks;
         int numTasks;
@@ -42,7 +41,6 @@ namespace Garnet.cluster
                 logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.FastAofTruncate)
                     clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
-                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
             }
             TruncatedUntil = 0;
         }
@@ -56,10 +54,9 @@ namespace Garnet.cluster
             // Call truncate only once per page
             if (oldPage != newPage)
             {
-                // Truncate 2 pages after ReadOnly mark, so that we have sufficient time to shift begin before we flush
-                long truncateUntilAddress = (newTailAddress & ~logPageSizeMask) - TruncateLagAddress;
-                // Do not truncate beyond new tail (to handle corner cases)
-                if (truncateUntilAddress > newTailAddress) truncateUntilAddress = newTailAddress;
+                // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
+                // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
+                var truncateUntilAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressAbove(newTailAddress, numPagesAbove: 2);
                 if (truncateUntilAddress > 0)
                     SafeTruncateAof(truncateUntilAddress);
             }
