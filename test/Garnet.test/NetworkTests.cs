@@ -233,7 +233,9 @@ namespace Garnet.test
                 ManualResetEventSlim e = new();
                 string val = null;
                 db.StringSet("after_injection", "works", (c, r) => { val = r; e.Set(); });
-                e.Wait();
+                ClassicAssert.IsTrue(
+                    e.Wait(System.TimeSpan.FromSeconds(5)),
+                    "Timed out waiting for StringSet callback after exception-injection cleanup test.");
                 ClassicAssert.AreEqual("OK", val);
 
                 // Safe to dispose — no leaked handlers
