@@ -36,8 +36,10 @@ namespace Garnet.cluster
 
         internal readonly ActiveWorkerMonitor batchWorkerMonitor;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ResumeReplay() => activeWorkerMonitor.TryEnter();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SuspendReplay() => _ = activeWorkerMonitor.Exit();
 
         /// <summary>

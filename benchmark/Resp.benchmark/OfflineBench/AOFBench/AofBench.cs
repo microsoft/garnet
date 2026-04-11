@@ -82,7 +82,10 @@ namespace Resp.benchmark
 
             try
             {
-                Console.WriteLine($">>> Running {options.AofBenchType} using {threads} thread(s) >>>");
+                if(options.AofBenchType is AofBenchType.Replay)
+                    Console.WriteLine($">>> Running {options.AofBenchType} using {threads} worker(s) >>>");
+                else
+                    Console.WriteLine($">>> Running {options.AofBenchType} using {threads}x{options.AofReplayTaskCount} worker(s) >>>");
 
                 if (options.AofBenchType is AofBenchType.EnqueueRandom or AofBenchType.EnqueueSharded)
                     aofTailAddress = aofGen.appendOnlyFile.Log.TailAddress;
