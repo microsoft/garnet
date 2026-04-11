@@ -101,35 +101,40 @@ namespace Garnet.test
             // Connect multiple clients and verify they register as active handlers
             const int clientCount = 5;
             var clients = new Garnet.client.GarnetClient[clientCount];
-            for (int i = 0; i < clientCount; i++)
+            try
             {
-                clients[i] = TestUtils.GetGarnetClient(useTLS: true);
-                clients[i].Connect();
+                for (int i = 0; i < clientCount; i++)
+                {
+                    clients[i] = TestUtils.GetGarnetClient(useTLS: true);
+                    clients[i].Connect();
 
-                // Verify the connection works
-                ManualResetEventSlim done = new();
-                string result = null;
-                clients[i].StringSet($"key{i}", $"value{i}", (c, r) => { result = r; done.Set(); });
-                done.Wait();
-                ClassicAssert.AreEqual("OK", result);
+                    // Verify the connection works
+                    ManualResetEventSlim done = new();
+                    string result = null;
+                    clients[i].StringSet($"key{i}", $"value{i}", (c, r) => { result = r; done.Set(); });
+                    ClassicAssert.IsTrue(done.Wait(5000), $"Timed out waiting for StringSet callback on client {i}");
+                    ClassicAssert.AreEqual("OK", result);
+                }
+
+                // Wait for all connections to be registered
+                var deadline = System.Environment.TickCount64 + 5000;
+                while (garnetServerTcp.get_conn_active() < clientCount && System.Environment.TickCount64 < deadline)
+                    Thread.Sleep(50);
+                ClassicAssert.GreaterOrEqual(garnetServerTcp.get_conn_active(), clientCount,
+                    "Expected all clients to be registered as active handlers");
             }
-
-            // Wait for all connections to be registered
-            var deadline = System.Environment.TickCount64 + 5000;
-            while (garnetServerTcp.get_conn_active() < clientCount && System.Environment.TickCount64 < deadline)
-                Thread.Sleep(50);
-            ClassicAssert.GreaterOrEqual(garnetServerTcp.get_conn_active(), clientCount,
-                "Expected all clients to be registered as active handlers");
-
-            // Abruptly dispose all clients (sends FIN, simulating remote peer disconnect)
-            for (int i = 0; i < clientCount; i++)
+            finally
             {
-                clients[i].Dispose();
+                // Abruptly dispose all clients (sends FIN, simulating remote peer disconnect)
+                for (int i = 0; i < clientCount; i++)
+                {
+                    clients[i]?.Dispose();
+                }
             }
 
             // Wait for the server to detect the disconnections and clean up handlers
-            deadline = System.Environment.TickCount64 + 10000;
-            while (garnetServerTcp.get_conn_active() > 0 && System.Environment.TickCount64 < deadline)
+            var deadline2 = System.Environment.TickCount64 + 10000;
+            while (garnetServerTcp.get_conn_active() > 0 && System.Environment.TickCount64 < deadline2)
                 Thread.Sleep(100);
 
             ClassicAssert.AreEqual(0, garnetServerTcp.get_conn_active(),
@@ -143,7 +148,7 @@ namespace Garnet.test
             ManualResetEventSlim e = new();
             string val = null;
             db.StringSet("after_cleanup", "works", (c, r) => { val = r; e.Set(); });
-            e.Wait();
+            ClassicAssert.IsTrue(e.Wait(5000), "Timed out waiting for post-cleanup StringSet callback");
             ClassicAssert.AreEqual("OK", val);
         }
 
@@ -212,11 +217,18 @@ namespace Garnet.test
 
                 if (activeCount > 0)
                 {
-                    // Bug confirmed: handlers leaked. Don't try to dispose the server
-                    // (it would hang forever in DisposeActiveHandlers). Just fail.
+                    // Bug confirmed: handlers leaked. Attempt best-effort cleanup
+                    // on a background thread with a timeout so we don't leave a live
+                    // listener running for the rest of the test suite.
+                    var disposeTask = Task.Run(() =>
+                    {
+                        try { testServer.Dispose(); }
+                        catch { /* best effort */ }
+                    });
+                    disposeTask.Wait(TimeSpan.FromSeconds(5));
+
                     ClassicAssert.Fail(
-                        $"Leaked {activeCount} handler(s): Dispose() did not call DisposeImpl() to remove handler from activeHandlers. " +
-                        "Server disposal skipped to avoid hanging on the leaked handlers.");
+                        $"Leaked {activeCount} handler(s): Dispose() did not call DisposeImpl() to remove handler from activeHandlers.");
                 }
 
                 // If we get here, the fix is working — handlers were cleaned up properly.
@@ -226,7 +238,7 @@ namespace Garnet.test
                 ManualResetEventSlim e = new();
                 string val = null;
                 db.StringSet("after_injection", "works", (c, r) => { val = r; e.Set(); });
-                e.Wait();
+                ClassicAssert.IsTrue(e.Wait(5000), "Timed out waiting for post-injection StringSet callback");
                 ClassicAssert.AreEqual("OK", val);
 
                 // Safe to dispose — no leaked handlers
@@ -234,8 +246,14 @@ namespace Garnet.test
             }
             catch
             {
-                // On failure, don't dispose testServer (it would hang).
-                // Let the OS reclaim resources when the process exits.
+                // Best-effort cleanup on failure — attempt disposal with a timeout
+                // to avoid leaving a live listener for the rest of the test run.
+                var disposeTask = Task.Run(() =>
+                {
+                    try { testServer.Dispose(); }
+                    catch { /* best effort */ }
+                });
+                disposeTask.Wait(TimeSpan.FromSeconds(5));
                 throw;
             }
             finally
