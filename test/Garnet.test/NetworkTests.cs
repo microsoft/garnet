@@ -205,11 +205,18 @@ namespace Garnet.test
                     ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Dispose_After_Handler_Registered_Before_Start);
                 }
 
-                // Give server a moment to finish processing
-                Thread.Sleep(500);
-
+                // Poll until the server finishes processing accepts/disposals, or time out.
+                const int pollIntervalMs = 50;
+                const int maxWaitMs = 2000;
+                int waitedMs = 0;
                 long activeCount = garnetServerTcp.get_conn_active();
 
+                while (activeCount > 0 && waitedMs < maxWaitMs)
+                {
+                    Thread.Sleep(pollIntervalMs);
+                    waitedMs += pollIntervalMs;
+                    activeCount = garnetServerTcp.get_conn_active();
+                }
                 if (activeCount > 0)
                 {
                     // Bug confirmed: handlers leaked. Don't try to dispose the server
