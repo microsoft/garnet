@@ -6,11 +6,35 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Record disposer for Garnet's unified store. Enables per-record disposal
-    /// on page eviction and record lifecycle events via <see cref="IRecordDisposer.DisposeRecord"/>.
+    /// Record disposer for Garnet's unified store. Handles per-record cleanup on delete
+    /// and page eviction via <see cref="IRecordDisposer.DisposeRecord"/>.
     /// </summary>
     public struct GarnetRecordDisposer : IRecordDisposer
     {
+        /// <summary>
+        /// Holder for cache size tracker reference. Uses a wrapper class so the reference
+        /// can be set after store creation (CacheSizeTracker requires the store in its
+        /// constructor, but GarnetRecordDisposer is created with the store).
+        /// </summary>
+        public sealed class CacheSizeTrackerHolder
+        {
+            /// <summary>The cache size tracker, set after store creation.</summary>
+            public CacheSizeTracker Tracker;
+        }
+
+        /// <summary>
+        /// Holder for cache size tracker, set after store creation.
+        /// </summary>
+        internal readonly CacheSizeTrackerHolder cacheSizeTrackerHolder;
+
+        /// <summary>
+        /// Creates a GarnetRecordDisposer.
+        /// </summary>
+        public GarnetRecordDisposer(CacheSizeTrackerHolder cacheSizeTrackerHolder)
+        {
+            this.cacheSizeTrackerHolder = cacheSizeTrackerHolder;
+        }
+
         /// <inheritdoc/>
         public readonly bool DisposeOnPageEviction => false;
 
@@ -23,8 +47,11 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
         {
-            // Dispatch based on RecordType for inline records with external resources.
-            // Specific record type handlers (e.g. RangeIndex) will be added here.
+            // Handle heap objects: update cache size tracker on delete
+            if (logRecord.Info.ValueIsObject && reason == DisposeReason.Deleted)
+            {
+                cacheSizeTrackerHolder?.Tracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
+            }
         }
     }
 }

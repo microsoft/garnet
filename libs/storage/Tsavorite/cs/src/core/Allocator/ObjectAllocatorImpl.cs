@@ -328,6 +328,9 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
+                if (disposeReason == DisposeReason.Deleted)
+                    storeFunctions.DisposeRecord(ref logRecord, disposeReason);
+
                 logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.DisposeValueObject(obj, disposeReason));
                 logRecord.ClearOptionals();
             }
@@ -367,8 +370,9 @@ namespace Tsavorite.core
                 if (offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null and closed/sealed records
-                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan)
+                // Skip null, closed/sealed, and tombstoned records (tombstoned records were already
+                // disposed with DisposeReason.Deleted at the delete site)
+                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan || logRecord.Info.Tombstone)
                 {
                     address += allocatedSize;
                     continue;

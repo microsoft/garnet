@@ -197,8 +197,12 @@ namespace Tsavorite.core
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             if (logRecord.IsSet)
+            {
+                if (disposeReason == DisposeReason.Deleted)
+                    storeFunctions.DisposeRecord(ref logRecord, disposeReason);
+
                 logRecord.ClearOptionals();
-            // Key and Value are always inline in the SpanByteAllocator so this is a no-op
+            }
         }
 
         internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }

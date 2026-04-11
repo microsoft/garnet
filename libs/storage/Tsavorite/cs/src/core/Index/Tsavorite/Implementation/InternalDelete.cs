@@ -124,14 +124,16 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
+                        // Immediately dispose all resources: app callback (storeFunctions.DisposeRecord)
+                        // + ClearHeapFields + ClearOptionals — all via hlog.DisposeRecord.
+                        DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
+
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
-                        else
-                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
@@ -260,7 +262,11 @@ namespace Tsavorite.core
 
                 // Success should always Seal the old record. This may be readcache or readonly, which is OK.
                 if (stackCtx.recSrc.HasMainLogSrc)
+                {
+                    // Immediately dispose all resources on the source record before sealing.
+                    DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
+                }
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;

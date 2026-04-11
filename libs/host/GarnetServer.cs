@@ -365,14 +365,21 @@ namespace Garnet
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
+            // Create a holder for cache size tracker so GarnetRecordDisposer can reference it.
+            // The actual CacheSizeTracker is set after store creation (it requires the store).
+            var cacheSizeTrackerHolder = new GarnetRecordDisposer.CacheSizeTrackerHolder();
+
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager),
-                    new GarnetRecordDisposer())
+                    new GarnetRecordDisposer(cacheSizeTrackerHolder))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
+            {
                 sizeTracker = new CacheSizeTracker(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
+                cacheSizeTrackerHolder.Tracker = sizeTracker;
+            }
             return store;
         }
 
