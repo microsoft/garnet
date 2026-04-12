@@ -15,8 +15,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
 
     public enum DeviceMode
     {
@@ -114,7 +114,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -168,7 +168,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -236,7 +236,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -252,7 +252,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -352,7 +352,7 @@ namespace Tsavorite.test.recovery
                     PageSize = pageSize,
                     LogMemorySize = 1L << 20,
                     CheckpointDir = MethodTestDir
-                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
@@ -413,7 +413,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 11,
                 SegmentSize = 1L << 11,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -535,7 +535,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -551,7 +551,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -659,7 +659,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -675,7 +675,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -785,7 +785,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -860,7 +860,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -949,7 +949,7 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 LogMemorySize = 1L << 20,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1019,7 +1019,7 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 LogMemorySize = 1L << 14,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1056,7 +1056,7 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 LogMemorySize = 1L << 14,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1150,7 +1150,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1229,7 +1229,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 ReadCacheEnabled = readCacheMode == ReadCacheMode.UseRC,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

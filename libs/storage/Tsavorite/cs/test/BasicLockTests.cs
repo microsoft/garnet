@@ -14,7 +14,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTests
 {
-    using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordDisposer>;
+    using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]
@@ -90,7 +90,7 @@ namespace Tsavorite.test.LockTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = log
-            }, StoreFunctions.Create(keyComparer, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(keyComparer, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<TestSpanByteKey, long, long, Empty, Functions>(new Functions());

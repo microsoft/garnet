@@ -13,7 +13,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Expiration
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]
@@ -523,7 +523,7 @@ namespace Tsavorite.test.Expiration
                 LogDevice = log,
                 LogMemorySize = 1L << 19,
                 PageSize = 1L << 14
-            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

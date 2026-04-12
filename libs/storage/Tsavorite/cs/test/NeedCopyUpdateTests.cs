@@ -11,11 +11,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
 
-    using RMWValueAllocator = ObjectAllocator<StoreFunctions<IntKeyComparer, DefaultRecordDisposer>>;
-    using RMWValueStoreFunctions = StoreFunctions<IntKeyComparer, DefaultRecordDisposer>;
+    using RMWValueAllocator = ObjectAllocator<StoreFunctions<IntKeyComparer, DefaultRecordTrigger>>;
+    using RMWValueStoreFunctions = StoreFunctions<IntKeyComparer, DefaultRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]
@@ -212,7 +212,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << (PageSizeBits + 1),
                 PageSize = 1L << PageSizeBits
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

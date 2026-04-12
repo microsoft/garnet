@@ -14,8 +14,8 @@ using Tsavorite.core;
 namespace Tsavorite.test.recovery
 {
     using static Tsavorite.test.TestUtils;
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, DefaultRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, DefaultRecordTrigger>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordTrigger>;
 
     public enum TimeFuzzMode { TimeFuzz, NoTimeFuzz };
 

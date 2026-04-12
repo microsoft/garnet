@@ -7,14 +7,14 @@ namespace Garnet.server
 {
     /// <summary>
     /// Record disposer for Garnet's unified store. Handles per-record cleanup on delete
-    /// and page eviction via <see cref="IRecordDisposer.DisposeRecord"/>.
+    /// and page eviction via <see cref="IRecordTrigger.DisposeRecord"/>.
     /// </summary>
-    public struct GarnetRecordDisposer : IRecordDisposer
+    public struct GarnetRecordTrigger : IRecordTrigger
     {
         /// <summary>
         /// Holder for cache size tracker reference. Uses a wrapper class so the reference
         /// can be set after store creation (CacheSizeTracker requires the store in its
-        /// constructor, but GarnetRecordDisposer is created with the store).
+        /// constructor, but GarnetRecordTrigger is created with the store).
         /// </summary>
         public sealed class CacheSizeTrackerHolder
         {
@@ -28,9 +28,9 @@ namespace Garnet.server
         internal readonly CacheSizeTrackerHolder cacheSizeTrackerHolder;
 
         /// <summary>
-        /// Creates a GarnetRecordDisposer.
+        /// Creates a GarnetRecordTrigger.
         /// </summary>
-        public GarnetRecordDisposer(CacheSizeTrackerHolder cacheSizeTrackerHolder)
+        public GarnetRecordTrigger(CacheSizeTrackerHolder cacheSizeTrackerHolder)
         {
             this.cacheSizeTrackerHolder = cacheSizeTrackerHolder;
         }

@@ -32,7 +32,7 @@ namespace Garnet.server
                 deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
             // Heap object cache-size tracking and disposal are handled by
-            // storeFunctions.DisposeRecord (GarnetRecordDisposer) which is called
+            // storeFunctions.DisposeRecord (GarnetRecordTrigger) which is called
             // by Tsavorite after InPlaceDeleter returns.
             return true;
         }

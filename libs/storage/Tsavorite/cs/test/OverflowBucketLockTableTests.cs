@@ -15,7 +15,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTable
 {
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
 
     internal class SingleBucketComparer : IKeyComparer
     {
@@ -76,7 +76,7 @@ namespace Tsavorite.test.LockTable
                 LogDevice = log,
                 PageSize = 1L << 12,
                 LogMemorySize = 1L << 22
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

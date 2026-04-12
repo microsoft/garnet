@@ -8,7 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Interface to implement the Disposer component of <see cref="IStoreFunctions"/>
     /// </summary>
-    public interface IRecordDisposer
+    public interface IRecordTrigger
     {
         /// <summary>
         /// If true, <see cref="DisposeRecord(ref LogRecord, DisposeReason)"/> is called per record
@@ -30,15 +30,15 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Default no-op implementation if <see cref="IRecordDisposer"/>
+    /// Default no-op implementation if <see cref="IRecordTrigger"/>
     /// </summary>
     /// <remarks>It is appropriate to call methods on this instance as a no-op.</remarks>
-    public struct DefaultRecordDisposer : IRecordDisposer
+    public struct DefaultRecordTrigger : IRecordTrigger
     {
         /// <summary>
         /// Default instance
         /// </summary>
-        public static readonly DefaultRecordDisposer Instance = new();
+        public static readonly DefaultRecordTrigger Instance = new();
 
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.
@@ -52,14 +52,14 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// No-op implementation of <see cref="IRecordDisposer"/> for SpanByte
+    /// No-op implementation of <see cref="IRecordTrigger"/> for SpanByte
     /// </summary>
-    public struct SpanByteRecordDisposer : IRecordDisposer    // TODO remove for dual
+    public struct SpanByteRecordTrigger : IRecordTrigger    // TODO remove for dual
     {
         /// <summary>
         /// Default instance
         /// </summary>
-        public static readonly SpanByteRecordDisposer Instance = new();
+        public static readonly SpanByteRecordTrigger Instance = new();
 
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.

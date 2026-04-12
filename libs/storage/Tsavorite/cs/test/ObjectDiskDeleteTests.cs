@@ -11,8 +11,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTrigger>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]

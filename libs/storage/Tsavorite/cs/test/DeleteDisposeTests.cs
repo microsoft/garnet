@@ -12,20 +12,20 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ObjTrackingAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordDisposer>>;
-    using ObjTrackingStoreFunctions = StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordDisposer>;
+    using ObjTrackingAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordTrigger>>;
+    using ObjTrackingStoreFunctions = StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordTrigger>;
 
-    using TrackingAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordDisposer>>;
-    using TrackingStoreFunctions = StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordDisposer>;
+    using TrackingAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTrigger>>;
+    using TrackingStoreFunctions = StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]
     internal class DeleteDisposeTests : AllureTestBase
     {
-        internal struct TrackingRecordDisposer : IRecordDisposer
+        internal struct TrackingRecordTrigger : IRecordTrigger
         {
             internal readonly DisposeTracker tracker;
-            public TrackingRecordDisposer(DisposeTracker tracker) => this.tracker = tracker;
+            public TrackingRecordTrigger(DisposeTracker tracker) => this.tracker = tracker;
             public readonly bool DisposeOnPageEviction => false;
             public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
             public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) => tracker?.RecordDispose(reason);
@@ -94,7 +94,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions.Create(IntKeyComparer.Instance, new TrackingRecordDisposer(tracker))
+            }, StoreFunctions.Create(IntKeyComparer.Instance, new TrackingRecordTrigger(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
@@ -238,17 +238,17 @@ namespace Tsavorite.test
     }
 
     /// <summary>
-    /// Tests that both <see cref="IRecordDisposer.DisposeRecord"/> and <see cref="IRecordDisposer.DisposeValueObject"/>
+    /// Tests that both <see cref="IRecordTrigger.DisposeRecord"/> and <see cref="IRecordTrigger.DisposeValueObject"/>
     /// are called exactly once for IHeapObject records through all delete and expiration paths.
     /// </summary>
     [AllureNUnit]
     [TestFixture]
     internal class ObjectDeleteDisposeTests : AllureTestBase
     {
-        internal struct ObjTrackingRecordDisposer : IRecordDisposer
+        internal struct ObjTrackingRecordTrigger : IRecordTrigger
         {
             internal readonly ObjDisposeTracker tracker;
-            public ObjTrackingRecordDisposer(ObjDisposeTracker tracker) => this.tracker = tracker;
+            public ObjTrackingRecordTrigger(ObjDisposeTracker tracker) => this.tracker = tracker;
             public readonly bool DisposeOnPageEviction => false;
 
             public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason)
@@ -331,7 +331,7 @@ namespace Tsavorite.test
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(),
-                    new ObjTrackingRecordDisposer(tracker))
+                    new ObjTrackingRecordTrigger(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 

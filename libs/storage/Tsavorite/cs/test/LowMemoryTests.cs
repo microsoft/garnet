@@ -11,8 +11,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LowMemory
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]
@@ -37,7 +37,7 @@ namespace Tsavorite.test.LowMemory
                 LogMemorySize = 1L << 12,
                 SegmentSize = 1L << 26,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

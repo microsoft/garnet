@@ -16,7 +16,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.InsertAtTailStressTests
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteKeyComparerModulo, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteKeyComparerModulo, SpanByteRecordTrigger>;
 
     // Number of mutable pages for this test
     public enum MutablePages
@@ -79,7 +79,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
                 MutableFraction = 8.0 / (1 << (memoryBits - pageBits)),
             };
             store = new(kvSettings
-                , StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(comparer, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

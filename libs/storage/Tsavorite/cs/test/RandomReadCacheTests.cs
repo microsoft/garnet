@@ -16,7 +16,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]
@@ -90,7 +90,7 @@ namespace Tsavorite.test.ReadCacheTests
             kvSettings.LogDevice = log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
             store = new(kvSettings
-                , StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

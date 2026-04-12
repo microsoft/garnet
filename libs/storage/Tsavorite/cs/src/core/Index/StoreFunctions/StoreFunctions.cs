@@ -16,9 +16,9 @@ namespace Tsavorite.core
     /// because there is no need to wrap calls to them with additional functionality. This can be changed to redirect if such wrapper
     /// functionality is needed.
     /// </remarks>
-    public struct StoreFunctions<TKeyComparer, TRecordDisposer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordDisposer recordDisposer) : IStoreFunctions
+    public struct StoreFunctions<TKeyComparer, TRecordTrigger>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTrigger recordTrigger) : IStoreFunctions
         where TKeyComparer : IKeyComparer
-        where TRecordDisposer : IRecordDisposer
+        where TRecordTrigger : IRecordTrigger
     {
         #region Fields
         /// <summary>Compare two keys for equality, and get a key's hash code.</summary>
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         readonly Func<IObjectSerializer<IHeapObject>> valueSerializerCreator = valueSerializerCreator;
 
         /// <summary>Dispose a record</summary>
-        readonly TRecordDisposer recordDisposer = recordDisposer;
+        readonly TRecordTrigger recordTrigger = recordTrigger;
 
         /// <summary>Optional checkpoint completion callback, set separately from ctor.</summary>
         Action checkpointCompletionCallback = () => { };
@@ -84,15 +84,15 @@ namespace Tsavorite.core
 
         #region Record Disposer
         /// <inheritdoc/>
-        public readonly bool DisposeOnPageEviction => recordDisposer.DisposeOnPageEviction;
+        public readonly bool DisposeOnPageEviction => recordTrigger.DisposeOnPageEviction;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordDisposer.DisposeValueObject(valueObject, reason);
+        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordTrigger.DisposeValueObject(valueObject, reason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) => recordDisposer.DisposeRecord(ref logRecord, reason);
+        public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) => recordTrigger.DisposeRecord(ref logRecord, reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion
@@ -112,38 +112,38 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>
-                (TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordDisposer recordDisposer)
+        public static StoreFunctions<TKeyComparer, TRecordTrigger> Create<TKeyComparer, TRecordTrigger>
+                (TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTrigger recordTrigger)
             where TKeyComparer : IKeyComparer
-            where TRecordDisposer : IRecordDisposer
-            => new(keyComparer, valueSerializerCreator, recordDisposer);
+            where TRecordTrigger : IRecordTrigger
+            => new(keyComparer, valueSerializerCreator, recordTrigger);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
+        public static StoreFunctions<TKeyComparer, DefaultRecordTrigger> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator, DefaultRecordDisposer.Instance);
+            => new(keyComparer, valueSerializerCreator, DefaultRecordTrigger.Instance);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, TRecordDisposer> Create<TKeyComparer, TRecordDisposer>(TKeyComparer keyComparer, TRecordDisposer recordDisposer)
+        public static StoreFunctions<TKeyComparer, TRecordTrigger> Create<TKeyComparer, TRecordTrigger>(TKeyComparer keyComparer, TRecordTrigger recordTrigger)
             where TKeyComparer : IKeyComparer
-            where TRecordDisposer : IRecordDisposer
-            => new(keyComparer, valueSerializerCreator: null, recordDisposer);
+            where TRecordTrigger : IRecordTrigger
+            => new(keyComparer, valueSerializerCreator: null, recordTrigger);
 
         /// <summary>
         /// Store functions that take only the <paramref name="keyComparer"/>
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer)
+        public static StoreFunctions<TKeyComparer, DefaultRecordTrigger> Create<TKeyComparer>(TKeyComparer keyComparer)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator: null, DefaultRecordDisposer.Instance);
+            => new(keyComparer, valueSerializerCreator: null, DefaultRecordTrigger.Instance);
 
         /// <summary>
         /// Store functions for <see cref="Span{_byte_}"/> Key and Value
         /// </summary>
-        public static StoreFunctions<SpanByteComparer, DefaultRecordDisposer> Create()
-            => new(SpanByteComparer.Instance, valueSerializerCreator: null, DefaultRecordDisposer.Instance);
+        public static StoreFunctions<SpanByteComparer, DefaultRecordTrigger> Create()
+            => new(SpanByteComparer.Instance, valueSerializerCreator: null, DefaultRecordTrigger.Instance);
     }
 }

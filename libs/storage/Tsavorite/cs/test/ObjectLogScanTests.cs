@@ -45,8 +45,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectValueComparerModulo, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectValueComparerModulo, DefaultRecordDisposer>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectValueComparerModulo, DefaultRecordTrigger>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectValueComparerModulo, DefaultRecordTrigger>;
 
     [AllureNUnit]
     [TestFixture]

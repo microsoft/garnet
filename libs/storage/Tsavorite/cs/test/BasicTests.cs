@@ -14,11 +14,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
 
-    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordTrigger>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordTrigger>;
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
@@ -48,7 +48,7 @@ namespace Tsavorite.test
             kvSettings.LogDevice = log;
 
             store = new(kvSettings
-                , StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -639,7 +639,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -681,7 +681,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -793,7 +793,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
