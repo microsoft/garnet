@@ -48,7 +48,7 @@ namespace Tsavorite.test.spanbyte
 
 namespace Tsavorite.test.spanbyte
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparerModulo, SpanByteRecordTrigger>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparerModulo, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -81,7 +81,7 @@ namespace Tsavorite.test.spanbyte
                 LogDevice = log,
                 LogMemorySize = 1L << 25,
                 PageSize = 1L << PageSizeBits
-            }, StoreFunctions.Create(comparer, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -405,7 +405,7 @@ namespace Tsavorite.test.spanbyte
                 LogDevice = log,
                 LogMemorySize = 1L << 20,
                 PageSize = 1L << PageSizeBits
-            }, StoreFunctions.Create(new SpanByteComparerModulo(0), SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(new SpanByteComparerModulo(0), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

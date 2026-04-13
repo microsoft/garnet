@@ -15,8 +15,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.UnsafeContext
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, DefaultRecordTrigger>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, DefaultRecordTrigger>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, DefaultRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, DefaultRecordTriggers>;
 
     //** These tests ensure the basics are fully covered - taken from BasicTests
 

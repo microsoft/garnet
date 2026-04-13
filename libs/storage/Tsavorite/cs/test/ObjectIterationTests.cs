@@ -15,8 +15,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTrigger>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTrigger>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -48,7 +48,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << (largeMemory ? 25 : 14),
                 PageSize = 1L << (largeMemory ? 20 : 9)
-            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTrigger.Instance)
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
@@ -340,10 +340,10 @@ namespace Tsavorite.test
                 MutableFraction = 1,
                 LogDevice = LogDevice,
             };
-            var StoreFunctions = new StoreFunctions<SpanByteComparer, DefaultRecordTrigger>(new SpanByteComparer(), () => null, new DefaultRecordTrigger());
-            using var Store = new TsavoriteKV<StoreFunctions<SpanByteComparer, DefaultRecordTrigger>, ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordTrigger>>>(
+            var StoreFunctions = new StoreFunctions<SpanByteComparer, DefaultRecordTriggers>(new SpanByteComparer(), () => null, new DefaultRecordTriggers());
+            using var Store = new TsavoriteKV<StoreFunctions<SpanByteComparer, DefaultRecordTriggers>, ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordTriggers>>>(
                 Settings, StoreFunctions,
-                static (AllocSettings, StoreFuncs) => new ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordTrigger>>(AllocSettings, StoreFuncs));
+                static (AllocSettings, StoreFuncs) => new ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordTriggers>>(AllocSettings, StoreFuncs));
             using var ReadAddSession = Store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>(System.Buffers.MemoryPool<byte>.Shared));
 
             Span<int> keySpan = stackalloc int[1];

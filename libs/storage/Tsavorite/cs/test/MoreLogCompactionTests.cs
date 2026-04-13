@@ -10,8 +10,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -31,7 +31,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 9
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

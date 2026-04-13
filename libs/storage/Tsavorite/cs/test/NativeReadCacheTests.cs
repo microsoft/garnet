@@ -10,8 +10,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordTrigger>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordTrigger>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -34,7 +34,7 @@ namespace Tsavorite.test.ReadCacheTests
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 10,
                 ReadCacheEnabled = true
-            }, StoreFunctions.Create(new KeyStruct.Comparer(), SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(new KeyStruct.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

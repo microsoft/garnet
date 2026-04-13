@@ -16,8 +16,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordTrigger>>;
-    using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTrigger>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -146,7 +146,7 @@ namespace Tsavorite.test.recovery.sumstore
                     IndexSize = KeySpace,
                     LogDevice = LogDevice,
                     CheckpointDir = CheckpointDirectory
-                }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTrigger.Instance)
+                }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             }

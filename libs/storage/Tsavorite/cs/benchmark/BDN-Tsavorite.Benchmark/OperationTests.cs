@@ -14,7 +14,7 @@ using Tsavorite.core;
 namespace BenchmarkDotNetTests
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTrigger>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
     public class OperationTests
@@ -38,7 +38,7 @@ namespace BenchmarkDotNetTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = logDevice
-            }, StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordTrigger())
+            }, StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordTriggers())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

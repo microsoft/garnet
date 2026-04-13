@@ -47,8 +47,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordTrigger>>;
-    using StructStoreFunctions = StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordTrigger>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -79,7 +79,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 9
-            }, StoreFunctions.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

@@ -12,7 +12,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTrigger>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     internal static class SpanByteYcsbConstants
     {
@@ -113,7 +113,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordTrigger())
+                , StoreFunctions.Create(SpanByteComparer.Instance, new SpanByteRecordTriggers())
                 , allocatorFactory
             );
         }

@@ -9,12 +9,12 @@ namespace Garnet.server
     /// Record lifecycle triggers for Garnet's unified store. Handles per-record cleanup
     /// on delete via <see cref="IRecordTriggers.OnDispose"/>.
     /// </summary>
-    public struct GarnetRecordTrigger : IRecordTriggers
+    public struct GarnetRecordTriggers : IRecordTriggers
     {
         /// <summary>
         /// Holder for cache size tracker reference. Uses a wrapper class so the reference
         /// can be set after store creation (CacheSizeTracker requires the store in its
-        /// constructor, but GarnetRecordTrigger is created with the store).
+        /// constructor, but GarnetRecordTriggers is created with the store).
         /// </summary>
         public sealed class CacheSizeTrackerHolder
         {
@@ -28,9 +28,9 @@ namespace Garnet.server
         internal readonly CacheSizeTrackerHolder cacheSizeTrackerHolder;
 
         /// <summary>
-        /// Creates a GarnetRecordTrigger.
+        /// Creates a GarnetRecordTriggers.
         /// </summary>
-        public GarnetRecordTrigger(CacheSizeTrackerHolder cacheSizeTrackerHolder)
+        public GarnetRecordTriggers(CacheSizeTrackerHolder cacheSizeTrackerHolder)
         {
             this.cacheSizeTrackerHolder = cacheSizeTrackerHolder;
         }

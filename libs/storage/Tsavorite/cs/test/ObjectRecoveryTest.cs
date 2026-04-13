@@ -13,8 +13,8 @@ using Tsavorite.test.recovery.sumstore;
 namespace Tsavorite.test.recovery.objects
 {
     using static Tsavorite.test.TestUtils;
-    using ClassAllocator = ObjectAllocator<StoreFunctions<AdId.Comparer, DefaultRecordTrigger>>;
-    using ClassStoreFunctions = StoreFunctions<AdId.Comparer, DefaultRecordTrigger>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<AdId.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<AdId.Comparer, DefaultRecordTriggers>;
 
     internal struct StructTuple<T1, T2>
     {
@@ -52,7 +52,7 @@ namespace Tsavorite.test.recovery.objects
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions.Create(new AdId.Comparer(), () => new NumClicksObj.Serializer(), DefaultRecordTrigger.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), () => new NumClicksObj.Serializer(), DefaultRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

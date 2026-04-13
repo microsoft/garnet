@@ -56,13 +56,13 @@ namespace Tsavorite.test.Revivification
 {
     using static VarbyteLengthUtility;
 
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTrigger>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTrigger>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
-    using SpanByteStoreFunctions = StoreFunctions<RevivificationSpanByteComparer, SpanByteRecordTrigger>;
+    using SpanByteStoreFunctions = StoreFunctions<RevivificationSpanByteComparer, SpanByteRecordTriggers>;
 
     public enum DeleteDest { FreeList, InChain }
 
@@ -311,7 +311,7 @@ namespace Tsavorite.test.Revivification
                 PageSize = 1L << 12,
                 LogMemorySize = 1L << 20,
                 RevivificationSettings = revivificationSettings
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<TestSpanByteKey, long, long, Empty, RevivificationFixedLenFunctions>(functions);
@@ -753,7 +753,7 @@ namespace Tsavorite.test.Revivification
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
             store = new(kvSettings
-                , StoreFunctions.Create(comparer, SpanByteRecordTrigger.Instance)
+                , StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1889,7 +1889,7 @@ namespace Tsavorite.test.Revivification
                 PageSize = 1L << 17,
                 LogMemorySize = 1L << 20,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
-            }, StoreFunctions.Create(comparer, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

@@ -12,8 +12,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordTrigger>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordTrigger>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -107,7 +107,7 @@ namespace Tsavorite.test
                     LogDevice = log,
                     LogMemorySize = 1L << 15,
                     PageSize = 1L << 10,
-                }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordTrigger.Instance)
+                }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

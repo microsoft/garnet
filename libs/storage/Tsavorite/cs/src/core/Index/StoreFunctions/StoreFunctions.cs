@@ -139,9 +139,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordTrigger> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
+        public static StoreFunctions<TKeyComparer, DefaultRecordTriggers> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator, DefaultRecordTrigger.Instance);
+            => new(keyComparer, valueSerializerCreator, DefaultRecordTriggers.Instance);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
@@ -154,14 +154,14 @@ namespace Tsavorite.core
         /// <summary>
         /// Store functions that take only the <paramref name="keyComparer"/>
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordTrigger> Create<TKeyComparer>(TKeyComparer keyComparer)
+        public static StoreFunctions<TKeyComparer, DefaultRecordTriggers> Create<TKeyComparer>(TKeyComparer keyComparer)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator: null, DefaultRecordTrigger.Instance);
+            => new(keyComparer, valueSerializerCreator: null, DefaultRecordTriggers.Instance);
 
         /// <summary>
         /// Store functions for <see cref="Span{_byte_}"/> Key and Value
         /// </summary>
-        public static StoreFunctions<SpanByteComparer, DefaultRecordTrigger> Create()
-            => new(SpanByteComparer.Instance, valueSerializerCreator: null, DefaultRecordTrigger.Instance);
+        public static StoreFunctions<SpanByteComparer, DefaultRecordTriggers> Create()
+            => new(SpanByteComparer.Instance, valueSerializerCreator: null, DefaultRecordTriggers.Instance);
     }
 }

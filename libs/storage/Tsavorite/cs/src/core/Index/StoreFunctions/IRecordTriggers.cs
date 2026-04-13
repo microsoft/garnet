@@ -67,10 +67,10 @@ namespace Tsavorite.core
     /// Default no-op implementation of <see cref="IRecordTriggers"/>.
     /// </summary>
     /// <remarks>It is appropriate to call methods on this instance as a no-op.</remarks>
-    public struct DefaultRecordTrigger : IRecordTriggers
+    public struct DefaultRecordTriggers : IRecordTriggers
     {
         /// <summary>Default instance.</summary>
-        public static readonly DefaultRecordTrigger Instance = new();
+        public static readonly DefaultRecordTriggers Instance = new();
 
         /// <inheritdoc/>
         public readonly bool CallOnFlush => false;
@@ -88,10 +88,10 @@ namespace Tsavorite.core
     /// <summary>
     /// No-op implementation of <see cref="IRecordTriggers"/> for SpanByte.
     /// </summary>
-    public struct SpanByteRecordTrigger : IRecordTriggers    // TODO remove for dual
+    public struct SpanByteRecordTriggers : IRecordTriggers    // TODO remove for dual
     {
         /// <summary>Default instance.</summary>
-        public static readonly SpanByteRecordTrigger Instance = new();
+        public static readonly SpanByteRecordTriggers Instance = new();
 
         /// <inheritdoc/>
         public readonly bool CallOnFlush => false;

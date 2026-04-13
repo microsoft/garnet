@@ -42,8 +42,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<LocalKeyStructComparer, SpanByteRecordTrigger>>;
-    using StructStoreFunctions = StoreFunctions<LocalKeyStructComparer, SpanByteRecordTrigger>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<LocalKeyStructComparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<LocalKeyStructComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -65,7 +65,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 LogMemorySize = 1L << 29
-            }, StoreFunctions.Create(comparer, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
         }

@@ -16,8 +16,8 @@ using Tsavorite.test.recovery;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTrigger>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -58,7 +58,7 @@ namespace Tsavorite.test
                         PageSize = 1L << 10,
                         LogMemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
-                    }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTrigger.Instance)
+                    }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
                 using var s = store.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());

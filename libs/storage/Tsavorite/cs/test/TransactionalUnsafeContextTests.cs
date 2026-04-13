@@ -50,8 +50,8 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 }
 namespace Tsavorite.test.TransactionalUnsafeContext
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<TransactionalUnsafeComparer, SpanByteRecordTrigger>>;
-    using LongStoreFunctions = StoreFunctions<TransactionalUnsafeComparer, SpanByteRecordTrigger>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<TransactionalUnsafeComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<TransactionalUnsafeComparer, SpanByteRecordTriggers>;
 
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
@@ -215,7 +215,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             functions = new TransactionalUnsafeFunctions();
 
             store = new(kvSettings
-                , StoreFunctions.Create(comparer, SpanByteRecordTrigger.Instance)
+                , StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

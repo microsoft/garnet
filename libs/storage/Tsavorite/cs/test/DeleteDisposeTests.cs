@@ -12,20 +12,20 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ObjTrackingAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordTrigger>>;
-    using ObjTrackingStoreFunctions = StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordTrigger>;
+    using ObjTrackingAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordTriggers>>;
+    using ObjTrackingStoreFunctions = StoreFunctions<TestObjectKey.Comparer, ObjectDeleteDisposeTests.ObjTrackingRecordTriggers>;
 
-    using TrackingAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTrigger>>;
-    using TrackingStoreFunctions = StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTrigger>;
+    using TrackingAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTriggers>>;
+    using TrackingStoreFunctions = StoreFunctions<IntKeyComparer, DeleteDisposeTests.TrackingRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
     internal class DeleteDisposeTests : AllureTestBase
     {
-        internal struct TrackingRecordTrigger : IRecordTriggers
+        internal struct TrackingRecordTriggers : IRecordTriggers
         {
             internal readonly DisposeTracker tracker;
-            public TrackingRecordTrigger(DisposeTracker tracker) => this.tracker = tracker;
+            public TrackingRecordTriggers(DisposeTracker tracker) => this.tracker = tracker;
             public readonly bool CallOnEvict => false;
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
@@ -96,7 +96,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions.Create(IntKeyComparer.Instance, new TrackingRecordTrigger(tracker))
+            }, StoreFunctions.Create(IntKeyComparer.Instance, new TrackingRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
@@ -247,10 +247,10 @@ namespace Tsavorite.test
     [TestFixture]
     internal class ObjectDeleteDisposeTests : AllureTestBase
     {
-        internal struct ObjTrackingRecordTrigger : IRecordTriggers
+        internal struct ObjTrackingRecordTriggers : IRecordTriggers
         {
             internal readonly ObjDisposeTracker tracker;
-            public ObjTrackingRecordTrigger(ObjDisposeTracker tracker) => this.tracker = tracker;
+            public ObjTrackingRecordTriggers(ObjDisposeTracker tracker) => this.tracker = tracker;
             public readonly bool CallOnEvict => false;
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
@@ -335,7 +335,7 @@ namespace Tsavorite.test
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 10
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(),
-                    new ObjTrackingRecordTrigger(tracker))
+                    new ObjTrackingRecordTriggers(tracker))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 

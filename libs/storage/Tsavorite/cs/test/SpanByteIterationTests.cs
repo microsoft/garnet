@@ -15,7 +15,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTrigger>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -99,7 +99,7 @@ namespace Tsavorite.test
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 9,
                 SegmentSize = 1L << 22
-            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -198,7 +198,7 @@ namespace Tsavorite.test
                 LogMemorySize = 1L << 15,
                 PageSize = 1L << 9,
                 SegmentSize = 1L << 22
-            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -253,7 +253,7 @@ namespace Tsavorite.test
                 LogMemorySize = 1L << 25,
                 PageSize = 1L << 19,
                 SegmentSize = 1L << 22
-            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTrigger.Instance)
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
