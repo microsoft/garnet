@@ -35,7 +35,17 @@ namespace Garnet.server
         /// </summary>
         public readonly GarnetLatencyMetrics globalLatencyMetrics;
 
-        public GarnetServerMetrics(bool trackStats, bool trackLatency, GarnetServerMonitor monitor)
+        /// <summary>
+        /// Global per-command usage statistics (calls, failures, rejections, latency).
+        /// </summary>
+        public CommandStats globalCommandStats;
+
+        /// <summary>
+        /// History of per-command usage statistics from disposed sessions.
+        /// </summary>
+        public CommandStats historyCommandStats;
+
+        public GarnetServerMetrics(bool trackStats, bool trackLatency, bool trackCommandStats, GarnetServerMonitor monitor)
         {
             total_connections_received = 0;
             total_connections_disposed = 0;
@@ -49,6 +59,9 @@ namespace Garnet.server
             historySessionMetrics = trackStats ? new GarnetSessionMetrics() : null;
 
             globalLatencyMetrics = trackLatency ? new() : null;
+
+            globalCommandStats = trackCommandStats ? new CommandStats() : null;
+            historyCommandStats = trackCommandStats ? new CommandStats() : null;
         }
 
         public void Dispose()

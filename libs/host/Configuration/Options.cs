@@ -351,6 +351,10 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
+        [OptionValidation]
+        [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections, latency). Exposed via INFO COMMANDSTATS.")]
+        public bool? CommandStatsMonitor { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
         public int SlowLogThreshold { get; set; }
@@ -912,6 +916,7 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
