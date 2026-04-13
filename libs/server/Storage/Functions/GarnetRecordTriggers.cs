@@ -9,54 +9,44 @@ namespace Garnet.server
     /// Record lifecycle triggers for Garnet's unified store. Handles per-record cleanup
     /// on delete via <see cref="IRecordTriggers.OnDispose"/>.
     /// </summary>
-    public struct GarnetRecordTriggers : IRecordTriggers
+    public readonly struct GarnetRecordTriggers : IRecordTriggers
     {
         /// <summary>
-        /// Holder for cache size tracker reference. Uses a wrapper class so the reference
-        /// can be set after store creation (CacheSizeTracker requires the store in its
-        /// constructor, but GarnetRecordTriggers is created with the store).
+        /// Cache size tracker for heap size accounting on delete.
+        /// Created before the store and initialized after via <see cref="CacheSizeTracker.Initialize"/>.
         /// </summary>
-        public sealed class CacheSizeTrackerHolder
-        {
-            /// <summary>The cache size tracker, set after store creation.</summary>
-            public CacheSizeTracker Tracker;
-        }
+        internal readonly CacheSizeTracker cacheSizeTracker;
 
         /// <summary>
-        /// Holder for cache size tracker, set after store creation.
+        /// Creates a GarnetRecordTriggers with a cache size tracker.
         /// </summary>
-        internal readonly CacheSizeTrackerHolder cacheSizeTrackerHolder;
-
-        /// <summary>
-        /// Creates a GarnetRecordTriggers.
-        /// </summary>
-        public GarnetRecordTriggers(CacheSizeTrackerHolder cacheSizeTrackerHolder)
+        public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker)
         {
-            this.cacheSizeTrackerHolder = cacheSizeTrackerHolder;
+            this.cacheSizeTracker = cacheSizeTracker;
         }
 
         /// <inheritdoc/>
-        public readonly bool CallOnFlush => false;
+        public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnEvict => false;
+        public bool CallOnEvict => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnDiskRead => false;
+        public bool CallOnDiskRead => false;
 
         /// <inheritdoc/>
-        public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason)
+        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason)
         {
             // Heap object disposal is handled by ClearHeapFields in ObjectAllocatorImpl
         }
 
         /// <inheritdoc/>
-        public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason)
+        public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
             // Handle heap objects: update cache size tracker on delete
             if (logRecord.Info.ValueIsObject && reason == DisposeReason.Deleted)
             {
-                cacheSizeTrackerHolder?.Tracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
+                cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
             }
         }
     }
