@@ -159,7 +159,7 @@ namespace Tsavorite.core
                 }
             }
 
-            request.OnDispose();
+            request.DisposeRecord();
             return status;
         }
         #endregion

@@ -193,7 +193,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                request.OnDispose();
+                request.DisposeRecord();
             }
             return !stop;
         }

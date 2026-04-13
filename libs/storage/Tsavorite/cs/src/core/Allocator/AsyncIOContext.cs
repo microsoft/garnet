@@ -65,7 +65,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Dispose
         /// </summary>
-        public void OnDispose()
+        public void DisposeRecord()
         {
             // Do not dispose requestKey as it is a shallow copy of the key in pendingContext
             diskLogRecord.Dispose();
@@ -106,7 +106,7 @@ namespace Tsavorite.core
                 , allows ref struct
 #endif
         {
-            request.OnDispose();
+            request.DisposeRecord();
             request.requestKey.Dispose();
 
             request.requestKey = ConditionallyHoistedKey.Create(requestKey, bufferPool);
@@ -116,7 +116,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Set(ref AsyncIOContext ctx)
         {
-            request.OnDispose();
+            request.DisposeRecord();
 
             request = ctx;
             exception = null;
@@ -126,7 +126,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetException(Exception ex)
         {
-            request.OnDispose();
+            request.DisposeRecord();
             request.requestKey.Dispose();
 
             request = default;
@@ -139,7 +139,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            request.OnDispose();
+            request.DisposeRecord();
             request.requestKey.Dispose();
             semaphore?.Dispose();
         }
