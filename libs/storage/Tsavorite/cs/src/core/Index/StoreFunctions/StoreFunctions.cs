@@ -87,12 +87,26 @@ namespace Tsavorite.core
         public readonly bool DisposeOnPageEviction => recordTrigger.DisposeOnPageEviction;
 
         /// <inheritdoc/>
+        public readonly bool CallOnFlush => recordTrigger.CallOnFlush;
+
+        /// <inheritdoc/>
+        public readonly bool CallOnDiskRead => recordTrigger.CallOnDiskRead;
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordTrigger.DisposeValueObject(valueObject, reason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) => recordTrigger.DisposeRecord(ref logRecord, reason);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnFlushRecord(ref LogRecord logRecord) => recordTrigger.OnFlushRecord(ref logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnDiskReadRecord(ref LogRecord logRecord) => recordTrigger.OnDiskReadRecord(ref logRecord);
         #endregion Record Disposer
 
         #region Checkpoint Completion

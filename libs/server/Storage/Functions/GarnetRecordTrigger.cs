@@ -39,6 +39,12 @@ namespace Garnet.server
         public readonly bool DisposeOnPageEviction => false;
 
         /// <inheritdoc/>
+        public readonly bool CallOnFlush => false;
+
+        /// <inheritdoc/>
+        public readonly bool CallOnDiskRead => false;
+
+        /// <inheritdoc/>
         public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason)
         {
             // Heap object disposal is handled by ClearHeapFields in ObjectAllocatorImpl

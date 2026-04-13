@@ -466,6 +466,11 @@ namespace Tsavorite.core
                                 // Clean up temporary bits when applying the delta log
                                 ref var destInfo = ref LogRecord.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
+                                if (storeFunctions.CallOnDiskRead)
+                                {
+                                    var destLogRecord = new LogRecord(destination);
+                                    storeFunctions.OnDiskReadRecord(ref destLogRecord);
+                                }
                             }
                             physicalAddress += size;
                         }
@@ -2112,6 +2117,9 @@ namespace Tsavorite.core
                     if (currentLength >= recordLength)
                     {
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                        if (storeFunctions.CallOnDiskRead)
+                            storeFunctions.OnDiskReadRecord(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
                 }

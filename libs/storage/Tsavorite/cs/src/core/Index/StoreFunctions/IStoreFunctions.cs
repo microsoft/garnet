@@ -56,11 +56,23 @@ namespace Tsavorite.core
         /// </summary>
         bool DisposeOnPageEviction { get; }
 
+        /// <inheritdoc cref="IRecordTrigger.CallOnFlush"/>
+        bool CallOnFlush { get; }
+
+        /// <inheritdoc cref="IRecordTrigger.CallOnDiskRead"/>
+        bool CallOnDiskRead { get; }
+
         /// <summary>Dispose the Value of a record, if necessary.</summary>
         void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
 
         /// <summary>Called during page eviction to allow the application to clean up external resources.</summary>
         void DisposeRecord(ref LogRecord logRecord, DisposeReason reason);
+
+        /// <summary>Called per valid record during page flush to allow snapshotting external resources.</summary>
+        void OnFlushRecord(ref LogRecord logRecord);
+
+        /// <summary>Called per record loaded from disk to allow invalidating stale resource handles.</summary>
+        void OnDiskReadRecord(ref LogRecord logRecord);
         #endregion Record Disposer
 
         #region Checkpoint Completion

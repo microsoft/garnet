@@ -389,6 +389,37 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Call <see cref="IStoreFunctions.OnFlushRecord(ref LogRecord)"/> on original in-memory records
+        /// before they are flushed to disk. This allows the application to snapshot external resources
+        /// (e.g. BfTree data files) and set flags on the live record while it is still in memory.
+        /// </summary>
+        internal void OnFlushRecordsInRange(long startAddress, long endAddress)
+        {
+            var page = GetPage(startAddress);
+            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
+
+            while (address < endAddress)
+            {
+                var physicalAddress = GetPhysicalAddress(address);
+                var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
+                var allocatedSize = logRecord.AllocatedSize;
+
+                if (allocatedSize <= 0)
+                    break;
+
+                var offset = GetOffsetOnPage(address);
+                if (offset + allocatedSize > PageSize)
+                    break;
+
+                if (logRecord.Info.Valid && !logRecord.Info.IsNull && !logRecord.Info.SkipOnScan && !logRecord.Info.Tombstone)
+                    storeFunctions.OnFlushRecord(ref logRecord);
+
+                address += allocatedSize;
+            }
+        }
+
+        /// <summary>
         /// Dispose memory allocator
         /// </summary>
         public override void Dispose()
@@ -908,6 +939,12 @@ namespace Tsavorite.core
             {
                 var flushStartAddress = LastIssuedFlushedUntilAddress;
                 var flushEndAddress = OngoingFlushedUntilAddress;
+
+                // Notify the application per record before flushing, so it can snapshot external
+                // resources and/or set flags on the live in-memory records.
+                // This runs on the ORIGINAL records (not a copy), under epoch protection.
+                if (storeFunctions.CallOnFlush)
+                    OnFlushRecordsInRange(flushStartAddress, flushEndAddress);
 
                 // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (onReadOnlyObserver != null)
