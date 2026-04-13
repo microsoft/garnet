@@ -84,7 +84,10 @@ namespace Garnet.cluster
 
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
-                    WaitForSlotToStabalize(_slot, ref keySlice, ref config);
+                    if (!WaitForSlotToStabalize(_slot, ref keySlice, ref config))
+                    {
+                        return new(SlotVerifiedState.TRYAGAIN, _slot);
+                    }
                     goto tryAgain;
                 }
 
@@ -137,14 +140,24 @@ namespace Garnet.cluster
                 return Exists(ref key);
             }
 
-            void WaitForSlotToStabalize(ushort slot, ref ArgSlice keySlice, ref ClusterConfig config)
+            bool WaitForSlotToStabalize(ushort slot, ref ArgSlice keySlice, ref ClusterConfig config)
             {
                 // For Vector Set ops specifically, we need a slot to be stable (or faulted, but not migrating) before writes can proceed
                 //
                 // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving
+                const int MaxSlotStabilizationWaitMilliseconds = 1_000;
+
+                var waitStart = Stopwatch.GetTimestamp();
 
                 do
                 {
+                    var waitDuration = Stopwatch.GetElapsedTime(waitStart);
+
+                    if (waitDuration.TotalMilliseconds > MaxSlotStabilizationWaitMilliseconds)
+                    {
+                        return false;
+                    }
+
                     ReleaseCurrentEpoch();
                     _ = Thread.Yield();
                     AcquireCurrentEpoch();
@@ -152,6 +165,8 @@ namespace Garnet.cluster
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }
                 while (config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING);
+
+                return true;
             }
         }
 

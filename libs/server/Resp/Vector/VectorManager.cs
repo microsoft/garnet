@@ -88,7 +88,7 @@ namespace Garnet.server
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
 
             // TODO: Pull this off a config or something
-            replicationReplayTasks = new Task[Environment.ProcessorCount];
+            replicationReplayTasks = new Task[Math.Max((Environment.ProcessorCount / 2) - 1, 1)];
             for (var i = 0; i < replicationReplayTasks.Length; i++)
             {
                 replicationReplayTasks[i] = Task.CompletedTask;
