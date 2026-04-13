@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -79,17 +78,19 @@ namespace Garnet.server
         public void Dispose() => Log.Dispose();
 
         /// <summary>
-        /// Get a sequence number that is larger than maximum sequence number already assigned.
+        /// Get a sequence number that is strictly greater than any sequence number assigned to records
+        /// at or below the currently observed TailAddress.
         /// </summary>
-        /// <returns></returns>
+        /// <remarks>
+        /// Correctness relies on ordering: the caller must read TailAddress BEFORE calling this method.
+        /// On the enqueue path, the sequence number is captured BEFORE the Enqueue (which advances TailAddress).
+        /// Therefore, any fresh <see cref="SequenceNumberGenerator.GetSequenceNumber"/> call made after
+        /// observing a TailAddress is guaranteed to return a value strictly greater than the sequence
+        /// numbers of all records at or below that TailAddress.
+        /// </remarks>
+        /// <returns>A sequence number strictly greater than those of all records up to the last observed tail.</returns>
         public long GetLargerThanMaximumSequenceNumber()
-        {
-            var maxAssignedSequenceNumber = Log.physicalSublogMaxSequenceNumber.Max();
-            var sequenceNumber = seqNumGen.GetSequenceNumber();
-            while (maxAssignedSequenceNumber >= sequenceNumber)
-                sequenceNumber = seqNumGen.GetSequenceNumber();
-            return sequenceNumber;
-        }
+            => seqNumGen.GetSequenceNumber() + 1;
 
         /// <summary>
         /// Create or update existing timestamp manager
@@ -113,7 +114,6 @@ namespace Garnet.server
             if (!serverOptions.MultiLogEnabled)
                 return;
             var physicalSublogMaxReplayedSequenceNumber = readConsistencyManager.GetPhysicalSublogMaxReplayedSequenceNumber();
-            Log.ResetPhysicalSublogMaxSequenceNumber(physicalSublogMaxReplayedSequenceNumber);
             var start = physicalSublogMaxReplayedSequenceNumber.Max();
             var newSeqNumGen = new SequenceNumberGenerator(start);
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
