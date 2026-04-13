@@ -33,10 +33,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
+        void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
+        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)
@@ -139,10 +139,10 @@ namespace Tsavorite.core
             if (logicalAddress < GetMinRevivifiableAddress())
                 return false;
 
-            // Application-level dispose (storeFunctions.DisposeRecord) was already called at the delete site.
-            // Call hlog.DisposeRecord with RevivificationFreeList to clear the key for freelist reuse
+            // Application-level dispose (storeFunctions.OnDispose) was already called at the delete site.
+            // Call hlog.OnDispose with RevivificationFreeList to clear the key for freelist reuse
             // (Deleted reason passes clearKey=false, but freelist reuse needs the key space cleared).
-            DisposeRecord(ref logRecord, DisposeReason.RevivificationFreeList);
+            OnDispose(ref logRecord, DisposeReason.RevivificationFreeList);
 
             return RevivificationManager.TryAdd(logicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
         }
@@ -300,7 +300,7 @@ namespace Tsavorite.core
             TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord srcLogRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // Record was already disposed at the delete site (DisposeRecord with DisposeReason.Deleted).
+            // Record was already disposed at the delete site (OnDispose with DisposeReason.Deleted).
             // Heap fields and optionals are already cleared. This method only handles chain management.
 
             if (!RevivificationManager.IsEnabled)

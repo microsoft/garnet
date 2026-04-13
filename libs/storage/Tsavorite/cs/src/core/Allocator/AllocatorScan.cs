@@ -187,13 +187,13 @@ namespace Tsavorite.core
 
                 request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
                 if (storeFunctions.CallOnDiskRead)
-                    storeFunctions.OnDiskReadRecord(ref request.diskLogRecord.logRecord);
+                    storeFunctions.OnDiskRead(ref request.diskLogRecord.logRecord);
                 stop = !scanFunctions.Reader(in request.diskLogRecord, new RecordMetadata(request.logicalAddress, request.diskLogRecord.ETag), numRecords, out _);
                 logicalAddress = request.diskLogRecord.Info.PreviousAddress;
             }
             finally
             {
-                request.DisposeRecord();
+                request.OnDispose();
             }
             return !stop;
         }

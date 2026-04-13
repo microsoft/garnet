@@ -220,7 +220,7 @@ namespace Garnet.server
                     _ = logRecord.RemoveETag();
 
                 // Heap disposal and cache size tracking are handled by
-                // DisposeRecord(Deleted) in InternalRMW for both ExpireAndStop and ExpireAndResume.
+                // OnDispose(Deleted) in InternalRMW for both ExpireAndStop and ExpireAndResume.
                 rmwInfo.Action = cmd == RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return IPUResult.Failed;
             }

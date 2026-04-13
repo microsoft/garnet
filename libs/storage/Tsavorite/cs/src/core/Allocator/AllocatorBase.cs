@@ -469,7 +469,7 @@ namespace Tsavorite.core
                                 if (storeFunctions.CallOnDiskRead)
                                 {
                                     var destLogRecord = new LogRecord(destination);
-                                    storeFunctions.OnDiskReadRecord(ref destLogRecord);
+                                    storeFunctions.OnDiskRead(ref destLogRecord);
                                 }
                             }
                             physicalAddress += size;
@@ -1410,7 +1410,7 @@ namespace Tsavorite.core
                 MemoryPageScan(start, end, logSizeTracker);
             }
 
-            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
+            // TODO: Currently we don't call OnDispose or OnDisposeValueObject on eviction; we defer to the OnEvictionObserver
             // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
@@ -1488,9 +1488,9 @@ namespace Tsavorite.core
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
-                    // Dispose records being evicted — allows cleanup of external resources via DisposeRecord.
-                    if (storeFunctions.DisposeOnPageEviction)
-                        _wrapper.DisposeRecordsInRangeForEviction(start, end);
+                    // Notify application of records being evicted — allows cleanup of external resources.
+                    if (storeFunctions.CallOnEvict)
+                        _wrapper.EvictRecordsInRange(start, end);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -2119,7 +2119,7 @@ namespace Tsavorite.core
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
                         ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
                         if (storeFunctions.CallOnDiskRead)
-                            storeFunctions.OnDiskReadRecord(ref ctx.diskLogRecord.logRecord);
+                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
                 }
@@ -2155,7 +2155,7 @@ namespace Tsavorite.core
                     ctx.logicalAddress = prevAddressToRead;
                     if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
-                        ctx.DisposeRecord();
+                        ctx.OnDispose();
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
@@ -2170,7 +2170,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
-                ctx.DisposeRecord();
+                ctx.OnDispose();
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
                 else

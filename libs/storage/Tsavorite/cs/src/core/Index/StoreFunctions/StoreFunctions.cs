@@ -16,9 +16,9 @@ namespace Tsavorite.core
     /// because there is no need to wrap calls to them with additional functionality. This can be changed to redirect if such wrapper
     /// functionality is needed.
     /// </remarks>
-    public struct StoreFunctions<TKeyComparer, TRecordTrigger>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTrigger recordTrigger) : IStoreFunctions
+    public struct StoreFunctions<TKeyComparer, TRecordTriggers>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTriggers recordTriggers) : IStoreFunctions
         where TKeyComparer : IKeyComparer
-        where TRecordTrigger : IRecordTrigger
+        where TRecordTriggers : IRecordTriggers
     {
         #region Fields
         /// <summary>Compare two keys for equality, and get a key's hash code.</summary>
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         readonly Func<IObjectSerializer<IHeapObject>> valueSerializerCreator = valueSerializerCreator;
 
         /// <summary>Dispose a record</summary>
-        readonly TRecordTrigger recordTrigger = recordTrigger;
+        readonly TRecordTriggers recordTriggers = recordTriggers;
 
         /// <summary>Optional checkpoint completion callback, set separately from ctor.</summary>
         Action checkpointCompletionCallback = () => { };
@@ -82,32 +82,36 @@ namespace Tsavorite.core
         }
         #endregion Value Serializer
 
-        #region Record Disposer
+        #region Record Triggers
         /// <inheritdoc/>
-        public readonly bool DisposeOnPageEviction => recordTrigger.DisposeOnPageEviction;
+        public readonly bool CallOnFlush => recordTriggers.CallOnFlush;
 
         /// <inheritdoc/>
-        public readonly bool CallOnFlush => recordTrigger.CallOnFlush;
+        public readonly bool CallOnEvict => recordTriggers.CallOnEvict;
 
         /// <inheritdoc/>
-        public readonly bool CallOnDiskRead => recordTrigger.CallOnDiskRead;
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordTrigger.DisposeValueObject(valueObject, reason);
+        public readonly bool CallOnDiskRead => recordTriggers.CallOnDiskRead;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason) => recordTrigger.DisposeRecord(ref logRecord, reason);
+        public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordTriggers.OnDisposeValueObject(valueObject, reason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnFlushRecord(ref LogRecord logRecord) => recordTrigger.OnFlushRecord(ref logRecord);
+        public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => recordTriggers.OnDispose(ref logRecord, reason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnDiskReadRecord(ref LogRecord logRecord) => recordTrigger.OnDiskReadRecord(ref logRecord);
-        #endregion Record Disposer
+        public readonly void OnFlush(ref LogRecord logRecord) => recordTriggers.OnFlush(ref logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnEvict(ref LogRecord logRecord) => recordTriggers.OnEvict(ref logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnDiskRead(ref LogRecord logRecord) => recordTriggers.OnDiskRead(ref logRecord);
+        #endregion Record Triggers
 
         #region Checkpoint Completion
         /// <inheritdoc/>
@@ -126,11 +130,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, TRecordTrigger> Create<TKeyComparer, TRecordTrigger>
-                (TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTrigger recordTrigger)
+        public static StoreFunctions<TKeyComparer, TRecordTriggers> Create<TKeyComparer, TRecordTriggers>
+                (TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator, TRecordTriggers recordTriggers)
             where TKeyComparer : IKeyComparer
-            where TRecordTrigger : IRecordTrigger
-            => new(keyComparer, valueSerializerCreator, recordTrigger);
+            where TRecordTriggers : IRecordTriggers
+            => new(keyComparer, valueSerializerCreator, recordTriggers);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
@@ -142,10 +146,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, TRecordTrigger> Create<TKeyComparer, TRecordTrigger>(TKeyComparer keyComparer, TRecordTrigger recordTrigger)
+        public static StoreFunctions<TKeyComparer, TRecordTriggers> Create<TKeyComparer, TRecordTriggers>(TKeyComparer keyComparer, TRecordTriggers recordTriggers)
             where TKeyComparer : IKeyComparer
-            where TRecordTrigger : IRecordTrigger
-            => new(keyComparer, valueSerializerCreator: null, recordTrigger);
+            where TRecordTriggers : IRecordTriggers
+            => new(keyComparer, valueSerializerCreator: null, recordTriggers);
 
         /// <summary>
         /// Store functions that take only the <paramref name="keyComparer"/>

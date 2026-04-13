@@ -1285,7 +1285,7 @@ namespace Tsavorite.core
                 var logRecord = new LogRecord(physicalAddress + recordOffset);
                 logRecord.InfoRef.ClearBitsForDiskImages();
                 if (storeFunctions.CallOnDiskRead)
-                    storeFunctions.OnDiskReadRecord(ref logRecord);
+                    storeFunctions.OnDiskRead(ref logRecord);
 
                 long recordSize = logRecord.AllocatedSize;
                 Debug.Assert(recordSize > 0 && recordSize <= endOffset - recordOffset,

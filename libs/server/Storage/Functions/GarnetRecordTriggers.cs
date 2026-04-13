@@ -6,10 +6,10 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Record disposer for Garnet's unified store. Handles per-record cleanup on delete
-    /// and page eviction via <see cref="IRecordTrigger.DisposeRecord"/>.
+    /// Record lifecycle triggers for Garnet's unified store. Handles per-record cleanup
+    /// on delete via <see cref="IRecordTriggers.OnDispose"/>.
     /// </summary>
-    public struct GarnetRecordTrigger : IRecordTrigger
+    public struct GarnetRecordTrigger : IRecordTriggers
     {
         /// <summary>
         /// Holder for cache size tracker reference. Uses a wrapper class so the reference
@@ -36,22 +36,22 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly bool DisposeOnPageEviction => false;
+        public readonly bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnFlush => false;
+        public readonly bool CallOnEvict => false;
 
         /// <inheritdoc/>
         public readonly bool CallOnDiskRead => false;
 
         /// <inheritdoc/>
-        public readonly void DisposeValueObject(IHeapObject valueObject, DisposeReason reason)
+        public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason)
         {
             // Heap object disposal is handled by ClearHeapFields in ObjectAllocatorImpl
         }
 
         /// <inheritdoc/>
-        public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason reason)
+        public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
             // Handle heap objects: update cache size tracker on delete
             if (logRecord.Info.ValueIsObject && reason == DisposeReason.Deleted)

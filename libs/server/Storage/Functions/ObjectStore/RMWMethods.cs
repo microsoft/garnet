@@ -116,7 +116,7 @@ namespace Garnet.server
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
                 // Heap disposal and cache size tracking are handled by
-                // DisposeRecord(Deleted) in InternalRMW when processing ExpireAndResume.
+                // OnDispose(Deleted) in InternalRMW when processing ExpireAndResume.
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
@@ -133,7 +133,7 @@ namespace Garnet.server
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
                     // Heap disposal and cache size tracking are handled by
-                    // DisposeRecord(Deleted) in the ExpireAndStop path of InternalRMW.
+                    // OnDispose(Deleted) in the ExpireAndStop path of InternalRMW.
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }

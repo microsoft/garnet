@@ -49,31 +49,31 @@ namespace Tsavorite.core
         IObjectSerializer<IHeapObject> BeginDeserializeValue(Stream stream);
         #endregion Value Serializer
 
-        #region Record Disposer
-        /// <summary>
-        /// If true, <see cref="DisposeRecord(ref LogRecord, DisposeReason)"/> is called per record
-        /// during page evictions from both readcache and main log, allowing cleanup of external resources.
-        /// </summary>
-        bool DisposeOnPageEviction { get; }
-
-        /// <inheritdoc cref="IRecordTrigger.CallOnFlush"/>
+        #region Record Triggers
+        /// <inheritdoc cref="IRecordTriggers.CallOnFlush"/>
         bool CallOnFlush { get; }
 
-        /// <inheritdoc cref="IRecordTrigger.CallOnDiskRead"/>
+        /// <inheritdoc cref="IRecordTriggers.CallOnEvict"/>
+        bool CallOnEvict { get; }
+
+        /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
         bool CallOnDiskRead { get; }
 
-        /// <summary>Dispose the Value of a record, if necessary.</summary>
-        void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
+        /// <inheritdoc cref="IRecordTriggers.OnDisposeValueObject"/>
+        void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason);
 
-        /// <summary>Called during page eviction to allow the application to clean up external resources.</summary>
-        void DisposeRecord(ref LogRecord logRecord, DisposeReason reason);
+        /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
+        void OnDispose(ref LogRecord logRecord, DisposeReason reason);
 
-        /// <summary>Called per valid record during page flush to allow snapshotting external resources.</summary>
-        void OnFlushRecord(ref LogRecord logRecord);
+        /// <inheritdoc cref="IRecordTriggers.OnFlush"/>
+        void OnFlush(ref LogRecord logRecord);
 
-        /// <summary>Called per record loaded from disk to allow invalidating stale resource handles.</summary>
-        void OnDiskReadRecord(ref LogRecord logRecord);
-        #endregion Record Disposer
+        /// <inheritdoc cref="IRecordTriggers.OnEvict"/>
+        void OnEvict(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnDiskRead"/>
+        void OnDiskRead(ref LogRecord logRecord);
+        #endregion Record Triggers
 
         #region Checkpoint Completion
         /// <summary>Set the parameterless checkpoint completion callback.</summary>

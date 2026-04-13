@@ -124,9 +124,9 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
-                        // Immediately dispose all resources: app callback (storeFunctions.DisposeRecord)
-                        // + ClearHeapFields + ClearOptionals — all via hlog.DisposeRecord.
-                        DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
+                        // Immediately dispose all resources: app callback (storeFunctions.OnDispose)
+                        // + ClearHeapFields + ClearOptionals — all via hlog.OnDispose.
+                        OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
@@ -241,7 +241,7 @@ namespace Tsavorite.core
                 // but we may want it for a later Delete, or for insert with a smaller Key.
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                    DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                    OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
 
                 if (deleteInfo.Action == DeleteAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -264,7 +264,7 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // Immediately dispose all resources on the source record before sealing.
-                    DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
+                    OnDispose(ref srcLogRecord, DisposeReason.Deleted);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
                 }
 
@@ -276,7 +276,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
+            OnDispose(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

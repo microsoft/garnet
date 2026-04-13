@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// Serializer for IGarnetObject
     /// </summary>
-    /// <remarks>Implements <see cref="IObjectSerializer{IHeapObject}"/> for Tsavorite <see cref="StoreFunctions{TKeyComparer, TRecordTrigger}"/></remarks>
+    /// <remarks>Implements <see cref="IObjectSerializer{IHeapObject}"/> for Tsavorite <see cref="StoreFunctions{TKeyComparer, TRecordTriggers}"/></remarks>
     public sealed class GarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>, IObjectSerializer<IHeapObject>
     {
         readonly CustomCommandManager customCommandManager;

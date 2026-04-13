@@ -103,7 +103,7 @@ namespace Tsavorite.core
                         var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
                         logRecord.InitializeForReuse(in sizeInfo);
 
-                        // Call RevivificationManager.TryAdd() directly, as here we've done InitializeForReuse of a new record so don't want DisposeRecord.
+                        // Call RevivificationManager.TryAdd() directly, as here we've done InitializeForReuse of a new record so don't want OnDispose.
                         if (RevivificationManager.TryAdd(newLogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             continue;
                     }
@@ -199,7 +199,7 @@ namespace Tsavorite.core
 
         Fail:
             var logRecord = hlog.CreateLogRecord(newLogicalAddress);
-            DisposeRecord(ref logRecord, DisposeReason.CASAndRetryFailed);
+            OnDispose(ref logRecord, DisposeReason.CASAndRetryFailed);
             newPhysicalAddress = 0;
             return false;
         }

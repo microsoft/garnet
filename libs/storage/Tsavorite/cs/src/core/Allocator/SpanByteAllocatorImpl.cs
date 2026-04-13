@@ -194,18 +194,18 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
+        internal void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             if (logRecord.IsSet)
             {
                 if (disposeReason == DisposeReason.Deleted)
-                    storeFunctions.DisposeRecord(ref logRecord, disposeReason);
+                    storeFunctions.OnDispose(ref logRecord, disposeReason);
 
                 logRecord.ClearOptionals();
             }
         }
 
-        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
+        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
 
         /// <summary>
         /// Dispose memory allocator
