@@ -121,7 +121,7 @@ namespace Garnet.test
                 // Wait for all connections to be registered
                 var deadline = System.Environment.TickCount64 + 5000;
                 while (garnetServerTcp.get_conn_active() < clientCount && System.Environment.TickCount64 < deadline)
-                    Thread.Sleep(50);
+                    Thread.Sleep(250);
                 ClassicAssert.GreaterOrEqual(garnetServerTcp.get_conn_active(), clientCount,
                     "Expected all clients to be registered as active handlers");
             }
@@ -137,7 +137,7 @@ namespace Garnet.test
             // Wait for the server to detect the disconnections and clean up handlers
             var deadline2 = System.Environment.TickCount64 + 10000;
             while (garnetServerTcp.get_conn_active() > 0 && System.Environment.TickCount64 < deadline2)
-                Thread.Sleep(100);
+                Thread.Sleep(250);
 
             ClassicAssert.AreEqual(0, garnetServerTcp.get_conn_active(),
                 "Server still has active handlers after all clients disconnected — handlers were not properly cleaned up (CLOSE-WAIT leak)");
@@ -191,7 +191,10 @@ namespace Garnet.test
                     // We can't use GarnetClient here because TLS auth would hang —
                     // the exception fires before Start(), so the server never begins
                     // TLS negotiation, and the client would wait forever.
-                    for (int i = 0; i < 3; i++)
+                    const int injectionCount = 3;
+                    var receivedBefore = garnetServerTcp.TotalConnectionsReceived;
+
+                    for (int i = 0; i < injectionCount; i++)
                     {
                         using var rawSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                         try
@@ -203,8 +206,11 @@ namespace Garnet.test
                             // Connection may fail if server closed socket fast enough
                         }
 
-                        // Give the server time to process the accept and hit the exception
-                        Thread.Sleep(200);
+                        // Wait for the server to receive and process this connection
+                        var connDeadline = System.Environment.TickCount64 + 5000;
+                        while (garnetServerTcp.TotalConnectionsReceived < receivedBefore + i + 1
+                               && System.Environment.TickCount64 < connDeadline)
+                            Thread.Sleep(250);
                     }
                 }
                 finally
@@ -212,8 +218,10 @@ namespace Garnet.test
                     ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Dispose_After_Handler_Registered_Before_Start);
                 }
 
-                // Give server a moment to finish processing
-                Thread.Sleep(500);
+                // Wait for all injected connections to be fully disposed
+                var disposeDeadline = System.Environment.TickCount64 + 5000;
+                while (garnetServerTcp.get_conn_active() > 0 && System.Environment.TickCount64 < disposeDeadline)
+                    Thread.Sleep(250);
 
                 long activeCount = garnetServerTcp.get_conn_active();
 
@@ -260,7 +268,7 @@ namespace Garnet.test
             }
             finally
             {
-                TestUtils.DeleteDirectory(testDir);
+                TestUtils.DeleteDirectory(testDir, wait: true);
             }
         }
     }
