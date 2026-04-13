@@ -345,8 +345,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Iterate records in the given logical address range and call OnDispose on each.
-        /// Used during page eviction to allow disposal of external resources.
+        /// Iterate records in the given logical address range and call <see cref="IStoreFunctions.OnEvict"/>
+        /// on each valid, non-tombstoned record. Used during page eviction to allow cleanup of external resources.
         /// </summary>
         internal void EvictRecordsInRange(long startAddress, long endAddress)
         {

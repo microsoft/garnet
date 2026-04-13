@@ -114,8 +114,8 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Iterate records in the given logical address range and invoke the application-level
-        /// <see cref="IRecordTriggers.OnDispose"/> hook for each non-null record.
-        /// Used during page eviction to allow disposal of external resources.
+        /// <see cref="IRecordTriggers.OnEvict"/> hook for each valid, non-tombstoned record.
+        /// Used during page eviction to allow cleanup of external resources.
         /// </summary>
         void EvictRecordsInRange(long startAddress, long endAddress);
     }
