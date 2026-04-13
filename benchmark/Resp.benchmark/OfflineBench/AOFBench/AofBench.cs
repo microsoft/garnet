@@ -82,7 +82,7 @@ namespace Resp.benchmark
 
             try
             {
-                if(options.AofBenchType is AofBenchType.Replay)
+                if (options.AofBenchType is AofBenchType.Replay)
                     Console.WriteLine($">>> Running {options.AofBenchType} using {threads} worker(s) >>>");
                 else
                     Console.WriteLine($">>> Running {options.AofBenchType} using {threads}x{options.AofReplayTaskCount} worker(s) >>>");
