@@ -205,7 +205,7 @@ namespace Garnet.cluster
             try
             {
                 var migrateTask = migrateOperation[0];
-                if (!migrateTask.Initialize())
+                if (!await migrateTask.InitializeAsync())
                     return false;
 
                 // Migrate main store keys

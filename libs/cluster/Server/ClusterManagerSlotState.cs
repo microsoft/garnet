@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using Garnet.common;
@@ -158,62 +159,75 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         public bool TryPrepareSlotsForMigration(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
         {
-            errorMessage = default;
-            while (true)
+            try
             {
-                var current = currentConfig;
-                var migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
-
-                // Check migrating worker is a known valid worker
-                if (migratingWorkerId == 0)
+                errorMessage = default;
+                while (true)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
-                    return false;
-                }
+                    var current = currentConfig;
+                    var migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
 
-                // Check if node-id is different from local node
-                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
-                {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
-                    return false;
-                }
-
-                // Check if local node is primary
-                if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
-                {
-                    errorMessage = Encoding.ASCII.GetBytes($"ERR Target node {nodeid} is not a master node.");
-                    return false;
-                }
-
-                foreach (var slot in slots)
-                {
-                    // Check if slot is owned by local node
-                    if (!current.IsLocal((ushort)slot))
+                    // Check migrating worker is a known valid worker
+                    if (migratingWorkerId == 0)
                     {
-                        errorMessage = Encoding.ASCII.GetBytes($"ERR I'm not the owner of hash slot {slot}");
+                        errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
                         return false;
                     }
 
-                    // Check node state is stable
-                    if (current.GetState((ushort)slot) != SlotState.STABLE)
+                    // Check if node-id is different from local node
+                    if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                     {
-                        var _migratingNodeId = current.GetNodeIdFromSlot((ushort)slot);
-                        errorMessage = Encoding.ASCII.GetBytes($"ERR Slot already scheduled for migration from {_migratingNodeId}");
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                         return false;
                     }
-                }
 
-                // Slot is conditionally assigned to target node
-                // Redirection logic should be aware of this and not consider this slot as part of target node until migration completes
-                // Cluster status queries should also be aware of this implicit assignment and return this node as the current owner
-                // The above is only true for the primary that owns this slot and this configuration change is not propagated through gossip.
-                var newConfig = current.UpdateMultiSlotState(slots, migratingWorkerId, SlotState.MIGRATING);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
-                    break;
+                    // Check if local node is primary
+                    if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
+                    {
+                        errorMessage = Encoding.ASCII.GetBytes($"ERR Target node {nodeid} is not a master node.");
+                        return false;
+                    }
+
+                    foreach (var slot in slots)
+                    {
+                        // Check if slot is owned by local node
+                        if (!current.IsLocal((ushort)slot))
+                        {
+                            errorMessage = Encoding.ASCII.GetBytes($"ERR I'm not the owner of hash slot {slot}");
+                            return false;
+                        }
+
+                        // Check node state is stable
+                        if (current.GetState((ushort)slot) != SlotState.STABLE)
+                        {
+                            var _migratingNodeId = current.GetNodeIdFromSlot((ushort)slot);
+                            errorMessage = Encoding.ASCII.GetBytes($"ERR Slot already scheduled for migration from {_migratingNodeId}");
+                            return false;
+                        }
+                    }
+
+                    // Slot is conditionally assigned to target node
+                    // Redirection logic should be aware of this and not consider this slot as part of target node until migration completes
+                    // Cluster status queries should also be aware of this implicit assignment and return this node as the current owner
+                    // The above is only true for the primary that owns this slot and this configuration change is not propagated through gossip.
+                    var newConfig = current.UpdateMultiSlotState(slots, migratingWorkerId, SlotState.MIGRATING);
+                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                        break;
+                }
+                FlushConfig();
+                logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
+                return true;
+
             }
-            FlushConfig();
-            logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
-            return true;
+            catch (Exception ex)
+            {
+                _ = Debugger.Launch();
+
+                GC.KeepAlive(ex);
+
+                errorMessage = "uh oh"u8;
+                return false;
+            }
         }
 
         /// <summary>
@@ -412,25 +426,37 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         public bool TryPrepareSlotsForOwnershipChange(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
         {
-            errorMessage = default;
-            while (true)
+            try
             {
-                var current = currentConfig;
-                var workerId = current.GetWorkerIdFromNodeId(nodeid);
-                if (workerId == 0)
+                errorMessage = default;
+                while (true)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
-                    return false;
-                }
+                    var current = currentConfig;
+                    var workerId = current.GetWorkerIdFromNodeId(nodeid);
+                    if (workerId == 0)
+                    {
+                        errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
+                        return false;
+                    }
 
-                var newConfig = current.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
-                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
-                    break;
+                    var newConfig = current.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
+                    if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
+                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                        break;
+                }
+                logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
+                FlushConfig();
+                return true;
             }
-            logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
-            FlushConfig();
-            return true;
+            catch (Exception ex)
+            {
+                _ = Debugger.Launch();
+
+                GC.KeepAlive(ex);
+
+                errorMessage = "uh oh"u8;
+                return false;
+            }
         }
 
         /// <summary>

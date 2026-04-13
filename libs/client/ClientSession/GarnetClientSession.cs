@@ -174,6 +174,51 @@ namespace Garnet.client
         }
 
         /// <summary>
+        /// Connect to server
+        /// </summary>
+        /// <param name="timeoutMs">Timeout in milliseconds (default 0 for immediate timeout)</param>
+        /// <param name="token"></param>
+        public async Task ConnectAsync(int timeoutMs = 0, CancellationToken token = default)
+        {
+            socket = await ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false);
+            networkHandler = new GarnetClientSessionTcpNetworkHandler(
+                this,
+                socket,
+                networkBufferSettings,
+                networkPool,
+                sslOptions != null,
+                messageConsumer: this,
+                networkSendThrottleMax: networkSendThrottleMax,
+                logger: logger);
+            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
+            networkSender = networkHandler.GetNetworkSender();
+            networkSender.GetResponseObject();
+            unsafe
+            {
+                offset = networkSender.GetResponseObjectHead();
+                end = networkSender.GetResponseObjectTail();
+            }
+            numCommands = 0;
+
+            try
+            {
+                if (authUsername != null)
+                {
+                    _ = await ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false);
+                }
+                else if (authPassword != null)
+                {
+                    _ = await ExecuteAsync("AUTH", authPassword).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Connect client send socket
         /// </summary>
         /// <param name="millisecondsTimeout"></param>
@@ -264,7 +309,7 @@ namespace Garnet.client
         /// <summary>
         /// Reconnect to server
         /// </summary>
-        public void Reconnect(int timeoutMs = 0, CancellationToken token = default)
+        public async Task ReconnectAsync(int timeoutMs = 0, CancellationToken token = default)
         {
             if (Disposed) throw new ObjectDisposedException("GarnetClientSession");
             try
@@ -274,7 +319,7 @@ namespace Garnet.client
                 networkHandler?.Dispose();
             }
             catch { }
-            Connect(timeoutMs, token);
+            await ConnectAsync(timeoutMs, token);
         }
 
         /// <summary>
@@ -525,11 +570,7 @@ namespace Garnet.client
                 else if (!RawResult)
                 {
                     var tcs = tcsQueue.Dequeue();
-                    if (error)
-                    {
-                        _ = Debugger.Launch();
-                        tcs?.SetException(new Exception(result));
-                    }
+                    if (error) tcs?.SetException(new Exception(result));
                     else tcs?.SetResult(result);
                 }
             }
@@ -537,12 +578,7 @@ namespace Garnet.client
             if (RawResult)
             {
                 var tcs = tcsQueue.Dequeue();
-                if (error)
-                {
-                    _ = Debugger.Launch();
-
-                    tcs?.SetException(new Exception(result));
-                }
+                if (error) tcs?.SetException(new Exception(result));
                 else tcs?.SetResult(result);
             }
 
@@ -588,8 +624,6 @@ namespace Garnet.client
             }
             while (!tcsQueue.IsEmpty())
             {
-                _ = Debugger.Launch();
-
                 var tcs = tcsQueue.Dequeue();
                 tcs?.TrySetException(disposeException);
             }

@@ -20,7 +20,7 @@ namespace Garnet.cluster
             var client = migrateOperation[0].Client;
             try
             {
-                if (!CheckConnection(client))
+                if (!await CheckConnectionAsync(client))
                 {
                     Status = MigrateState.FAIL;
                     return false;

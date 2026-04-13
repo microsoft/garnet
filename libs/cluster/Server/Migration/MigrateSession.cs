@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -19,7 +20,7 @@ namespace Garnet.cluster
     /// <summary>
     /// MigrateSession
     /// </summary>
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         static readonly Memory<byte> IMPORTING = "IMPORTING"u8.ToArray();
         static readonly Memory<byte> NODE = "NODE"u8.ToArray();
@@ -190,35 +191,36 @@ namespace Garnet.cluster
                 migrateOperation[i].Dispose();
         }
 
-        private bool CheckConnection(GarnetClientSession client)
+        private async Task<bool> CheckConnectionAsync(GarnetClientSession client)
         {
             var status = true;
             if (!client.IsConnected)
             {
-                client.Reconnect((int)_timeout.TotalMilliseconds);
-                if (_passwd != null)
+                await client.ReconnectAsync((int)_timeout.TotalMilliseconds).ConfigureAwait(false);
+
+                if(_passwd != null)
                 {
                     try
                     {
-                        status = client.Authenticate(_username, _passwd).ContinueWith(resp =>
+                        var respResult = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, _cts.Token);
+
+                        if (!respResult.Equals("OK", StringComparison.Ordinal))
                         {
-                            // Check if authenticate succeeded
-                            if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                            {
-                                logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", resp);
-                                Status = MigrateState.FAIL;
-                                return false;
-                            }
-                            return true;
-                        }, TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(_timeout, _cts.Token).Result;
+                            logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", respResult);
+                            Status = MigrateState.FAIL;
+                            status = false;
+                        }
                     }
                     catch (Exception ex)
                     {
+                        Status = MigrateState.FAIL;
+
                         logger?.LogError(ex, "An error occurred");
                         return false;
                     }
                 }
             }
+
             return status;
         }
 
@@ -264,6 +266,8 @@ namespace Garnet.cluster
         {
             if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
+                _ = Debugger.Launch();
+
                 Status = MigrateState.FAIL;
                 logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(resp));
                 return false;
@@ -278,7 +282,11 @@ namespace Garnet.cluster
         public bool RelinquishOwnership()
         {
             if (!clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
+            {
+                _ = Debugger.Launch();
+
                 return false;
+            }
             return true;
         }
 

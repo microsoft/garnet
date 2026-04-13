@@ -249,7 +249,7 @@ namespace Garnet.cluster
 
                 workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
                 workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
-                if (!migrateOperation.Initialize())
+                if (!await migrateOperation.InitializeAsync())
                     return false;
 
                 var cursor = workerStartAddress;

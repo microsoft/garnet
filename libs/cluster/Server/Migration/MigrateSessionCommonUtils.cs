@@ -80,12 +80,6 @@ namespace Garnet.cluster
                         },
                         TaskContinuationOptions.RunContinuationsAsynchronously
                     );
-
-                    //if (!HandleMigrateTaskResponse(task))
-                    //    return false;
-
-                    //// re-initialize cluster migrate command parameters
-                    //gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
                 }
                 return Task.FromResult(true);
             }
@@ -154,22 +148,10 @@ namespace Garnet.cluster
                     }
 
                     return true;
-
-                    //return task.ContinueWith(resp =>
-                    //{
-                    //    // Check if setslotsrange executed correctly
-                    //    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    //    {
-                    //        logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
-                    //        Status = MigrateState.FAIL;
-                    //        return false;
-                    //    }
-                    //    return true;
-                    //}, TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(_timeout, _cts.Token).Result;
                 }
                 catch (Exception ex)
                 {
-                    _ = Debugger.Launch();
+                    //_ = Debugger.Launch();
 
                     logger?.LogError(ex, "An error has occurred");
                     Status = MigrateState.FAIL;

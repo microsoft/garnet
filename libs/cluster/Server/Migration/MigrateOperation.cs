@@ -52,9 +52,9 @@ namespace Garnet.cluster
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
-            public bool Initialize()
+            public async Task<bool> InitializeAsync()
             {
-                if (!session.CheckConnection(gcs))
+                if (!await session.CheckConnectionAsync(gcs))
                     return false;
                 gcs.InitializeIterationBuffer(session.clusterProvider.storeWrapper.loggingFrequency);
                 return true;
@@ -235,7 +235,7 @@ namespace Garnet.cluster
             {
                 var migrateOperation = this;
 
-                if (!migrateOperation.Initialize())
+                if (!await migrateOperation.InitializeAsync())
                     return false;
 
                 var workerStartAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.BeginAddress;

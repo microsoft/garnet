@@ -611,7 +611,14 @@ namespace Garnet.test.cluster
         public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
+                if (msg == "Migration Cleanup timeout")
+                {
+                    _ = Debugger.Launch();
+                }
+
                 Assert.Fail(msg ?? "Cancellation Requested");
+            }
 
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
@@ -1882,7 +1889,7 @@ namespace Garnet.test.cluster
         public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger, CancellationToken cancellationToken = default)
         {
             var backoffToken = cancellationToken.CanBeCanceled ? cancellationToken : context.cts.Token;
-            while (MigrateTasks(endPoint, logger) > 0) { BackOff(cancellationToken: backoffToken); }
+            while (MigrateTasks(endPoint, logger) > 0) { BackOff(cancellationToken: backoffToken, msg: "Migration Cleanup timeout"); }
         }
 
         public void WaitForMigrationCleanup(ILogger logger)
