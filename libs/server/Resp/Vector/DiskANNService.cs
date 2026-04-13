@@ -34,11 +34,9 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
-            // TODO: actually pass distance metric
-
             unsafe
             {
-                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
             }
         }
 
@@ -296,6 +294,14 @@ namespace Garnet.server
 
             return NativeDiskANNMethods.check_internal_id_valid(context, index, (nint)internal_id_data, (nuint)internal_id_len) == 1;
         }
+
+        public bool CheckExternalIdValid(ulong context, nint index, ReadOnlySpan<byte> externalId)
+        {
+            var external_id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(externalId));
+            var external_id_len = externalId.Length;
+
+            return NativeDiskANNMethods.check_external_id_valid(context, index, (nint)external_id_data, (nuint)external_id_len) == 1;
+        }
     }
 
     public static partial class NativeDiskANNMethods
@@ -308,6 +314,7 @@ namespace Garnet.server
             uint dimensions,
             uint reduceDims,
             VectorQuantType quantType,
+            VectorDistanceMetricType metricType,
             uint buildExplorationFactor,
             uint numLinks,
             nint readCallback,
@@ -414,6 +421,14 @@ namespace Garnet.server
             nint index,
             nint internal_id,
             nuint internal_id_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte check_external_id_valid(
+            ulong context,
+            nint index,
+            nint external_id,
+            nuint external_id_len
         );
     }
 }
