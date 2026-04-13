@@ -390,7 +390,7 @@ namespace Tsavorite.core
         /// before they are flushed to disk. This allows the application to snapshot external resources
         /// (e.g. BfTree data files) and set flags on the live record while it is still in memory.
         /// </summary>
-        internal void OnFlushsInRange(long startAddress, long endAddress)
+        internal void FlushRecordsInRange(long startAddress, long endAddress)
         {
             var page = GetPage(startAddress);
             var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
@@ -941,7 +941,7 @@ namespace Tsavorite.core
                 // resources and/or set flags on the live in-memory records.
                 // This runs on the ORIGINAL records (not a copy), under epoch protection.
                 if (storeFunctions.CallOnFlush)
-                    OnFlushsInRange(flushStartAddress, flushEndAddress);
+                    FlushRecordsInRange(flushStartAddress, flushEndAddress);
 
                 // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (onReadOnlyObserver != null)
