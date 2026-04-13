@@ -198,8 +198,7 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
-                if (disposeReason == DisposeReason.Deleted)
-                    storeFunctions.OnDispose(ref logRecord, disposeReason);
+                storeFunctions.OnDispose(ref logRecord, disposeReason);
 
                 logRecord.ClearOptionals();
             }
