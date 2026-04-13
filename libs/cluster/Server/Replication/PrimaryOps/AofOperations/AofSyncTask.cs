@@ -138,7 +138,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(
+                    logger?.LogError(
                         ex,
                         "{Consume}[{taskId}]: exception consuming AOF payload to sync {remoteNodeId} ({currenAddress}, {nextAddress})",
                         nameof(AofSyncTask.Consume),
@@ -155,7 +155,7 @@ namespace Garnet.cluster
                 cts.Token.ThrowIfCancellationRequested();
 
                 if (!garnetClient.IsConnected)
-                    ExceptionUtils.ThrowException(new GarnetException("AOF stream client disconnected!"));
+                    ExceptionUtils.ThrowException(new GarnetException($"AOF stream client disconnected! [{physicalSublogIdx}]:({startAddress},{previousAddress})"));
 
                 // Trigger flush while we are out of epoch protection
                 garnetClient.CompletePending(false);
