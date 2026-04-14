@@ -314,8 +314,8 @@ namespace Garnet
             var (aofDevice, aof) = CreateAOF(dbId);
 
             var vectorManager = new VectorManager(
-                serverOptions.EnableVectorSetPreview,
                 dbId,
+                serverOptions,
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );

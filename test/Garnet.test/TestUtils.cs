@@ -519,7 +519,8 @@ namespace Garnet.test
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            int vectorSetReplayTaskCount = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -584,7 +585,8 @@ namespace Garnet.test
                     replicaSyncTimeout: replicaSyncTimeout,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
-                    clusterAnnounceHostname: clusterAnnounceHostname);
+                    clusterAnnounceHostname: clusterAnnounceHostname,
+                    vectorSetReplayTaskCount: vectorSetReplayTaskCount);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -664,7 +666,8 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            int vectorSetReplayTaskCount = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -787,6 +790,7 @@ namespace Garnet.test
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
+                VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
             };
 
