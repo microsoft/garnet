@@ -59,15 +59,12 @@ namespace Resp.benchmark
         {
             this.options = options;
 
-            if (options.Client == ClientType.InProc && !options.EnableCluster && options.AofBenchType == AofBenchType.Replay)
-                throw new Exception("InProc AofBench with AofBenchType.Replay requires --cluster!");
+            var replayEnabled = options.AofBenchType is AofBenchType.Replay or AofBenchType.ReplayNoResp;
+            if (!options.EnableCluster && options.AofBenchType == AofBenchType.Replay)
+                throw new Exception("InProc/AofBench with AofBenchType.Replay requires --cluster!");
 
             var serverOptions = GetServerOptions(options);
-
-            if (options.Client == ClientType.InProc)
-            {
-                primaryId = Generator.CreateHexId();
-            }
+            primaryId = Generator.CreateHexId();
 
             server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
             sessions = server.GetRespSessions(options.AofPhysicalSublogCount);
@@ -83,12 +80,15 @@ namespace Resp.benchmark
 
             try
             {
-                if (options.AofBenchType is AofBenchType.Replay)
-                    Console.WriteLine($">>> Running {options.AofBenchType} using {threads} worker(s) >>>");
-                else
-                    Console.WriteLine($">>> Running {options.AofBenchType} using {threads}x{options.AofReplayTaskCount} worker(s) >>>");
+                var msg = options.AofBenchType switch
+                {
+                    AofBenchType.Replay or AofBenchType.ReplayNoResp => $">>> Running {options.AofBenchType} using {threads}x{options.AofReplayTaskCount} worker(s) >>>",
+                    AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => $">>> Running {options.AofBenchType} using {threads} worker(s) >>>",
+                    _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
+                };
+                Console.WriteLine(msg);
 
-                if (options.AofBenchType is AofBenchType.EnqueueRandom or AofBenchType.EnqueueSharded)
+                if (options.IsReplayEnabled)
                     aofTailAddress = aofGen.appendOnlyFile.Log.TailAddress;
 
                 var epoch = new LightEpoch();
@@ -99,6 +99,7 @@ namespace Resp.benchmark
                     workers[idx] = options.AofBenchType switch
                     {
                         AofBenchType.Replay => new Thread(() => RunAofReplayBench(x)),
+                        AofBenchType.ReplayNoResp => new Thread(() => RunAofReplayBenchNoResp(x)),
                         AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x, epoch)),
                         _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                     };
@@ -107,7 +108,6 @@ namespace Resp.benchmark
                 // Start threads.
                 foreach (var worker in workers)
                     worker.Start();
-
 
                 waiter.Set();
 
@@ -124,7 +124,7 @@ namespace Resp.benchmark
                 swatch.Stop();
 
                 var seconds = swatch.ElapsedMilliseconds / 1000.0;
-                if (options.AofBenchType == AofBenchType.Replay)
+                if (options.IsReplayEnabled)
                 {
                     var bytesPerSecond = (total_bytes_processed / seconds) / (double)1_000_000_000;
                     var recordsReplayedPerSecond = total_records_replayed / seconds;
@@ -153,105 +153,147 @@ namespace Resp.benchmark
                 waiter.Reset();
                 Console.WriteLine("------------------------------");
             }
+        }
 
-            unsafe void RunAofReplayBench(int threadId)
+        unsafe void RunAofEnqueBench(int threadId, LightEpoch epoch)
+        {
+            waiter.Wait();
+            var kvPairs = aofGen.GetKVPairBuffer(threadId);
+            var recordsEnqueued = 0L;
+            var bytesEnqueued = 0L;
+            while (!done)
             {
-                var buffers = aofGen.GetPageBuffers(threadId);
-                var offset = 0;
-                var currentAddress = 64L;
-                var nextAddress = 64L;
-                var pagesSend = 0L;
-                var totalBytes = 0L;
-                var recordsReplayedCount = 0L;
-
-                waiter.Wait();
-
-                while (!done)
+                for (var i = 0; i < kvPairs.Count; i++)
                 {
-                    var pos = offset++ % buffers.Length;
-                    var currPage = buffers[pos];
-                    fixed (byte* payloadPtr = currPage.payload)
-                    {
-                        nextAddress = currentAddress + currPage.payloadLength;
-                        aofSync[threadId].Consume(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
-
-                        // First page has a valid address from 64.
-                        // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
-                        currentAddress = currentAddress == 64 ? currPage.Length : currentAddress + currPage.Length;
-                        pagesSend++;
-                        totalBytes += currPage.payloadLength;
-                        recordsReplayedCount += currPage.recordCount;
-                    }
-                }
-
-                //Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
-                _ = Interlocked.Add(ref total_pages_processed, pagesSend);
-                _ = Interlocked.Add(ref total_bytes_processed, totalBytes);
-                _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);
-            }
-
-            unsafe void RunAofEnqueBench(int threadId, LightEpoch epoch)
-            {
-                waiter.Wait();
-                var kvPairs = aofGen.GetKVPairBuffer(threadId);
-                var recordsEnqueued = 0L;
-                var bytesEnqueued = 0L;
-                while (!done)
-                {
-                    for (var i = 0; i < kvPairs.Count; i++)
-                    {
-                        if (done) break;
-                        var kvPair = kvPairs[i];
-                        var kb = kvPair.Item1;
-                        var vb = kvPair.Item2;
-                        fixed (byte* keyPtr = kb)
-                        fixed (byte* valPtr = vb)
-                        {
-                            var key = SpanByte.FromPinnedPointer(keyPtr, kb.Length);
-                            var value = SpanByte.FromPinnedPointer(valPtr, vb.Length);
-                            StringInput input = default;
-                            var useShardedHeader = options.AofPhysicalSublogCount > 1 || options.AofReplayTaskCount > 1;
-                            if (!useShardedHeader)
-                            {
-                                var aofHeader = new AofHeader
-                                {
-                                    opType = AofEntryType.StoreUpsert,
-                                    storeVersion = 1,
-                                    sessionID = threadId,
-                                };
-
-                                aofGen.appendOnlyFile.Log.SingleLog.Enqueue(
-                                    aofHeader,
-                                    key,
-                                    value,
-                                    ref input,
-                                    epoch,
-                                    out _);
-                                bytesEnqueued += sizeof(AofHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
-                            }
-                            else
-                            {
-                                aofGen.appendOnlyFile.Log.Enqueue(
-                                    AofEntryType.StoreUpsert,
-                                    1,
-                                    threadId,
-                                    key,
-                                    value,
-                                    ref input,
-                                    epoch,
-                                    out _);
-                                bytesEnqueued += sizeof(AofShardedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
-                            }
-                        }
-                        recordsEnqueued++;
-                    }
-
                     if (done) break;
+                    var kvPair = kvPairs[i];
+                    var kb = kvPair.Item1;
+                    var vb = kvPair.Item2;
+                    fixed (byte* keyPtr = kb)
+                    fixed (byte* valPtr = vb)
+                    {
+                        var key = SpanByte.FromPinnedPointer(keyPtr, kb.Length);
+                        var value = SpanByte.FromPinnedPointer(valPtr, vb.Length);
+                        StringInput input = default;
+                        var useShardedHeader = options.AofPhysicalSublogCount > 1 || options.AofReplayTaskCount > 1;
+                        if (!useShardedHeader)
+                        {
+                            var aofHeader = new AofHeader
+                            {
+                                opType = AofEntryType.StoreUpsert,
+                                storeVersion = 1,
+                                sessionID = threadId,
+                            };
+
+                            aofGen.appendOnlyFile.Log.SingleLog.Enqueue(
+                                aofHeader,
+                                key,
+                                value,
+                                ref input,
+                                epoch,
+                                out _);
+                            bytesEnqueued += sizeof(AofHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
+                        }
+                        else
+                        {
+                            aofGen.appendOnlyFile.Log.Enqueue(
+                                AofEntryType.StoreUpsert,
+                                1,
+                                threadId,
+                                key,
+                                value,
+                                ref input,
+                                epoch,
+                                out _);
+                            bytesEnqueued += sizeof(AofShardedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
+                        }
+                    }
+                    recordsEnqueued++;
                 }
-                //Console.WriteLine($"[{threadId}] - Enqueued: {recordsEnqueued:N0} records");
-                _ = Interlocked.Add(ref total_records_enqueued, recordsEnqueued);
-                _ = Interlocked.Add(ref total_bytes_processed, bytesEnqueued);
+
+                if (done) break;
             }
+            //Console.WriteLine($"[{threadId}] - Enqueued: {recordsEnqueued:N0} records");
+            _ = Interlocked.Add(ref total_records_enqueued, recordsEnqueued);
+            _ = Interlocked.Add(ref total_bytes_processed, bytesEnqueued);
+        }
+
+        unsafe void RunAofReplayBench(int threadId)
+        {
+            var buffers = aofGen.GetPageBuffers(threadId);
+            var offset = 0;
+            var currentAddress = 64L;
+            var nextAddress = 64L;
+            var pagesSend = 0L;
+            var totalBytes = 0L;
+            var recordsReplayedCount = 0L;
+
+            waiter.Wait();
+
+            // Initialize stream for replay
+            aofSync[threadId].InitializeReplayStream();
+
+            while (!done)
+            {
+                var pos = offset++ % buffers.Length;
+                var currPage = buffers[pos];
+                fixed (byte* payloadPtr = currPage.payload)
+                {
+                    nextAddress = currentAddress + currPage.payloadLength;
+                    aofSync[threadId].Consume(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+
+                    // First page has a valid address from 64.
+                    // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
+                    currentAddress = currentAddress == 64 ? currPage.Length : currentAddress + currPage.Length;
+                    pagesSend++;
+                    totalBytes += currPage.payloadLength;
+                    recordsReplayedCount += currPage.recordCount;
+                }
+            }
+
+            //Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
+            _ = Interlocked.Add(ref total_pages_processed, pagesSend);
+            _ = Interlocked.Add(ref total_bytes_processed, totalBytes);
+            _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);
+        }
+
+        unsafe void RunAofReplayBenchNoResp(int threadId)
+        {
+            var buffers = aofGen.GetPageBuffers(threadId);
+            var offset = 0;
+            var currentAddress = 64L;
+            var nextAddress = 64L;
+            var pagesSend = 0L;
+            var totalBytes = 0L;
+            var recordsReplayedCount = 0L;
+
+            waiter.Wait();
+
+            // Initialize stream for replay
+            aofSync[threadId].InitializeReplayStream();
+
+            while (!done)
+            {
+                var pos = offset++ % buffers.Length;
+                var currPage = buffers[pos];
+                fixed (byte* payloadPtr = currPage.payload)
+                {
+                    nextAddress = currentAddress + currPage.payloadLength;
+                    aofSync[threadId].ConsumeNoResp(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+
+                    // First page has a valid address from 64.
+                    // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
+                    currentAddress = currentAddress == 64 ? currPage.Length : currentAddress + currPage.Length;
+                    pagesSend++;
+                    totalBytes += currPage.payloadLength;
+                    recordsReplayedCount += currPage.recordCount;
+                }
+            }
+
+            //Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
+            _ = Interlocked.Add(ref total_pages_processed, pagesSend);
+            _ = Interlocked.Add(ref total_bytes_processed, totalBytes);
+            _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);
         }
     }
 }

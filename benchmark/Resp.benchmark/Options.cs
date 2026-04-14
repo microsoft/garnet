@@ -217,5 +217,8 @@ namespace Resp.benchmark
             v |= v >> 32;
             return v - (v >> 1);
         }
+
+        public bool IsReplayEnabled
+            => AofBenchType is AofBenchType.Replay or AofBenchType.ReplayNoResp;
     }
 }

@@ -21,7 +21,6 @@ namespace Resp.benchmark
         string primaryId;
         readonly long startAddress;
         long previousAddress;
-        bool initialized = false;
         readonly ILogger logger = null;
 
         public long Size => previousAddress - startAddress;
@@ -37,30 +36,10 @@ namespace Resp.benchmark
             garnetClient = null;
             this.startAddress = startAddress;
             previousAddress = startAddress;
-
-            if (options.Client == ClientType.InProc)
-            {
-                buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
-                primaryId = aofBench.primaryId;
-                if (options.EnableCluster)
-                    aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
-            }
-            else
-            {
-                // Get replica information
-                var replicaNode = GetClusterNodes(options);
-                primaryId = replicaNode.ParentNodeId;
-
-                // Initialize client
-                var aofSyncNetworkBufferSettings = aofGen.GetAofSyncNetworkBufferSettings();
-                garnetClient = new GarnetClientSession(
-                            replicaNode.EndPoint,
-                            aofSyncNetworkBufferSettings,
-                            aofSyncNetworkBufferSettings.CreateBufferPool(),
-                            tlsOptions: null,
-                            logger: logger);
-                garnetClient.Connect();
-            }
+            buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
+            primaryId = aofBench.primaryId;
+            if (options.EnableCluster)
+                aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
         }
 
         public void Dispose()
@@ -100,36 +79,21 @@ namespace Resp.benchmark
             return replicaNode;
         }
 
-        unsafe void InitializeReplayStream()
+        public unsafe void InitializeReplayStream()
         {
-            if (options.Client == ClientType.InProc)
+            fixed (byte* ptr = buffer)
             {
-                fixed (byte* ptr = buffer)
-                {
-                    var respMessageSize = WriterClusterAppendLog(
-                        ptr,
-                        buffer.Length,
-                        nodeId: primaryId,
-                        physicalSublogIdx: threadId,
-                        previousAddress: -1,
-                        currentAddress: -1,
-                        nextAddress: -1,
-                        payloadPtr: -1,
-                        payloadLength: 0);
-                    _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
-                }
-            }
-            else
-            {
-                garnetClient.ExecuteClusterAppendLog(
-                    primaryId,
+                var respMessageSize = WriterClusterAppendLog(
+                    ptr,
+                    buffer.Length,
+                    nodeId: primaryId,
                     physicalSublogIdx: threadId,
                     previousAddress: -1,
                     currentAddress: -1,
                     nextAddress: -1,
                     payloadPtr: -1,
                     payloadLength: 0);
-                garnetClient.CompletePending(false);
+                _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
             }
         }
 
@@ -187,39 +151,19 @@ namespace Resp.benchmark
         {
             try
             {
-                if (!initialized)
+                fixed (byte* ptr = buffer)
                 {
-                    InitializeReplayStream();
-                    initialized = true;
-                }
-
-                if (options.Client == ClientType.InProc)
-                {
-                    fixed (byte* ptr = buffer)
-                    {
-                        var respMessageSize = WriterClusterAppendLog(
-                            ptr,
-                            buffer.Length,
-                            nodeId: primaryId,
-                            physicalSublogIdx: threadId,
-                            previousAddress,
-                            currentAddress,
-                            nextAddress,
-                            (long)payloadPtr,
-                            payloadLength);
-                        _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
-                    }
-                }
-                else
-                {
-                    garnetClient.ExecuteClusterAppendLog(
-                        primaryId,
+                    var respMessageSize = WriterClusterAppendLog(
+                        ptr,
+                        buffer.Length,
+                        nodeId: primaryId,
                         physicalSublogIdx: threadId,
                         previousAddress,
                         currentAddress,
                         nextAddress,
                         (long)payloadPtr,
                         payloadLength);
+                    _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
                 }
 
                 previousAddress = nextAddress;
@@ -227,6 +171,27 @@ namespace Resp.benchmark
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.AofSyncTaskInfo.Consume");
+                throw;
+            }
+        }
+
+        public unsafe void ConsumeNoResp(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            try
+            {
+                aofBench.sessions[threadId].clusterSession.ProcessPrimaryStream(
+                    physicalSublogIdx: threadId,
+                    payloadPtr,
+                    payloadLength,
+                    previousAddress,
+                    currentAddress,
+                    nextAddress);
+
+                previousAddress = nextAddress;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.AofSyncTaskInfo.ConsumeNoResp");
                 throw;
             }
         }

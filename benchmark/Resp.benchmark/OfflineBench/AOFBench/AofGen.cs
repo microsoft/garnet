@@ -66,7 +66,7 @@ namespace Resp.benchmark
             appendOnlyFile = new GarnetAppendOnlyFile(aofServerOptions, logSettings, Program.loggerFactory.CreateLogger("AofGen - AOF instance"));
             garnetLog = new GarnetLog(appendOnlyFile, aofServerOptions, logSettings);
 
-            if (options.AofBenchType == AofBenchType.Replay)
+            if (options.IsReplayEnabled)
             {
                 pageBuffers = new Page[options.AofPhysicalSublogCount][];
             }
@@ -118,7 +118,7 @@ namespace Resp.benchmark
         {
             var seqNumGen = new SequenceNumberGenerator(0);
             Console.WriteLine($"Generating AoFBench Data!");
-            var threads = options.AofBenchType == AofBenchType.Replay ? options.AofPhysicalSublogCount : options.NumThreads.Max();
+            var threads = options.IsReplayEnabled ? options.AofPhysicalSublogCount : options.NumThreads.Max();
             var workers = new Thread[threads];
 
             // Run the experiment.
@@ -127,7 +127,7 @@ namespace Resp.benchmark
                 var x = idx;
                 workers[idx] = options.AofBenchType switch
                 {
-                    AofBenchType.Replay => new Thread(() => GeneratePages(x)),
+                    AofBenchType.Replay or AofBenchType.ReplayNoResp => new Thread(() => GeneratePages(x)),
                     AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => GenerateKeys(x)),
                     _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                 };

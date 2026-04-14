@@ -123,5 +123,16 @@ namespace Garnet.server
         /// Dispose
         /// </summary>
         void Dispose();
+
+        /// <summary>
+        /// NOTE: Used for micro-benchmark
+        /// </summary>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="record"></param>
+        /// <param name="recordLength"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        unsafe void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress);
     }
 }

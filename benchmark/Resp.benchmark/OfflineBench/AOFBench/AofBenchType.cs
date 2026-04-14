@@ -16,6 +16,10 @@ namespace Resp.benchmark
         /// <summary>
         /// Simulate AOF replay.
         /// </summary>
-        Replay
+        Replay,
+        /// <summary>
+        /// Simulate AOF replay (skipping resp parsing)
+        /// </summary>
+        ReplayNoResp
     }
 }
