@@ -245,6 +245,7 @@ namespace Garnet.test.cluster
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
+        /// <param name="vectorSetReplayTaskCount"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -293,7 +294,8 @@ namespace Garnet.test.cluster
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            bool useClusterAnnounceHostname = false)
+            bool useClusterAnnounceHostname = false,
+            int vectorSetReplayTaskCount = 0)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -350,7 +352,8 @@ namespace Garnet.test.cluster
                 replicaSyncTimeout: replicaSyncTimeout,
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
-                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
+                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
 
             foreach (var node in nodes)
                 node.Start();
@@ -364,6 +367,7 @@ namespace Garnet.test.cluster
         /// <param name="endpoint"></param>
         /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
+        /// <param name="disableEpochCollision"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
         /// <param name="lowMemory"></param>
@@ -383,8 +387,10 @@ namespace Garnet.test.cluster
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
         /// <param name="asyncReplay"></param>
-        /// <param name="clusterCreds"></param>
+        /// <param name="vectorSetReplayTaskCount"></param>
+        /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
+        /// <param name="clusterCreds"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -410,6 +416,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            int vectorSetReplayTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
@@ -445,7 +452,8 @@ namespace Garnet.test.cluster
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
                 certificates: certificates,
-                clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
 
             return new GarnetServer(opts, loggerFactory);
         }
