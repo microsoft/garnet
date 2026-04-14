@@ -15,19 +15,19 @@ namespace Tsavorite.core
         /// If true, <see cref="OnFlush(ref LogRecord)"/> is called per valid record on the
         /// original in-memory page before it is flushed to disk.
         /// </summary>
-        public bool CallOnFlush { get; }
+        bool CallOnFlush { get; }
 
         /// <summary>
         /// If true, <see cref="OnEvict(ref LogRecord)"/> is called per non-tombstoned record
         /// when a page is evicted past HeadAddress.
         /// </summary>
-        public bool CallOnEvict { get; }
+        bool CallOnEvict { get; }
 
         /// <summary>
         /// If true, <see cref="OnDiskRead(ref LogRecord)"/> is called per record loaded from
         /// disk into memory (recovery, delta log apply, pending reads, push scans).
         /// </summary>
-        public bool CallOnDiskRead { get; }
+        bool CallOnDiskRead { get; }
 
         /// <summary>
         /// Called when a heap value object needs to be disposed (e.g. during ClearHeapFields).
@@ -67,43 +67,43 @@ namespace Tsavorite.core
     /// Default no-op implementation of <see cref="IRecordTriggers"/>.
     /// </summary>
     /// <remarks>It is appropriate to call methods on this instance as a no-op.</remarks>
-    public struct DefaultRecordTriggers : IRecordTriggers
+    public readonly struct DefaultRecordTriggers : IRecordTriggers
     {
         /// <summary>Default instance.</summary>
         public static readonly DefaultRecordTriggers Instance = new();
 
         /// <inheritdoc/>
-        public readonly bool CallOnFlush => false;
+        public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnEvict => false;
+        public bool CallOnEvict => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnDiskRead => false;
+        public bool CallOnDiskRead => false;
 
         /// <inheritdoc/>
-        public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
+        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
     }
 
     /// <summary>
     /// No-op implementation of <see cref="IRecordTriggers"/> for SpanByte.
     /// </summary>
-    public struct SpanByteRecordTriggers : IRecordTriggers    // TODO remove for dual
+    public readonly struct SpanByteRecordTriggers : IRecordTriggers    // TODO remove for dual
     {
         /// <summary>Default instance.</summary>
         public static readonly SpanByteRecordTriggers Instance = new();
 
         /// <inheritdoc/>
-        public readonly bool CallOnFlush => false;
+        public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnEvict => false;
+        public bool CallOnEvict => false;
 
         /// <inheritdoc/>
-        public readonly bool CallOnDiskRead => false;
+        public bool CallOnDiskRead => false;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
+        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
     }
 }
