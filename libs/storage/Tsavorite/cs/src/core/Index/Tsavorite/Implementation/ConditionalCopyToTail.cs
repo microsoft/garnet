@@ -133,7 +133,7 @@ namespace Tsavorite.core
                 pendingContext.CopyFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap,
                     srcLogRecord.IsMemoryLogRecord
                         ? obj => { }
-                : obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                : obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
             }
             return OperationStatus.RECORD_ON_DISK;
         }

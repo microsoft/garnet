@@ -516,7 +516,7 @@ namespace Tsavorite.core
                     serializedLogRecord.ValueObject = valueObject;
                     valueObjectSerializer.EndDeserialize();
                 }
-                return new(serializedLogRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                return new(serializedLogRecord, obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
             }
             catch
             {

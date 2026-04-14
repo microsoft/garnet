@@ -115,7 +115,7 @@ namespace Tsavorite.core
             // If we are not currently taking a checkpoint, we can delete the old version
             // since the new version of the object is already created.
             var oldValueObject = (HeapObjectBase)srcLogRecord.ValueObject;
-            if (!srcLogRecord.Info.IsInNewVersion)
+            if (!dstLogRecord.Info.IsInNewVersion)
             {
                 // Wait for any concurrent ongoing serialization of oldValue to complete
                 while (true)

@@ -216,17 +216,11 @@ namespace Garnet.server
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                if (logRecord.Info.ValueIsObject)
-                {
-                    functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
-
-                    // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                    functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(_ => { });
-                }
-                else
+                if (!logRecord.Info.ValueIsObject)
                     _ = logRecord.RemoveETag();
 
+                // Heap disposal and cache size tracking are handled by
+                // OnDispose(Deleted) in InternalRMW for both ExpireAndStop and ExpireAndResume.
                 rmwInfo.Action = cmd == RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return IPUResult.Failed;
             }

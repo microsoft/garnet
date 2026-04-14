@@ -33,10 +33,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
+        void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
+        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)
@@ -135,12 +135,14 @@ namespace Tsavorite.core
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
             Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TryTransferToFreeList");
 
-            // If its address is not revivifiable, just leave it orphaned and invalid; the caller will Dispose with its own DisposeReason.
+            // If its address is not revivifiable, just leave it orphaned and invalid.
             if (logicalAddress < GetMinRevivifiableAddress())
                 return false;
 
-            // Dispose any existing key and value. We do this as soon as we have elided so objects are released for GC as early as possible.
-            DisposeRecord(ref logRecord, DisposeReason.RevivificationFreeList);
+            // Application-level dispose (storeFunctions.OnDispose) was already called at the delete site.
+            // Call hlog.OnDispose with RevivificationFreeList to clear the key for freelist reuse
+            // (Deleted reason passes clearKey=false, but freelist reuse needs the key space cleared).
+            OnDispose(ref logRecord, DisposeReason.RevivificationFreeList);
 
             return RevivificationManager.TryAdd(logicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
         }
@@ -298,15 +300,15 @@ namespace Tsavorite.core
             TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord srcLogRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            // Record was already disposed at the delete site (OnDispose with DisposeReason.Deleted).
+            // Heap fields and optionals are already cleared. This method only handles chain management.
+
             if (!RevivificationManager.IsEnabled)
             {
                 // We are not doing revivification, so we just want to remove the record from the tag chain so we don't potentially do an IO later for key 
                 // traceback. If we succeed, we need to SealAndInvalidate. It's fine if we don't succeed here; this is just tidying up the HashBucket. 
                 if (stackCtx.hei.TryElide())
-                {
                     srcLogRecord.InfoRef.SealAndInvalidate();
-                    DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
-                }
                 return;
             }
 
@@ -328,7 +330,6 @@ namespace Tsavorite.core
                 {
                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
                     srcLogRecord.InfoRef.UnsealAndValidate();
-                    DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                 }
                 else if (!isAdded && RevivificationManager.restoreDeletedRecordsIfBinIsFull)
                 {
@@ -342,9 +343,7 @@ namespace Tsavorite.core
 
                     if (stackCtx.hei.entry.Address <= kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
                         srcLogRecord.InfoRef.UnsealAndValidate();
-                    DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                 }
-                // Do not DisposeRecord if we fell through to here; that means TryElideAndTransferToFreeList elided and called DisposeRecord with DisposeReason.RevivificationFreeList.
             }
         }
     }
