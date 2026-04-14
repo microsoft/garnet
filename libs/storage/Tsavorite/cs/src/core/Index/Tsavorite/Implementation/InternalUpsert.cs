@@ -332,7 +332,7 @@ namespace Tsavorite.core
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                    DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                    OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
 
                 if (upsertInfo.Action == UpsertAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -360,7 +360,7 @@ namespace Tsavorite.core
                     if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref srcLogRecord);
                     else
-                        DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
+                        OnDispose(ref srcLogRecord, DisposeReason.Elided);
                 }
                 else
                 {
@@ -378,7 +378,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
+            OnDispose(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

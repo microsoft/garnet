@@ -14,13 +14,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
-    using SpanByteStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>;
 
-    using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<AdId.Comparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -55,7 +55,7 @@ namespace Tsavorite.test.recovery.sumstore
                 LogDevice = log,
                 SegmentSize = 1L << 25, //LogMemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -316,11 +316,11 @@ namespace Tsavorite.test.recovery.sumstore
             var task = allocatorType switch
             {
                 AllocatorType.SpanByte => RunTest<SpanByteStoreFunctions, StructAllocator>(allocatorType,
-                                                () => StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance),
+                                                () => StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordTriggers.Instance),
                                                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
                                                 Populate, Read, Recover, isAsync),
                 AllocatorType.Object => RunTest<ClassStoreFunctions, ClassAllocator>(allocatorType,
-                                                () => StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance),
+                                                () => StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                                                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
                                                 Populate, Read, Recover, isAsync),
                 _ => throw new ApplicationException("Unknown allocator type"),

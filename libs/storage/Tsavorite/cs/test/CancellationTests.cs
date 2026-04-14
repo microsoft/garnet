@@ -13,8 +13,8 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.Cancellation
 {
     // Use an int in these tests just to get a different length underlying the SpanByte
-    using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>>;
-    using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>;
+    using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
+    using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -156,7 +156,7 @@ namespace Tsavorite.test.Cancellation
                 LogDevice = log,
                 LogMemorySize = 1L << 17,
                 PageSize = 1L << 12
-            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

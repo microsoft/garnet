@@ -24,8 +24,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordTriggers>;
 
     public class RefCountedAdder : SessionFunctionsBase<long, Empty, Empty>
     {
@@ -150,7 +150,7 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

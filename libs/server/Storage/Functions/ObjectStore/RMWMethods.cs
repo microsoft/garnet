@@ -115,11 +115,8 @@ namespace Garnet.server
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
-
-                // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
-                logRecord.ClearValueIfHeap(obj => { });
+                // Heap disposal and cache size tracking are handled by
+                // OnDispose(Deleted) in InternalRMW when processing ExpireAndResume.
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
@@ -131,15 +128,12 @@ namespace Garnet.server
                     return true;
                 if (output.HasRemoveKey)
                 {
-                    functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
-
-                    // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                    functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(obj => { });
                     if (!logRecord.Info.Modified)
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
+                    // Heap disposal and cache size tracking are handled by
+                    // OnDispose(Deleted) in the ExpireAndStop path of InternalRMW.
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
