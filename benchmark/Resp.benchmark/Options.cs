@@ -143,7 +143,7 @@ namespace Resp.benchmark
         [Option("aof-physical-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
         public int AofPhysicalSublogCount { get; set; }
 
-        [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
+        [Option("aof-replay-task-count", Required = false, Default = 1, HelpText = "Number of replay tasks per physical sublog at the replica.")]
         public int AofReplayTaskCount { get; set; }
 
         [Option("aof-memory-size", Required = false, Default = "64m", HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.")]
