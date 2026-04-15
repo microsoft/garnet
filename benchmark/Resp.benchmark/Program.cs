@@ -183,7 +183,7 @@ namespace Resp.benchmark
 
             loggerFactory = CreateLoggerFactory(opts);
 
-            if (opts.Client != ClientType.InProc || !opts.AofBench)
+            if (!(opts.Client == ClientType.InProc || opts.AofBench))
                 WaitForServer(opts);
 
             if (opts.SaveFreqSecs > 0)
