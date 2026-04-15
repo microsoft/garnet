@@ -127,7 +127,7 @@ namespace Resp.benchmark
                 var x = idx;
                 workers[idx] = options.AofBenchType switch
                 {
-                    AofBenchType.Replay or AofBenchType.ReplayNoResp => new Thread(() => GeneratePages(x)),
+                    AofBenchType.Replay or AofBenchType.ReplayNoResp or AofBenchType.ReplayDirect => new Thread(() => GeneratePages(x)),
                     AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => GenerateKeys(x)),
                     _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                 };
@@ -147,7 +147,7 @@ namespace Resp.benchmark
             swatch.Stop();
 
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
-            if (options.AofBenchType == AofBenchType.Replay)
+            if (options.IsReplayEnabled)
             {
                 Console.WriteLine($"Generated {threads}x{options.AofGenPages} pages of size {aofServerOptions.AofPageSize} in {seconds:N2} secs");
                 Console.WriteLine($"Generated number of AOF records: {total_number_of_aof_records:N0}");

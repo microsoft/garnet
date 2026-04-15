@@ -82,7 +82,7 @@ namespace Resp.benchmark
             {
                 var msg = options.AofBenchType switch
                 {
-                    AofBenchType.Replay or AofBenchType.ReplayNoResp => $">>> Running {options.AofBenchType} using {threads}x{options.AofReplayTaskCount} worker(s) >>>",
+                    AofBenchType.Replay or AofBenchType.ReplayNoResp or AofBenchType.ReplayDirect => $">>> Running {options.AofBenchType} using {threads}x{options.AofReplayTaskCount} worker(s) >>>",
                     AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => $">>> Running {options.AofBenchType} using {threads} worker(s) >>>",
                     _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                 };
@@ -100,6 +100,7 @@ namespace Resp.benchmark
                     {
                         AofBenchType.Replay => new Thread(() => RunAofReplayBench(x)),
                         AofBenchType.ReplayNoResp => new Thread(() => RunAofReplayBenchNoResp(x)),
+                        AofBenchType.ReplayDirect => new Thread(() => RunAofReplayBenchDirect(x)),
                         AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x, epoch)),
                         _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                     };
@@ -280,6 +281,45 @@ namespace Resp.benchmark
                 {
                     nextAddress = currentAddress + currPage.payloadLength;
                     aofSync[threadId].ConsumeNoResp(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+
+                    // First page has a valid address from 64.
+                    // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
+                    currentAddress = currentAddress == 64 ? currPage.Length : currentAddress + currPage.Length;
+                    pagesSend++;
+                    totalBytes += currPage.payloadLength;
+                    recordsReplayedCount += currPage.recordCount;
+                }
+            }
+
+            //Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
+            _ = Interlocked.Add(ref total_pages_processed, pagesSend);
+            _ = Interlocked.Add(ref total_bytes_processed, totalBytes);
+            _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);
+        }
+
+        unsafe void RunAofReplayBenchDirect(int threadId)
+        {
+            var buffers = aofGen.GetPageBuffers(threadId);
+            var offset = 0;
+            var currentAddress = 64L;
+            var nextAddress = 64L;
+            var pagesSend = 0L;
+            var totalBytes = 0L;
+            var recordsReplayedCount = 0L;
+
+            waiter.Wait();
+
+            // Initialize stream for replay
+            aofSync[threadId].InitializeReplayStream();
+
+            while (!done)
+            {
+                var pos = offset++ % buffers.Length;
+                var currPage = buffers[pos];
+                fixed (byte* payloadPtr = currPage.payload)
+                {
+                    nextAddress = currentAddress + currPage.payloadLength;
+                    aofSync[threadId].ConsumeDirect(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
 
                     // First page has a valid address from 64.
                     // After that currentAddress starts from beginning of bage (i.e. multiple of page size)

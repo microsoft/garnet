@@ -219,6 +219,6 @@ namespace Resp.benchmark
         }
 
         public bool IsReplayEnabled
-            => AofBenchType is AofBenchType.Replay or AofBenchType.ReplayNoResp;
+            => AofBenchType is AofBenchType.Replay or AofBenchType.ReplayNoResp or AofBenchType.ReplayDirect;
     }
 }

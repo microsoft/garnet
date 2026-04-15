@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System.Net;
+using Embedded.server;
 using Garnet.client;
+using Garnet.cluster;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -24,6 +26,9 @@ namespace Resp.benchmark
         readonly ILogger logger = null;
 
         public long Size => previousAddress - startAddress;
+
+        // Direct replay mode (InProc): bypass RESP, call ReplicaReplayDriver directly
+        ReplicaReplayDriver replayDriver;
 
         public byte[] buffer;
 
@@ -81,19 +86,30 @@ namespace Resp.benchmark
 
         public unsafe void InitializeReplayStream()
         {
-            fixed (byte* ptr = buffer)
+            if (options.AofBenchType == AofBenchType.ReplayDirect)
             {
-                var respMessageSize = WriterClusterAppendLog(
-                    ptr,
-                    buffer.Length,
-                    nodeId: primaryId,
-                    physicalSublogIdx: threadId,
-                    previousAddress: -1,
-                    currentAddress: -1,
-                    nextAddress: -1,
-                    payloadPtr: -1,
-                    payloadLength: 0);
-                _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
+                // Direct mode: initialize ReplicaReplayDriver without going through RESP
+                var clusterProvider = (ClusterProvider)aofBench.server.StoreWrapper.clusterProvider;
+                var networkSender = new EmbeddedNetworkSender();
+                clusterProvider.replicationManager.InitializeReplicaReplayDriver(threadId, networkSender);
+                replayDriver = clusterProvider.replicationManager.ReplicaReplayDriverStore.GetReplayDriver(threadId);
+                replayDriver.ResumeReplay();
+            }
+            else {
+                fixed (byte* ptr = buffer)
+                {
+                    var respMessageSize = WriterClusterAppendLog(
+                        ptr,
+                        buffer.Length,
+                        nodeId: primaryId,
+                        physicalSublogIdx: threadId,
+                        previousAddress: -1,
+                        currentAddress: -1,
+                        nextAddress: -1,
+                        payloadPtr: -1,
+                        payloadLength: 0);
+                    _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
+                }
             }
         }
 
@@ -186,6 +202,26 @@ namespace Resp.benchmark
                     previousAddress,
                     currentAddress,
                     nextAddress);
+
+                previousAddress = nextAddress;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.AofSyncTaskInfo.ConsumeNoResp");
+                throw;
+            }
+        }
+
+        public unsafe void ConsumeDirect(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            try
+            {
+                replayDriver.Consume(
+                    payloadPtr,
+                    payloadLength,
+                    currentAddress,
+                    nextAddress,
+                    isProtected: false);
 
                 previousAddress = nextAddress;
             }
