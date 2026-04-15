@@ -81,5 +81,10 @@ namespace Garnet.common
         /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
         /// </summary>
         VectorSet_Interrupt_Delete_2,
+        /// <summary>
+        /// Failure after handler registered in activeHandlers but before Start() is called.
+        /// This means no SAEA receive loop is running, so the only cleanup path is public Dispose().
+        /// </summary>
+        Dispose_After_Handler_Registered_Before_Start,
     }
 }
