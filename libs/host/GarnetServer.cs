@@ -488,7 +488,7 @@ namespace Garnet
 
             // Phase 3: Dispose the provider (storage engine shutdown — may take time).
             Provider?.Dispose();
-                        
+
             subscribeBroker?.Dispose();
             storeEpoch?.Dispose();
             aofEpoch?.Dispose();
