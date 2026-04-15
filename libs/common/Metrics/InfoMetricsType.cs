@@ -87,7 +87,7 @@ namespace Garnet.common
         /// </summary>
         HLOGSCAN,
         /// <summary>
-        /// Per-command usage statistics (calls, failures, rejections, latency)
+        /// Per-command usage statistics (calls, failures, rejections)
         /// </summary>
         COMMANDSTATS,
     }

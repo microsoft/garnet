@@ -250,21 +250,21 @@ namespace Garnet.server
             // Build an aggregate from history (disposed sessions) + active sessions
             CommandStats aggregate = new();
 
-            // Add history stats from the monitor
-            CommandStats historyStats = storeWrapper.monitor.GlobalMetrics.historyCommandStats;
-            if (historyStats != null)
-                aggregate.Add(historyStats);
-
-            // If periodic sampling is running, add the last sampled global stats
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0)
             {
+                // Periodic sampling is running — globalCommandStats already includes
+                // history + active sessions from the last sampling tick.
                 CommandStats globalStats = storeWrapper.monitor.GlobalMetrics.globalCommandStats;
                 if (globalStats != null)
                     aggregate.Add(globalStats);
             }
             else
             {
-                // No periodic sampling — scan active sessions directly
+                // No periodic sampling — aggregate history + active sessions on demand
+                CommandStats historyStats = storeWrapper.monitor.GlobalMetrics.historyCommandStats;
+                if (historyStats != null)
+                    aggregate.Add(historyStats);
+
                 foreach (IGarnetServer server in storeWrapper.monitor.Servers)
                 {
                     foreach (IMessageConsumer consumer in ((GarnetServerBase)server).ActiveConsumers())

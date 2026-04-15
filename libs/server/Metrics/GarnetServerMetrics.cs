@@ -36,7 +36,7 @@ namespace Garnet.server
         public readonly GarnetLatencyMetrics globalLatencyMetrics;
 
         /// <summary>
-        /// Global per-command usage statistics (calls, failures, rejections, latency).
+        /// Global per-command usage statistics (calls, failures, rejections).
         /// </summary>
         public CommandStats globalCommandStats;
 

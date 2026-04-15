@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 namespace Garnet.server
 {
     /// <summary>
-    /// Per-command statistics entry tracking calls, failures, rejections, and latency.
+    /// Per-command statistics entry tracking calls, failures, and rejections.
     /// Follows the Redis COMMANDSTATS convention.
     /// </summary>
     public struct CommandStatsEntry
@@ -59,8 +59,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void IncrementCalls(RespCommand cmd)
         {
-            int idx = (int)cmd;
-            if ((uint)idx < (uint)entries.Length)
+            ushort idx = (ushort)cmd;
+            if (idx < entries.Length)
                 entries[idx].Calls++;
         }
 
@@ -70,8 +70,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void IncrementFailed(RespCommand cmd)
         {
-            int idx = (int)cmd;
-            if ((uint)idx < (uint)entries.Length)
+            ushort idx = (ushort)cmd;
+            if (idx < entries.Length)
                 entries[idx].FailedCalls++;
         }
 
@@ -81,8 +81,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void IncrementRejected(RespCommand cmd)
         {
-            int idx = (int)cmd;
-            if ((uint)idx < (uint)entries.Length)
+            ushort idx = (ushort)cmd;
+            if (idx < entries.Length)
                 entries[idx].RejectedCalls++;
         }
 
@@ -92,8 +92,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public CommandStatsEntry GetEntry(RespCommand cmd)
         {
-            int idx = (int)cmd;
-            if ((uint)idx < (uint)entries.Length)
+            ushort idx = (ushort)cmd;
+            if (idx < entries.Length)
                 return entries[idx];
             return default;
         }

@@ -352,7 +352,7 @@ namespace Garnet
         public bool? LatencyMonitor { get; set; }
 
         [OptionValidation]
-        [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections, latency). Exposed via INFO COMMANDSTATS.")]
+        [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections). Exposed via INFO COMMANDSTATS.")]
         public bool? CommandStatsMonitor { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
