@@ -104,7 +104,7 @@ namespace Tsavorite.core
                 }
                 if (!status.IsPending)
                 {
-                    DisposeRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
+                    OnDispose(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
                     pendingContext.Dispose();
                 }
             }

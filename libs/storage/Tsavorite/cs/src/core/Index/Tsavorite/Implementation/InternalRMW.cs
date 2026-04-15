@@ -165,14 +165,21 @@ namespace Tsavorite.core
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
 
+                        // Immediately dispose all resources at delete site.
+                        OnDispose(ref srcLogRecord, DisposeReason.Deleted);
+
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
-                        else
-                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
                         goto LatchRelease;
+                    }
+                    else if (rmwInfo.Action == RMWAction.ExpireAndResume)
+                    {
+                        // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called
+                        // OnDispose(Deleted). If it failed and we fall through to CreateNewRecord,
+                        // the record is already disposed.
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {
@@ -399,11 +406,18 @@ namespace Tsavorite.core
                         return OperationStatus.CANCELED;
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
+                        // The old value is logically deleted (expired). Dispose resources immediately.
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                            OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                         doingCU = false;
                         forExpiration = true;
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
+                        // Immediately dispose all resources on the expired source record.
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                            OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
+
                         if (allocOptions.elideSourceRecord)
                         {
                             srcLogRecord.InfoRef.SetTombstone();
@@ -415,7 +429,7 @@ namespace Tsavorite.core
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
-                        // otherwise we shall continue down the tombstoning path
+                        // Non-elidable: create tombstone record
                         addTombstone = true;
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
@@ -484,8 +498,8 @@ namespace Tsavorite.core
                         newLogRecord.InfoRef.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
 
-                    if (rmwInfo.ClearSourceValueObject)
-                        srcLogRecord.ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
+                    // Note: ClearSourceValueObject disposal is deferred to after CAS success (in the post-CAS block)
+                    // to avoid disposing the source if CAS fails and the operation retries.
                     goto DoCAS;
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -501,6 +515,9 @@ namespace Tsavorite.core
                 {
                     Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
                         "This block should only handle expiration/tombstoning via RCU.");
+                    // Dispose the source record's resources immediately.
+                    if (stackCtx.recSrc.HasMainLogSrc)
+                        OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                     addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
                     newLogRecord.InfoRef.SetDirtyAndModified();
@@ -509,6 +526,9 @@ namespace Tsavorite.core
                 }
                 else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                 {
+                    // Dispose the source record's resources immediately.
+                    if (stackCtx.recSrc.HasMainLogSrc)
+                        OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                     doingCU = false;
                     forExpiration = true;
 
@@ -521,7 +541,7 @@ namespace Tsavorite.core
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
                         stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                         if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                            DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                            OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
                         goto RetryNow;
                     }
                     addTombstone = newLogRecord.Info.Tombstone;
@@ -575,8 +595,8 @@ namespace Tsavorite.core
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
                         {
-                            if (!newLogRecord.Info.IsInNewVersion && isMemoryLogRecord)
-                                srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
+                            if (rmwInfo.ClearSourceValueObject && isMemoryLogRecord)
+                                srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.CopyUpdated));
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -602,7 +622,7 @@ namespace Tsavorite.core
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                             _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref inMemoryLogRecord);
                         else
-                            DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
+                            OnDispose(ref inMemoryLogRecord, DisposeReason.Elided);
                     }
                     else
                     {
@@ -621,7 +641,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
+            OnDispose(ref newLogRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
@@ -634,6 +654,13 @@ namespace Tsavorite.core
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
             advancedStatusCode |= StatusCode.Expired;
+
+            // Dispose the expired record's resources before reinitializing.
+            // For IPU, this is the old in-place record about to be overwritten.
+            // For CU, this is the newly allocated record (source was already disposed at the decision site).
+            if (isIpu)
+                OnDispose(ref logRecord, DisposeReason.Deleted);
+
             if (!sessionFunctions.NeedInitialUpdate(logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -680,8 +707,10 @@ namespace Tsavorite.core
             }
 
             // Reinitialization in place was not possible. InternalRMW will do the following based on who called this:
-            //  IPU: move to the NIU->allocate->IU path
+            //  IPU: move to the NIU->allocate->IU path. Set tombstone so CreateNewRecordRMW uses InitialUpdater (doingCU=false).
             //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
+            if (isIpu)
+                logRecord.InfoRef.SetTombstone();
             status = OperationStatus.SUCCESS;
             return false;
         }

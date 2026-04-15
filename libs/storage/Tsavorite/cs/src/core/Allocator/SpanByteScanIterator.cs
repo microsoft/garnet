@@ -93,7 +93,7 @@ namespace Tsavorite.core
         {
             if (diskLogRecord.IsSet)
             {
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDispose(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
             }
             diskLogRecord = default;
@@ -249,7 +249,7 @@ namespace Tsavorite.core
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail (SpanByteAllocator has no objects).
                         diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap),
-                                            obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                                            obj => store.storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
                     }
                 }
                 finally
@@ -410,7 +410,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             if (diskLogRecord.IsSet)
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDispose(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             frame?.Dispose();

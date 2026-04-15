@@ -466,6 +466,11 @@ namespace Tsavorite.core
                                 // Clean up temporary bits when applying the delta log
                                 ref var destInfo = ref LogRecord.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
+                                if (storeFunctions.CallOnDiskRead)
+                                {
+                                    var destLogRecord = new LogRecord(destination);
+                                    storeFunctions.OnDiskRead(ref destLogRecord);
+                                }
                             }
                             physicalAddress += size;
                         }
@@ -1405,7 +1410,7 @@ namespace Tsavorite.core
                 MemoryPageScan(start, end, logSizeTracker);
             }
 
-            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
+            // TODO: Currently we don't call OnDispose or OnDisposeValueObject on eviction; we defer to the OnEvictionObserver
             // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
@@ -1483,9 +1488,9 @@ namespace Tsavorite.core
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
-                    // Dispose records being evicted — allows cleanup of external resources via DisposeRecord.
-                    if (storeFunctions.DisposeOnPageEviction)
-                        _wrapper.DisposeRecordsInRangeForEviction(start, end);
+                    // Notify application of records being evicted — allows cleanup of external resources.
+                    if (storeFunctions.CallOnEvict)
+                        _wrapper.EvictRecordsInRange(start, end);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -2116,6 +2121,9 @@ namespace Tsavorite.core
                     if (currentLength >= recordLength)
                     {
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                        if (storeFunctions.CallOnDiskRead)
+                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
                 }

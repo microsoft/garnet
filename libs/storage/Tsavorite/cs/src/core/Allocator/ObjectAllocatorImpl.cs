@@ -324,28 +324,30 @@ namespace Tsavorite.core
         /// Dispose an in-memory <see cref="LogRecord"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
+        internal void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             if (logRecord.IsSet)
             {
-                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.DisposeValueObject(obj, disposeReason));
+                storeFunctions.OnDispose(ref logRecord, disposeReason);
+
+                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.OnDisposeValueObject(obj, disposeReason));
                 logRecord.ClearOptionals();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
+        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
             if (logRecord.IsSet && logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
-                storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
+                storeFunctions.OnDisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 
         /// <summary>
-        /// Iterate records in the given logical address range and call DisposeRecord on each.
-        /// Used during page eviction to allow disposal of external resources.
+        /// Iterate records in the given logical address range and call <see cref="IStoreFunctions.OnEvict"/>
+        /// on each valid, non-tombstoned record. Used during page eviction to allow cleanup of external resources.
         /// </summary>
-        internal void DisposeRecordsInRangeForEviction(long startAddress, long endAddress)
+        internal void EvictRecordsInRange(long startAddress, long endAddress)
         {
             // Ensure we start after the page header
             var page = GetPage(startAddress);
@@ -367,18 +369,47 @@ namespace Tsavorite.core
                 if (offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null and closed/sealed records
-                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan)
+                // Skip null, closed/sealed, and tombstoned records (tombstoned records were already
+                // disposed with DisposeReason.Deleted at the delete site)
+                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan || logRecord.Info.Tombstone)
                 {
                     address += allocatedSize;
                     continue;
                 }
 
-                // Call application dispose hook directly for eviction. We do not call the full
-                // DisposeRecord (which includes ClearHeapFields/ClearOptionals) to keep eviction
-                // behavior unchanged — FreePage handles bulk cleanup of the ObjectIdMap.
-                // Currently DisposeRecordsInRangeForEviction is only called for PageEviction.
-                storeFunctions.DisposeRecord(ref logRecord, DisposeReason.PageEviction);
+                // Notify the application that this record is being evicted from memory.
+                storeFunctions.OnEvict(ref logRecord);
+
+                address += allocatedSize;
+            }
+        }
+
+        /// <summary>
+        /// Call <see cref="IStoreFunctions.OnFlush(ref LogRecord)"/> on original in-memory records
+        /// before they are flushed to disk. This allows the application to snapshot external resources
+        /// (e.g. BfTree data files) and set flags on the live record while it is still in memory.
+        /// </summary>
+        internal void FlushRecordsInRange(long startAddress, long endAddress)
+        {
+            var page = GetPage(startAddress);
+            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
+
+            while (address < endAddress)
+            {
+                var physicalAddress = GetPhysicalAddress(address);
+                var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
+                var allocatedSize = logRecord.AllocatedSize;
+
+                if (allocatedSize <= 0)
+                    break;
+
+                var offset = GetOffsetOnPage(address);
+                if (offset + allocatedSize > PageSize)
+                    break;
+
+                if (logRecord.Info.Valid && !logRecord.Info.IsNull && !logRecord.Info.SkipOnScan && !logRecord.Info.Tombstone)
+                    storeFunctions.OnFlush(ref logRecord);
 
                 address += allocatedSize;
             }
@@ -905,6 +936,12 @@ namespace Tsavorite.core
                 var flushStartAddress = LastIssuedFlushedUntilAddress;
                 var flushEndAddress = OngoingFlushedUntilAddress;
 
+                // Notify the application per record before flushing, so it can snapshot external
+                // resources and/or set flags on the live in-memory records.
+                // This runs on the ORIGINAL records (not a copy), under epoch protection.
+                if (storeFunctions.CallOnFlush)
+                    FlushRecordsInRange(flushStartAddress, flushEndAddress);
+
                 // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (onReadOnlyObserver != null)
                 {
@@ -974,7 +1011,7 @@ namespace Tsavorite.core
             if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
                 // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
-                ctx.diskLogRecord.objectDisposer = obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
+                ctx.diskLogRecord.objectDisposer = obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
 
                 // Default the output arguments for reading a previous record.
                 prevAddressToRead = 0;

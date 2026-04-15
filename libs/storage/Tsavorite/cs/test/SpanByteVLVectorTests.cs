@@ -13,7 +13,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.spanbyte
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -38,7 +38,7 @@ namespace Tsavorite.test.spanbyte
                     LogDevice = log,
                     LogMemorySize = 1L << 17,
                     PageSize = 1L << 12
-                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
@@ -101,7 +101,7 @@ namespace Tsavorite.test.spanbyte
                     LogDevice = log,
                     LogMemorySize = 1L << 17,
                     PageSize = 1L << 12
-                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());

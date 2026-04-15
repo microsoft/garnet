@@ -170,6 +170,7 @@ namespace Garnet.common
                 // Dispose of the socket to free up unmanaged resources
                 socket.Dispose();
             }
+            DisposeImpl();
         }
 
         /// <summary>
@@ -182,7 +183,22 @@ namespace Garnet.common
 
         void Dispose(SocketAsyncEventArgs e)
         {
-            e.AcceptSocket.Dispose();
+            try
+            {
+                if (e.AcceptSocket.Connected)
+                {
+                    e.AcceptSocket.Shutdown(SocketShutdown.Both);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogTrace(ex, "Error shutting down accept socket during SAEA dispose");
+            }
+            finally
+            {
+                e.AcceptSocket.Close();
+                e.AcceptSocket.Dispose();
+            }
             DisposeImpl();
             e.Dispose();
         }
