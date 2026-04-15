@@ -176,38 +176,16 @@ namespace Resp.benchmark
                         var key = SpanByte.FromPinnedPointer(keyPtr, kb.Length);
                         var value = SpanByte.FromPinnedPointer(valPtr, vb.Length);
                         StringInput input = default;
-                        var useShardedHeader = options.AofPhysicalSublogCount > 1 || options.AofReplayTaskCount > 1;
-                        if (!useShardedHeader)
-                        {
-                            var aofHeader = new AofHeader
-                            {
-                                opType = AofEntryType.StoreUpsert,
-                                storeVersion = 1,
-                                sessionID = threadId,
-                            };
-
-                            aofGen.appendOnlyFile.Log.SingleLog.Enqueue(
-                                aofHeader,
-                                key,
-                                value,
-                                ref input,
-                                epoch,
-                                out _);
-                            bytesEnqueued += sizeof(AofHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
-                        }
-                        else
-                        {
-                            aofGen.appendOnlyFile.Log.Enqueue(
-                                AofEntryType.StoreUpsert,
-                                1,
-                                threadId,
-                                key,
-                                value,
-                                ref input,
-                                epoch,
-                                out _);
-                            bytesEnqueued += sizeof(AofShardedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
-                        }
+                        aofGen.appendOnlyFile.Log.Enqueue(
+                            AofEntryType.StoreUpsert,
+                            1,
+                            threadId,
+                            key,
+                            value,
+                            ref input,
+                            epoch,
+                            out _);
+                        bytesEnqueued += sizeof(AofShardedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
                     }
                     recordsEnqueued++;
                 }
