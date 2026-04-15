@@ -94,6 +94,9 @@ namespace Garnet.test.cluster
             context = new ClusterTestContext();
             context.logTextWriter = captureLogWriter;
             context.Setup(MonitorTests);
+
+            // Temporary hackery, force threadpool minimums up
+            _ = ThreadPool.SetMinThreads(512, 512);
         }
 
         [TearDown]
@@ -1611,7 +1614,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, useTLS: false);
+                _ = SimpleSetupCluster(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1);
 
                 var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
                 var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
