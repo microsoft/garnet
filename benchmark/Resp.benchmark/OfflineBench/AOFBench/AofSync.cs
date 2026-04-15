@@ -95,7 +95,8 @@ namespace Resp.benchmark
                 replayDriver = clusterProvider.replicationManager.ReplicaReplayDriverStore.GetReplayDriver(threadId);
                 replayDriver.ResumeReplay();
             }
-            else {
+            else
+            {
                 fixed (byte* ptr = buffer)
                 {
                     var respMessageSize = WriterClusterAppendLog(

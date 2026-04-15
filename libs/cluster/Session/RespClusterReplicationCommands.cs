@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Text;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
@@ -197,6 +198,8 @@ namespace Garnet.cluster
                 return true;
             }
 
+            LogPrimaryStream(physicalSublogIdx, previousAddress, currentAddress, nextAddress, logger);
+
             // This is an initialization message
             if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
             {
@@ -228,6 +231,13 @@ namespace Garnet.cluster
             }
 
             return true;
+
+            [Conditional("DEBUG")]
+            static void LogPrimaryStream(int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, ILogger logger)
+            {
+                // Log as critical to ensure it is visible in CI
+                logger?.LogCritical("physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddres}, currentAddress: {currentAddress}, nextAddress: {nextAddress}", physicalSublogIdx, previousAddress, currentAddress, nextAddress);
+            }
         }
 
         /// <summary>
