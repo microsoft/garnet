@@ -301,6 +301,7 @@ namespace Garnet.server
                     try
                     {
                         IncrementConnectionsReceived();
+                        ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Dispose_After_Handler_Registered_Before_Start);
                         handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
                     }
                     catch (Exception ex)
