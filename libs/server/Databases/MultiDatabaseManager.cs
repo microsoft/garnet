@@ -346,9 +346,7 @@ namespace Garnet.server
                 {
                     if (!t.IsFaulted || t.Exception == null) continue;
 
-                    logger?.LogError(t.Exception,
-                        "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
-                        t.Result.Item1, t.Result.Item2);
+                    logger?.LogError(t.Exception, "Exception raised while committing to AOF.");
                 }
 
                 if (exThrown)

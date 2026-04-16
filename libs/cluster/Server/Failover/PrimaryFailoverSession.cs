@@ -47,10 +47,12 @@ namespace Garnet.cluster
                     return null;
                 }
 
+                var completedTaskRes = await completedTask.ConfigureAwait(false);
+
                 // Return client for replica that has caught up with replication primary
                 for (var i = 0; i < tasks.Length; i++)
                 {
-                    if (completedTask == tasks[i] && tasks[i].Result == clusterProvider.replicationManager.ReplicationOffset)
+                    if (completedTask == tasks[i] && completedTaskRes == clusterProvider.replicationManager.ReplicationOffset)
                         return clients[i];
                 }
                 return null;
@@ -68,7 +70,9 @@ namespace Garnet.cluster
                     return null;
                 }
 
-                if (syncTask.Result != clusterProvider.replicationManager.ReplicationOffset)
+                var syncTaskResult = await syncTask.ConfigureAwait(false);
+
+                if (syncTaskResult != clusterProvider.replicationManager.ReplicationOffset)
                     return null;
                 else
                     return clients[0];
