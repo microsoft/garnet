@@ -75,11 +75,11 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        public VectorManager(bool enabled, int dbId, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
+        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
 
-            IsEnabled = enabled;
+            IsEnabled = serverOptions.EnableVectorSetPreview;
 
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
@@ -87,16 +87,16 @@ namespace Garnet.server
             replicationBlockEvent = CountingEventSlim.Create();
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
 
-            // TODO: Pull this off a config or something
-            replicationReplayTasks = new Task[Environment.ProcessorCount];
+            if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
+                throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
+            var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
+            replicationReplayTasks = new Task[vectorSetReplayCount];
             for (var i = 0; i < replicationReplayTasks.Length; i++)
             {
                 replicationReplayTasks[i] = Task.CompletedTask;
             }
 
-            // TODO: Probably configurable?
-            // For now, just number of processors
-            vectorSetLocks = new(Environment.ProcessorCount);
+            vectorSetLocks = new(vectorSetReplayCount);
 
             this.getCleanupSession = getCleanupSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
