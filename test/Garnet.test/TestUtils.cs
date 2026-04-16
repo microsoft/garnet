@@ -791,10 +791,7 @@ namespace Garnet.test
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
-<<<<<<< HEAD
-=======
-                ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads
->>>>>>> 5e94fadf15 (use server options instead of hackery - kick miniothreads up for all cluster tests using SimpleSetupCluster)
+                ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
 
             if (lowMemory)
