@@ -498,12 +498,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Thread acquires its epoch entry
         /// </summary>
+        /// <summary>
+        /// Thread acquires its epoch entry
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Acquire()
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
-            Debug.Assert(entry == kInvalidIndex,
-                "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+            if (entry != kInvalidIndex)
+            {
+                AcquireFailed(ref entry);
+            }
 
             // Reserve an entry in the epoch table for this thread
             ReserveEntryForThread(ref entry);
@@ -521,6 +526,34 @@ namespace Tsavorite.core
             {
                 Drain((*(tableAligned + entry)).localCurrentEpoch);
             }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void AcquireFailed(ref int entry)
+        {
+            var threadId = (*(tableAligned + entry)).threadId;
+            var localEpoch = (*(tableAligned + entry)).localCurrentEpoch;
+
+            // Dump ALL instance entries for this thread to see full epoch state
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Epoch re-entry on thread {Environment.CurrentManagedThreadId}: instanceId={instanceId}, entry={entry}, " +
+                          $"holder threadId={threadId}, localEpoch={localEpoch}, Metadata.threadId={Metadata.threadId}");
+            sb.AppendLine("All epoch entries for this thread:");
+            for (int i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                var e = Metadata.Entries.GetRef(i);
+                if (e != kInvalidIndex)
+                {
+                    var t = (*(tableAligned + e)).threadId;
+                    var le = (*(tableAligned + e)).localCurrentEpoch;
+                    sb.AppendLine($"  instance[{i}]: entry={e}, threadId={t}, localEpoch={le}");
+                }
+            }
+            sb.AppendLine($"CURRENT stack:\n{Environment.StackTrace}");
+            var msg = sb.ToString();
+            Console.Error.WriteLine(msg);
+            Console.Error.Flush();
+            Debug.Fail(msg);
         }
 
         /// <summary>

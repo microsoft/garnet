@@ -6,6 +6,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 #if DEBUG
 using Garnet.common;
@@ -105,7 +106,28 @@ namespace Garnet.cluster
                 while (i < migrateOperationRunners.Length)
                 {
                     var idx = i;
-                    migrateOperationRunners[idx] = Task.Run(() => ScanStoreTask(idx, storeType, beginAddress, tailAddress, pageSize));
+                    // Use dedicated threads instead of Task.Run to avoid thread pool starvation.
+                    // ScanStoreTask blocks its thread for the entire scan/transmit cycle (via
+                    // HandleMigrateTaskResponse's .Result call). With TLS, the SslStream read
+                    // continuations depend on the worker thread pool. If migration workers
+                    // consume all pool threads, TLS response processing stalls and migrations
+                    // time out. Dedicated threads keep the thread pool free for TLS work.
+                    var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var thread = new Thread(() =>
+                    {
+                        try
+                        {
+                            var result = ScanStoreTask(idx, storeType, beginAddress, tailAddress, pageSize);
+                            tcs.SetResult(result.Result);
+                        }
+                        catch (Exception ex)
+                        {
+                            tcs.SetException(ex);
+                        }
+                    })
+                    { IsBackground = true, Name = $"MigrateWorker-{storeType}-{idx}" };
+                    thread.Start();
+                    migrateOperationRunners[idx] = tcs.Task;
                     i++;
                 }
 
@@ -120,50 +142,26 @@ namespace Garnet.cluster
 
                         if (vectorSets.Count > 0)
                         {
-                            var gcs = migrateOperation[0].Client;
-
-                            foreach (var (key, value) in vectorSets)
+                            // Run vector set migration on a dedicated thread to avoid blocking
+                            // the thread pool. HandleMigrateTaskResponse blocks with .Result,
+                            // which can starve TLS response processing on the thread pool.
+                            var vectorTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                            var vectorThread = new Thread(() =>
                             {
-                                // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
-                                // namespaces for element data
-                                VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _);
-
-                                var newContext = _namespaceMap[oldContext];
-                                VectorManager.SetContextForMigration(value, newContext);
-
-                                unsafe
+                                try
                                 {
-                                    fixed (byte* keyPtr = key, valuePtr = value)
-                                    {
-                                        var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                        var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
-
-                                        if (gcs.NeedsInitialization)
-                                            gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-
-                                        while (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
-                                        {
-                                            if (!HandleMigrateTaskResponse(task))
-                                            {
-                                                logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
-                                                return false;
-                                            }
-
-                                            gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-                                        }
-
-                                        // Force a flush before doing the delete, in case that fails
-                                        if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
-                                        {
-                                            logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", keySpan);
-                                            return false;
-                                        }
-
-                                        // Delete the index on this node now that it's moved over to the destination node
-                                        migrateOperation[0].DeleteVectorSet(ref keySpan);
-                                    }
+                                    vectorTcs.SetResult(MigrateVectorSetKeys(vectorSets));
                                 }
-                            }
+                                catch (Exception ex)
+                                {
+                                    vectorTcs.SetException(ex);
+                                }
+                            })
+                            { IsBackground = true, Name = $"MigrateVectorSets-{storeType}" };
+                            vectorThread.Start();
+
+                            if (!await vectorTcs.Task.WaitAsync(_timeout, _cts.Token).ConfigureAwait(false))
+                                return false;
                         }
                     }
                 }
@@ -224,6 +222,55 @@ namespace Garnet.cluster
                 }
 
                 return Task.FromResult(true);
+            }
+
+            // Migrate vector set index keys on a dedicated thread.
+            // This method blocks with HandleMigrateTaskResponse (.Result) and must not
+            // run on the thread pool to avoid starving TLS response processing.
+            bool MigrateVectorSetKeys(Dictionary<byte[], byte[]> vectorSets)
+            {
+                var gcs = migrateOperation[0].Client;
+
+                foreach (var (key, value) in vectorSets)
+                {
+                    VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _);
+
+                    var newContext = _namespaceMap[oldContext];
+                    VectorManager.SetContextForMigration(value, newContext);
+
+                    unsafe
+                    {
+                        fixed (byte* keyPtr = key, valuePtr = value)
+                        {
+                            var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+                            var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
+
+                            if (gcs.NeedsInitialization)
+                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
+
+                            while (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
+                            {
+                                if (!HandleMigrateTaskResponse(task))
+                                {
+                                    logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
+                                    return false;
+                                }
+
+                                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
+                            }
+
+                            if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                            {
+                                logger?.LogCritical("Flush failed before deletion of Vector Set {key} during migration", keySpan);
+                                return false;
+                            }
+
+                            migrateOperation[0].DeleteVectorSet(ref keySpan);
+                        }
+                    }
+                }
+
+                return true;
             }
         }
     }

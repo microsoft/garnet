@@ -131,11 +131,18 @@ namespace Garnet.networking
                     if (copiedBytes > 0 || garnetNetworkHandler.networkBytesRead - garnetNetworkHandler.networkReadHead > 0)
                         break;
 
-                    // Set readerStatus to indicate we are waiting for the semaphore
+                    // Create a TCS for this wait cycle. We intentionally do NOT use
+                    // RunContinuationsAsynchronously so that when OnNetworkReceiveWithTLSAsync
+                    // calls SetResult, the continuation runs inline on the IOCP thread rather
+                    // than being queued to the thread pool.
+                    var tcs = new TaskCompletionSource<bool>();
+                    garnetNetworkHandler.receivedDataTcs = tcs;
+
+                    // Set readerStatus to indicate we are waiting for new data
                     garnetNetworkHandler.readerStatus = TlsReaderStatus.Waiting;
                     if (garnetNetworkHandler.expectingData.CurrentCount == 0) garnetNetworkHandler.expectingData.Release();
-                    await garnetNetworkHandler.receivedData.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    // Releaser of semaphore should have updated readerStatus
+                    await tcs.Task.ConfigureAwait(false);
+                    // Releaser of TCS should have updated readerStatus
                     Debug.Assert(garnetNetworkHandler.readerStatus == TlsReaderStatus.Active || garnetNetworkHandler.disposeCount > 0);
                 }
 

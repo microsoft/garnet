@@ -384,6 +384,13 @@ namespace Garnet.server
                                             throw;
                                         }
                                     }
+
+                                    // Diagnostic: check if ActiveThreadSession epoch is still held before session dispose
+                                    if (VectorManager.ActiveThreadSession != null)
+                                    {
+                                        Console.Error.WriteLine($"[DIAG] ActiveThreadSession still set before dispose on thread {Environment.CurrentManagedThreadId}!\n{Environment.StackTrace}");
+                                        Console.Error.Flush();
+                                    }
                                 }
                             }
                             catch (OperationCanceledException cancelEx)

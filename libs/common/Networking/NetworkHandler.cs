@@ -89,8 +89,14 @@ namespace Garnet.networking
 
         /* TLS related fields */
         readonly SslStream sslStream;
-        readonly SemaphoreSlim receivedData, expectingData;
+        readonly SemaphoreSlim expectingData;
         protected readonly CancellationTokenSource cancellationTokenSource;
+
+        // Signal from OnNetworkReceiveWithTLSAsync to ReadAsyncInternal that new encrypted
+        // data has arrived. Uses TaskCompletionSource WITHOUT RunContinuationsAsynchronously
+        // so that the continuation runs inline on the IOCP thread that calls SetResult,
+        // avoiding thread pool dependency that can stall under thread pool saturation.
+        volatile TaskCompletionSource<bool> receivedDataTcs;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
         volatile TlsReaderStatus readerStatus;
@@ -125,7 +131,6 @@ namespace Garnet.networking
 
                 sslStream = new SslStream(new NetworkHandlerStream(this, logger));
 
-                receivedData = new SemaphoreSlim(0);
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
@@ -302,8 +307,9 @@ namespace Garnet.networking
                     // We have a ReadAsync task waiting for new data, set it to active status
                     readerStatus = TlsReaderStatus.Active;
 
-                    // Unblock the asynchronous ReadAsync task
-                    _ = receivedData.Release();
+                    // Unblock the asynchronous ReadAsync task. SetResult runs the continuation
+                    // inline on this (IOCP) thread, avoiding thread pool dependency.
+                    receivedDataTcs.SetResult(true);
 
                     while (readerStatus == TlsReaderStatus.Active)
                         await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
@@ -651,8 +657,7 @@ namespace Garnet.networking
             networkSender.Dispose();
             sslStream?.Dispose();
             // Release the reader so it sees the cancellation
-            receivedData?.Release();
-            receivedData?.Dispose();
+            receivedDataTcs?.TrySetCanceled();
             // Release the expecter so it sees the cancellation
             expectingData?.Release();
             expectingData?.Dispose();
