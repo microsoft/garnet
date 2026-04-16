@@ -268,7 +268,7 @@ namespace Garnet.cluster
 
             [Conditional("DEBUG")]
             static void LogPrimaryStream(long previousAddress, long currentAddress, long nextAddress, ILogger logger)
-            {                
+            {
                 var state = new GarnetTestLoggingEvent()
                 {
                     Type = GarnetTestLoggingEventType.LogPrimaryStreamType,
