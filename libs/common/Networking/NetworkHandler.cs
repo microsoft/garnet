@@ -362,6 +362,7 @@ namespace Garnet.networking
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 if (result.IsCompletedSuccessfully)
                 {
+                    // .Result is unavoidable here, but safe since we've checked IsCompletedSuccessfully
                     transportBytesRead += result.Result;
 
                     // Read task has control, process the decrypted transport bytes
