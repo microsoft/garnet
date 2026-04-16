@@ -6,8 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Per-record lifecycle callbacks invoked by the store at key events:
-    /// flush to disk, eviction, disposal, and disk read.
+    /// Per-record and store-level lifecycle callbacks invoked by the store at key events:
+    /// flush to disk, eviction, disposal, disk read, and checkpoint.
     /// </summary>
     public interface IRecordTriggers
     {
@@ -61,6 +61,32 @@ namespace Tsavorite.core
         /// Only called when <see cref="CallOnDiskRead"/> is true. Default implementation is a no-op.
         /// </summary>
         void OnDiskRead(ref LogRecord logRecord) { }
+
+        /// <summary>
+        /// Called once before recovering records from a checkpoint snapshot file.
+        /// Provides the checkpoint token so the application knows which snapshot files to use.
+        /// Default implementation is a no-op.
+        /// </summary>
+        void OnRecovery(System.Guid checkpointToken) { }
+
+        /// <summary>
+        /// Called per record recovered from a checkpoint snapshot file (above FlushedUntilAddress).
+        /// Allows the application to mark stubs so the restore path uses the checkpoint snapshot.
+        /// Only called when <see cref="CallOnDiskRead"/> is true. Default implementation is a no-op.
+        /// </summary>
+        void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+
+        /// <summary>
+        /// Called at checkpoint lifecycle points identified by <paramref name="trigger"/>.
+        /// <list type="bullet">
+        /// <item><see cref="CheckpointTrigger.VersionShift"/>: PREPARE → IN_PROGRESS transition.
+        /// Set a barrier to block v+1 operations on external resources.</item>
+        /// <item><see cref="CheckpointTrigger.FlushBegin"/>: WAIT_FLUSH, after all v threads
+        /// completed. Snapshot external resources and clear the barrier.</item>
+        /// </list>
+        /// Default implementation is a no-op.
+        /// </summary>
+        void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) { }
     }
 
     /// <summary>

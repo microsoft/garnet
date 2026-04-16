@@ -276,6 +276,7 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
+            bool enableRangeIndexPreview = false,
             string aofMemorySize = "64m"
             )
         {
@@ -361,6 +362,7 @@ namespace Garnet.test
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
                 EnableVectorSetPreview = enableVectorSetPreview,
+                EnableRangeIndexPreview = enableRangeIndexPreview,
             };
 
             if (!string.IsNullOrEmpty(memorySize))
@@ -670,6 +672,7 @@ namespace Garnet.test
             string clusterAnnounceHostname = null,
             bool enableVectorSetPreview = true,
             int vectorSetReplayTaskCount = 0,
+            bool enableRangeIndexPreview = false,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
@@ -794,6 +797,7 @@ namespace Garnet.test
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
+                EnableRangeIndexPreview = enableRangeIndexPreview,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };

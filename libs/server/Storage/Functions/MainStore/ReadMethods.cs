@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -27,20 +28,21 @@ namespace Garnet.server
 
             var cmd = input.header.cmd;
 
-            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
+            // Type safety: prevent cross-type access (e.g., GET on RI key, RI.SET on string key).
+            // Hot path (normal GET/SET on normal string): RecordType == 0, cmd is not special →
+            // hits only the first condition (one byte compare), skips everything.
             if (cmd != RespCommand.NONE)
             {
-                // Vector sets are reachable (key not mangled) and hidden.
-                // So we can use that to detect type mismatches.
-                if (srcLogRecord.RecordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
+                var recordType = srcLogRecord.RecordType;
+                if (recordType != 0)
                 {
-                    // Attempted an illegal op on a VectorSet
-                    readInfo.Action = ReadAction.WrongType;
-                    return false;
+                    // Record has a special type (RI or Vector) — check if the command is allowed
+                    if (CheckRecordTypeMismatch(recordType, cmd, ref readInfo))
+                        return false;
                 }
-                else if (srcLogRecord.RecordType != VectorManager.RecordType && cmd.IsLegalOnVectorSet())
+                else if (cmd != RespCommand.GET && (cmd.IsRangeIndexCommand() || cmd.IsVectorSetCommand()))
                 {
-                    // Attempted a vector set op on a non-VectorSet
+                    // RI/Vector command on a normal string key
                     readInfo.Action = ReadAction.WrongType;
                     return false;
                 }
@@ -124,6 +126,40 @@ namespace Garnet.server
                 // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                 var numDigitsInEtag = NumUtils.CountDigits(existingEtag);
                 WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Checks for type mismatches between the record's RecordType and the command.
+        /// Called only when RecordType != 0 (RI or Vector key). Separated from Reader
+        /// to keep the hot path compact.
+        /// </summary>
+        private static bool CheckRecordTypeMismatch(byte recordType, RespCommand cmd, ref ReadInfo readInfo)
+        {
+            // RangeIndex type safety
+            if (recordType == RangeIndexManager.RangeIndexRecordType && !cmd.IsLegalOnRangeIndex())
+            {
+                readInfo.Action = ReadAction.WrongType;
+                return true;
+            }
+            if (recordType != RangeIndexManager.RangeIndexRecordType && cmd.IsRangeIndexCommand())
+            {
+                readInfo.Action = ReadAction.WrongType;
+                return true;
+            }
+
+            // Vector set type safety
+            if (recordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
+            {
+                readInfo.Action = ReadAction.WrongType;
+                return true;
+            }
+            if (recordType != VectorManager.RecordType && cmd.IsVectorSetCommand())
+            {
+                readInfo.Action = ReadAction.WrongType;
                 return true;
             }
 
