@@ -527,6 +527,7 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
+            int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (UseAzureStorage)
@@ -593,6 +594,7 @@ namespace Garnet.test
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
+                    vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
                 ClassicAssert.IsNotNull(opts);
@@ -674,6 +676,7 @@ namespace Garnet.test
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
             bool enableVectorSetPreview = true,
+            int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
@@ -797,6 +800,7 @@ namespace Garnet.test
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
+                VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
