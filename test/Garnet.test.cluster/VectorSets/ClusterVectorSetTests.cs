@@ -94,9 +94,6 @@ namespace Garnet.test.cluster
             context = new ClusterTestContext();
             context.logTextWriter = captureLogWriter;
             context.Setup(MonitorTests);
-
-            // Temporary hackery, force threadpool minimums up
-            _ = ThreadPool.SetMinThreads(512, 512);
         }
 
         [TearDown]
@@ -2102,7 +2099,7 @@ namespace Garnet.test.cluster
 
         private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false, bool useTLS = true)
         {
-            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots);
+            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots, threadPoolMinIOCompletionThreads: 512);
             context.CreateConnection(useTLS: useTLS);
             return context.clusterTestUtils.SimpleSetupCluster(primary_count: primaryCount, replica_count: replicaCount);
         }
