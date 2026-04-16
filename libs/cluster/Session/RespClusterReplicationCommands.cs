@@ -237,8 +237,8 @@ namespace Garnet.cluster
             {
                 var state = new GarnetTestLoggingEvent()
                 {
-                    type = GarnetTestLoggingEventType.LogPrimaryStreamType,
-                    msg = $"physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddress}, currentAddress: {currentAddress}, nextAddress: {nextAddress}",
+                    Type = GarnetTestLoggingEventType.LogPrimaryStreamType,
+                    Message = $"physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddress}, currentAddress: {currentAddress}, nextAddress: {nextAddress}",
                 };
 
                 logger?.LogTesting(LogLevel.Critical, state);

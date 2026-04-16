@@ -12,10 +12,10 @@ namespace Garnet.common
 
     public struct GarnetTestLoggingEvent
     {
-        public GarnetTestLoggingEventType type;
-        public string msg;
+        public GarnetTestLoggingEventType Type;
+        public string Message;
 
-        public override string ToString() => $"<{type}>: {msg}";
+        public override string ToString() => $"<{Type}>: {Message}";
     }
 
     public static class LoggingExtensions
