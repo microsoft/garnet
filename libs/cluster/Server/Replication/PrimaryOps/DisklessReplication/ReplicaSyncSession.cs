@@ -51,10 +51,10 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="commands"></param>
         /// <returns></returns>
-        public Task<string> ExecuteAsync(params string[] commands)
+        public async Task<string> ExecuteAsync(params string[] commands)
         {
-            WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.ExecuteAsync(commands);
+            await WaitForFlush().ConfigureAwait(false);
+            return await AofSyncTask.garnetClient.ExecuteAsync(commands);
         }
 
         /// <summary>

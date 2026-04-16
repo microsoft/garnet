@@ -188,7 +188,7 @@ namespace Garnet.server
             var aofSize = AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
             if (aofSize <= aofSizeLimit) return;
 
-            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            if (!await TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).ConfigureAwait(false))
                 return;
 
             try
@@ -203,7 +203,7 @@ namespace Garnet.server
                 logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
                     aofSize, aofSizeLimit);
 
-                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
+                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
 
