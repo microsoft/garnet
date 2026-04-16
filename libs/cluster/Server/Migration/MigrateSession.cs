@@ -222,6 +222,39 @@ namespace Garnet.cluster
             return status;
         }
 
+
+
+        private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)
+        {
+            if (!client.IsConnected)
+            {
+                await client.ReconnectAsync((int)_timeout.TotalMilliseconds).ConfigureAwait(false);
+                if (_passwd != null)
+                {
+                    try
+                    {
+                        var authResp = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+
+                        if (!authResp.Equals("OK", StringComparison.Ordinal))
+                        {
+                            logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", authResp);
+                            Status = MigrateState.FAIL;
+                            return false;
+                        }
+
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "An error occurred");
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Get slot ranges from slot list
         /// </summary>

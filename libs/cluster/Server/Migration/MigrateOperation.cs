@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -56,9 +57,9 @@ namespace Garnet.cluster
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
-            public bool Initialize()
+            public async ValueTask<bool> InitializeAsync()
             {
-                if (!session.CheckConnection(gcs))
+                if (!await session.CheckConnectionAsync(gcs).ConfigureAwait(false))
                     return false;
                 gcs.InitializeIterationBuffer(session.clusterProvider.storeWrapper.loggingFrequency);
                 return true;
@@ -83,7 +84,7 @@ namespace Garnet.cluster
             /// Transmit gathered keys
             /// </summary>
             /// <returns></returns>
-            public bool TransmitSlots()
+            public async Task<bool> TransmitSlotsAsync()
             {
                 var output = new UnifiedOutput();       // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
                 var vectorOutput = new VectorOutput();  // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
@@ -102,19 +103,19 @@ namespace Garnet.cluster
                         if (hasNs)
                         {
                             // Migrating Vector Set element data
-                            if (!session.WriteOrSendRecord(gcs, localServerSession, ns, key, ref vectorInput, ref vectorOutput, out _))
+                            if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, ns, key, ref vectorInput, ref vectorOutput, out _).ConfigureAwait(false))
                                 return false;
                         }
                         else
                         {
                             // Migrating everything else
-                            if (!session.WriteOrSendRecord(gcs, localServerSession, key, ref input, ref output, out _))
+                            if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, key, ref input, ref output, out _).ConfigureAwait(false))
                                 return false;
                         }
                     }
 
                     // Flush final data in client buffer
-                    if (!session.HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                    if (!await session.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
                         return false;
                 }
                 finally
@@ -126,7 +127,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            public bool TransmitKeys(Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
+            public async Task<bool> TransmitKeysAsync(Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
@@ -167,7 +168,7 @@ namespace Garnet.cluster
                             continue;
                         }
 
-                        if (!session.WriteOrSendRecord(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
+                        if (!await session.WriteOrSendRecordAsync(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status).ConfigureAwait(false))
                             return false;
 
                         // If key was FOUND, mark it for deletion
@@ -176,7 +177,7 @@ namespace Garnet.cluster
                     }
 
                     // Flush final data in client buffer
-                    if (!session.HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                    if (!await session.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
                         return false;
                 }
                 finally
@@ -191,11 +192,11 @@ namespace Garnet.cluster
             /// 
             /// Doesn't delete anything, just scans and transmits.
             /// </summary>
-            public bool TransmitKeysNamespaces(ILogger logger)
+            public async Task<bool> TransmitKeysNamespacesAsync(ILogger logger)
             {
                 var migrateOperation = this;
 
-                if (!migrateOperation.Initialize())
+                if (!await migrateOperation.InitializeAsync().ConfigureAwait(false))
                     return false;
 
                 var workerStartAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.BeginAddress;
@@ -220,7 +221,7 @@ namespace Garnet.cluster
                     migrateOperation.session.WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    if (!migrateOperation.TransmitSlots())
+                    if (!await migrateOperation.TransmitSlotsAsync().ConfigureAwait(false))
                     {
                         logger?.LogWarning("TransmitSlots failed for {cursor} to {current} (with {count} keys)", cursor, current, migrateOperation.sketch.argSliceVector.Count);
                         return false;

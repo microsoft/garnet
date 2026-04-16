@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -16,14 +17,14 @@ namespace Garnet.cluster
     /// <summary>
     /// This code implements operations associated with the MIGRATE KEYS transfer option.
     /// </summary>
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Method used to migrate individual keys from store to target node.
         /// Used with MIGRATE KEYS option
         /// </summary>
         /// <returns>True on success, false otherwise</returns>
-        private bool MigrateKeysFromStore()
+        private async Task<bool> MigrateKeysFromStoreAsync()
         {
             var migrateTask = migrateOperation[0];
 
@@ -46,7 +47,7 @@ namespace Garnet.cluster
                 }
 
                 // Transmit keys from store
-                if (!migrateTask.TransmitKeys(indexesToMigrate))
+                if (!await migrateTask.TransmitKeysAsync(indexesToMigrate).ConfigureAwait(false))
                 {
                     logger?.LogError("Failed transmitting keys from store");
                     return false;
@@ -56,7 +57,7 @@ namespace Garnet.cluster
                 if ((_namespaces?.Count ?? 0) > 0)
                 {
                     // Actually move element data over
-                    if (!migrateTask.TransmitKeysNamespaces(logger))
+                    if (!await migrateTask.TransmitKeysNamespacesAsync(logger).ConfigureAwait(false))
                     {
                         logger?.LogError("Failed to transmit vector set (namespaced) element data, migration failed");
                         return false;
@@ -65,8 +66,8 @@ namespace Garnet.cluster
                     // Move the indexes over
                     var gcs = migrateTask.Client;
 
-                    Span<byte> serializationBuffer = stackalloc byte[128];
-                    byte[] serializeBufferArr = null;
+                    var serializeBufferArr = ArrayPool<byte>.Shared.Rent(128);
+
                     try
                     {
 
@@ -81,26 +82,26 @@ namespace Garnet.cluster
 
                             var neededSpace = sizeof(int) + key.Length + sizeof(int) + value.Length;
 
-                            if (neededSpace > serializationBuffer.Length)
+                            if (neededSpace > serializeBufferArr.Length)
                             {
-                                if (serializeBufferArr != null)
-                                {
-                                    ArrayPool<byte>.Shared.Return(serializeBufferArr);
-                                    serializationBuffer = serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
-                                }
+                                ArrayPool<byte>.Shared.Return(serializeBufferArr);
+                                serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                             }
 
-                            BinaryPrimitives.WriteInt32LittleEndian(serializationBuffer, key.Length);
-                            key.CopyTo(serializationBuffer[sizeof(int)..]);
-                            BinaryPrimitives.WriteInt32LittleEndian(serializationBuffer[(sizeof(int) + key.Length)..], value.Length);
-                            value.CopyTo(serializationBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
+                            {
+                                Span<byte> serializeBuffer = serializeBufferArr;
+                                BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer, key.Length);
+                                key.CopyTo(serializeBuffer[sizeof(int)..]);
+                                BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer[(sizeof(int) + key.Length)..], value.Length);
+                                value.CopyTo(serializeBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
+                            }
 
                             if (gcs.NeedsInitialization)
                                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
 
-                            while (!gcs.TryWriteRecordSpan(serializationBuffer[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
+                            while (!gcs.TryWriteRecordSpan(serializeBufferArr.AsSpan()[..neededSpace], MigrationRecordSpanType.VectorSetIndex, out var task))
                             {
-                                if (!HandleMigrateTaskResponse(task))
+                                if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
                                 {
                                     logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", SpanByte.ToShortString(key));
                                     return false;
@@ -112,13 +113,10 @@ namespace Garnet.cluster
                     }
                     finally
                     {
-                        if (serializeBufferArr != null)
-                        {
-                            ArrayPool<byte>.Shared.Return(serializeBufferArr);
-                        }
+                        ArrayPool<byte>.Shared.Return(serializeBufferArr);
                     }
 
-                    if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                    if (!await HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
                     {
                         logger?.LogCritical("Final flush after Vector Set migration failed");
                         return false;
@@ -157,16 +155,16 @@ namespace Garnet.cluster
         /// This method is used to process the MIGRATE KEYS transfer option.
         /// </summary>
         /// <returns></returns>
-        public bool MigrateKeys()
+        public async Task<bool> MigrateKeysAsync()
         {
             try
             {
                 var migrateTask = migrateOperation[0];
-                if (!migrateTask.Initialize())
+                if (!await migrateTask.InitializeAsync().ConfigureAwait(false))
                     return false;
 
                 // Migrate main store keys
-                if (!MigrateKeysFromStore())
+                if (!await MigrateKeysFromStoreAsync().ConfigureAwait(false))
                     return false;
             }
             catch (Exception ex)
