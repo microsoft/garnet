@@ -111,7 +111,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Perform series of steps to update local config and take ownership of primary slots.
         /// </summary>
-        private bool TakeOverAsPrimary()
+        private async Task<bool> TakeOverAsPrimaryAsync()
         {
             // Take over as primary and inform old primary
             status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
@@ -126,16 +126,16 @@ namespace Garnet.cluster
                 // Make replica syncing unavailable by setting recovery flag
                 if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, upgradeLock: false))
                 {
-                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimaryAsync)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     return false;
                 }
                 acquiredLock = true;
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
                 {
-                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimaryAsync)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
                     return false;
                 }
 
@@ -147,8 +147,8 @@ namespace Garnet.cluster
 
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
-                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimary));
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimaryAsync));
+                _ = clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
                 clusterProvider.storeWrapper.StartPrimaryTasks();
@@ -309,7 +309,7 @@ namespace Garnet.cluster
                 }
 
                 // Transition to primary role
-                if (!TakeOverAsPrimary())
+                if (!await TakeOverAsPrimaryAsync().ConfigureAwait(false))
                 {
                     return false;
                 }

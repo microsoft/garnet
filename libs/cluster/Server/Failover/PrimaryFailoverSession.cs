@@ -105,7 +105,7 @@ namespace Garnet.cluster
                 var oldRole = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
                 var replicas = clusterProvider.clusterManager.CurrentConfig.GetReplicaIds(localId);
                 clusterProvider.clusterManager.TryStopWrites(replicas[0]);
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 status = FailoverStatus.WAITING_FOR_SYNC;
                 var newPrimary = await WaitForFirstReplicaSync().ConfigureAwait(false);

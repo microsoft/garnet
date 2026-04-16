@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -361,7 +362,7 @@ namespace Garnet.cluster
         /// Wait for config transition
         /// </summary>
         /// <returns></returns>
-        internal bool BumpAndWaitForEpochTransition()
+        internal async Task<bool> BumpAndWaitForEpochTransitionAsync()
         {
             BumpCurrentEpoch();
             // Acquire latest bumped epoch
@@ -371,7 +372,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                 retry:
-                    Thread.Yield();
+                    await Task.Yield();
                     var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
                     foreach (var s in sessions)
                     {

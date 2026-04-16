@@ -20,54 +20,63 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
         /// <param name="options">Options for the sync.</param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
-        /// <returns>A boolean indicating whether replication initiation was successful.</returns>
-        public bool TryReplicateDisklessSync(
+        /// <returns>A boolean indicating whether replication initiation was successful, or false and an error message if not.</returns>
+        public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryReplicateDisklessSyncAsync(
             ClusterSession session,
-            ReplicateSyncOptions options,
-            out ReadOnlySpan<byte> errorMessage)
+            ReplicateSyncOptions options)
         {
-            errorMessage = default;
+            ReadOnlyMemory<byte> errorMessage = default;
 
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
-                if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out errorMessage, logger: logger))
-                    return false;
+                if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out var errorMessageSpan, logger: logger))
+                    return (false, errorMessageSpan.ToArray());
 
                 // Wait for threads to agree configuration change of this node
-                session?.UnsafeBumpAndWaitForEpochTransition();
+                if (session != null)
+                {
+                    await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                }
+
                 if (options.Background)
-                    _ = Task.Run(() => TryBeginReplicaSync(options.UpgradeLock));
+                    _ = TryBeginReplicaSyncAsync(options.UpgradeLock, forceAsync: true);
                 else
                 {
-                    var result = TryBeginReplicaSync(options.UpgradeLock).Result;
+                    var result = await TryBeginReplicaSyncAsync(options.UpgradeLock, forceAsync: false).ConfigureAwait(false);
                     if (result != null)
                     {
                         errorMessage = Encoding.ASCII.GetBytes(result);
-                        return false;
+                        return (false, errorMessage);
                     }
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
-                return false;
+                logger?.LogError(ex, $"{nameof(TryReplicateDisklessSyncAsync)}");
+                return (false, errorMessage);
             }
 
-            return true;
+            return (true, errorMessage);
 
-            async Task<string> TryBeginReplicaSync(bool downgradeLock)
+            async Task<string> TryBeginReplicaSyncAsync(bool downgradeLock, bool forceAsync)
             {
+                if (forceAsync)
+                {
+                    await Task.Yield();
+                }
+
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 GarnetClientSession gcs = null;
                 resetHandler ??= new CancellationTokenSource();
                 try
                 {
-                    if (!clusterProvider.serverOptions.EnableFastCommit)
+                    if (!clusterProvider.serverOptions.EnableFastCommit && storeWrapper.appendOnlyFile != null)
                     {
-                        storeWrapper.appendOnlyFile?.Commit();
-                        storeWrapper.appendOnlyFile?.WaitForCommit();
+                        await storeWrapper.appendOnlyFile.CommitAsync().ConfigureAwait(false);
+
+                        // TODO: Is this wait necessary?
+                        await storeWrapper.appendOnlyFile.WaitForCommitAsync().ConfigureAwait(false);
                     }
 
                     // Reset background replay iterator
@@ -80,7 +89,7 @@ namespace Garnet.cluster
                         storeWrapper.Reset();
 
                     // Suspend background tasks that may interfere with AOF
-                    await storeWrapper.SuspendPrimaryOnlyTasks();
+                    await storeWrapper.SuspendPrimaryOnlyTasks().ConfigureAwait(false);
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
@@ -112,7 +121,7 @@ namespace Garnet.cluster
                     // Used only for disk-based replication
                     if (!disklessSync)
                         recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                    gcs.Connect();
+                    await gcs.ConnectAsync().ConfigureAwait(false);
 
                     SyncMetadata syncMetadata = new(
                         fullSync: false,
@@ -134,7 +143,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
+                    logger?.LogError(ex, $"{nameof(TryBeginReplicaSyncAsync)}");
 
                     if (options.AllowReplicaResetOnFailure)
                     {

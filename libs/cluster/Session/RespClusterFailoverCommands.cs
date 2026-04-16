@@ -122,7 +122,10 @@ namespace Garnet.cluster
             {// Reset this node back to its original state
                 clusterProvider.clusterManager.TryResetReplica();
             }
-            UnsafeBumpAndWaitForEpochTransition();
+
+            // Cannot avoid blocking here
+            UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
+            
             while (!RespWriteUtils.TryWriteInt64(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
                 SendAndReset();
             return true;

@@ -489,7 +489,8 @@ namespace Garnet.cluster
 
                 if (setSlotsSucceeded)
                 {
-                    UnsafeBumpAndWaitForEpochTransition();
+                    // Cannot avoid blocking here
+                    UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
 
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -588,7 +589,8 @@ namespace Garnet.cluster
 
             if (setSlotsSucceeded)
             {
-                UnsafeBumpAndWaitForEpochTransition();
+                // Cannot avoid blocking here
+                UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
 
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
