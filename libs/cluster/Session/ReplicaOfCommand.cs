@@ -44,7 +44,10 @@ namespace Garnet.cluster
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
-                    UnsafeBumpAndWaitForEpochTransition();
+                    
+                    // Cannot avoid blocking here
+                    UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
+                    
                     clusterProvider.storeWrapper.SuspendReplicaOnlyTasks().Wait();
                     clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
@@ -81,15 +84,19 @@ namespace Garnet.cluster
                     AllowReplicaResetOnFailure: true,
                     UpgradeLock: false
                 );
-                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, syncOpts, out var errorMessage) :
-                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, syncOpts, out errorMessage);
+
+                // Cannot avoid blocking here
+                var (success, errorMessage) =
+                    (clusterProvider.serverOptions.ReplicaDisklessSync ?
+                        clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
+                        clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
+                    ).GetAwaiter().GetResult();
 
                 clusterProvider.storeWrapper.StartReplicaTasks();
 
                 if (!success)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
                         SendAndReset();
                 }
                 else

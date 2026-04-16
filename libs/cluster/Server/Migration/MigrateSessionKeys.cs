@@ -39,7 +39,7 @@ namespace Garnet.cluster
             {
                 // Transition keys to MIGRATING status
                 migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                WaitForConfigPropagation();
+                await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                 // Discover Vector Sets linked namespaces
                 var indexesToMigrate = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
@@ -131,7 +131,7 @@ namespace Garnet.cluster
                 }
 
                 // Final cleanup, which will also delete Vector Sets
-                DeleteKeys();
+                await DeleteKeysAsync().ConfigureAwait(false);
             }
             finally
             {
@@ -156,7 +156,7 @@ namespace Garnet.cluster
             // NOTE: Any keys not found in main store are automatically set to INITIALIZING before this method is called
             // Transition all INITIALIZING to TRANSMITTING state
             migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
-            WaitForConfigPropagation();
+            await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
             // Transmit keys from object store
             if (!await migrateTask.TransmitKeysAsync(StoreType.Object, new(ByteArrayComparer.Instance)).ConfigureAwait(false))
@@ -166,26 +166,26 @@ namespace Garnet.cluster
             }
 
             // Delete keys if COPY option is false or transition KEYS from MIGRATING to MIGRATED status
-            DeleteKeys();
+            await DeleteKeysAsync().ConfigureAwait(false);
             return true;
         }
 
         /// <summary>
         /// Delete local copy of keys if _copyOption is set to false.
         /// </summary>
-        private void DeleteKeys()
+        private async Task DeleteKeysAsync()
         {
             var migrateTask = migrateOperation[0];
             // Transition to deleting to block read requests                
             migrateTask.sketch.SetStatus(SketchStatus.DELETING);
-            WaitForConfigPropagation();
+            await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
             // Delete keys
             migrateTask.DeleteKeys();
 
             // Transition to MIGRATED to release waiting operations
             migrateTask.sketch.SetStatus(SketchStatus.MIGRATED);
-            WaitForConfigPropagation();
+            await WaitForConfigPropagationAsync().ConfigureAwait(false);
         }
 
         /// <summary>

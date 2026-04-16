@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -28,7 +29,7 @@ namespace Garnet.cluster
 
     using VectorContext = BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>, SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
 
-    internal sealed unsafe partial class ClusterSession : IClusterSession
+    internal sealed partial class ClusterSession : IClusterSession
     {
         readonly ClusterProvider clusterProvider;
         readonly TransactionManager txnManager;
@@ -45,7 +46,7 @@ namespace Garnet.cluster
         UserHandle userHandle;
 
         SessionParseState parseState;
-        byte* dcurr, dend;
+        unsafe byte* dcurr, dend;
         long _localCurrentEpoch = 0;
 
         public long LocalCurrentEpoch => _localCurrentEpoch;
@@ -93,7 +94,7 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
+        public unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
             this.dcurr = dcurr;
             this.dend = dend;
@@ -141,7 +142,7 @@ namespace Garnet.cluster
             }
         }
 
-        void SendAndReset()
+        unsafe void SendAndReset()
         {
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
@@ -153,7 +154,7 @@ namespace Garnet.cluster
             }
         }
 
-        void SendAndReset(ref byte* dcurr, ref byte* dend)
+        unsafe void SendAndReset(ref byte* dcurr, ref byte* dend)
         {
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
@@ -166,7 +167,7 @@ namespace Garnet.cluster
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void Send(byte* d)
+        unsafe void Send(byte* d)
         {
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
@@ -200,10 +201,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
         /// </summary>
-        public void UnsafeBumpAndWaitForEpochTransition()
+        public async Task UnsafeBumpAndWaitForEpochTransitionAsync()
         {
             ReleaseCurrentEpoch();
-            _ = clusterProvider.BumpAndWaitForEpochTransition();
+            _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
             AcquireCurrentEpoch();
         }
     }

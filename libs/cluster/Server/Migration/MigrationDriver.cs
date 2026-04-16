@@ -122,7 +122,7 @@ namespace Garnet.cluster
             else
             {
                 // This will execute as a background task for the slots or slotsrange variant
-                _ = Task.Run(BeginAsyncMigrationTask);
+                _ = BeginAsyncMigrationTaskAsync();
             }
 
             return true;
@@ -131,8 +131,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Migrate slots session background task
         /// </summary>
-        private async Task BeginAsyncMigrationTask()
+        private async Task BeginAsyncMigrationTaskAsync()
         {
+            // Force async
+            await Task.Yield();
+
             var configResumed = true;
             try
             {
@@ -157,7 +160,7 @@ namespace Garnet.cluster
                     return;
                 }
 
-                if (!clusterProvider.BumpAndWaitForEpochTransition()) return;
+                if (!await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false)) return;
                 #endregion
 
                 // Acquire namespaces at this point, after slots have been switch to migration

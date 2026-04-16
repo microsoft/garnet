@@ -258,7 +258,7 @@ namespace Garnet.cluster
 
                     // Transition EPSM to MIGRATING
                     migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                    migrateOperation.session.WaitForConfigPropagation();
+                    await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Transmit all keys gathered
                     if (!await migrateOperation.TransmitSlotsAsync(StoreType.Main).ConfigureAwait(false))
@@ -269,7 +269,7 @@ namespace Garnet.cluster
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                    migrateOperation.session.WaitForConfigPropagation();
+                    await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Clear keys from buffer
                     migrateOperation.sketch.Clear();
