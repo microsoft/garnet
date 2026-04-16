@@ -36,15 +36,6 @@ namespace Garnet.common
 #endif
         => StaticGetHashCode64(key);
 
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetHashCodeU64<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-        => StaticGetHashCode64(key) & long.MaxValue;
-
         /// <summary>
         /// Equality comparison
         /// </summary>
