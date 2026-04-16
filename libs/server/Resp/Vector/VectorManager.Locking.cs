@@ -108,7 +108,6 @@ namespace Garnet.server
             ActiveThreadSession = storageSession;
             try
             {
-
                 var keyHash = storageSession.basicContext.GetKeyHash(ref key);
 
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
@@ -265,7 +264,6 @@ namespace Garnet.server
             ActiveThreadSession = storageSession;
             try
             {
-
                 var keyHash = storageSession.basicContext.GetKeyHash(ref key);
 
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
