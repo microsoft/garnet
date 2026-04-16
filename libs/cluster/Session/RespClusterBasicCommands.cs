@@ -492,6 +492,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.GarnetClientExtensions.ExecuteClusterPublishNoResponse"/>
         private bool NetworkClusterPublish(out bool invalidParameters)
         {
             invalidParameters = false;

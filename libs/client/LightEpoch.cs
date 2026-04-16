@@ -193,7 +193,7 @@ namespace Garnet.client
                 if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
                     return i;
             }
-            throw new InvalidOperationException("Exceeded maximum number of active LightEpoch instances");
+            throw new InvalidOperationException($"Exceeded maximum number of active LightEpoch instances {ActiveInstanceCount()} {InstanceIndexBuffer.MaxInstances}");
         }
 
         /// <summary>

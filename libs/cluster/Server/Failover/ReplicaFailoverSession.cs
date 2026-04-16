@@ -42,7 +42,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token);
+                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 return client;
             }
@@ -84,7 +84,7 @@ namespace Garnet.cluster
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
-                var primaryReplicationOffset = await client.failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token);
+                var primaryReplicationOffset = await client.failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
@@ -172,7 +172,7 @@ namespace Garnet.cluster
         {
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId);
+            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId).ConfigureAwait(false);
 
             try
             {
@@ -211,13 +211,13 @@ namespace Garnet.cluster
                     {
                         resp.Dispose();
                     }
-                }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token);
+                }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 var localAddress = oldConfig.LocalNodeIp;
                 var localPort = oldConfig.LocalNodePort;
 
                 // Ask replica to attach and sync
-                var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token);
+                var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 // Check if response for attach succeeded
                 if (!replicaOfResp.Equals("OK"))
@@ -254,7 +254,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    attachReplicaTasks.Add(Task.Run(async () => await BroadcastConfigAndRequestAttach(replicaId, configByteArray)));
+                    attachReplicaTasks.Add(Task.Run(async () => await BroadcastConfigAndRequestAttach(replicaId, configByteArray).ConfigureAwait(false)));
                 }
                 catch (Exception ex)
                 {
@@ -297,7 +297,7 @@ namespace Garnet.cluster
             try
             {
                 // Issue stop writes and on ack wait for replica to catch up
-                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSync())
+                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSync().ConfigureAwait(false))
                 {
                     return false;
                 }
