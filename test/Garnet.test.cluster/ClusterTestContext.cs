@@ -295,7 +295,8 @@ namespace Garnet.test.cluster
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
-            int vectorSetReplayTaskCount = 0)
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -353,7 +354,8 @@ namespace Garnet.test.cluster
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
-                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
             foreach (var node in nodes)
                 node.Start();

@@ -520,7 +520,8 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
-            int vectorSetReplayTaskCount = 0)
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -586,7 +587,8 @@ namespace Garnet.test
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
-                    vectorSetReplayTaskCount: vectorSetReplayTaskCount);
+                    vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -667,7 +669,8 @@ namespace Garnet.test
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
             bool enableVectorSetPreview = true,
-            int vectorSetReplayTaskCount = 0)
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -714,7 +717,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                ThreadPoolMinThreads = 100,
+                ThreadPoolMinThreads = 512,
                 SegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
@@ -792,6 +795,7 @@ namespace Garnet.test
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
+                ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
 
             if (lowMemory)
