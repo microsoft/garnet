@@ -253,6 +253,7 @@ namespace Garnet.test.cluster
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
+        /// <param name="vectorSetReplayTaskCount"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -304,6 +305,7 @@ namespace Garnet.test.cluster
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
+            int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
             var ipAddress = IPAddress.Loopback;
@@ -364,6 +366,7 @@ namespace Garnet.test.cluster
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
             foreach (var node in nodes)
@@ -399,6 +402,7 @@ namespace Garnet.test.cluster
         /// <param name="useAcl"></param>
         /// <param name="asyncReplay"></param>
         /// <param name="sublogCount"></param>
+        /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
         /// <param name="clusterCreds"></param>
@@ -428,6 +432,7 @@ namespace Garnet.test.cluster
             bool useAcl = false,
             bool asyncReplay = false,
             int sublogCount = 1,
+            int vectorSetReplayTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
@@ -465,7 +470,8 @@ namespace Garnet.test.cluster
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
                 certificates: certificates,
-                clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
 
             return new GarnetServer(opts, loggerFactory);
         }

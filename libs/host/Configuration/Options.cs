@@ -642,7 +642,7 @@ namespace Garnet
         public bool EnableVectorSetPreview { get; set; }
 
         [IntRangeValidation(0, int.MaxValue, isRequired: false)]
-        [Option("vector-set-replay-task-count")]
+        [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
 
         /// <summary>
@@ -930,7 +930,7 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
-                VectorSetReplayTaskCount = VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : VectorSetReplayTaskCount
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount
             };
         }
 

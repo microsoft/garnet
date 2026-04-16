@@ -526,9 +526,9 @@ namespace Garnet.server
         public bool EnableVectorSetPreview = false;
 
         /// <summary>
-        /// Configure how many replay tasks are use to replay VectorSet operations.
+        /// Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count).
         /// </summary>
-        public int VectorSetReplayTaskCount = Environment.ProcessorCount;
+        public int VectorSetReplayTaskCount = 0;
 
         /// <summary>
         /// Get the directory name for database checkpoints
