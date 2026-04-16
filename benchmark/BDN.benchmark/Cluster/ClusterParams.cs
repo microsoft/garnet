@@ -40,7 +40,7 @@ namespace BDN.benchmark.Cluster
                 ret += "DSV";
 
             if (enableAof)
-                ret += "AOF";
+                ret += ret.Length == 0 ? "AOF" : "+AOF";
 
             return ret;
         }

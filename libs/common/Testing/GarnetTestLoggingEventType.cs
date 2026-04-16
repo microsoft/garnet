@@ -12,15 +12,15 @@ namespace Garnet.common
 
     public struct GarnetTestLoggingEvent
     {
-        public GarnetTestLoggingEventType type;
-        public string msg;
+        public GarnetTestLoggingEventType Type;
+        public string Message;
 
-        public override string ToString() => $"<{type}>: {msg}";
+        public override string ToString() => $"<{Type}>: {Message}";
     }
 
     public static class LoggingExtensions
     {
-        public static void LogTesting(this ILogger logger, LogLevel logLevel, GarnetTestLoggingEvent state)
+        public static void LogTesting(this ILogger logger, GarnetTestLoggingEvent state)
         {
             logger?.Log(LogLevel.Critical,
                 eventId: default,

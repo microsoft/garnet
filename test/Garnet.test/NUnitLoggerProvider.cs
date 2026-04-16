@@ -85,9 +85,9 @@ namespace Garnet.test
                 Exception exception,
                 Func<TState, Exception, string> formatter)
             {
-                if (state is GarnetTestLoggingEvent)
+                if (state is GarnetTestLoggingEvent _state)
                 {
-                    if (provider.GarnetTestLoggingEvents[(int)GarnetTestLoggingEventType.LogPrimaryStreamType])
+                    if (provider.GarnetTestLoggingEvents[(int)_state.Type])
                     {
                         var msg = string.Format("[{0:d1}.{1}.({2})] |{3}| <{4}> {5} ^{6}^",
                             eventId.Id,
