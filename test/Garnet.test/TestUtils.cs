@@ -720,7 +720,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                ThreadPoolMinThreads = 100,
+                ThreadPoolMinThreads = 512,
                 SegmentSize = segmentSize,
                 ObjectStoreSegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
