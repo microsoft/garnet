@@ -34,8 +34,6 @@ namespace Tsavorite.core
         {
             disposed = true;
             onWork.Signal();
-            if (!processQueue.Wait(TimeSpan.FromSeconds(30)))
-                throw new Exception("ProcessQueue task timed out!");
         }
 
         /// <summary>

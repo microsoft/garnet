@@ -1903,7 +1903,7 @@ namespace Tsavorite.core
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(() => FlushRunner());
+                _ = Task.Run(FlushRunner);
             else
                 FlushRunner();
 
@@ -1915,7 +1915,6 @@ namespace Tsavorite.core
 
                 try
                 {
-
                     // Flush each page in sequence
                     for (long flushPage = startPage; flushPage < endPage; flushPage++)
                     {
@@ -1928,7 +1927,6 @@ namespace Tsavorite.core
                         if (endLogicalAddress < flushEndAddress)
                             flushEndAddress = endLogicalAddress;
                         var flushSize = flushEndAddress - flushStartAddress;
-
                         if (flushSize <= 0)
                         {
                             // No data to flush for this page. Signal completion and drain the
