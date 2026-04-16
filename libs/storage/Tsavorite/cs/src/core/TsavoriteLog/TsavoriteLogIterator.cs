@@ -475,6 +475,9 @@ namespace Tsavorite.core
         /// <returns>whether a next entry is present</returns>
         public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
         {
+            // Throttle and implicitly check for consumer liveness
+            consumer.Throttle();
+
             if (maxChunkSize == 0) maxChunkSize = allocator.PageSize;
 
             if (disposed)
@@ -500,7 +503,7 @@ namespace Tsavorite.core
                         epoch.ProtectAndDrain();
                     }
 
-                    var hasNext = GetNextInternal(out long startPhysicalAddress, out int newEntryLength, out long startLogicalAddress, out long endLogicalAddress, out bool isCommitRecord, out bool onFrame);
+                    var hasNext = GetNextInternal(out long startPhysicalAddress, out var newEntryLength, out var startLogicalAddress, out var endLogicalAddress, out bool isCommitRecord, out bool onFrame);
 
                     if (!hasNext)
                     {
@@ -509,7 +512,7 @@ namespace Tsavorite.core
                     }
 
                     // GetNextInternal returns only the payload length, so adjust the totalLength
-                    int totalLength = headerSize + Align(newEntryLength);
+                    var totalLength = headerSize + Align(newEntryLength);
 
                     // Expand the records in iteration, as long as as they are on the same physical page
                     while (ExpandGetNextInternal(startPhysicalAddress, ref totalLength, out _, out endLogicalAddress, out isCommitRecord))
