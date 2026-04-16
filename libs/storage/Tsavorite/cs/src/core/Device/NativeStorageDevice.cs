@@ -90,8 +90,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Resolve NativeLibraryPath (which is a NuGet-style "runtimes/&lt;rid&gt;/native/&lt;lib&gt;" relative
         /// path) to an absolute filesystem path. We probe (in order) the assembly's own directory, the
-        /// application's base directory, and finally the current working directory. Falls back to the
-        /// raw relative path if none of these exist, so dlopen's error message surfaces as before.
+        /// application's base directory, and finally the current working directory when it is available.
+        /// Falls back to the raw relative path if none of these exist, so dlopen's error message
+        /// surfaces as before.
         /// </summary>
         static string ResolveNativeLibraryPath(Assembly assembly)
         {
@@ -99,7 +100,7 @@ namespace Tsavorite.core
             [
                 Path.GetDirectoryName(assembly?.Location),
                 AppContext.BaseDirectory,
-                Directory.GetCurrentDirectory(),
+                TryGetCurrentDirectory(),
             ];
 
             foreach (var root in searchRoots)
@@ -112,6 +113,23 @@ namespace Tsavorite.core
             }
 
             return NativeLibraryPath;
+        }
+
+        /// <summary>
+        /// Returns Directory.GetCurrentDirectory() if it can be obtained, otherwise null. The current
+        /// directory can be unavailable (e.g., deleted or inaccessible to the process), which should
+        /// not block native library resolution.
+        /// </summary>
+        static string TryGetCurrentDirectory()
+        {
+            try
+            {
+                return Directory.GetCurrentDirectory();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -211,21 +229,31 @@ namespace Tsavorite.core
             }
         }
 
+        static string TryGetLinuxMultiarchTriplet(Architecture architecture) => architecture switch
+        {
+            Architecture.X64 => "x86_64-linux-gnu",
+            Architecture.Arm64 => "aarch64-linux-gnu",
+            Architecture.Arm => "arm-linux-gnueabihf",
+            _ => null
+        };
+
         static string BuildLibaioDiagnostic(string attemptedSymlinkPath, Exception inner)
         {
-            var arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
-                ? "aarch64-linux-gnu" : "x86_64-linux-gnu";
+            var arch = TryGetLinuxMultiarchTriplet(RuntimeInformation.ProcessArchitecture);
             var attempted = attemptedSymlinkPath == null
                 ? "Could not find libaio.so.1t64 in standard multiarch paths; auto-repair skipped."
                 : $"Attempted to create '{attemptedSymlinkPath}' -> libaio.so.1t64 but the load still failed.";
+            var compatSymlinkFix = arch == null
+                ? "(b) as root, create a 'libaio.so.1' -> 'libaio.so.1t64' compat symlink in the appropriate multiarch library directory for your distro, "
+                : $"(b) as root, create the compat symlink: sudo ln -s /usr/lib/{arch}/libaio.so.1t64 /usr/lib/{arch}/libaio.so.1, ";
             return
                 $"Failed to load native storage device library '{NativeLibraryPath}' because its dependency 'libaio.so.1' " +
                 "is not resolvable by the dynamic linker. This typically happens on Debian 13 (trixie) or " +
                 "Ubuntu 24.04 (noble) where the libaio1 package was renamed to libaio1t64 (64-bit time_t ABI " +
                 "transition) and only ships 'libaio.so.1t64'. " + attempted + " " +
                 "To fix, either (a) install the legacy-named package if available for your distro, " +
-                $"(b) as root, create the compat symlink: sudo ln -s /usr/lib/{arch}/libaio.so.1t64 /usr/lib/{arch}/libaio.so.1, " +
-                "or (c) switch to the managed device by setting '--device-type Managed' (or removing '--use-native-device-linux'). " +
+                compatSymlinkFix +
+                "or (c) switch to a non-native device by setting '--device-type RandomAccess' (or removing '--use-native-device-linux'). " +
                 "Original loader error: " + inner.Message;
         }
 

@@ -24,7 +24,7 @@ set (NATIVE_DEVICE_HEADERS ${NATIVE_DEVICE_HEADERS}
   device/file_windows.h
 )
 else()
-set (FNATIVE_DEVICE_HEADERS ${NATIVE_DEVICE_HEADERS}
+set (NATIVE_DEVICE_HEADERS ${NATIVE_DEVICE_HEADERS}
   device/file_linux.h
   device/libaio_compat.h
 )
