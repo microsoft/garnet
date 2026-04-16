@@ -76,7 +76,7 @@ namespace Garnet.cluster
 
 #if DEBUG
             // Only on Debug mode
-            ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).GetAwaiter().GetResult();
+            await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).ConfigureAwait(false);
 #endif
 
             // Send main store
