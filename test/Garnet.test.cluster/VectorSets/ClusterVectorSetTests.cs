@@ -2097,10 +2097,10 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(vsimRes.Length > 0);
         }
 
-        private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false)
+        private (List<ShardInfo> Shards, List<ushort> Slots) SimpleSetupCluster(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool enableIncrementalSnapshots = false, bool useTLS = true)
         {
-            context.CreateInstances(shardCount, useTLS: true, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots);
-            context.CreateConnection(useTLS: true);
+            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, EnableIncrementalSnapshots: enableIncrementalSnapshots, threadPoolMinIOCompletionThreads: 512);
+            context.CreateConnection(useTLS: useTLS);
             return context.clusterTestUtils.SimpleSetupCluster(primary_count: primaryCount, replica_count: replicaCount);
         }
 

@@ -249,7 +249,11 @@ namespace Garnet.cluster
                     migrateOperation.session.WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateOperation.TransmitSlots(StoreType.Main);
+                    if (!migrateOperation.TransmitSlots(StoreType.Main))
+                    {
+                        logger?.LogWarning("TransmitSlots failed for {cursor} to {current} (with {count} keys)", cursor, current, migrateOperation.sketch.argSliceVector.Count);
+                        return false;
+                    }
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);

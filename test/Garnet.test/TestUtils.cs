@@ -525,7 +525,8 @@ namespace Garnet.test
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -590,7 +591,8 @@ namespace Garnet.test
                     replicaSyncTimeout: replicaSyncTimeout,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
-                    clusterAnnounceHostname: clusterAnnounceHostname);
+                    clusterAnnounceHostname: clusterAnnounceHostname,
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -670,7 +672,8 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -717,7 +720,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                ThreadPoolMinThreads = 100,
+                ThreadPoolMinThreads = 512,
                 SegmentSize = segmentSize,
                 ObjectStoreSegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
@@ -795,7 +798,8 @@ namespace Garnet.test
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
-                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs
+                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
+                ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads
             };
 
             if (lowMemory)
