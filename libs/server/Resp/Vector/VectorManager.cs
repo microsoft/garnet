@@ -110,6 +110,8 @@ namespace Garnet.server
         /// </summary>
         public void Initialize()
         {
+            if (!IsEnabled) return;
+
             using var session = (RespServerSession)getCleanupSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
             {
@@ -152,6 +154,8 @@ namespace Garnet.server
         /// </summary>
         public void ResumePostRecovery()
         {
+            if (!IsEnabled) return;
+
             using var session = (RespServerSession)getCleanupSession();
 
             ref var ctx = ref session.storageSession.vectorContext;
