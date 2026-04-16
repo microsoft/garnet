@@ -235,8 +235,13 @@ namespace Garnet.cluster
             [Conditional("DEBUG")]
             static void LogPrimaryStream(int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, ILogger logger)
             {
-                // Log as critical to ensure it is visible in CI
-                logger?.LogCritical("physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddres}, currentAddress: {currentAddress}, nextAddress: {nextAddress}", physicalSublogIdx, previousAddress, currentAddress, nextAddress);
+                var state = new GarnetTestLoggingEvent()
+                {
+                    type = GarnetTestLoggingEventType.LogPrimaryStreamType,
+                    msg = $"physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddress}, currentAddress: {currentAddress}, nextAddress: {nextAddress}",
+                };
+
+                logger?.LogTesting(LogLevel.Critical, state);
             }
         }
 

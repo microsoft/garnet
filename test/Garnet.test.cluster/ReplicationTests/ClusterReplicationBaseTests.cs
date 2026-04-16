@@ -156,6 +156,8 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
+            context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType]);
+
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var primaryIndex = 0;
