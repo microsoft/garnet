@@ -50,7 +50,13 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason)
         {
-            // Heap object disposal is handled by ClearHeapFields in ObjectAllocatorImpl
+            // When a CopyUpdate eagerly clears the source's ValueObject slot (InternalRMW sets ClearSourceValueObject
+            // and then invokes ClearValueIfHeap, which routes here), this is the point at which the (v) value becomes
+            // unreachable on the in-memory log. The paired positive increment was emitted by PostCopyUpdater for the
+            // (v+1) value. Checkpoint/disk paths that leave the source alive don't reach this site; their decrement
+            // is emitted by OnEvict when the sealed source page later evicts.
+            if (reason == DisposeReason.CopyUpdated && valueObject != null)
+                cacheSizeTracker?.AddHeapSize(-valueObject.HeapMemorySize);
         }
 
         /// <inheritdoc/>

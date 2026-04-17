@@ -195,7 +195,6 @@ namespace Garnet.server
             // by InternalRMW right before PCU, for both memory and disk sources) has already cloned src.ValueObject
             // into dstLogRecord. Reuse it directly — do not clone again.
             var value = Unsafe.As<IGarnetObject>(dstLogRecord.ValueObject);
-            var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
 
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags
@@ -242,9 +241,10 @@ namespace Garnet.server
 
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
-            // If oldValue has been set to null, subtract its size from the tracked heap size
-            var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-            functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
+            // Track creation of the (v+1) value unconditionally; the matching decrement for the (v) value is
+            // emitted at the removal site: OnDisposeValueObject(DisposeReason.CopyUpdated) when the source is
+            // cleared eagerly, or OnEvict when the sealed source page later evicts (checkpoint/disk paths).
+            functionsState.cacheSizeTracker?.AddHeapSize(value.HeapMemorySize);
 
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
