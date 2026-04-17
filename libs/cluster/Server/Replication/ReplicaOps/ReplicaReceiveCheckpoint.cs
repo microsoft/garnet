@@ -41,7 +41,7 @@ namespace Garnet.cluster
                     return (false, errorMessageSpan.ToArray());
 
                 // Wait for threads to agree
-                if(session != null)
+                if (session != null)
                 {
                     await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
                 }

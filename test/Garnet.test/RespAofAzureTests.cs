@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -69,7 +70,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreAutoCommitRecoverTest()
+        public async Task AofUpsertStoreAutoCommitRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -78,7 +79,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
 
-            server.Store.WaitForCommit();
+            await server.Store.WaitForCommitAsync();
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, useAzureStorage: true);
             server.Start();

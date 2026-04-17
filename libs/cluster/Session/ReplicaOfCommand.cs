@@ -47,7 +47,7 @@ namespace Garnet.cluster
 
                     // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
                     UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
-                    
+
                     clusterProvider.storeWrapper.SuspendReplicaOnlyTasks().Wait();
                     clusterProvider.storeWrapper.StartPrimaryTasks();
                 }

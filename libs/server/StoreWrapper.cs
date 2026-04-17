@@ -492,13 +492,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Wait for commits from all active databases
-        /// </summary>
-        /// <returns>false if config prevents committing to AOF</returns>
-        internal bool WaitForCommit() =>
-            WaitForCommitAsync().GetAwaiter().GetResult();
-
-        /// <summary>
         /// Asynchronously wait for commits from all active databases
         /// </summary>
         /// <param name="token">Cancellation token</param>

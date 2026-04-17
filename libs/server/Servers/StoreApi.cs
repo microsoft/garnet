@@ -71,24 +71,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                return await storeWrapper.WaitForCommitAsync(token: token);
-            }
-        }
-
-        /// <summary>
-        /// Wait for commit
-        /// </summary>
-        /// <returns>false if the commit was ignored due to node state or config</returns>
-        public bool WaitForCommit()
-        {
-            using (PreventRoleChange(out var acquired))
-            {
-                if (!acquired || IsReplica)
-                {
-                    return false;
-                }
-
-                return storeWrapper.WaitForCommit();
+                return await storeWrapper.WaitForCommitAsync(token: token).ConfigureAwait(false);
             }
         }
 
@@ -105,7 +88,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                return await storeWrapper.CommitAOFAsync(token: token);
+                return await storeWrapper.CommitAOFAsync(token: token).ConfigureAwait(false);
             }
         }
 

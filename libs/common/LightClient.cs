@@ -213,7 +213,7 @@ namespace Garnet.common
             try
             {
                 await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
-                
+
                 return socket.Connected;
             }
             catch
