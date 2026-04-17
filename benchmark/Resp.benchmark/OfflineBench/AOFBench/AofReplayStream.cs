@@ -12,39 +12,43 @@ using Tsavorite.core;
 
 namespace Resp.benchmark
 {
-    internal sealed class AofSync : IBulkLogEntryConsumer, IDisposable
+    internal sealed class AofReplayStream : IBulkLogEntryConsumer, IDisposable
     {
         const int maxChunkSize = 1 << 20;
         readonly Options options;
-        readonly AofBench aofBench;
         readonly int threadId;
         readonly CancellationTokenSource cts = new();
         GarnetClientSession garnetClient;
-        string primaryId;
         readonly long startAddress;
         long previousAddress;
         readonly ILogger logger = null;
+        readonly string primaryId;
 
         public long Size => previousAddress - startAddress;
+
+        readonly GarnetServerInstance instance;
 
         // Direct replay mode (InProc): bypass RESP, call ReplicaReplayDriver directly
         ReplicaReplayDriver replayDriver;
 
         public byte[] buffer;
 
-        public AofSync(AofBench aofBench, int threadId, long startAddress, Options options, AofGen aofGen)
+        public AofReplayStream(
+            GarnetServerInstance instance,
+            int threadId,
+            long startAddress,
+            Options options)
         {
             this.options = options;
-            this.aofBench = aofBench;
+            this.instance = instance;
             this.threadId = threadId;
-            primaryId = null;
+            this.primaryId = instance.primaryId;
             garnetClient = null;
             this.startAddress = startAddress;
             previousAddress = startAddress;
             buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
-            primaryId = aofBench.primaryId;
-            if (options.EnableCluster)
-                aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
+
+            instance.GetClusterSession(0).UnsafeSetConfig(replicaOf: primaryId);
         }
 
         public void Dispose()
@@ -89,7 +93,7 @@ namespace Resp.benchmark
             if (options.AofBenchType == AofBenchType.ReplayDirect)
             {
                 // Direct mode: initialize ReplicaReplayDriver without going through RESP
-                var clusterProvider = (ClusterProvider)aofBench.server.StoreWrapper.clusterProvider;
+                var clusterProvider = (ClusterProvider)instance.server.StoreWrapper.clusterProvider;
                 var networkSender = new EmbeddedNetworkSender();
                 clusterProvider.replicationManager.InitializeReplicaReplayDriver(threadId, networkSender);
                 replayDriver = clusterProvider.replicationManager.ReplicaReplayDriverStore.GetReplayDriver(threadId);
@@ -109,7 +113,7 @@ namespace Resp.benchmark
                         nextAddress: -1,
                         payloadPtr: -1,
                         payloadLength: 0);
-                    _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
+                    _ = instance.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
                 }
             }
         }
@@ -180,7 +184,7 @@ namespace Resp.benchmark
                         nextAddress,
                         (long)payloadPtr,
                         payloadLength);
-                    _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
+                    _ = instance.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
                 }
 
                 previousAddress = nextAddress;
@@ -196,7 +200,7 @@ namespace Resp.benchmark
         {
             try
             {
-                aofBench.sessions[threadId].clusterSession.ProcessPrimaryStream(
+                instance.sessions[threadId].clusterSession.ProcessPrimaryStream(
                     physicalSublogIdx: threadId,
                     payloadPtr,
                     payloadLength,

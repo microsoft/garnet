@@ -57,14 +57,14 @@ namespace Resp.benchmark
                 EnableFastCommit = true,
                 CommitFrequencyMs = -1,
                 FastAofTruncate = true,
-                AofReplicationRefreshFrequencyMs = 10,
+                AofReplicationRefreshFrequencyMs = options.AofReplicationRefreshFrequencyMs,
                 EnableCluster = true,
                 ReplicationOffsetMaxLag = 0,
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount
             };
             aofServerOptions.GetAofSettings(0, aofEpoch, out var logSettings);
             appendOnlyFile = new GarnetAppendOnlyFile(aofServerOptions, logSettings, Program.loggerFactory.CreateLogger("AofGen - AOF instance"));
-            garnetLog = new GarnetLog(appendOnlyFile, aofServerOptions, logSettings);
+            garnetLog = appendOnlyFile.Log;
 
             if (options.IsReplayEnabled)
             {
@@ -114,9 +114,8 @@ namespace Resp.benchmark
             return kvPairs;
         }
 
-        public unsafe void GenerateData()
+        public void GenerateData()
         {
-            var seqNumGen = new SequenceNumberGenerator(0);
             Console.WriteLine($"Generating AoFBench Data!");
             var threads = options.IsReplayEnabled ? options.AofPhysicalSublogCount : options.NumThreads.Max();
             var workers = new Thread[threads];
@@ -157,97 +156,98 @@ namespace Resp.benchmark
             {
                 Console.WriteLine($"Generated {threads}x{options.DbSize} KV pairs in {seconds:N2} secs");
             }
+        }
 
-            void GeneratePages(int threadId)
+        unsafe void GeneratePages(int threadId)
+        {
+            var seqNumGen = new SequenceNumberGenerator(0);
+            var number_of_aof_records = 0L;
+            var number_of_aof_bytes = 0L;
+            var kvPairs = GenerateKVPairs(threadId, options.AofPhysicalSublogCount == 1);
+            // Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
+            var pages = options.AofGenPages;
+            pageBuffers[threadId] = new Page[pages];
+            for (var i = 0; i < pages; i++)
             {
-                var number_of_aof_records = 0L;
-                var number_of_aof_bytes = 0L;
-                var kvPairs = GenerateKVPairs(threadId, options.AofPhysicalSublogCount == 1);
-                // Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
-                var pages = options.AofGenPages;
-                pageBuffers[threadId] = new Page[pages];
-                for (var i = 0; i < pages; i++)
-                {
-                    pageBuffers[threadId][i] = new Page(1 << aofServerOptions.AofPageSizeBits());
-                    FillPage(threadId, kvPairs, i, pageBuffers[threadId][i]);
-                }
+                pageBuffers[threadId][i] = new Page(1 << aofServerOptions.AofPageSizeBits());
+                FillPage(threadId, kvPairs, i, pageBuffers[threadId][i]);
+            }
 
-                // Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
-                _ = Interlocked.Add(ref total_number_of_aof_records, number_of_aof_records);
-                _ = Interlocked.Add(ref total_number_of_aof_bytes, number_of_aof_bytes);
+            // Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
+            _ = Interlocked.Add(ref total_number_of_aof_records, number_of_aof_records);
+            _ = Interlocked.Add(ref total_number_of_aof_bytes, number_of_aof_bytes);
 
-                void FillPage(int threadId, List<(byte[], byte[])> kvPairs, int pageCount, Page page)
+            void FillPage(int threadId, List<(byte[], byte[])> kvPairs, int pageCount, Page page)
+            {
+                fixed (byte* pagePtr = page.payload)
                 {
-                    fixed (byte* pagePtr = page.payload)
+                    var pageOffset = pagePtr;
+                    // First page starts from 64 address, so the payload space must be smaller
+                    var pageEnd = pageOffset + page.Length - (pageCount == 0 ? 64 : 0);
+                    var kvOffset = 0;
+                    while (true)
                     {
-                        var pageOffset = pagePtr;
-                        // First page starts from 64 address, so the payload space must be smaller
-                        var pageEnd = pageOffset + page.Length - (pageCount == 0 ? 64 : 0);
-                        var kvOffset = 0;
-                        while (true)
+                        var kvPair = kvPairs[kvOffset++ % kvPairs.Count];
+                        var keyData = kvPair.Item1;
+                        var valueData = kvPair.Item2;
+                        StringInput input = default;
+                        fixed (byte* keyPtr = keyData)
+                        fixed (byte* valuePtr = valueData)
                         {
-                            var kvPair = kvPairs[kvOffset++ % kvPairs.Count];
-                            var keyData = kvPair.Item1;
-                            var valueData = kvPair.Item2;
-                            StringInput input = default;
-                            fixed (byte* keyPtr = keyData)
-                            fixed (byte* valuePtr = valueData)
+                            var key = SpanByte.FromPinnedPointer(keyPtr, keyData.Length);
+                            var value = SpanByte.FromPinnedPointer(valuePtr, valueData.Length);
+                            var aofHeader = new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = 1, sessionID = 0 };
+                            var useShardedHeader = options.AofPhysicalSublogCount > 1 || options.AofReplayTaskCount > 1;
+                            if (!useShardedHeader)
                             {
-                                var key = SpanByte.FromPinnedPointer(keyPtr, keyData.Length);
-                                var value = SpanByte.FromPinnedPointer(valuePtr, valueData.Length);
-                                var aofHeader = new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = 1, sessionID = 0 };
-                                var useShardedHeader = options.AofPhysicalSublogCount > 1 || options.AofReplayTaskCount > 1;
-                                if (!useShardedHeader)
-                                {
-                                    if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
-                                        ref pageOffset,
-                                        pageEnd,
-                                        aofHeader,
-                                        key,
-                                        value,
-                                        ref input))
-                                        break;
-                                }
-                                else
-                                {
-                                    var extendedAofHeader = new AofShardedHeader
-                                    {
-                                        basicHeader = new AofHeader
-                                        {
-                                            padding = (byte)AofHeaderType.ShardedHeader,
-                                            opType = aofHeader.opType,
-                                            storeVersion = aofHeader.storeVersion,
-                                            sessionID = aofHeader.sessionID
-                                        },
-                                        sequenceNumber = seqNumGen.GetSequenceNumber()
-                                    };
-
-                                    if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
-                                        ref pageOffset,
-                                        pageEnd,
-                                        extendedAofHeader,
-                                        key,
-                                        value,
-                                        ref input))
-                                        break;
-                                }
-                                page.recordCount++;
+                                if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
+                                    ref pageOffset,
+                                    pageEnd,
+                                    aofHeader,
+                                    key,
+                                    value,
+                                    ref input))
+                                    break;
                             }
-                        }
+                            else
+                            {
+                                var extendedAofHeader = new AofShardedHeader
+                                {
+                                    basicHeader = new AofHeader
+                                    {
+                                        padding = (byte)AofHeaderType.ShardedHeader,
+                                        opType = aofHeader.opType,
+                                        storeVersion = aofHeader.storeVersion,
+                                        sessionID = aofHeader.sessionID
+                                    },
+                                    sequenceNumber = seqNumGen.GetSequenceNumber()
+                                };
 
-                        var payloadLength = (int)(pageOffset - pagePtr);
-                        page.payloadLength = payloadLength;
-                        number_of_aof_records += page.recordCount;
-                        number_of_aof_bytes += payloadLength;
+                                if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
+                                    ref pageOffset,
+                                    pageEnd,
+                                    extendedAofHeader,
+                                    key,
+                                    value,
+                                    ref input))
+                                    break;
+                            }
+                            page.recordCount++;
+                        }
                     }
+
+                    var payloadLength = (int)(pageOffset - pagePtr);
+                    page.payloadLength = payloadLength;
+                    number_of_aof_records += page.recordCount;
+                    number_of_aof_bytes += payloadLength;
                 }
             }
+        }
 
-            void GenerateKeys(int threadId)
-            {
-                kvPairBuffers[threadId] = GenerateKVPairs(threadId, options.AofBenchType == AofBenchType.EnqueueRandom);
-                //Console.WriteLine($"[{threadId}] - Generated {kvPairBuffers[threadId].Count} KV pairs for {options.AofBenchType}");
-            }
+        void GenerateKeys(int threadId)
+        {
+            kvPairBuffers[threadId] = GenerateKVPairs(threadId, options.AofBenchType == AofBenchType.EnqueueRandom);
+            //Console.WriteLine($"[{threadId}] - Generated {kvPairBuffers[threadId].Count} KV pairs for {options.AofBenchType}");
         }
     }
 }

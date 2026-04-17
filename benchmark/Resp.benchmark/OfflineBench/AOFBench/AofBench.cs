@@ -4,8 +4,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using Embedded.server;
-using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
@@ -31,7 +29,8 @@ namespace Resp.benchmark
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount,
                 AofReplayTaskCount = options.AofReplayTaskCount,
                 ReplicationOffsetMaxLag = 0,
-                CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null
+                CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null,
+                AofReplicationRefreshFrequencyMs = 100,
             };
             return serverOptions;
         }
@@ -39,21 +38,17 @@ namespace Resp.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly Options options;
         readonly AofGen aofGen;
-        readonly AofSync[] aofSync;
+        readonly AofReplayStream[] aofReplayStream;
         StringBuilder stats = new();
         long total_bytes_processed = 0;
         long total_pages_processed = 0;
         long total_records_replayed = 0;
         long total_records_enqueued = 0;
 
-        internal EmbeddedRespServer server;
-        internal RespServerSession[] sessions;
-
         volatile bool done = false;
 
-        internal readonly string primaryId;
-
         AofAddress aofTailAddress;
+        readonly LightEpoch epoch;
 
         public AofBench(Options options)
         {
@@ -64,12 +59,19 @@ namespace Resp.benchmark
                 throw new Exception("InProc/AofBench with AofBenchType.Replay requires --cluster!");
 
             var serverOptions = GetServerOptions(options);
-            primaryId = Generator.CreateHexId();
-
-            server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
-            sessions = server.GetRespSessions(options.AofPhysicalSublogCount);
             aofGen = new AofGen(options);
-            aofSync = [.. Enumerable.Range(0, options.AofPhysicalSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 64, options, aofGen))];
+
+            if (options.IsReplayEnabled)
+            {
+                options.EnableCluster = true;
+                var instance = new GarnetServerInstance(options);
+                aofReplayStream = [.. Enumerable.Range(0, options.AofPhysicalSublogCount).Select(
+                    x => new AofReplayStream(instance, threadId: x, startAddress: 64, options))];
+            }
+            else
+            {
+                epoch = new LightEpoch();
+            }
         }
 
         public void GenerateData() => aofGen.GenerateData();
@@ -77,6 +79,8 @@ namespace Resp.benchmark
         public void Run(int threads)
         {
             var workers = new Thread[threads];
+
+            Console.WriteLine($"Epoch instance count:{LightEpoch.ActiveInstanceCount()}");
 
             try
             {
@@ -91,7 +95,6 @@ namespace Resp.benchmark
                 if (options.IsReplayEnabled)
                     aofTailAddress = aofGen.appendOnlyFile.Log.TailAddress;
 
-                var epoch = new LightEpoch();
                 // Run the experiment.
                 for (var idx = 0; idx < threads; ++idx)
                 {
@@ -101,7 +104,7 @@ namespace Resp.benchmark
                         AofBenchType.Replay => new Thread(() => RunAofReplayBench(x)),
                         AofBenchType.ReplayNoResp => new Thread(() => RunAofReplayBenchNoResp(x)),
                         AofBenchType.ReplayDirect => new Thread(() => RunAofReplayBenchDirect(x)),
-                        AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x, epoch)),
+                        AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x)),
                         _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                     };
                 }
@@ -156,7 +159,7 @@ namespace Resp.benchmark
             }
         }
 
-        unsafe void RunAofEnqueBench(int threadId, LightEpoch epoch)
+        unsafe void RunAofEnqueBench(int threadId)
         {
             waiter.Wait();
             var kvPairs = aofGen.GetKVPairBuffer(threadId);
@@ -210,7 +213,7 @@ namespace Resp.benchmark
             waiter.Wait();
 
             // Initialize stream for replay
-            aofSync[threadId].InitializeReplayStream();
+            aofReplayStream[threadId].InitializeReplayStream();
 
             while (!done)
             {
@@ -219,7 +222,7 @@ namespace Resp.benchmark
                 fixed (byte* payloadPtr = currPage.payload)
                 {
                     nextAddress = currentAddress + currPage.payloadLength;
-                    aofSync[threadId].Consume(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+                    aofReplayStream[threadId].Consume(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
 
                     // First page has a valid address from 64.
                     // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
@@ -249,7 +252,7 @@ namespace Resp.benchmark
             waiter.Wait();
 
             // Initialize stream for replay
-            aofSync[threadId].InitializeReplayStream();
+            aofReplayStream[threadId].InitializeReplayStream();
 
             while (!done)
             {
@@ -258,7 +261,7 @@ namespace Resp.benchmark
                 fixed (byte* payloadPtr = currPage.payload)
                 {
                     nextAddress = currentAddress + currPage.payloadLength;
-                    aofSync[threadId].ConsumeNoResp(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+                    aofReplayStream[threadId].ConsumeNoResp(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
 
                     // First page has a valid address from 64.
                     // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
@@ -288,7 +291,7 @@ namespace Resp.benchmark
             waiter.Wait();
 
             // Initialize stream for replay
-            aofSync[threadId].InitializeReplayStream();
+            aofReplayStream[threadId].InitializeReplayStream();
 
             while (!done)
             {
@@ -297,7 +300,7 @@ namespace Resp.benchmark
                 fixed (byte* payloadPtr = currPage.payload)
                 {
                     nextAddress = currentAddress + currPage.payloadLength;
-                    aofSync[threadId].ConsumeDirect(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+                    aofReplayStream[threadId].ConsumeDirect(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
 
                     // First page has a valid address from 64.
                     // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
