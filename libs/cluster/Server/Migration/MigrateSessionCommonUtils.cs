@@ -70,43 +70,44 @@ namespace Garnet.cluster
                     key.CopyTo(keyCopy);
                     valueCopy.CopyTo(valueCopy);
 
-                    var retryTask =
-                        handleResponseTask.ContinueWith(
-                            res =>
-                            {
-                                if (res.IsCompletedSuccessfully && res.Result)
-                                {
-                                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
-
-                                    unsafe
-                                    {
-                                        fixed (byte* keyCopyPtr = keyCopy, valueCopyPtr = valueCopy)
-                                        {
-                                            ref var keyCopyRef = ref SpanByte.Reinterpret(keyCopyPtr);
-                                            ref var valueCopyRef = ref SpanByte.Reinterpret(valueCopyPtr);
-
-                                            if (!gcs.TryWriteKeyValueSpanByte(ref keyCopyRef, ref valueCopyRef, out _))
-                                            {
-                                                logger?.LogCritical($"{nameof(WriteOrSendMainStoreKeyValuePairAsync)} failed on retry");
-                                                return false;
-                                            }
-                                        }
-                                    }
-
-                                    return true;
-                                }
-                                else
-                                {
-                                    return false;
-                                }
-                            },
-                            TaskContinuationOptions.RunContinuationsAsynchronously
-                        );
-
-                    return new(retryTask);
+                    return new(RetryHelperAsync(handleResponseTask, gcs, _sourceNodeId, _replaceOption, keyCopy, valueCopy, logger));
                 }
 
                 return new(true);
+
+                static async Task<bool> RetryHelperAsync(Task<bool> handleResponseTask, GarnetClientSession gcs, string sourceNodeId, bool replaceOption, byte[] keyCopy, byte[] valueCopy, ILogger logger)
+                {
+                    try
+                    {
+                        if (await handleResponseTask.ConfigureAwait(false))
+                        {
+                            gcs.SetClusterMigrateHeader(sourceNodeId, replaceOption, isMainStore: true, isVectorSets: false);
+
+                            unsafe
+                            {
+                                fixed (byte* keyCopyPtr = keyCopy, valueCopyPtr = valueCopy)
+                                {
+                                    ref var keyCopyRef = ref SpanByte.Reinterpret(keyCopyPtr);
+                                    ref var valueCopyRef = ref SpanByte.Reinterpret(valueCopyPtr);
+
+                                    if (!gcs.TryWriteKeyValueSpanByte(ref keyCopyRef, ref valueCopyRef, out _))
+                                    {
+                                        logger?.LogCritical($"{nameof(WriteOrSendMainStoreKeyValuePairAsync)} failed on retry");
+                                        return false;
+                                    }
+                                }
+                            }
+
+                            return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error occurred in WriteOrSendMainStoreKeyValuePairAsync async path");
+                    }
+
+                    return false;
+                }
             }
         }
 
@@ -145,7 +146,7 @@ namespace Garnet.cluster
 
                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false, isVectorSets: false);
 
-                    if(!gcs.TryWriteKeyValueByteArray(key, value, expiration, out _))
+                    if (!gcs.TryWriteKeyValueByteArray(key, value, expiration, out _))
                     {
                         logger?.LogCritical($"{nameof(WriteOrSendObjectStoreKeyValuePairAsync)} failed on retry");
                         return false;

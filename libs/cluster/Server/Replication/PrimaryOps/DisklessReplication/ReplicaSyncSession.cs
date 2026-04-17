@@ -152,16 +152,20 @@ namespace Garnet.cluster
         {
             if (task != null)
             {
-                flushTask = task.ContinueWith(resp =>
+                flushTask = ContinueFlushTaskAsync(task).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+            }
+
+            async Task<bool> ContinueFlushTaskAsync(Task<string> task)
+            {
+                var resp = await task.ConfigureAwait(false);
+                if (!resp.Equals("OK", StringComparison.Ordinal))
                 {
-                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    {
-                        logger?.LogError("ReplicaSyncSession: {errorMsg}", resp.Result);
-                        SetStatus(SyncStatus.FAILED, resp.Result);
-                        return false;
-                    }
-                    return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+                    logger?.LogError("ReplicaSyncSession: {errorMsg}", resp);
+                    SetStatus(SyncStatus.FAILED, resp);
+                    return false;
+                }
+
+                return true;
             }
         }
 
