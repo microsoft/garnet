@@ -110,7 +110,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="replicaSyncSession"></param>
         /// <returns></returns>
-        public async Task<SyncStatusInfo> ReplicationSyncDriver(ReplicaSyncSession replicaSyncSession)
+        public async Task<SyncStatusInfo> ReplicationSyncDriverAsync(ReplicaSyncSession replicaSyncSession)
         {
             try
             {

@@ -74,7 +74,7 @@ namespace Garnet.cluster
         /// <param name="channel">A span containing the channel name to which the message will be published.</param>
         /// <param name="message">A span containing the message to publish to the channel.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        public static void ExecuteClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
-            => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, ref channel, ref message, cancellationToken);
+        public static void ExecuteClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, Span<byte> channel, Span<byte> message, CancellationToken cancellationToken = default)
+            => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, channel, message, cancellationToken);
     }
 }

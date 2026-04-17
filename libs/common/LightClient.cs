@@ -112,9 +112,9 @@ namespace Garnet.common
         /// </summary>
         public override void Connect()
         {
-            socket = ConnectSendSocketAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            socket = ConnectSendSocket();
             networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBufferSettings, networkPool, sslOptions != null, this);
-            networkHandler.StartAsync(sslOptions, endpoint.ToString()).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.Start(sslOptions, endpoint.ToString());
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
         }
@@ -122,6 +122,39 @@ namespace Garnet.common
         /// <summary>
         /// Connect client send socket
         /// </summary>
+        private Socket ConnectSendSocket(CancellationToken cancellationToken = default)
+        {
+            if (endpoint is DnsEndPoint dnsEndpoint)
+            {
+                var hostEntries = Dns.GetHostEntry(dnsEndpoint.Host);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    if (TryConnectSocket(socket, endpoint))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (endpoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (TryConnectSocket(socket, endpoint))
+                    return socket;
+            }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", endpoint);
+            throw new Exception($"Failed to connect at {endpoint}");
+        }
+
+        /// <inheritdoc cref="ConnectSendSocket"/>
         private async Task<Socket> ConnectSendSocketAsync(CancellationToken cancellationToken = default)
         {
             if (endpoint is DnsEndPoint dnsEndpoint)
@@ -154,28 +187,41 @@ namespace Garnet.common
             throw new Exception($"Failed to connect at {endpoint}");
         }
 
+
         /// <summary>
         /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="endpoint"></param>
-        /// <param name="cancellationToken">The cancellation token</param>
         /// <returns></returns>
-        private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, CancellationToken cancellationToken = default)
+        private bool TryConnectSocket(Socket socket, EndPoint endpoint)
         {
             try
             {
-                await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
-                if (socket.Connected)
-                    return true;
+                socket.Connect(endpoint);
+                return socket.Connected;
             }
             catch
             {
                 socket.Dispose();
                 return false;
             }
+        }
 
-            return true;
+        /// <inheritdoc cref="TryConnectSocket"/>
+        private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                
+                return socket.Connected;
+            }
+            catch
+            {
+                socket.Dispose();
+                return false;
+            }
         }
 
         /// <summary>

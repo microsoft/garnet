@@ -100,13 +100,13 @@ namespace Garnet.cluster
         /// Initialize connection and cancellation tokens.
         /// Initialization is performed only once
         /// </summary>
-        public Task InitializeAsync()
+        public ValueTask InitializeAsync()
         {
             // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
         }
 
         public void Dispose()
@@ -281,7 +281,7 @@ namespace Garnet.cluster
         /// <param name="cmd"></param>
         /// <param name="channel"></param>
         /// <param name="message"></param>
-        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        public void TryClusterPublish(RespCommand cmd, Span<byte> channel, Span<byte> message)
         {
             var locked = false;
             try
@@ -294,7 +294,7 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                gc.ExecuteClusterPublishNoResponse(cmd, ref channel, ref message);
+                gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally
             {

@@ -99,7 +99,7 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here
+                // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
                 var (success, errorMessage) =
                     (clusterProvider.serverOptions.ReplicaDisklessSync ?
                         clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
@@ -314,15 +314,14 @@ namespace Garnet.cluster
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            if (!clusterProvider.replicationManager.TryBeginPrimarySync(
-                replicaNodeId,
-                replicaAssignedPrimaryId,
-                replicaCheckpointEntry,
-                replicaAofBeginAddress,
-                replicaAofTailAddress,
-                out var errorMessage))
+            var beginPrimarySyncTask = clusterProvider.replicationManager.TryBeginPrimarySyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
+
+            // No choice but to call .GetResult() here, we're on the network thread
+            var (success, errorMessage) = beginPrimarySyncTask.GetAwaiter().GetResult();
+
+            if (!success)
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -491,7 +490,13 @@ namespace Garnet.cluster
             ReadOnlySpan<byte> errorMessage = default;
             long replicationOffset = -1;
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
-                _ = clusterProvider.replicationManager.TryAttachSync(syncMetadata, out errorMessage);
+            {
+                var attachTask = clusterProvider.replicationManager.TryAttachSyncAsync(syncMetadata);
+
+                // Using .GetResult() here because we're on the network thread
+                var (_, err) = attachTask.GetAwaiter().GetResult();
+                errorMessage = err.Span;
+            }
             else
                 replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata, out errorMessage);
 

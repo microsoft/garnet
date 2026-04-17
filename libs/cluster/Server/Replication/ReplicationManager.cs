@@ -536,7 +536,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="primaryReplicationOffset"></param>
         /// <returns></returns>
-        public async Task<long> WaitForReplicationOffset(long primaryReplicationOffset)
+        public async Task<long> WaitForReplicationOffsetAsync(long primaryReplicationOffset)
         {
             while (ReplicationOffset < primaryReplicationOffset)
             {
@@ -569,7 +569,7 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here
+                // Cannot avoid blocking here, so calling .GetResult() is fine
                 var (success, errorMessage) =
                     (clusterProvider.serverOptions.ReplicaDisklessSync ?
                         TryReplicateDisklessSyncAsync(null, syncOpts) :

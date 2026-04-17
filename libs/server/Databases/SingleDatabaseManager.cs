@@ -108,7 +108,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
         {
             // Check if checkpoint already in progress
             if (!TryPauseCheckpoints(defaultDatabase.Id))
@@ -118,8 +118,7 @@ namespace Garnet.server
             if (background)
                 return true;
 
-            // .GetResult is unavoidable here, must be synchronous
-            checkpointTask.GetAwaiter().GetResult();
+            await checkpointTask.ConfigureAwait(false);
             return true;
 
             async Task TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
@@ -141,11 +140,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return TakeCheckpoint(background, logger, token);
+            return TakeCheckpointAsync(background, logger, token);
         }
 
         /// <inheritdoc/>

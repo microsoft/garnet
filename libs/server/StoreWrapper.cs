@@ -362,8 +362,8 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, ILogger logger = null,
-            CancellationToken token = default) => databaseManager.TakeCheckpoint(background, logger, token);
+        public Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null,
+            CancellationToken token = default) => databaseManager.TakeCheckpointAsync(background, logger, token);
 
         /// <summary>
         /// Take checkpoint of all active database IDs or a specified database ID
@@ -373,17 +373,17 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId = -1, ILogger logger = null, CancellationToken token = default)
+        public Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, ILogger logger = null, CancellationToken token = default)
         {
             if (dbId == -1)
             {
-                return databaseManager.TakeCheckpoint(background, logger, token);
+                return databaseManager.TakeCheckpointAsync(background, logger, token);
             }
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpointAsync)} with DB ID: {dbId}");
 
-            return databaseManager.TakeCheckpoint(background, dbId, logger, token);
+            return databaseManager.TakeCheckpointAsync(background, dbId, logger, token);
         }
 
         /// <summary>

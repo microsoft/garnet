@@ -341,8 +341,8 @@ namespace Garnet.cluster
                 throw new GarnetException();
         }
 
-        public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
-            => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
+        public ValueTask ClusterPublishAsync(RespCommand cmd, Span<byte> channel, Span<byte> message)
+            => clusterManager.TryClusterPublishAsync(cmd, channel, message);
 
         internal GarnetClusterCheckpointManager ReplicationLogCheckpointManager
         {

@@ -235,7 +235,8 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                // Must call .GetResult() here, cannot move off the thread
+                                _ = storeWrapper.TakeCheckpointAsync(background: false, logger).GetAwaiter().GetResult();
                             }
 
                             // Process buffered records

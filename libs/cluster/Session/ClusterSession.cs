@@ -93,9 +93,9 @@ namespace Garnet.cluster
                 {
                     _ = command switch
                     {
-                        RespCommand.MIGRATE => TryMIGRATE(out invalidParameters),
+                        RespCommand.MIGRATE => NetworkTryMIGRATE(out invalidParameters),
                         RespCommand.FAILOVER => TryFAILOVER(),
-                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => TryREPLICAOF(out invalidParameters),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => NetworkTryREPLICAOF(out invalidParameters),
                         _ => false
                     };
                 }
@@ -151,8 +151,7 @@ namespace Garnet.cluster
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
-                    var task = clusterProvider.storeWrapper.appendOnlyFile.WaitForCommitAsync();
-                    if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
+                    clusterProvider.storeWrapper.appendOnlyFile.WaitForCommit();
                 }
                 int sendBytes = (int)(dcurr - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);

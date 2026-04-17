@@ -11,14 +11,14 @@ namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
-        private Task<long> CheckReplicaSync(GarnetClient gclient)
+        private async Task<long> CheckReplicaSync(GarnetClient gclient)
         {
             try
             {
                 if (!gclient.IsConnected)
-                    gclient.Connect();
+                    await gclient.ConnectAsync().ConfigureAwait(false);
 
-                return gclient.ExecuteClusterFailReplicationOffset(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token);
+                return await gclient.ExecuteClusterFailReplicationOffset(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -84,7 +84,7 @@ namespace Garnet.cluster
             try
             {
                 if (!gclient.IsConnected)
-                    gclient.Connect();
+                    await gclient.ConnectAsync().ConfigureAwait(false);
 
                 return await gclient.Failover(FailoverOption.TAKEOVER).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }

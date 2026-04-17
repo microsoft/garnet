@@ -120,7 +120,7 @@ namespace Garnet.cluster
                 (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
                 logger?.LogInformation("Checkpoint search completed");
 
-                gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds);
+                await gcs.ConnectAsync((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds).ConfigureAwait(false);
 
                 var index_size = -1L;
                 var hlog_size = default(LogFileInfo);

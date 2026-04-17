@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        private bool TryREPLICAOF(out bool invalidParameters)
+        private bool NetworkTryREPLICAOF(out bool invalidParameters)
         {
             invalidParameters = false;
 
@@ -34,7 +34,7 @@ namespace Garnet.cluster
                 {
                     if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne, upgradeLock: false))
                     {
-                        logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                        logger?.LogError($"{nameof(NetworkTryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
                             SendAndReset();
                         return true;
@@ -44,8 +44,8 @@ namespace Garnet.cluster
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
-                    
-                    // Cannot avoid blocking here
+
+                    // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
                     UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
                     
                     clusterProvider.storeWrapper.SuspendReplicaOnlyTasks().Wait();
@@ -61,7 +61,7 @@ namespace Garnet.cluster
                 if (!NumUtils.TryParse(portSpan, out int port))
                 {
                     var portStr = Encoding.ASCII.GetString(portSpan);
-                    logger?.LogWarning($"{nameof(TryREPLICAOF)} failed to parse port {{port}}", portStr);
+                    logger?.LogWarning($"{nameof(NetworkTryREPLICAOF)} failed to parse port {{port}}", portStr);
                     while (!RespWriteUtils.TryWriteError($"ERR REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
                         SendAndReset();
                     return true;
@@ -85,7 +85,7 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here
+                // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
                 var (success, errorMessage) =
                     (clusterProvider.serverOptions.ReplicaDisklessSync ?
                         clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
