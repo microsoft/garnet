@@ -152,7 +152,6 @@ namespace Garnet.server
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
-                var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
 
                 // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
@@ -175,9 +174,10 @@ namespace Garnet.server
 
                 sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
-                // If oldValue has been set to null, subtract its size from the tracked heap size
-                var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
+                // Track creation of the (v+1) value unconditionally; the matching decrement for the (v) value is
+                // emitted at the removal site: OnDispose(DisposeReason.CopyUpdated) when the source is cleared
+                // eagerly, or OnEvict when the sealed source page later evicts (checkpoint/disk paths).
+                functionsState.cacheSizeTracker?.AddHeapSize(value.HeapMemorySize);
             }
 
             if (functionsState.appendOnlyFile != null)
