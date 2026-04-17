@@ -87,11 +87,6 @@ namespace Garnet.server
         public int AofTailWitnessFreqMs = 100;
 
         /// <summary>
-        /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
-        /// </summary>
-        public int SubscriberRefreshFrequencyMs = 0;
-
-        /// <summary>
         /// Write ahead logging (append-only file) commit issue frequency in milliseconds.
         /// 0 = issue an immediate commit per operation
         /// -1 = manually issue commits using COMMITAOF command (no auto-commit)

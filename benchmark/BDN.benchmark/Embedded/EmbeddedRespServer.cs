@@ -30,7 +30,6 @@ namespace Embedded.server
                 new SubscribeBroker(
                     null,
                     opts.PubSubPageSizeBytes(),
-                    opts.SubscriberRefreshFrequencyMs,
                     pubSubEpoch,
                     true);
         }
