@@ -421,7 +421,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Fires <see cref="SafeTailPageShiftCallback"/> only when the new SafeTail is on a different
         /// page than the last call. Uses <see cref="lastPublishedSafeTailPage"/> as a monotonic filter so
-        /// that concurrent callers cannot double-fire for the same page transition.
+        /// that concurrent callers cannot double-fire for the same page transition. The callback is
+        /// always invoked outside epoch protection so it can safely re-enter Tsavorite APIs (matching
+        /// the contract of the previous background-worker design).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void MaybeInvokePageShiftCallback(long oldSafe, long newSafe)
@@ -432,7 +434,20 @@ namespace Tsavorite.core
             long prev = Volatile.Read(ref lastPublishedSafeTailPage);
             if (newPage <= prev) return;
             if (Interlocked.CompareExchange(ref lastPublishedSafeTailPage, newPage, prev) != prev) return;
-            cb(oldSafe, newSafe);
+
+            // Invoke callback outside epoch protection. Producer drive and direct RefreshSafeTailAddress
+            // callers may hold the epoch; suspend it so the callback can re-enter log APIs without
+            // tripping nested-epoch asserts or corrupting epoch bookkeeping.
+            var isProtected = epoch.ThisInstanceProtected();
+            if (isProtected) epoch.Suspend();
+            try
+            {
+                cb(oldSafe, newSafe);
+            }
+            finally
+            {
+                if (isProtected) epoch.Resume();
+            }
         }
         #endregion
 
@@ -447,6 +462,12 @@ namespace Tsavorite.core
             CommittedUntilAddress = beginAddress;
             CommittedBeginAddress = beginAddress;
             cachedSafeTailAddress = beginAddress;
+
+            // Reset monotonic page trackers to the new (lower) address so that the first post-reset
+            // enqueue that crosses into a new page re-arms both producer-drive and callback dispatch.
+            var resetPage = beginAddress >> allocator.LogPageSizeBits;
+            Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
+            Volatile.Write(ref lastProducerObservedPage, resetPage);
 
             commitNum = 0;
             this.beginAddress = beginAddress;
@@ -507,6 +528,14 @@ namespace Tsavorite.core
 
                 CommittedUntilAddress = committedUntilAddress;
                 CommittedBeginAddress = beginAddress;
+
+                // Align monotonic page trackers to the restored address so that post-recovery producer
+                // drive and page-shift callbacks re-arm correctly (they only advance beyond the
+                // initial floor).
+                var resetPage = committedUntilAddress >> allocator.LogPageSizeBits;
+                Volatile.Write(ref lastPublishedSafeTailPage, resetPage);
+                Volatile.Write(ref lastProducerObservedPage, resetPage);
+
                 AdvanceSafeTailFloor(committedUntilAddress);
 
                 commitNum = lastCommitNum;
@@ -1270,7 +1299,11 @@ namespace Tsavorite.core
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
                 Debug.Assert(logicalAddress == 0);
 
+                // epoch.Suspend releases this thread's LightEpoch entry, which via ResetAllocatedUserWords
+                // clears our in-flight slot back to InflightInactive. That may raise min(inflight), so wake
+                // any parked waiters that were being held back by our Begin publish.
                 epoch.Suspend();
+                NotifyParkedWaiters();
                 if (cannedException != null)
                     throw cannedException;
                 try
@@ -1303,8 +1336,10 @@ namespace Tsavorite.core
                 Debug.Assert(logicalAddress == 0);
 
                 // We are holding the TsavoriteLog's epoch; release and then reacquire it. And if the caller's epoch is
-                // also held, suspend and reacquire it as well.
+                // also held, suspend and reacquire it as well. Suspend clears our in-flight slot via
+                // ResetAllocatedUserWords; wake parked waiters that our Begin publish may have been holding back.
                 epoch.Suspend();
+                NotifyParkedWaiters();
                 var suspended = epochAccessor.TrySuspend();
                 try
                 {
