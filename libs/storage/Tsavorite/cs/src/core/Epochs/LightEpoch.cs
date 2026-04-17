@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -151,6 +152,25 @@ namespace Tsavorite.core
         /// ID of this LightEpoch instance
         /// </summary>
         readonly int instanceId;
+
+        /// <summary>
+        /// Maximum number of general-purpose per-thread <see cref="long"/> user-word slots that subsystems
+        /// can claim via <see cref="AllocateUserWord(long)"/>. Bounded by the free space in <see cref="Entry"/>'s
+        /// cache line (48 bytes = 6 longs).
+        /// </summary>
+        public const int MaxUserWords = 6;
+
+        /// <summary>
+        /// Initial value written to each entry's user-word slot on allocation and on entry recycle.
+        /// Indexed by user-word index; only slots whose bit is set in <see cref="userWordMask"/> are valid.
+        /// </summary>
+        readonly long[] userWordInitialValues = new long[MaxUserWords];
+
+        /// <summary>
+        /// Bitmask of claimed user-word slots. Each set bit means that word index is in use by some subsystem
+        /// and must be initialized on entry acquire and reset on entry release.
+        /// </summary>
+        int userWordMask;
 
         /// <summary>
         /// This is the LightEpoch-level static buffer (array) of available instance slots.
@@ -510,6 +530,10 @@ namespace Tsavorite.core
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
             Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
 
+            // Reset any per-thread user-word slots to their configured initial values so that a fresh
+            // thread (or a recycled slot) never observes stale values left by a previous owner.
+            ResetAllocatedUserWords(entry);
+
             // Protect CurrentEpoch by copying it to the instance-specific epoch table
             // so that ComputeNewSafeToReclaimEpoch() will see it.
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
@@ -531,6 +555,11 @@ namespace Tsavorite.core
 
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+
+            // Reset any per-thread user-word slots before giving up ownership so the next owner of this
+            // entry starts from a known state. Also ensures that consumers scanning the column via
+            // ForEachUserWord do not observe stale in-flight values after a thread has released the epoch.
+            ResetAllocatedUserWords(entry);
 
             // Clear "ThisInstanceProtected()" (non-static epoch table)
             (*(tableAligned + entry)).localCurrentEpoch = 0;
@@ -711,8 +740,150 @@ namespace Tsavorite.core
             return sb.ToString();
         }
 
+        #region User-word API
+
+        /// <summary>
+        /// Visitor interface for <see cref="ForEachUserWord{TVisitor}"/>. Implementations should be
+        /// <c>struct</c>s to enable JIT specialization so that <see cref="Visit"/> inlines into the scan loop.
+        /// </summary>
+        public interface ILightEpochUserWordVisitor
+        {
+            /// <summary>
+            /// Invoked once per epoch table entry with the current value of the selected user word.
+            /// </summary>
+            /// <param name="value">Value read via acquire semantics from the entry's user word.</param>
+            void Visit(long value);
+        }
+
+        /// <summary>
+        /// Number of entries in the epoch table.
+        /// </summary>
+        public int EntryCount => kTableSize;
+
+        /// <summary>
+        /// Claim a per-thread user-word slot. Returns the word index to pass to
+        /// <see cref="ThisThreadUserWord(int)"/> and <see cref="ForEachUserWord{TVisitor}(int, ref TVisitor)"/>.
+        /// The column across all entries is initialized to <paramref name="initialValue"/>, and the same
+        /// value will be used to reset the slot on entry recycle (thread exit / new thread acquiring an entry).
+        /// Throws if all <see cref="MaxUserWords"/> slots are already claimed.
+        /// </summary>
+        /// <param name="initialValue">Value written to every entry's slot on allocation and on entry recycle.</param>
+        /// <returns>Word index in the range <c>[0, <see cref="MaxUserWords"/>)</c>.</returns>
+        public int AllocateUserWord(long initialValue)
+        {
+            while (true)
+            {
+                var mask = Volatile.Read(ref userWordMask);
+                int idx = -1;
+                for (int i = 0; i < MaxUserWords; i++)
+                {
+                    if ((mask & (1 << i)) == 0)
+                    {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx < 0)
+                    throw new InvalidOperationException($"All {MaxUserWords} LightEpoch user-word slots are claimed.");
+
+                // Write the initial value before publishing the mask bit so concurrent readers
+                // that observe the bit set also observe the initialized column.
+                userWordInitialValues[idx] = initialValue;
+                for (int i = 1; i <= kTableSize; i++)
+                    Volatile.Write(ref UserWordRef(i, idx), initialValue);
+
+                var newMask = mask | (1 << idx);
+                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) == mask)
+                    return idx;
+                // Someone else modified the mask; retry.
+            }
+        }
+
+        /// <summary>
+        /// Release a previously claimed user-word slot.
+        /// </summary>
+        public void ReleaseUserWord(int wordIndex)
+        {
+            if ((uint)wordIndex >= MaxUserWords)
+                throw new ArgumentOutOfRangeException(nameof(wordIndex));
+            while (true)
+            {
+                var mask = Volatile.Read(ref userWordMask);
+                var newMask = mask & ~(1 << wordIndex);
+                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) == mask)
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Get a ref to the current thread's user-word slot. Caller MUST be inside epoch protection
+        /// (<see cref="Resume"/> / before <see cref="Suspend"/>). Returns the same cache line that is
+        /// already hot due to epoch Resume, so writes are essentially free.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref long ThisThreadUserWord(int wordIndex)
+        {
+            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+            Debug.Assert(ThisInstanceProtected(), "ThisThreadUserWord must be called while epoch is protected");
+            int entryIndex = Metadata.Entries.GetRef(instanceId);
+            return ref UserWordRef(entryIndex, wordIndex);
+        }
+
+        /// <summary>
+        /// Iterate the user-word column across all epoch table entries, invoking
+        /// <see cref="ILightEpochUserWordVisitor.Visit(long)"/> once per entry. Entries belonging to
+        /// threads not currently registered will carry the slot's configured initial value (e.g.,
+        /// <see cref="long.MaxValue"/> for a <c>min</c> fold), so they contribute neutrally to folds
+        /// without the caller needing to filter on <c>threadId</c>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ForEachUserWord<TVisitor>(int wordIndex, ref TVisitor visitor)
+            where TVisitor : struct, ILightEpochUserWordVisitor
+        {
+            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+            // Entries are 1..kTableSize; index 0 is kInvalidIndex and unused.
+            for (int i = 1; i <= kTableSize; i++)
+            {
+                long v = Volatile.Read(ref UserWordRef(i, wordIndex));
+                visitor.Visit(v);
+            }
+        }
+
+        /// <summary>
+        /// Get a ref to the user word at <paramref name="wordIndex"/> for entry <paramref name="entryIndex"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        ref long UserWordRef(int entryIndex, int wordIndex)
+            => ref Unsafe.Add(ref (*(tableAligned + entryIndex)).userWord0, wordIndex);
+
+        /// <summary>
+        /// Reset every currently-allocated user word in the given entry to its configured initial value.
+        /// Called on both entry acquisition and release to ensure a fresh thread never observes stale
+        /// values left by a previous owner of the slot.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ResetAllocatedUserWords(int entryIndex)
+        {
+            var mask = userWordMask;
+            if (mask == 0)
+                return;
+            while (mask != 0)
+            {
+                int i = BitOperations.TrailingZeroCount(mask);
+                mask &= mask - 1;
+                Volatile.Write(ref UserWordRef(entryIndex, i), userWordInitialValues[i]);
+            }
+        }
+
+        #endregion
+
         /// <summary>
         /// Epoch table entry (cache line size).
+        /// Existing epoch fields occupy the first 16 bytes (localCurrentEpoch + threadId + 4 bytes padding).
+        /// The remaining 48 bytes host <see cref="MaxUserWords"/> general-purpose per-thread <see cref="long"/> slots that
+        /// subsystems can claim via <see cref="AllocateUserWord(long)"/>. This reuses the cache line that is already
+        /// hot from epoch Resume/Suspend, so user-word access is essentially free compared to touching a separate
+        /// data structure.
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = kCacheLineBytes)]
         struct Entry
@@ -728,6 +899,28 @@ namespace Tsavorite.core
             /// </summary>
             [FieldOffset(8)]
             public int threadId;
+
+            /// <summary>
+            /// First user-word slot. Remaining <see cref="MaxUserWords"/> - 1 slots are contiguous after this
+            /// field at 8-byte stride. Access via <c>Unsafe.Add(ref userWord0, wordIndex)</c>.
+            /// </summary>
+            [FieldOffset(16)]
+            public long userWord0;
+
+            [FieldOffset(24)]
+            public long userWord1;
+
+            [FieldOffset(32)]
+            public long userWord2;
+
+            [FieldOffset(40)]
+            public long userWord3;
+
+            [FieldOffset(48)]
+            public long userWord4;
+
+            [FieldOffset(56)]
+            public long userWord5;
 
             public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}";
         }

@@ -40,9 +40,10 @@ namespace Garnet.server
         /// <param name="startFresh">start the log from scratch, do not continue</param>
         public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
         {
+            _ = subscriberRefreshFrequencyMs; // retained for API compatibility; SafeTailAddress is now tracked per-enqueue with no refresh frequency.
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs, Epoch = epoch });
+            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, Epoch = epoch });
             pageSizeBits = aof.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 aof.TruncateUntil(aof.CommittedUntilAddress);
