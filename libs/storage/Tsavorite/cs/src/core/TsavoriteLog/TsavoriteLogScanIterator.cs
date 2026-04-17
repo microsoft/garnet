@@ -144,7 +144,7 @@ namespace Tsavorite.core
                 return SlowWaitAsync(this, token);
             }
 
-            if (NextAddress < tsavoriteLog.SafeTailAddress)
+            if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
                 return new ValueTask<bool>(true);
             return SlowWaitUncommittedAsync(token);
         }
@@ -185,7 +185,7 @@ namespace Tsavorite.core
                     tcs ??= newTcs; // successful CAS so update the local var
                 }
 
-                if (NextAddress < tsavoriteLog.SafeTailAddress)
+                if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
@@ -740,7 +740,7 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.RefreshSafeTailAddress() : tsavoriteLog.CommittedUntilAddress)))
                     return false;
 
                 if (currentAddress < _headAddress)
@@ -858,7 +858,7 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.RefreshSafeTailAddress() : tsavoriteLog.CommittedUntilAddress)))
                     return false;
 
                 if (currentAddress < _headAddress)

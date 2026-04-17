@@ -122,7 +122,7 @@ namespace Tsavorite.test
         {
             AsyncByteVector,
             AsyncMemoryOwner,
-            Sync,
+            Sync
         }
 
         internal static bool IsAsync(IteratorType iterType) =>
@@ -665,8 +665,7 @@ namespace Tsavorite.test
                 PageSizeBits = 14,
                 LogChecksum = logChecksum,
                 LogCommitManager = manager,
-                TryRecoverLatest = false,
-                SafeTailRefreshFrequencyMs = 0
+                TryRecoverLatest = false
             };
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings).ConfigureAwait(false) : new TsavoriteLog(logSettings);
 
@@ -678,7 +677,7 @@ namespace Tsavorite.test
                 _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
-            while (log.SafeTailAddress < log.TailAddress)
+            while (log.RefreshSafeTailAddress() < log.TailAddress)
                 await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
@@ -727,7 +726,7 @@ namespace Tsavorite.test
             _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
-            while (log.SafeTailAddress < log.TailAddress)
+            while (log.RefreshSafeTailAddress() < log.TailAddress)
                 await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
@@ -747,8 +746,7 @@ namespace Tsavorite.test
                 MemorySizeBits = 20,
                 PageSizeBits = 14,
                 LogChecksum = logChecksum,
-                LogCommitManager = manager,
-                SafeTailRefreshFrequencyMs = 0
+                LogCommitManager = manager
             });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
@@ -757,7 +755,7 @@ namespace Tsavorite.test
                 _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
-            while (log.SafeTailAddress < log.TailAddress)
+            while (log.RefreshSafeTailAddress() < log.TailAddress)
                 await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
@@ -806,7 +804,7 @@ namespace Tsavorite.test
                 _ = log.Enqueue(data1);
 
                 // Wait for safe tail to catch up
-                while (log.SafeTailAddress < log.TailAddress)
+                while (log.RefreshSafeTailAddress() < log.TailAddress)
                     await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
@@ -948,8 +946,7 @@ namespace Tsavorite.test
                 MemorySizeBits = 20,
                 PageSizeBits = 14,
                 LogCommitManager = manager,
-                SegmentSizeBits = 22,
-                SafeTailRefreshFrequencyMs = 0
+                SegmentSizeBits = 22
             });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++)
@@ -959,7 +956,7 @@ namespace Tsavorite.test
                 _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
-            while (log.SafeTailAddress < log.TailAddress)
+            while (log.RefreshSafeTailAddress() < log.TailAddress)
                 await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
@@ -1008,7 +1005,7 @@ namespace Tsavorite.test
                 _ = log.Enqueue(data1);
 
                 // Wait for safe tail to catch up
-                while (log.SafeTailAddress < log.TailAddress)
+                while (log.RefreshSafeTailAddress() < log.TailAddress)
                     await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true).ConfigureAwait(false);
