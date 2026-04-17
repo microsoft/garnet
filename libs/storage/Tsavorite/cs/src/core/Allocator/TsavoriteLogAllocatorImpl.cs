@@ -18,7 +18,7 @@ namespace Tsavorite.core
         /// <summary>Constructor</summary>
 #pragma warning disable IDE0290 // Use primary constructor
         public TsavoriteLogAllocatorImpl(AllocatorSettings settings)
-            : base(settings.LogSettings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), evictCallback: null, settings.epoch, settings.flushCallback, settings.logger)
+            : base(settings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
         }

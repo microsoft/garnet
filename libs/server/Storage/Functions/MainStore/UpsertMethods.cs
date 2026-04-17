@@ -45,6 +45,12 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+
+            // Account for overflow key/value heap on the freshly-inserted record so the matching
+            // OnEvict decrement balances.
+            var heap = logRecord.CalculateHeapMemorySize();
+            if (heap != 0)
+                functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
 
         /// <inheritdoc />
@@ -61,6 +67,10 @@ namespace Garnet.server
                 Debug.Assert(!inputLogRecord.Info.ValueIsObject, "String store should not be called with IHeapObject");
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
+
+            var heap = logRecord.CalculateHeapMemorySize();
+            if (heap != 0)
+                functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
 
         /// <inheritdoc />

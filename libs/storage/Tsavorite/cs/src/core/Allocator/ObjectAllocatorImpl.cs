@@ -74,7 +74,7 @@ namespace Tsavorite.core
         public override string ToString() => BaseToString($" (LI {LastIssuedFlushedUntilAddress}, OG {OngoingFlushedUntilAddress}, No {NoFlushUntilAddress})");
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
-            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, transientObjectIdMap: new ObjectIdMap())
+            : base(settings, storeFunctions, wrapperCreator, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
@@ -346,31 +346,41 @@ namespace Tsavorite.core
         /// <summary>
         /// Iterate records in the given logical address range and call <see cref="IStoreFunctions.OnEvict"/>
         /// on each valid, non-tombstoned record. Used during page eviction to allow cleanup of external resources.
+        /// The caller constrains <paramref name="startAddress"/> / <paramref name="endAddress"/> to lie on a single page
+        /// (see <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosedWorker"/> and
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.EvictPageForRecovery"/>), so this routine walks records
+        /// within that single page only — matching the <see cref="ObjectScanIterator{TStoreFunctions, TAllocator}"/>
+        /// semantics with <c>includeClosedRecords: false</c> that the legacy <c>SubscribeEvictions</c> path used.
         /// </summary>
-        internal void EvictRecordsInRange(long startAddress, long endAddress)
+        internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source)
         {
-            // Ensure we start after the page header
-            var page = GetPage(startAddress);
-            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            // Clip to a single page: we don't cross page boundaries in one call, but be defensive in case the caller
+            // ever passes a multi-page range. The start-page PageHeader is skipped via GetFirstValidLogicalAddressOnPage.
+            var startPage = GetPage(startAddress);
+            var firstValidAddress = GetFirstValidLogicalAddressOnPage(startPage);
             var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
+            var pageEndAddress = GetLogicalAddressOfStartOfPage(startPage + 1);
+            var stopAddress = endAddress < pageEndAddress ? endAddress : pageEndAddress;
 
-            while (address < endAddress)
+            while (address < stopAddress)
             {
                 var physicalAddress = GetPhysicalAddress(address);
                 var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
                 var allocatedSize = logRecord.AllocatedSize;
 
-                // Guard against corrupt records causing infinite loops
+                // Guard against corrupt / zero-size records causing infinite loops. Also stop if the record would
+                // straddle the end of the page; ObjectScanIterator skips to the next page in that case, but our caller
+                // constrains the range to a single page so there is nothing further to visit here.
                 if (allocatedSize <= 0)
                     break;
-
-                // If record does not fit on page, stop (shouldn't happen within a single-page eviction range)
                 var offset = GetOffsetOnPage(address);
-                if (offset + allocatedSize > PageSize)
+                if (offset == 0 || offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null, closed/sealed, and tombstoned records (tombstoned records were already
-                // disposed with DisposeReason.Deleted at the delete site)
+                // Skip null, closed/sealed (SkipOnScan = Invalid | Sealed), and tombstoned records. Tombstoned records
+                // were already disposed with DisposeReason.Deleted at the delete site; SkipOnScan records either copied
+                // their heap contribution forward (CopyUpdater) and had it netted at the copy site, or are otherwise
+                // not responsible for the allocator's heap counter.
                 if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan || logRecord.Info.Tombstone)
                 {
                     address += allocatedSize;
@@ -378,7 +388,7 @@ namespace Tsavorite.core
                 }
 
                 // Notify the application that this record is being evicted from memory.
-                storeFunctions.OnEvict(ref logRecord);
+                storeFunctions.OnEvict(ref logRecord, source);
 
                 address += allocatedSize;
             }

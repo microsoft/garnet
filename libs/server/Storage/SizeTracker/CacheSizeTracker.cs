@@ -65,8 +65,9 @@ namespace Garnet.server
             => Initialize(store, targetSize, readCacheTargetSize, loggerFactory);
 
         /// <summary>
-        /// Initialize the tracker with a store. Subscribes to eviction notifications.
-        /// Called after store creation when using the parameterless constructor.
+        /// Initialize the tracker with a store. Wires the <see cref="LogSizeTracker"/> as the fast-path
+        /// size tracker for copy-to-tail / copy-to-readcache. Per-record heap-size decrement on page
+        /// eviction is driven by <see cref="GarnetRecordTriggers.OnEvict"/>.
         /// </summary>
         public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
         {
@@ -77,14 +78,14 @@ namespace Garnet.server
             {
                 mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize,
                         targetSize / HighTargetSizeDeltaFraction, targetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("MainLogSizeTracker"));
-                store.Log.SubscribeEvictions(mainLogTracker);
+                store.Log.SetLogSizeTracker(mainLogTracker);
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)
             {
                 readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.ReadCache, readCacheTargetSize,
                         readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("ReadCacheSizeTracker"));
-                store.ReadCache.SubscribeEvictions(readCacheTracker);
+                store.ReadCache.SetLogSizeTracker(readCacheTracker);
             }
         }
 

@@ -87,7 +87,7 @@ namespace Tsavorite.core
         public readonly bool CallOnFlush => recordTriggers.CallOnFlush;
 
         /// <inheritdoc/>
-        public readonly bool CallOnEvict => recordTriggers.CallOnEvict;
+        public readonly bool CallOnEvict(EvictionSource source) => recordTriggers.CallOnEvict(source);
 
         /// <inheritdoc/>
         public readonly bool CallOnDiskRead => recordTriggers.CallOnDiskRead;
@@ -106,7 +106,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnEvict(ref LogRecord logRecord) => recordTriggers.OnEvict(ref logRecord);
+        public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source) => recordTriggers.OnEvict(ref logRecord, source);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

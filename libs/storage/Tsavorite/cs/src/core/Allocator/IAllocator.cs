@@ -117,6 +117,9 @@ namespace Tsavorite.core
         /// <see cref="IRecordTriggers.OnEvict"/> hook for each valid, non-tombstoned record.
         /// Used during page eviction to allow cleanup of external resources.
         /// </summary>
-        void EvictRecordsInRange(long startAddress, long endAddress);
+        /// <param name="startAddress">Start logical address of the range.</param>
+        /// <param name="endAddress">End logical address of the range (exclusive).</param>
+        /// <param name="source">Identifies whether this eviction is from the main log or the read cache.</param>
+        void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source);
     }
 }

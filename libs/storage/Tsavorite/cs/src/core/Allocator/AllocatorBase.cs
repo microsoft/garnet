@@ -205,6 +205,12 @@ namespace Tsavorite.core
         /// <summary>Observer for records getting evicted from memory (page closed). May be the same object as <see cref="logSizeTracker"/>.</summary>
         internal IObserver<ITsavoriteScanIterator> onEvictionObserver;
 
+        /// <summary>
+        /// Whether this allocator is the read cache (as opposed to the main hybrid log).
+        /// Set once at construction from <see cref="AllocatorSettings.IsReadCache"/>.
+        /// </summary>
+        internal readonly bool IsReadCache;
+
         /// <summary>Log size tracker; called when an operation at the Tsavorite-internal level adds or removes heap memory size 
         /// (e.g. copying to log tail or read cache, which do not call <see cref="ISessionFunctions{TInputOutput, TContext}"/>).
         /// May be the same object as <see cref="onEvictionObserver"/>.</summary>
@@ -553,9 +559,15 @@ namespace Tsavorite.core
 
         /// <summary>Instantiate base allocator implementation</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected AllocatorBase(LogSettings logSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback,
-                LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
+        private protected AllocatorBase(AllocatorSettings allocatorSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator,
+                ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
         {
+            var logSettings = allocatorSettings.LogSettings;
+            var evictCallback = allocatorSettings.evictCallback;
+            var epoch = allocatorSettings.epoch;
+            var flushCallback = allocatorSettings.flushCallback;
+            IsReadCache = allocatorSettings.IsReadCache;
+
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
@@ -1403,10 +1415,20 @@ namespace Tsavorite.core
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal void EvictPageForRecovery(long page)
         {
-            if (logSizeTracker is not null)
+            var start = GetLogicalAddressOfStartOfPage(page);
+            var end = GetLogicalAddressOfStartOfPage(page + 1);
+
+            var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+            if (storeFunctions.CallOnEvict(source))
             {
-                var start = GetLogicalAddressOfStartOfPage(page);
-                var end = GetLogicalAddressOfStartOfPage(page + 1);
+                // New per-record path: OnEvict handles heap-size decrement per record. Parity
+                // with the runtime eviction path in OnPagesClosedWorker.
+                _wrapper.EvictRecordsInRange(start, end, source);
+            }
+            else if (logSizeTracker is not null)
+            {
+                // Legacy observer path: materialize an iterator and push heap-size decrement to
+                // the LogSizeTracker.OnNext observer (kept for consumers still using SubscribeEvictions).
                 MemoryPageScan(start, end, logSizeTracker);
             }
 
@@ -1489,8 +1511,9 @@ namespace Tsavorite.core
                         MemoryPageScan(start, end, onEvictionObserver);
 
                     // Notify application of records being evicted — allows cleanup of external resources.
-                    if (storeFunctions.CallOnEvict)
-                        _wrapper.EvictRecordsInRange(start, end);
+                    var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+                    if (storeFunctions.CallOnEvict(evictSource))
+                        _wrapper.EvictRecordsInRange(start, end, evictSource);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)

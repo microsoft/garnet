@@ -54,7 +54,7 @@ namespace Tsavorite.core
         bool CallOnFlush { get; }
 
         /// <inheritdoc cref="IRecordTriggers.CallOnEvict"/>
-        bool CallOnEvict { get; }
+        bool CallOnEvict(EvictionSource source);
 
         /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
         bool CallOnDiskRead { get; }
@@ -69,7 +69,7 @@ namespace Tsavorite.core
         void OnFlush(ref LogRecord logRecord);
 
         /// <inheritdoc cref="IRecordTriggers.OnEvict"/>
-        void OnEvict(ref LogRecord logRecord);
+        void OnEvict(ref LogRecord logRecord, EvictionSource source);
 
         /// <inheritdoc cref="IRecordTriggers.OnDiskRead"/>
         void OnDiskRead(ref LogRecord logRecord);

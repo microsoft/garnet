@@ -145,6 +145,6 @@ namespace Tsavorite.core
         public void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
-        public void EvictRecordsInRange(long startAddress, long endAddress) { }
+        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) { }
     }
 }

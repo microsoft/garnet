@@ -6,6 +6,21 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
+    /// Identifies which log a record eviction originated from. Main log and read cache are
+    /// separate <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/> instances but share
+    /// a single <see cref="IStoreFunctions"/>; this enum lets an <see cref="IRecordTriggers"/>
+    /// implementation tell the two apart when reacting to <see cref="IRecordTriggers.OnEvict"/>.
+    /// </summary>
+    public enum EvictionSource
+    {
+        /// <summary>The record is being evicted from the main hybrid log.</summary>
+        MainLog,
+
+        /// <summary>The record is being evicted from the read cache.</summary>
+        ReadCache,
+    }
+
+    /// <summary>
     /// Per-record lifecycle callbacks invoked by the store at key events:
     /// flush to disk, eviction, disposal, and disk read.
     /// </summary>
@@ -18,10 +33,12 @@ namespace Tsavorite.core
         bool CallOnFlush { get; }
 
         /// <summary>
-        /// If true, <see cref="OnEvict(ref LogRecord)"/> is called per non-tombstoned record
-        /// when a page is evicted past HeadAddress.
+        /// If true for the specified <paramref name="source"/>, <see cref="OnEvict(ref LogRecord, EvictionSource)"/>
+        /// is called per non-tombstoned record when a page is evicted past HeadAddress for that log
+        /// (main or read cache). Returning false lets the allocator skip the per-record eviction walk
+        /// entirely when the application has no work to do on that side.
         /// </summary>
-        bool CallOnEvict { get; }
+        bool CallOnEvict(EvictionSource source);
 
         /// <summary>
         /// If true, <see cref="OnDiskRead(ref LogRecord)"/> is called per record loaded from
@@ -51,9 +68,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Called per non-tombstoned record when a page is evicted past HeadAddress.
         /// Allows the application to free external resources (e.g. native memory).
-        /// Only called when <see cref="CallOnEvict"/> is true. Default implementation is a no-op.
+        /// Only called when <see cref="CallOnEvict"/> returns true for the corresponding source.
         /// </summary>
-        void OnEvict(ref LogRecord logRecord) { }
+        /// <param name="logRecord">The record being evicted.</param>
+        /// <param name="source">Which log (main or read cache) the record is being evicted from.</param>
+        void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
 
         /// <summary>
         /// Called per record loaded from disk into memory. Allows the application to invalidate
@@ -76,7 +95,7 @@ namespace Tsavorite.core
         public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public bool CallOnEvict => false;
+        public bool CallOnEvict(EvictionSource source) => false;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
@@ -97,7 +116,7 @@ namespace Tsavorite.core
         public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public bool CallOnEvict => false;
+        public bool CallOnEvict(EvictionSource source) => false;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
