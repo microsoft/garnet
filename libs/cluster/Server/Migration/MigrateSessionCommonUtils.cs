@@ -122,7 +122,13 @@ namespace Garnet.cluster
             {
                 if (!await task.ConfigureAwait(false))
                 {
-                    return false;
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+
+                    if (!gcs.TryWriteRecordSpan(span, type, out _))
+                    {
+                        logger?.LogCritical($"{nameof(WriteOrSendRecordSpanAsync)} failed on retry");
+                        return false;
+                    }
                 }
 
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);

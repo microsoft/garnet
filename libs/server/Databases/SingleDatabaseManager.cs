@@ -114,32 +114,30 @@ namespace Garnet.server
             if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(
-                t =>
-                {
-                    try
-                    {
-                        if (t.IsCompletedSuccessfully)
-                        {
-                            var storeTailAddress = t.Result;
-
-                            if (storeTailAddress.HasValue)
-                                defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                            defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
-                        }
-                    }
-                    finally
-                    {
-                        ResumeCheckpoints(defaultDatabase.Id);
-                    }
-                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
-
+            var checkpointTask = TakeCheckpointHelperAsync(defaultDatabase, logger, token);
             if (background)
                 return true;
 
-            checkpointTask.GetResult();
+            // .GetResult is unavoidable here, must be synchronous
+            checkpointTask.GetAwaiter().GetResult();
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
+            {
+                try
+                {
+                    var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
+
+                    if (storeTailAddress.HasValue)
+                        defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+
+                    defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                }
+                finally
+                {
+                    ResumeCheckpoints(defaultDatabase.Id);
+                }
+            }
         }
 
         /// <inheritdoc/>

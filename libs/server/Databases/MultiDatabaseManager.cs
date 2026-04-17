@@ -198,28 +198,28 @@ namespace Garnet.server
             if (!TryPauseCheckpoints(dbId))
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
-                t =>
-                {
-                    try
-                    {
-                        if (t.IsCompletedSuccessfully)
-                        {
-                            var storeTailAddress = t.Result;
-                            UpdateLastSaveData(dbId, storeTailAddress);
-                        }
-                    }
-                    finally
-                    {
-                        ResumeCheckpoints(dbId);
-                    }
-                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
+            var checkpointTask = TakeCheckpointHelperAsync(databasesMapSnapshot, dbId, logger, token);
 
             if (background)
                 return true;
 
-            checkpointTask.GetResult();
+            // .GetResult() is unavoidable here
+            checkpointTask.GetAwaiter().GetResult();
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase[] databasesMapSnapshot, int dbId, ILogger logger, CancellationToken token)
+            {
+                try
+                {
+                    var storeTailAddress = await TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ConfigureAwait(false);
+
+                    UpdateLastSaveData(dbId, storeTailAddress);
+                }
+                finally
+                {
+                    ResumeCheckpoints(dbId);
+                }
+            }
         }
 
         /// <inheritdoc/>
