@@ -596,7 +596,16 @@ namespace Tsavorite.core
                         if (pcuSuccess)
                         {
                             if (rmwInfo.ClearSourceValueObject && isMemoryLogRecord)
-                                srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.CopyUpdated));
+                            {
+                                // Signal the source's value-object slot is being cleared in place (the record
+                                // itself stays alive on the sealed page until eviction). We pass the full
+                                // srcLogRecord + CopyUpdated reason so the application can distinguish this
+                                // slot-level dispose from a record-level Deleted dispose. The actual object
+                                // disposal is handled inside ClearValueIfHeap via ObjectIdMap.Free → IHeapObject.Dispose.
+                                ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                                storeFunctions.OnDispose(ref srcMemLogRecord, DisposeReason.CopyUpdated);
+                                srcMemLogRecord.ClearValueIfHeap();
+                            }
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {

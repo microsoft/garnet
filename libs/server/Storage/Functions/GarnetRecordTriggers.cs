@@ -48,22 +48,16 @@ namespace Garnet.server
         public bool CallOnDiskRead => false;
 
         /// <inheritdoc/>
-        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason)
-        {
-            // When a CopyUpdate eagerly clears the source's ValueObject slot (InternalRMW sets ClearSourceValueObject
-            // and then invokes ClearValueIfHeap, which routes here), this is the point at which the (v) value becomes
-            // unreachable on the in-memory log. The paired positive increment was emitted by PostCopyUpdater for the
-            // (v+1) value. Checkpoint/disk paths that leave the source alive don't reach this site; their decrement
-            // is emitted by OnEvict when the sealed source page later evicts.
-            if (reason == DisposeReason.CopyUpdated && valueObject != null)
-                cacheSizeTracker?.AddHeapSize(-valueObject.HeapMemorySize);
-        }
-
-        /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            // Handle heap objects: update cache size tracker on delete
-            if (logRecord.Info.ValueIsObject && reason == DisposeReason.Deleted)
+            // Heap-size accounting for value objects. Two reasons reach us:
+            //  - Deleted: whole record is being disposed (tombstone/delete path). Decrement the value object.
+            //  - CopyUpdated: source record's value-object slot is being cleared in place after a successful
+            //    CopyUpdate CAS. The record itself stays alive on the sealed page until eviction, but the (v)
+            //    object is about to be released — this is the paired decrement for PostCopyUpdater's
+            //    unconditional +value.HeapMemorySize on the (v+1) value. Checkpoint/disk paths that leave
+            //    the source alive don't reach this site; their decrement comes from OnEvict at page eviction.
+            if (logRecord.Info.ValueIsObject && (reason == DisposeReason.Deleted || reason == DisposeReason.CopyUpdated))
             {
                 cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
             }

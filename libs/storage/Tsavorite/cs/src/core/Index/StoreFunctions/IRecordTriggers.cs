@@ -1,7 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
+using System;
 
 namespace Tsavorite.core
 {
@@ -47,12 +47,14 @@ namespace Tsavorite.core
         bool CallOnDiskRead { get; }
 
         /// <summary>
-        /// Called when a heap value object needs to be disposed (e.g. during ClearHeapFields).
-        /// </summary>
-        void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason);
-
-        /// <summary>
-        /// Called when a record is disposed due to delete, CAS failure, or other store-internal reasons.
+        /// Called when a record or one of its heap slots is disposed due to delete, CAS failure,
+        /// copy-update source-slot clearing, or other store-internal reasons. Use <paramref name="reason"/>
+        /// to distinguish record-level events (e.g. <see cref="DisposeReason.Deleted"/>) from
+        /// slot-level events (e.g. <see cref="DisposeReason.CopyUpdated"/>, which signals that only
+        /// the value-object slot is being cleared in place while the record itself remains on the
+        /// sealed page until eviction). If the value object implements <see cref="IDisposable"/> and
+        /// the application needs to release its resources, it should invoke <see cref="IDisposable.Dispose"/>
+        /// from this callback on the appropriate reasons.
         /// NOT called for page eviction (use <see cref="OnEvict"/> instead).
         /// Default implementation is a no-op.
         /// </summary>
@@ -99,9 +101,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
-
-        /// <inheritdoc/>
-        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
     }
 
     /// <summary>
@@ -120,9 +119,5 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
     }
 }

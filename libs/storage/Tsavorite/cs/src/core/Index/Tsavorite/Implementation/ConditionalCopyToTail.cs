@@ -129,12 +129,7 @@ namespace Tsavorite.core
 
             // Transfer the log record to the pending context. We do not want to dispose memory log records; those objects are still alive in the log.
             if (!pendingContext.diskLogRecord.IsSet)
-            {
-                pendingContext.CopyFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap,
-                    srcLogRecord.IsMemoryLogRecord
-                        ? obj => { }
-                : obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
-            }
+                pendingContext.CopyFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap);
             return OperationStatus.RECORD_ON_DISK;
         }
     }

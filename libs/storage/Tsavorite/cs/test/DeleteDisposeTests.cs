@@ -29,7 +29,6 @@ namespace Tsavorite.test
             public readonly bool CallOnEvict(EvictionSource source) => false;
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
-            public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => tracker?.RecordDispose(reason);
         }
 
@@ -240,8 +239,7 @@ namespace Tsavorite.test
     }
 
     /// <summary>
-    /// Tests that both <see cref="IRecordTriggers.OnDispose"/> and <see cref="IRecordTriggers.OnDisposeValueObject"/>
-    /// are called exactly once for IHeapObject records through all delete and expiration paths.
+    /// Tests that <see cref="IRecordTriggers.OnDispose"/> is called exactly once for IHeapObject records through all delete and expiration paths.
     /// </summary>
     [AllureNUnit]
     [TestFixture]
@@ -255,9 +253,6 @@ namespace Tsavorite.test
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
 
-            public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason)
-                => tracker?.RecordValueDispose(reason);
-
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason)
                 => tracker?.RecordDispose(reason);
         }
@@ -265,10 +260,8 @@ namespace Tsavorite.test
         internal class ObjDisposeTracker
         {
             private int _disposeRecordDeletedCount;
-            private int _disposeValueDeletedCount;
 
             public int DisposeRecordDeletedCount => _disposeRecordDeletedCount;
-            public int DisposeValueDeletedCount => _disposeValueDeletedCount;
 
             public void RecordDispose(DisposeReason reason)
             {
@@ -276,16 +269,9 @@ namespace Tsavorite.test
                     Interlocked.Increment(ref _disposeRecordDeletedCount);
             }
 
-            public void RecordValueDispose(DisposeReason reason)
-            {
-                if (reason == DisposeReason.Deleted)
-                    Interlocked.Increment(ref _disposeValueDeletedCount);
-            }
-
             public void Reset()
             {
                 Interlocked.Exchange(ref _disposeRecordDeletedCount, 0);
-                Interlocked.Exchange(ref _disposeValueDeletedCount, 0);
             }
         }
 
@@ -368,7 +354,6 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         [Test]
@@ -381,7 +366,6 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         [Test]
@@ -395,7 +379,6 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             for (int i = 0; i < n; i++) _ = s.BasicContext.Delete(new TestObjectKey { key = i });
             ClassicAssert.AreEqual(n, tracker.DisposeRecordDeletedCount, $"OnDispose(Deleted) should be called exactly {n} times");
-            ClassicAssert.AreEqual(n, tracker.DisposeValueDeletedCount, $"OnDisposeValueObject(Deleted) should be called exactly {n} times");
         }
 
         #endregion
@@ -413,7 +396,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 0 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         [Test]
@@ -428,7 +410,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 0 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         #endregion
@@ -446,7 +427,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 50 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         [Test]
@@ -461,7 +441,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 50 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         #endregion
@@ -479,7 +458,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 0 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         [Test]
@@ -493,7 +471,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 50 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         [Test]
@@ -508,7 +485,6 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 0 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
-            ClassicAssert.AreEqual(1, tracker.DisposeValueDeletedCount, "OnDisposeValueObject(Deleted) should be called exactly once");
         }
 
         #endregion

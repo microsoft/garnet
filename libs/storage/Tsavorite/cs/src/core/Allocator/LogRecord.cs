@@ -1201,7 +1201,7 @@ namespace Tsavorite.core
         /// Clears any heap-allocated Value: Object or Overflow. Does not clear key (if it is Overflow).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void ClearValueIfHeap(Action<IHeapObject> objectDisposer)
+        public readonly void ClearValueIfHeap()
         {
             if (Info.ValueIsInline)
                 return;
@@ -1211,19 +1211,19 @@ namespace Tsavorite.core
             {
                 var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
                 var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false, objectDisposer);
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
                 return;
             }
 
             // The key is not overflow so we must remove ObjectLogPosition and update filler.
-            ClearHeapFields(clearKey: false, objectDisposer);
+            ClearHeapFields(clearKey: false);
         }
 
         /// <summary>
         /// Clears any heap-allocated field, Object or Overflow, in the Value and optionally the Key. If we go from 
         /// <see cref="RecordInfo.RecordIsInline"/> being false to true, then we need to adjust filler as well.
         /// </summary>
-        public readonly void ClearHeapFields(bool clearKey, Action<IHeapObject> objectDisposer)
+        public readonly void ClearHeapFields(bool clearKey)
         {
             if (Info.RecordIsInline)
                 return;
@@ -1238,7 +1238,7 @@ namespace Tsavorite.core
             if (!clearKey && !Info.KeyIsInline)
             {
                 if (!Info.ValueIsInline)
-                    LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false, objectDisposer);
+                    LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
                 return;
             }
 
@@ -1249,7 +1249,7 @@ namespace Tsavorite.core
                 LogField.ClearObjectIdAndConvertToInline(ref InfoRef, keyAddress, objectIdMap, isKey: true);
             }
             if (!Info.ValueIsInline)
-                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false, objectDisposer);
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
 
             // Now update filler to account for removal of ObjectLogPosition
             dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLen + ObjectLogPositionSize);
@@ -1474,10 +1474,10 @@ namespace Tsavorite.core
             return size;
         }
 
-        public readonly void Dispose(Action<IHeapObject> objectDisposer)
+        public readonly void Dispose()
         {
             if (IsSet)
-                ClearHeapFields(clearKey: true, objectDisposer);
+                ClearHeapFields(clearKey: true);
         }
 
         public override readonly string ToString()

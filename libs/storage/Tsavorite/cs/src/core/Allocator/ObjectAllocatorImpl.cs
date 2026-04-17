@@ -330,7 +330,7 @@ namespace Tsavorite.core
             {
                 storeFunctions.OnDispose(ref logRecord, disposeReason);
 
-                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.OnDisposeValueObject(obj, disposeReason));
+                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted);
                 logRecord.ClearOptionals();
             }
         }
@@ -338,9 +338,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
-            // Clear the IHeapObject if we deserialized it
-            if (logRecord.IsSet && logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
-                storeFunctions.OnDisposeValueObject(logRecord.ValueObject, disposeReason);
+            // No-op: DiskLogRecord.Dispose() is the single site that disposes a deserialized value object.
         }
 
         /// <summary>
@@ -1020,9 +1018,9 @@ namespace Tsavorite.core
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
             if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
-                // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
-                ctx.diskLogRecord.objectDisposer = obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
-
+                // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
+                // is disposed (ObjectIdMap.Free → IHeapObject.Dispose), unless the object is transferred out
+                // (e.g. via CopyToTail) in which case the transient ObjectIdMap slot is cleared without disposing.
                 // Default the output arguments for reading a previous record.
                 prevAddressToRead = 0;
                 return true;

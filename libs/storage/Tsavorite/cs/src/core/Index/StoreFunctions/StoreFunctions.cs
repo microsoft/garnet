@@ -94,10 +94,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordTriggers.OnDisposeValueObject(valueObject, reason);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => recordTriggers.OnDispose(ref logRecord, reason);
 
         /// <inheritdoc/>

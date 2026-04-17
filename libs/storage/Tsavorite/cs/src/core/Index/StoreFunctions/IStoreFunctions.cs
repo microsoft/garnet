@@ -59,9 +59,6 @@ namespace Tsavorite.core
         /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
         bool CallOnDiskRead { get; }
 
-        /// <inheritdoc cref="IRecordTriggers.OnDisposeValueObject"/>
-        void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason);
-
         /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason);
 
