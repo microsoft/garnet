@@ -760,6 +760,14 @@ namespace Tsavorite.core
         public int EntryCount => kTableSize;
 
         /// <summary>
+        /// Lock used to serialize slot allocation / release. Slot churn is a rare cold-path event
+        /// (one per subsystem construction / Dispose), so a simple lock is the cleanest correctness
+        /// primitive here — it avoids races where two callers claim the same bit and race to
+        /// initialize the column.
+        /// </summary>
+        readonly object userWordSlotLock = new();
+
+        /// <summary>
         /// Claim a per-thread user-word slot. Returns the word index to pass to
         /// <see cref="ThisThreadUserWord(int)"/> and <see cref="ForEachUserWord{TVisitor}(int, ref TVisitor)"/>.
         /// The column across all entries is initialized to <paramref name="initialValue"/>, and the same
@@ -770,9 +778,9 @@ namespace Tsavorite.core
         /// <returns>Word index in the range <c>[0, <see cref="MaxUserWords"/>)</c>.</returns>
         public int AllocateUserWord(long initialValue)
         {
-            while (true)
+            lock (userWordSlotLock)
             {
-                var mask = Volatile.Read(ref userWordMask);
+                var mask = userWordMask;
                 int idx = -1;
                 for (int i = 0; i < MaxUserWords; i++)
                 {
@@ -785,32 +793,31 @@ namespace Tsavorite.core
                 if (idx < 0)
                     throw new InvalidOperationException($"All {MaxUserWords} LightEpoch user-word slots are claimed.");
 
-                // Write the initial value before publishing the mask bit so concurrent readers
-                // that observe the bit set also observe the initialized column.
+                // Initialize the column, then publish the mask bit so concurrent scanners that observe
+                // the bit set are guaranteed to observe an initialized column.
                 userWordInitialValues[idx] = initialValue;
                 for (int i = 1; i <= kTableSize; i++)
                     Volatile.Write(ref UserWordRef(i, idx), initialValue);
 
-                var newMask = mask | (1 << idx);
-                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) == mask)
-                    return idx;
-                // Someone else modified the mask; retry.
+                Volatile.Write(ref userWordMask, mask | (1 << idx));
+                return idx;
             }
         }
 
         /// <summary>
-        /// Release a previously claimed user-word slot.
+        /// Release a previously claimed user-word slot. Caller is responsible for ensuring that no
+        /// producer thread still holds or can still issue writes to the slot (e.g., by calling this
+        /// only after subsystem quiescence / Dispose). The slot is not "generation-tagged" — a
+        /// straggler write after release followed by a re-allocation would corrupt the new owner's
+        /// column.
         /// </summary>
         public void ReleaseUserWord(int wordIndex)
         {
             if ((uint)wordIndex >= MaxUserWords)
                 throw new ArgumentOutOfRangeException(nameof(wordIndex));
-            while (true)
+            lock (userWordSlotLock)
             {
-                var mask = Volatile.Read(ref userWordMask);
-                var newMask = mask & ~(1 << wordIndex);
-                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) == mask)
-                    return;
+                userWordMask &= ~(1 << wordIndex);
             }
         }
 
