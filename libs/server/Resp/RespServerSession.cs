@@ -1343,7 +1343,7 @@ namespace Garnet.server
                 if (waitForAofBlocking)
                 {
                     var task = storeWrapper.WaitForCommitAsync();
-                    if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
+                    if (!task.IsCompletedSuccessfully) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
@@ -1363,7 +1363,7 @@ namespace Garnet.server
                 if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 {
                     var task = storeWrapper.WaitForCommitAsync();
-                    if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
+                    if (!task.IsCompletedSuccessfully) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);
                 byte[] buffer = new byte[sendBytes];

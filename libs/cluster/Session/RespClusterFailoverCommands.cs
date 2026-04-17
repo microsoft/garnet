@@ -125,7 +125,7 @@ namespace Garnet.cluster
 
             // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
             UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
-            
+
             while (!RespWriteUtils.TryWriteInt64(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
                 SendAndReset();
             return true;

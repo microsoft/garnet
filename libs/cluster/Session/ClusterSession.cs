@@ -11,7 +11,7 @@ using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
-{ 
+{
     internal sealed partial class ClusterSession : IClusterSession
     {
         readonly ClusterProvider clusterProvider;

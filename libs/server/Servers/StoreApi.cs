@@ -76,23 +76,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Wait for commit
-        /// </summary>
-        /// <returns>false if the commit was ignored due to node state or config</returns>
-        public bool WaitForCommit()
-        {
-            using (PreventRoleChange(out var acquired))
-            {
-                if (!acquired || IsReplica)
-                {
-                    return false;
-                }
-
-                return storeWrapper.WaitForCommit();
-            }
-        }
-
-        /// <summary>
         /// Commit AOF
         /// </summary>
         /// <returns>false if the commit was ignored due to node state or config</returns>
