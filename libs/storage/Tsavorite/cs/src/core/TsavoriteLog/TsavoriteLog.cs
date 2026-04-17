@@ -149,9 +149,21 @@ namespace Tsavorite.core
         const long InflightInactive = long.MaxValue;
 
         /// <summary>
-        /// Callback when safe tail shifts
+        /// Callback fired when the safe tail crosses a page boundary. Arguments are the old and new
+        /// <see cref="SafeTailAddress"/>. Fires at most once per page — byte-level SafeTail advances that
+        /// do not cross a page boundary are coalesced. Iterators that need byte-level notification should
+        /// use <see cref="WaitUncommittedAsync"/> instead of this callback.
         /// </summary>
-        public Action<long, long> SafeTailShiftCallback;
+        public Action<long, long> SafeTailPageShiftCallback;
+
+        /// <summary>Last published page for <see cref="SafeTailPageShiftCallback"/>. Written only inside
+        /// the callback-dispatch path; read without locks under the monotonic-update invariant.</summary>
+        long lastPublishedSafeTailPage;
+
+        /// <summary>Highest page any producer has observed the tail reaching. Producers CAS this when they
+        /// cross into a new page and the CAS winner drives a <see cref="RefreshSafeTailAddress"/>. Ensures
+        /// the page-shift callback fires even with no active iterators driving scans.</summary>
+        long lastProducerObservedPage;
 
         /// <summary>
         /// Whether we automatically commit as records are inserted
@@ -297,6 +309,35 @@ namespace Tsavorite.core
         {
             Volatile.Write(ref epoch.ThisThreadUserWord(inflightWord), InflightInactive);
             NotifyParkedWaiters();
+            MaybeProducerDriveSafeTail();
+        }
+
+        /// <summary>
+        /// If a <see cref="SafeTailPageShiftCallback"/> is registered and this enqueue crossed into a
+        /// new page, drive a <see cref="RefreshSafeTailAddress"/> from the producer side. This keeps
+        /// the callback progressing even with no active iterators. Cost on the hot path is a cheap
+        /// (unsynchronized) long read + branch; the scan only runs once per page transition, driven by
+        /// exactly one producer (the CAS winner).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void MaybeProducerDriveSafeTail()
+        {
+            if (SafeTailPageShiftCallback == null) return;
+            long tail = allocator.GetTailAddress();
+            long newPage = tail >> allocator.LogPageSizeBits;
+            // Non-volatile read — stale values only cause a redundant CAS attempt, never missed progress
+            // (some subsequent producer will observe the shift and take the slow path).
+            if (newPage <= lastProducerObservedPage) return;
+            ProducerDriveSafeTailSlow(newPage);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ProducerDriveSafeTailSlow(long newPage)
+        {
+            long prev = Volatile.Read(ref lastProducerObservedPage);
+            if (newPage <= prev) return;
+            if (Interlocked.CompareExchange(ref lastProducerObservedPage, newPage, prev) != prev) return;
+            _ = RefreshSafeTailAddress();
         }
 
         /// <summary>
@@ -332,9 +373,10 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Recompute <see cref="SafeTailAddress"/> from the current in-flight state, advance the
-        /// monotonic cache, and invoke <see cref="SafeTailShiftCallback"/> if it shifted. Also notifies
-        /// any parked iterators of the new value. Consumers needing up-to-the-moment progress call this;
-        /// iterator hot loops can read <see cref="SafeTailAddress"/> directly (O(1) cached read).
+        /// monotonic cache, and invoke <see cref="SafeTailPageShiftCallback"/> if the new SafeTail
+        /// crossed a page boundary. Also notifies any parked iterators of the new value. Consumers
+        /// needing up-to-the-moment progress call this; iterator hot loops can read
+        /// <see cref="SafeTailAddress"/> directly (O(1) cached read).
         /// </summary>
         public long RefreshSafeTailAddress()
         {
@@ -356,11 +398,7 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref cachedSafeTailAddress, computed, out oldSafe))
             {
                 NotifyParkedWaiters();
-                // Invoke callback inline — it is safe to call from protected or unprotected contexts.
-                // The old bump-drain design fired this callback from a drain action on an arbitrary thread;
-                // this is equivalent but without the Suspend/Resume dance that risked aborting an
-                // in-progress iterator frame.
-                SafeTailShiftCallback?.Invoke(oldSafe, computed);
+                MaybeInvokePageShiftCallback(oldSafe, computed);
                 return computed;
             }
             return oldSafe;
@@ -376,8 +414,25 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref cachedSafeTailAddress, floor, out var oldSafe))
             {
                 NotifyParkedWaiters();
-                SafeTailShiftCallback?.Invoke(oldSafe, floor);
+                MaybeInvokePageShiftCallback(oldSafe, floor);
             }
+        }
+
+        /// <summary>
+        /// Fires <see cref="SafeTailPageShiftCallback"/> only when the new SafeTail is on a different
+        /// page than the last call. Uses <see cref="lastPublishedSafeTailPage"/> as a monotonic filter so
+        /// that concurrent callers cannot double-fire for the same page transition.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void MaybeInvokePageShiftCallback(long oldSafe, long newSafe)
+        {
+            var cb = SafeTailPageShiftCallback;
+            if (cb == null) return;
+            long newPage = newSafe >> allocator.LogPageSizeBits;
+            long prev = Volatile.Read(ref lastPublishedSafeTailPage);
+            if (newPage <= prev) return;
+            if (Interlocked.CompareExchange(ref lastPublishedSafeTailPage, newPage, prev) != prev) return;
+            cb(oldSafe, newSafe);
         }
         #endregion
 
