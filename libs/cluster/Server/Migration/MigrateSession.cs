@@ -190,40 +190,6 @@ namespace Garnet.cluster
                 migrateOperation[i].Dispose();
         }
 
-        private bool CheckConnection(GarnetClientSession client)
-        {
-            var status = true;
-            if (!client.IsConnected)
-            {
-                client.Reconnect((int)_timeout.TotalMilliseconds);
-                if (_passwd != null)
-                {
-                    try
-                    {
-                        status = client.Authenticate(_username, _passwd).ContinueWith(resp =>
-                        {
-                            // Check if authenticate succeeded
-                            if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                            {
-                                logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", resp);
-                                Status = MigrateState.FAIL;
-                                return false;
-                            }
-                            return true;
-                        }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(ex, "An error occurred");
-                        return false;
-                    }
-                }
-            }
-            return status;
-        }
-
-
-
         private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)
         {
             if (!client.IsConnected)

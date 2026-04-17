@@ -169,8 +169,11 @@ namespace Garnet.cluster
         /// <param name="replicaId">Replica-id to issue gossip and attache request</param>
         /// <param name="configByteArray">Serialized local cluster config data</param>
         /// <returns></returns>
-        private async Task BroadcastConfigAndRequestAttach(string replicaId, byte[] configByteArray)
+        private async Task BroadcastConfigAndRequestAttachAsync(string replicaId, byte[] configByteArray)
         {
+            // Force async
+            await Task.Yield();
+
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
             var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId);
@@ -184,41 +187,39 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                await client.Gossip(configByteArray).ContinueWith(t =>
-                {
-                    var resp = t.Result;
-                    try
-                    {
-                        var current = clusterProvider.clusterManager.CurrentConfig;
-                        if (resp.Length > 0)
-                        {
-                            clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                            var returnedConfigArray = resp.Span.ToArray();
-                            var other = ClusterConfig.FromByteArray(returnedConfigArray);
+                var resp = await client.Gossip(configByteArray).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
-                            // Check if gossip is from a node that is known and trusted before merging
-                            if (current.IsKnown(other.LocalNodeId))
-                                _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
-                            else
-                                logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
-                        }
-                        resp.Dispose();
-                    }
-                    catch (Exception ex)
+                try
+                {
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    if (resp.Length > 0)
                     {
-                        logger?.LogCritical(ex, "IssueAttachReplicas faulted");
+                        clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
+                        var returnedConfigArray = resp.Span.ToArray();
+                        var other = ClusterConfig.FromByteArray(returnedConfigArray);
+
+                        // Check if gossip is from a node that is known and trusted before merging
+                        if (current.IsKnown(other.LocalNodeId))
+                            _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                        else
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
-                    finally
-                    {
-                        resp.Dispose();
-                    }
-                }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token);
+                    resp.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogCritical(ex, "IssueAttachReplicas faulted");
+                }
+                finally
+                {
+                    resp.Dispose();
+                }
 
                 var localAddress = oldConfig.LocalNodeIp;
                 var localPort = oldConfig.LocalNodePort;
 
                 // Ask replica to attach and sync
-                var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token);
+                var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 // Check if response for attach succeeded
                 if (!replicaOfResp.Equals("OK"))
@@ -255,7 +256,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    attachReplicaTasks.Add(Task.Run(async () => await BroadcastConfigAndRequestAttach(replicaId, configByteArray)));
+                    attachReplicaTasks.Add(BroadcastConfigAndRequestAttachAsync(replicaId, configByteArray));
                 }
                 catch (Exception ex)
                 {
@@ -268,7 +269,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    await Task.WhenAll(attachReplicaTasks);
+                    await Task.WhenAll(attachReplicaTasks).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {

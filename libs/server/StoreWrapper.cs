@@ -933,7 +933,7 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task SuspendPrimaryOnlyTasks()
         {
-            await taskManager.Cancel(TaskPlacementCategory.Primary);
+            await taskManager.CancelAsync(TaskPlacementCategory.Primary);
         }
 
         /// <summary>
@@ -942,7 +942,7 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task SuspendReplicaOnlyTasks()
         {
-            await taskManager.Cancel(TaskPlacementCategory.Replica);
+            await taskManager.CancelAsync(TaskPlacementCategory.Replica);
         }
 
         /// <summary>

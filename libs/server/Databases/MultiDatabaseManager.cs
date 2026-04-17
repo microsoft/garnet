@@ -1011,21 +1011,10 @@ namespace Garnet.server
                     if (!TryPauseCheckpoints(dbId))
                         continue;
 
-                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
-                        t =>
-                        {
-                            ResumeCheckpoints(dbId);
-
-                            if (!t.IsCompletedSuccessfully)
-                                return;
-
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
-                            UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
-                        }, TaskContinuationOptions.ExecuteSynchronously);
+                    checkpointTasks[currIdx] = TakeCheckpointHelperAsync(databaseMapSnapshot, dbId);
                 }
 
-                await Task.WhenAll(checkpointTasks);
+                await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1037,6 +1026,28 @@ namespace Garnet.server
             }
 
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase[] databaseMapSnapshot, int dbId)
+            {
+                var needsResume = true;
+
+                try
+                {
+                    var (storeTailAddress, objectStoreTailAddress) = await TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ConfigureAwait(false);
+
+                    ResumeCheckpoints(dbId);
+                    needsResume = false;
+
+                    UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+                }
+                finally
+                {
+                    if (needsResume)
+                    {
+                        ResumeCheckpoints(dbId);
+                    }
+                }
+            }
         }
 
         private void UpdateLastSaveData(int dbId, long? storeTailAddress, long? objectStoreTailAddress)
