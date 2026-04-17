@@ -51,16 +51,31 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            // Heap-size accounting for value objects. Two reasons reach us:
-            //  - Deleted: whole record is being disposed (tombstone/delete path). Decrement the value object.
-            //  - CopyUpdated: source record's value-object slot is being cleared in place after a successful
-            //    CopyUpdate CAS. The record itself stays alive on the sealed page until eviction, but the (v)
-            //    object is about to be released — this is the paired decrement for PostCopyUpdater's
-            //    unconditional +value.HeapMemorySize on the (v+1) value. Checkpoint/disk paths that leave
-            //    the source alive don't reach this site; their decrement comes from OnEvict at page eviction.
-            if (logRecord.Info.ValueIsObject && (reason == DisposeReason.Deleted || reason == DisposeReason.CopyUpdated))
+            if (cacheSizeTracker is null)
+                return;
+
+            if (reason == DisposeReason.Deleted)
             {
-                cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
+                // Decrement the full heap contribution of the dying record (overflow key/value bytes
+                // and/or value-object heap). CalculateHeapMemorySize returns 0 for tombstoned records,
+                // which naturally makes this a no-op on the mutable Delete() path where
+                // MainStore.InPlaceDeleter already subtracted before tombstone was set. On the RMW
+                // expire paths (ExpireAndResume, ExpireAndStop for objects) the tombstone is NOT yet
+                // set when OnDispose fires, so CalculateHeapMemorySize returns the correct non-zero value.
+                var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
+                if (size != 0)
+                    cacheSizeTracker.AddHeapSize(-size);
+            }
+            else if (reason == DisposeReason.CopyUpdated)
+            {
+                // Source record's value-object slot is being cleared in place after a successful
+                // CopyUpdate CAS. The record itself stays alive on the sealed page until eviction,
+                // but the (v) object is about to be released — this is the paired decrement for
+                // PostCopyUpdater's unconditional +value.HeapMemorySize on the (v+1) value.
+                // Checkpoint/disk paths that leave the source alive don't reach this site; their
+                // decrement comes from OnEvict at page eviction.
+                if (logRecord.Info.ValueIsObject)
+                    cacheSizeTracker.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
             }
         }
 

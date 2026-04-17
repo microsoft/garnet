@@ -77,8 +77,9 @@ namespace Tsavorite.core
         /// disposing the value object from this callback; uncritical disposal there would corrupt the
         /// still-alive on-log record.
         /// </para>
+        /// Default implementation is a no-op.
         /// </summary>
-        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
 
         /// <summary>
         /// Called per valid record on the original in-memory page before flush to disk.

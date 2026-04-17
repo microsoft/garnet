@@ -187,6 +187,7 @@ namespace Garnet.cluster
 
                                     storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                                     diskLogRecord.Dispose();
+                                    diskLogRecord = default; // prevent double-trigger in finally
                                 }
                                 else
                                 {
@@ -199,8 +200,11 @@ namespace Garnet.cluster
                     }
                     finally
                     {
-                        storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-                        diskLogRecord.Dispose();
+                        if (diskLogRecord.IsSet)
+                        {
+                            storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                            diskLogRecord.Dispose();
+                        }
                     }
                 }
             }
