@@ -19,7 +19,6 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
-        readonly int logPageSizeBits, logPageSizeMask;
 
         AofSyncTaskInfo[] tasks;
         int numTasks;
@@ -36,30 +35,21 @@ namespace Garnet.cluster
             numTasks = 0;
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
-                logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
-                int logPageSize = 1 << logPageSizeBits;
-                logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.FastAofTruncate)
-                    clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
+                    clusterProvider.storeWrapper.appendOnlyFile.SafeTailPageShiftCallback = SafeTailPageShiftCallback;
             }
             TruncatedUntil = 0;
         }
 
         internal long AofTruncatedUntil => TruncatedUntil;
 
-        internal void SafeTailShiftCallback(long oldTailAddress, long newTailAddress)
+        internal void SafeTailPageShiftCallback(long oldTailAddress, long newTailAddress)
         {
-            long oldPage = oldTailAddress >> logPageSizeBits;
-            long newPage = newTailAddress >> logPageSizeBits;
-            // Call truncate only once per page
-            if (oldPage != newPage)
-            {
-                // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
-                // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
-                var truncateUntilAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressAbove(newTailAddress, numPagesAbove: 2);
-                if (truncateUntilAddress > 0)
-                    SafeTruncateAof(truncateUntilAddress);
-            }
+            // Truncate 2 pages above ReadOnly mark, so that we have sufficient time to shift begin before we flush.
+            // Make sure this is page-aligned, in case we go to a non-page-aligned ReadOnlyAddress.
+            var truncateUntilAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressAbove(newTailAddress, numPagesAbove: 2);
+            if (truncateUntilAddress > 0)
+                SafeTruncateAof(truncateUntilAddress);
         }
 
         public List<RoleInfo> GetReplicaInfo(long PrimaryReplicationOffset)
