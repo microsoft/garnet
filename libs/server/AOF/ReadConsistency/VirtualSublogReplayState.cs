@@ -76,6 +76,8 @@ namespace Garnet.server
         void SignalAdvanceTime()
         {
             var releaseCount = 0;
+            if (Volatile.Read(ref waiterCount) == 0)
+                return;
 
             lock (@lock)
             {
