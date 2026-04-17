@@ -230,7 +230,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(monitorSamplingFrequency, token);
+                    await Task.Delay(monitorSamplingFrequency, token).ConfigureAwait(false);
 
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.

@@ -152,7 +152,7 @@ namespace Garnet.cluster
         {
             try
             {
-                await AcquireWriteLockAsync();
+                await AcquireWriteLockAsync().ConfigureAwait(false);
 
                 if (_disposed) return false;
 
@@ -182,7 +182,7 @@ namespace Garnet.cluster
             GarnetServerNode conn = null;
             try
             {
-                await AcquireWriteLockAsync();
+                await AcquireWriteLockAsync().ConfigureAwait(false);
 
                 // Fail on disposed
                 if (_disposed) return (false, conn);
@@ -215,7 +215,7 @@ namespace Garnet.cluster
         {
             try
             {
-                await AcquireWriteLockAsync();
+                await AcquireWriteLockAsync().ConfigureAwait(false);
 
                 // Fail on disposed
                 if (_disposed) return false;
