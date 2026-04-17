@@ -190,11 +190,12 @@ namespace Garnet.server
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
-            // the record was CASed into the hash chain before it gets modified
-            var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
+            // We perform the object update here (and not in CopyUpdater) so that we are guaranteed that the record
+            // was CASed into the hash chain before it gets modified. Tsavorite's CacheSerializedObjectData (called
+            // by InternalRMW right before PCU, for both memory and disk sources) has already cloned src.ValueObject
+            // into dstLogRecord. Reuse it directly — do not clone again.
+            var value = Unsafe.As<IGarnetObject>(dstLogRecord.ValueObject);
             var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
-            _ = dstLogRecord.TrySetValueObject(value);
 
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags
