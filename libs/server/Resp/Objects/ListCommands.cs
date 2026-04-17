@@ -308,7 +308,7 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).GetAwaiter().GetResult();
 
             if (result.IsForceUnblocked)
             {
@@ -990,7 +990,7 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).GetAwaiter().GetResult();
 
             if (result.IsForceUnblocked)
             {
