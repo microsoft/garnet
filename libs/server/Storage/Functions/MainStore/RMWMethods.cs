@@ -45,6 +45,16 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
                     return true;
+                case RespCommand.RICREATE:
+                    return true;
+                case RespCommand.RIPROMOTE:
+                    return false; // Key must already exist; don't create new
+                case RespCommand.RIRESTORE:
+                    return false; // Key must already exist
+                case RespCommand.RISET:
+                    return false; // Tree must exist for SET
+                case RespCommand.RIDEL:
+                    return false; // Tree must exist for DEL
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -310,6 +320,24 @@ namespace Garnet.server
                     if (!TryCopyUpdateNumber(incrByFloat, logRecord.ValueSpan, ref output))
                         return false;
                     break;
+                case RespCommand.RICREATE:
+                    {
+                        // The stub bytes (including TreeHandle) are passed as parseState arg 0.
+                        // On AOF replay, HandleRangeIndexCreateReplay intercepts this and replaces
+                        // the stale TreeHandle with a fresh one before the RMW reaches here.
+                        var stubSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        if (!logRecord.TrySetContentLengths(RangeIndexManager.IndexSizeBytes, in sizeInfo))
+                        {
+                            functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "RICREATE");
+                            return false;
+                        }
+
+                        stubSpan.CopyTo(logRecord.ValueSpan);
+
+                        var dataHeader = logRecord.RecordDataHeader;
+                        dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                    }
+                    break;
                 case RespCommand.VADD:
                     {
                         if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
@@ -404,6 +432,20 @@ namespace Garnet.server
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             if (logRecord.Info.ValueIsObject)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            // RangeIndex type safety – reject non-RI commands on RI keys
+            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType && !input.header.cmd.IsLegalOnRangeIndex())
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            // Reject RI-specific commands on non-RI keys
+            if (logRecord.RecordType != RangeIndexManager.RangeIndexRecordType && input.header.cmd.IsRangeIndexCommand())
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
@@ -1056,6 +1098,30 @@ namespace Garnet.server
                         }
                     }
                     throw new GarnetException("Unsupported operation on input");
+                case RespCommand.RICREATE:
+                    // Index already exists at this key — reject with error
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return IPUResult.NotUpdated;
+                case RespCommand.RIPROMOTE:
+                    // Record is in mutable region — it should never have the flushed flag set
+                    // because OnFlushRecord only runs when pages move to read-only.
+                    Debug.Assert(!RangeIndexManager.ReadIndex(logRecord.ValueSpan).IsFlushed,
+                        "Mutable record should never have Flushed flag set");
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return IPUResult.Succeeded;
+                case RespCommand.RIRESTORE:
+                    // Set the TreeHandle from the restored BfTree pointer (passed via input.arg1).
+                    RangeIndexManager.RecreateIndex((nint)input.arg1, logRecord.ValueSpan);
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return IPUResult.Succeeded;
+                case RespCommand.RISET:
+                    // Synthetic write for AOF logging — the actual insert was done via native BfTree
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return IPUResult.Succeeded;
+                case RespCommand.RIDEL:
+                    // Synthetic write for AOF logging — the actual delete was done via native BfTree
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return IPUResult.Succeeded;
             }
 
             // increment the Etag transparently if in place update happened
@@ -1168,6 +1234,19 @@ namespace Garnet.server
                         ETagState.ResetState(ref functionsState.etagState);
                         return false;
                     }
+                    return true;
+                case RespCommand.RICREATE:
+                    // Index already exists — never copy-update, reject in caller
+                    return false;
+                case RespCommand.RIPROMOTE:
+                    // Always copy to tail to promote from read-only region
+                    return true;
+                case RespCommand.RIRESTORE:
+                    // Copy to tail if needed, then IPU will set TreeHandle
+                    return true;
+                case RespCommand.RISET:
+                case RespCommand.RIDEL:
+                    // Copy to tail so synthetic AOF write can be logged
                     return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -1674,6 +1753,52 @@ namespace Garnet.server
                         }
                     }
                     throw new GarnetException("Unsupported operation on input");
+                case RespCommand.RICREATE:
+                    // NeedCopyUpdate returns false for RICREATE, so CopyUpdater should never be reached.
+                    throw new GarnetException("CopyUpdater should not be called for RICREATE");
+                case RespCommand.RIPROMOTE:
+                    {
+                        // Copy stub bytes from source to destination, clearing the flushed flag.
+                        var srcValue = srcLogRecord.ValueSpan;
+                        if (!dstLogRecord.TrySetContentLengths(RangeIndexManager.IndexSizeBytes, in sizeInfo))
+                            return false;
+                        srcValue.CopyTo(dstLogRecord.ValueSpan);
+                        RangeIndexManager.ClearFlushedFlag(dstLogRecord.ValueSpan);
+
+                        // Preserve the RecordType
+                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+
+                        // NOTE: Source TreeHandle is cleared in PostCopyUpdater (after CAS success)
+                        // to avoid orphaning the tree if the CAS fails.
+                    }
+                    break;
+                case RespCommand.RIRESTORE:
+                    {
+                        // Copy stub bytes and set TreeHandle from restored BfTree.
+                        var srcValue = srcLogRecord.ValueSpan;
+                        if (!dstLogRecord.TrySetContentLengths(RangeIndexManager.IndexSizeBytes, in sizeInfo))
+                            return false;
+                        srcValue.CopyTo(dstLogRecord.ValueSpan);
+                        RangeIndexManager.RecreateIndex((nint)input.arg1, dstLogRecord.ValueSpan);
+
+                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                    }
+                    break;
+                case RespCommand.RISET:
+                case RespCommand.RIDEL:
+                    {
+                        // Synthetic write for AOF logging — just copy the stub bytes unchanged
+                        var srcValue = srcLogRecord.ValueSpan;
+                        if (!dstLogRecord.TrySetContentLengths(RangeIndexManager.IndexSizeBytes, in sizeInfo))
+                            return false;
+                        srcValue.CopyTo(dstLogRecord.ValueSpan);
+
+                        var dataHeader = dstLogRecord.RecordDataHeader;
+                        dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
+                    }
+                    break;
             }
 
 
@@ -1701,6 +1826,14 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+
+            // Clear source TreeHandle after CAS success for RIPROMOTE.
+            // This prevents eviction of the old record from freeing the BfTree
+            // that the new record now owns. Done here (not in CopyUpdater) so
+            // CAS failure doesn't orphan the tree.
+            if (input.header.cmd == RespCommand.RIPROMOTE)
+                RangeIndexManager.ClearTreeHandle(srcLogRecord.ValueSpan);
+
             return true;
         }
 

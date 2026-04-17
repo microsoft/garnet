@@ -13,6 +13,7 @@
     <ProjectReference Include="..\client\Garnet.client.csproj" />
     <ProjectReference Include="..\common\Garnet.common.csproj" />
     <ProjectReference Include="..\resources\Garnet.resources.csproj" />
+    <ProjectReference Include="..\..\libs\native\bftree-garnet\BfTreeInterop.csproj" />
   </ItemGroup>
 
   <ItemGroup>

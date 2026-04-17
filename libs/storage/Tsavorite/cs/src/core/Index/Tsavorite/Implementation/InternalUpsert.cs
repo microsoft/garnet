@@ -152,6 +152,11 @@ namespace Tsavorite.core
                         status = OperationStatus.CANCELED;
                         goto LatchRelease;
                     }
+                    if (upsertInfo.Action == UpsertAction.WrongType)
+                    {
+                        status = OperationStatus.WRONG_TYPE;
+                        goto LatchRelease;
+                    }
 
                     // InPlaceWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
                     goto CreateNewRecord;
