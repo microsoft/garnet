@@ -58,7 +58,7 @@ namespace Garnet.server
             cts.Cancel();
             try
             {
-                Cancel(TaskPlacementCategory.All).Wait();
+                CancelAsync(TaskPlacementCategory.All).Wait();
             }
             finally
             {
@@ -97,7 +97,7 @@ namespace Garnet.server
 
                 // Execute task factory
                 if (cleanupOnCompletion)
-                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await Cancel(taskType).ConfigureAwait(false)).Unwrap();
+                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await CancelAsync(taskType)).Unwrap();
                 else
                     taskMetadata.Task = taskFactory(taskMetadata.Cts.Token);
             }
@@ -105,7 +105,7 @@ namespace Garnet.server
             {
                 logger?.LogError(ex, "Failed starting task {taskType} with {method}", taskType, nameof(RegisterAndRun));
                 // Remove and cleanup registered entry when exception gets triggered
-                Cancel(taskType).Wait();
+                CancelAsync(taskType).Wait();
                 return false;
             }
             finally
@@ -121,7 +121,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskType"></param>
         /// <returns></returns>
-        public async Task Cancel(TaskType taskType)
+        public async Task CancelAsync(TaskType taskType)
         {
             if (registry.TryRemove(taskType, out var taskMetadata))
             {
@@ -136,7 +136,7 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogCritical(ex, "Unknown exception received for {Cancel} when awaiting for {taskType}.", nameof(Cancel), taskType);
+                    logger?.LogCritical(ex, "Unknown exception received for {Cancel} when awaiting for {taskType}.", nameof(CancelAsync), taskType);
                 }
             }
         }
@@ -146,20 +146,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskPlacementCategory"></param>
         /// <returns></returns>
-        public async Task Cancel(TaskPlacementCategory taskPlacementCategory)
+        public async Task CancelAsync(TaskPlacementCategory taskPlacementCategory)
         {
             foreach (var taskType in TaskTypeExtensions.GetTaskTypes(taskPlacementCategory))
-                await Cancel(taskType).ConfigureAwait(false);
+                await CancelAsync(taskType).ConfigureAwait(false);
         }
-
-        /// <summary>
-        /// Wait for task associated with the provided TaskType to complete.
-        /// </summary>
-        /// <param name="taskType"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public bool Wait(TaskType taskType, CancellationToken token = default)
-            => WaitAsync(taskType, token).Result;
 
         /// <summary>
         /// WaitAsync for task associated with the provided TaskType to complete.

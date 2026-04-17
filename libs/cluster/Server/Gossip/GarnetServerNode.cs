@@ -177,32 +177,28 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private Task Gossip(byte[] configByteArray)
+        private async Task GossipAsync(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
+            try
             {
-                try
+                using var resp = await gc.Gossip(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                if (resp.Length > 0)
                 {
-                    var resp = t.Result;
-                    if (resp.Length > 0)
-                    {
-                        clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                        var returnedConfigArray = resp.Span.ToArray();
-                        var other = ClusterConfig.FromByteArray(returnedConfigArray);
-                        var current = clusterProvider.clusterManager.CurrentConfig;
-                        // Check if gossip is from a node that is known and trusted before merging
-                        if (current.IsKnown(other.LocalNodeId))
-                            clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
-                        else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
-                    }
-                    resp.Dispose();
+                    clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
+                    var returnedConfigArray = resp.Span.ToArray();
+                    var other = ClusterConfig.FromByteArray(returnedConfigArray);
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    // Check if gossip is from a node that is known and trusted before merging
+                    if (current.IsKnown(other.LocalNodeId))
+                        clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                    else
+                        logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }
-                catch (Exception ex)
-                {
-                    logger?.LogCritical(ex, "GOSSIP faulted processing response");
-                }
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "GOSSIP faulted processing response");
+            }
         }
 
         /// <summary>
@@ -229,7 +225,7 @@ namespace Garnet.cluster
             {
                 // Issue first time gossip
                 var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
-                gossipTask = Gossip(configArray);
+                gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;
                 // Track bytes send
@@ -242,7 +238,7 @@ namespace Garnet.cluster
                 UpdateGossipRecv();
 
                 // Issue new gossip that can be either zero packet size or an updated configuration
-                gossipTask = Gossip(configByteArray);
+                gossipTask = GossipAsync(configByteArray);
                 UpdateGossipSend();
 
                 // Track number of full vs empty (ping) sends
