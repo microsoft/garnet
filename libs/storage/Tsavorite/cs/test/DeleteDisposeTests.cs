@@ -30,6 +30,7 @@ namespace Tsavorite.test
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => tracker?.RecordDispose(reason);
+            public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
         }
 
         internal class DisposeTracker
@@ -255,6 +256,8 @@ namespace Tsavorite.test
 
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason)
                 => tracker?.RecordDispose(reason);
+
+            public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
         }
 
         internal class ObjDisposeTracker

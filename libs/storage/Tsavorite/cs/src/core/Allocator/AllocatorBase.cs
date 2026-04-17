@@ -2178,6 +2178,7 @@ namespace Tsavorite.core
                     ctx.logicalAddress = prevAddressToRead;
                     if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
+                        _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
@@ -2193,6 +2194,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);

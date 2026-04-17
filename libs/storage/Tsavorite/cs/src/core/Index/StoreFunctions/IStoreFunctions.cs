@@ -62,6 +62,9 @@ namespace Tsavorite.core
         /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason);
 
+        /// <inheritdoc cref="IRecordTriggers.OnDisposeDiskRecord"/>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
+
         /// <inheritdoc cref="IRecordTriggers.OnFlush"/>
         void OnFlush(ref LogRecord logRecord);
 

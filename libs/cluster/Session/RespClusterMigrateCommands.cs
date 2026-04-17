@@ -185,6 +185,7 @@ namespace Garnet.cluster
                                     if (replaceOption || !Exists(keySlice))
                                         _ = basicGarnetApi.SET(in diskLogRecord);
 
+                                    storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                                     diskLogRecord.Dispose();
                                 }
                                 else
@@ -198,6 +199,7 @@ namespace Garnet.cluster
                     }
                     finally
                     {
+                        storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
                     }
                 }

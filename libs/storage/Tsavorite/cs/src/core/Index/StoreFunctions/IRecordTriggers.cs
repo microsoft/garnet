@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -56,9 +57,28 @@ namespace Tsavorite.core
         /// the application needs to release its resources, it should invoke <see cref="IDisposable.Dispose"/>
         /// from this callback on the appropriate reasons.
         /// NOT called for page eviction (use <see cref="OnEvict"/> instead).
+        /// NOT called for transient records materialized from disk (use <see cref="OnDisposeDiskRecord"/>).
         /// Default implementation is a no-op.
         /// </summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason) { }
+
+        /// <summary>
+        /// Called when a transient <see cref="DiskLogRecord"/> is about to be disposed — e.g. a record
+        /// deserialized from disk for a pending Read/RMW, delivered via scan iteration, or streamed
+        /// during cluster migration/replication. Unlike <see cref="OnDispose"/>, the value object (if any)
+        /// was never inserted into the store's in-memory accounting, so implementations must NOT adjust
+        /// heap-size totals here. If the value object implements <see cref="IDisposable"/> and holds
+        /// resources that this DiskLogRecord owns, the application should invoke
+        /// <see cref="IDisposable.Dispose"/> from this callback.
+        /// <para>
+        /// Caveat: scan iterators may briefly wrap an in-memory log record as a DiskLogRecord that
+        /// <em>shares</em> its value-object reference with the live on-log record. Implementations that
+        /// hold external resources should either gate disposal on <paramref name="reason"/> or avoid
+        /// disposing the value object from this callback; uncritical disposal there would corrupt the
+        /// still-alive on-log record.
+        /// </para>
+        /// </summary>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
 
         /// <summary>
         /// Called per valid record on the original in-memory page before flush to disk.
@@ -101,6 +121,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
     }
 
     /// <summary>
@@ -119,5 +143,9 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
     }
 }

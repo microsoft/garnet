@@ -36,7 +36,7 @@ namespace Tsavorite.core
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDispose(ref logRecord, disposeReason);
+        internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.OnDisposeDiskRecord(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)

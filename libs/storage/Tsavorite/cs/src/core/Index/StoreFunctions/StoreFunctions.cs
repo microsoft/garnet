@@ -98,6 +98,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) => recordTriggers.OnDisposeDiskRecord(ref logRecord, reason);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnFlush(ref LogRecord logRecord) => recordTriggers.OnFlush(ref logRecord);
 
         /// <inheritdoc/>

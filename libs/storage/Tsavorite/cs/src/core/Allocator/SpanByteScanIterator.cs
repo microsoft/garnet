@@ -93,7 +93,7 @@ namespace Tsavorite.core
         {
             if (diskLogRecord.IsSet)
             {
-                hlogBase._wrapper.OnDispose(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
             }
             diskLogRecord = default;
@@ -409,7 +409,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             if (diskLogRecord.IsSet)
-                hlogBase._wrapper.OnDispose(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             frame?.Dispose();

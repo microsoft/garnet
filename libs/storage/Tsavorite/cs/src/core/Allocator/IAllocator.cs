@@ -109,8 +109,10 @@ namespace Tsavorite.core
         /// <summary>Dispose an in-memory log record</summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 
-        /// <summary>Dispose an on-disk log record</summary>
-        void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason);
+        /// <summary>Dispose an on-disk / transient log record. Invokes the store's
+        /// <see cref="IStoreFunctions.OnDisposeDiskRecord"/> trigger; the caller should then call
+        /// <see cref="DiskLogRecord.Dispose"/> to release the record buffer.</summary>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason);
 
         /// <summary>
         /// Iterate records in the given logical address range and invoke the application-level

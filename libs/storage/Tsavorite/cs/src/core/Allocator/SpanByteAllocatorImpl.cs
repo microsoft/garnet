@@ -204,7 +204,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
+        internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
 
         /// <summary>
         /// Dispose memory allocator

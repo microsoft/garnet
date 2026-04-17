@@ -152,12 +152,10 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
-                // DiskLogRecord owns its deserialized value object (if any); dispose it here so the
-                // IHeapObject : IDisposable contract is honored uniformly across all call sites (pending-op
-                // completion, scan iterators, cluster streaming). Garnet's IHeapObject.Dispose is a no-op
-                // today but implementations holding external resources rely on this hook.
-                if (logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
-                    logRecord.ValueObject.Dispose();
+                // Pure cleanup: clear the inner LogRecord's heap-field slots and release the record buffer.
+                // The IHeapObject owned by this DiskLogRecord (if any) is disposed via the store-level
+                // IRecordTriggers.OnDisposeDiskRecord trigger, which callers must invoke before this
+                // Dispose(). The allocator's OnDisposeDiskRecord forwards to that trigger.
                 logRecord.Dispose();
             }
             logRecord = default;

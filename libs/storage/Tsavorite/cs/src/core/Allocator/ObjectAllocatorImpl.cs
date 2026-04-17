@@ -336,9 +336,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason)
+        internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
-            // No-op: DiskLogRecord.Dispose() is the single site that disposes a deserialized value object.
+            // Route to the store-level trigger; the app (e.g. Garnet) decides whether to Dispose()
+            // the value object. DiskLogRecord.Dispose() is responsible for releasing the record buffer.
+            storeFunctions.OnDisposeDiskRecord(ref logRecord, disposeReason);
         }
 
         /// <summary>

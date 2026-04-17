@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -62,6 +63,15 @@ namespace Garnet.server
                 cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
             }
         }
+
+        /// <inheritdoc/>
+        // Transient records materialized from disk / network have no entry in cacheSizeTracker, so no
+        // accounting decrement. Garnet's IHeapObject.Dispose() is a no-op today (Hash/List/Set/SortedSet
+        // hold no external resources), so this hook is a no-op. If a future IHeapObject impl acquires
+        // external resources the dispose call would go here, gated to skip scan-iterator wrappers that
+        // share the value-object reference with the live on-log record.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
 
         /// <inheritdoc/>
         public void OnEvict(ref LogRecord logRecord, EvictionSource source)
