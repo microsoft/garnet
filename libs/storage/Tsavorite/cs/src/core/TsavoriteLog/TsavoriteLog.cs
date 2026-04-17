@@ -338,9 +338,18 @@ namespace Tsavorite.core
         /// </summary>
         public long RefreshSafeTailAddress()
         {
+            // Ordering is critical: read the tail *before* the inflight column, with a full fence in
+            // between. Producers publish their inflight slot via a release store and then advance the
+            // tail via an interlocked FAA. If we read inflight first and tail second, a reader could
+            // observe a fresh tail value (post-FAA) while still seeing the producer's slot as
+            // InflightInactive (pre-BeginInflightEnqueue), incorrectly concluding that the entire
+            // range up to the new tail is safe even though the producer has not written its payload.
+            // Reading tail first + memory barrier guarantees that if we observed the FAA we will
+            // also observe the preceding BeginInflightEnqueue store.
+            long tail = allocator.GetTailAddress();
+            Interlocked.MemoryBarrier();
             var visitor = new MinVisitor { Min = InflightInactive };
             epoch.ForEachUserWord(inflightWord, ref visitor);
-            long tail = allocator.GetTailAddress();
             long computed = visitor.Min < tail ? visitor.Min : tail;
 
             long oldSafe;
