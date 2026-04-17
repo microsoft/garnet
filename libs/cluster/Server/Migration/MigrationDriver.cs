@@ -92,23 +92,20 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin migration task
         /// </summary>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryStartMigrationTaskAsync()
         {
-            errorMessage = default;
+            ReadOnlyMemory<byte> errorMessage = default;
             if (transferOption == TransferOption.KEYS)
             {
                 try
                 {
                     // This executes synchronously and serves the keys variant of resp command
-
-                    // No alternative to .GetResult() here, as the command executes synchronously
-                    if (!MigrateKeysAsync().GetAwaiter().GetResult())
+                    if (!await MigrateKeysAsync().ConfigureAwait(false))
                     {
-                        errorMessage = "IOERR Migrate keys failed."u8;
+                        errorMessage = "IOERR Migrate keys failed."u8.ToArray();
                         Status = MigrateState.FAIL;
-                        return false;
+                        return (false, errorMessage);
                     }
 
                     Status = MigrateState.SUCCESS;
@@ -125,7 +122,7 @@ namespace Garnet.cluster
                 _ = BeginAsyncMigrationTaskAsync();
             }
 
-            return true;
+            return (true, errorMessage);
         }
 
         /// <summary>

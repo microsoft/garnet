@@ -154,13 +154,23 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
         {
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            var checkpointTask = Task.Run(async () =>
+            var checkpointTask = TakeCheckpointHelperAsync();
+
+            if (background)
+                return true;
+
+            return await checkpointTask.ConfigureAwait(false);
+
+            async Task<bool> TakeCheckpointHelperAsync()
             {
+                // Force async 
+                await Task.Yield();
+
                 var checkpointLockTaken = false;
 
                 try
@@ -187,16 +197,11 @@ namespace Garnet.server
 
                     databasesContentLock.ReadUnlock();
                 }
-            }, token).GetAwaiter();
-
-            if (background)
-                return true;
-
-            return checkpointTask.GetResult();
+            }
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
@@ -211,8 +216,7 @@ namespace Garnet.server
             if (background)
                 return true;
 
-            // .GetResult() is unavoidable here
-            checkpointTask.GetAwaiter().GetResult();
+            await checkpointTask.ConfigureAwait(false);
             return true;
 
             async Task TakeCheckpointHelperAsync(GarnetDatabase[] databasesMapSnapshot, int dbId, ILogger logger, CancellationToken token)

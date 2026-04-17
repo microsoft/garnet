@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -15,26 +16,25 @@ namespace Garnet.cluster
         /// Try attach sync session from replica
         /// </summary>
         /// <param name="replicaSyncMetadata"></param>
-        /// <param name="errorMessage"></param>
         /// <returns></returns>
-        public bool TryAttachSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
+        public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryAttachSyncAsync(SyncMetadata replicaSyncMetadata)
         {
-            errorMessage = [];
+            ReadOnlyMemory<byte> errorMessage = default;
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
             {
                 if (!replicationSyncManager.AddReplicaSyncSession(replicaSyncMetadata, out var replicaSyncSession))
                 {
                     replicaSyncSession?.Dispose();
-                    errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
-                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
+                    errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
+                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
                 }
 
-                var status = replicationSyncManager.ReplicationSyncDriver(replicaSyncSession).GetAwaiter().GetResult();
+                var status = await replicationSyncManager.ReplicationSyncDriverAsync(replicaSyncSession).ConfigureAwait(false);
                 if (status.syncStatus == SyncStatus.FAILED)
                     errorMessage = Encoding.ASCII.GetBytes(status.error);
             }
 
-            return true;
+            return (true, errorMessage);
         }
 
         /// <summary>
@@ -45,17 +45,15 @@ namespace Garnet.cluster
         /// <param name="replicaCheckpointEntry"></param>
         /// <param name="replicaAofBeginAddress"></param>
         /// <param name="replicaAofTailAddress"></param>
-        /// <param name="errorMessage"></param>
         /// <returns></returns>
-        public bool TryBeginPrimarySync(
+        public Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginPrimarySyncAsync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
             long replicaAofBeginAddress,
-            long replicaAofTailAddress,
-            out ReadOnlySpan<byte> errorMessage)
+            long replicaAofTailAddress)
         {
-            return TryBeginDiskSync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, out errorMessage);
+            return TryBeginDiskSyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
         }
 
         /// <summary>
@@ -66,48 +64,45 @@ namespace Garnet.cluster
         /// <param name="replicaCheckpointEntry">Most recent checkpoint entry at replica</param>
         /// <param name="replicaAofBeginAddress">AOF begin address at replica</param>
         /// <param name="replicaAofTailAddress">AOF tail address at replica</param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryBeginDiskSync(
+        public Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskSyncAsync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
             long replicaAofBeginAddress,
-            long replicaAofTailAddress,
-            out ReadOnlySpan<byte> errorMessage)
+            long replicaAofTailAddress)
         {
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress))
             {
-                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
+                var errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
                 logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
-                return false;
+                return Task.FromResult((false, (ReadOnlyMemory<byte>)errorMessage.AsMemory()));
             }
 
-            return ReplicaSyncSessionBackgroundTask(replicaNodeId, out errorMessage);
+            return ReplicaSyncSessionBackgroundTaskAsync(replicaNodeId);
 
-            bool ReplicaSyncSessionBackgroundTask(string replicaId, out ReadOnlySpan<byte> errorMessage)
+            async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> ReplicaSyncSessionBackgroundTaskAsync(string replicaId)
             {
                 try
                 {
                     if (!replicaSyncSessionTaskStore.TryGetSession(replicaId, out var session))
                     {
-                        errorMessage = CmdStrings.RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR;
+                        var errorMessage = CmdStrings.RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR.ToArray();
                         logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
-                        return false;
+                        return (false, (ReadOnlyMemory<byte>)errorMessage.AsMemory());
                     }
 
-                    if (!session.SendCheckpoint().GetAwaiter().GetResult())
+                    if (!await session.SendCheckpoint().ConfigureAwait(false))
                     {
-                        errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
-                        return false;
+                        var errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
+                        return (false, (ReadOnlyMemory<byte>)errorMessage.AsMemory());
                     }
 
-                    errorMessage = CmdStrings.RESP_OK;
-                    return true;
+                    return (true, default);
                 }
                 finally
                 {
-                    replicaSyncSessionTaskStore.TryRemove(replicaId);
+                    _ = replicaSyncSessionTaskStore.TryRemove(replicaId);
                 }
             }
         }

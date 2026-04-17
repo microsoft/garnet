@@ -493,7 +493,7 @@ namespace Garnet.cluster
 
                 if (setSlotsSucceeded)
                 {
-                    // Cannot avoid blocking here
+                    // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
                     UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
 
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -593,7 +593,7 @@ namespace Garnet.cluster
 
             if (setSlotsSucceeded)
             {
-                // Cannot avoid blocking here
+                // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
                 UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
 
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
