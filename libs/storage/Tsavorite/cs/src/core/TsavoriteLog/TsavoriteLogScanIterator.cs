@@ -144,7 +144,10 @@ namespace Tsavorite.core
                 return SlowWaitAsync(this, token);
             }
 
-            if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
+            // Check the cached SafeTailAddress only (O(1)). The more expensive
+            // RefreshSafeTailAddress scan is deferred to SlowWaitUncommittedAsync where
+            // per-iterator backoff logic can throttle scan frequency.
+            if (NextAddress < tsavoriteLog.SafeTailAddress)
                 return new ValueTask<bool>(true);
             return SlowWaitUncommittedAsync(token);
         }
