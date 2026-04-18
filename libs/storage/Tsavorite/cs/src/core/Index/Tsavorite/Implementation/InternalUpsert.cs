@@ -228,6 +228,12 @@ namespace Tsavorite.core
                     TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                             ref logRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
 
+                    // Track revived record's heap — key was already tracked when the tombstone was created,
+                    // but value heap was subtracted at OnDispose(Deleted). Re-add it now.
+                    var valueHeap = logRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+
                     // Success
                     MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

@@ -292,6 +292,11 @@ namespace Tsavorite.core
                     {
                         sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
+                        // Track revived record's value heap — was subtracted at OnDispose(Deleted).
+                        var valueHeap = logRecord.GetValueHeapMemorySize();
+                        if (valueHeap != 0)
+                            hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

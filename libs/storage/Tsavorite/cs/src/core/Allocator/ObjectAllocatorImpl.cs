@@ -1119,10 +1119,18 @@ namespace Tsavorite.core
 
                     if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
-                        // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
-                        logSizeTracker?.UpdateSize(in logRecord, add: true);
+                        // CalculateHeapMemorySize returns 0 for tombstones, but eviction subtracts
+                        // key overflow for tombstoned records. Add it here so the tracker stays balanced.
+                        if (logRecord.Info.Tombstone)
+                        {
+                            if (logRecord.Info.KeyIsOverflow)
+                                logSizeTracker?.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
+                        }
+                        else
+                        {
+                            logSizeTracker?.UpdateSize(in logRecord, add: true);
+                        }
                     }
                 }
 
