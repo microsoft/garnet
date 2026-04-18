@@ -344,6 +344,10 @@ namespace Tsavorite.core
             success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track value heap.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Type arg specification is needed because we don't pass TContext

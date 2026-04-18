@@ -570,6 +570,10 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track value heap.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // If IU, status will be NOTFOUND; return that.
