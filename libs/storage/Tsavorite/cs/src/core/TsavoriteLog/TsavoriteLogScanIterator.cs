@@ -748,7 +748,9 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.RefreshSafeTailAddress() : tsavoriteLog.CommittedUntilAddress)))
+                // Use the cached SafeTailAddress for the hot path. Refresh only happens when the
+                // iterator catches up to the cache, via WaitAsync / SlowWaitUncommittedAsync.
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
                     return false;
 
                 if (currentAddress < _headAddress)
@@ -866,7 +868,9 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.RefreshSafeTailAddress() : tsavoriteLog.CommittedUntilAddress)))
+                // Use the cached SafeTailAddress for the hot path. Refresh only happens when the
+                // iterator catches up to the cache, via WaitAsync / SlowWaitUncommittedAsync.
+                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
                     return false;
 
                 if (currentAddress < _headAddress)
