@@ -342,15 +342,28 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Wake any iterators parked in <see cref="WaitUncommittedAsync"/> or as single-iterators.
-        /// Cheap in the common case: both references null-check to no-op.
+        /// When more than one single iterator is registered, pre-refreshes <see cref="SafeTailAddress"/>
+        /// so that all woken iterators see the fresh cache and skip their own redundant scans (O(1)
+        /// scan total instead of O(N_iterators)). With a single iterator, the scan is deferred to the
+        /// iterator's <see cref="TsavoriteLogScanSingleIterator.SlowWaitUncommittedAsync"/> path.
+        /// Cheap in the common case (no waiters): two null-check loads.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void NotifyParkedWaiters()
         {
             var tcs = refreshUncommittedTcs;
+            var asi = activeSingleIterators;
+
+            // When multiple iterators exist, refresh before signaling so they all see
+            // the fresh cache and skip their own RefreshSafeTailAddress scan.
+            // The count is a stale-tolerant hint: if we read an old value of 1 when it's actually 2,
+            // the extra iterator simply does its own scan (correct, just redundant). If we read 2 when
+            // it's actually 1, we do one extra scan (harmless).
+            if (asi != null && Volatile.Read(ref activeSingleIteratorCount) > 1)
+                _ = RefreshSafeTailAddress();
+
             if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
                 tcs.TrySetResult(Empty.Default);
-            var asi = activeSingleIterators;
             if (asi != null)
             {
                 foreach (var iter in asi)
@@ -2344,6 +2357,11 @@ namespace Tsavorite.core
 
         List<TsavoriteLogScanSingleIterator> activeSingleIterators;
 
+        /// <summary>Number of registered single iterators. Used by <see cref="NotifyParkedWaiters"/>
+        /// to decide whether to pre-refresh the cache before signaling (avoids redundant scans when
+        /// multiple iterators wake concurrently).</summary>
+        int activeSingleIteratorCount;
+
         public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
         {
             lock (this)
@@ -2360,6 +2378,7 @@ namespace Tsavorite.core
                         }
                     }
                     activeSingleIterators = newList;
+                    activeSingleIteratorCount = newList?.Count ?? 0;
                 }
             }
         }
@@ -2380,6 +2399,7 @@ namespace Tsavorite.core
             {
                 List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
                 activeSingleIterators = newList;
+                activeSingleIteratorCount = newList.Count;
             }
 
             if (Interlocked.Increment(ref logRefCount) == 1)
