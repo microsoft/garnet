@@ -56,11 +56,14 @@ namespace Garnet.server
 
             if (reason == DisposeReason.Deleted)
             {
-                // Decrement the full heap contribution of the dying record (overflow key/value bytes
-                // and/or value-object heap). Tombstone is NOT yet set when this fires — Tsavorite sets
-                // it AFTER OnDispose returns — so CalculateHeapMemorySize returns the correct non-zero
-                // value. ClearHeapFields then physically frees the heap fields from the ObjectIdMap.
-                var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
+                // Decrement only the VALUE-side heap (value overflow bytes or value-object heap).
+                // Key overflow is NOT subtracted here because ClearHeapFields(clearKey=false) keeps the
+                // key alive for hash-chain traversal. Key overflow is handled separately:
+                //  - Mutable delete: record is tombstoned after OnDispose → OnEvict skips it → key overflow
+                //    is a bounded phantom (freed by GC when the page is freed, same as pre-IRecordTriggers).
+                //  - Immutable delete: source is sealed (not tombstoned) → OnEvict visits it and subtracts
+                //    the remaining key overflow via CalculateHeapMemorySize.
+                var size = logRecord.GetValueHeapMemorySize();
                 if (size != 0)
                     cacheSizeTracker.AddHeapSize(-size);
             }
