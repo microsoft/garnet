@@ -359,19 +359,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Visitor that computes the minimum value across the user-word column.
-        /// </summary>
-        struct MinVisitor : LightEpoch.ILightEpochUserWordVisitor
-        {
-            public long Min;
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void Visit(long value)
-            {
-                if (value < Min) Min = value;
-            }
-        }
-
-        /// <summary>
         /// Recompute <see cref="SafeTailAddress"/> from the current in-flight state, advance the
         /// monotonic cache, and invoke <see cref="SafeTailPageShiftCallback"/> if the new SafeTail
         /// crossed a page boundary. Also notifies any parked iterators of the new value. Consumers
@@ -390,9 +377,8 @@ namespace Tsavorite.core
             // also observe the preceding BeginInflightEnqueue store.
             long tail = allocator.GetTailAddress();
             Interlocked.MemoryBarrier();
-            var visitor = new MinVisitor { Min = InflightInactive };
-            epoch.ForEachUserWord(inflightWord, ref visitor);
-            long computed = visitor.Min < tail ? visitor.Min : tail;
+            long minInflight = epoch.GetMinUserWord(inflightWord);
+            long computed = minInflight < tail ? minInflight : tail;
 
             long oldSafe;
             if (Utility.MonotonicUpdate(ref cachedSafeTailAddress, computed, out oldSafe))
