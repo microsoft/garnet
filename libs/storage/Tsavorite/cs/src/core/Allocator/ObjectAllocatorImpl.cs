@@ -377,11 +377,19 @@ namespace Tsavorite.core
                 if (offset == 0 || offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null, closed/sealed (SkipOnScan = Invalid | Sealed), and tombstoned records. Tombstoned records
-                // were already disposed with DisposeReason.Deleted at the delete site; SkipOnScan records either copied
-                // their heap contribution forward (CopyUpdater) and had it netted at the copy site, or are otherwise
-                // not responsible for the allocator's heap counter.
-                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan || logRecord.Info.Tombstone)
+                // Skip null, invalid, and tombstoned records:
+                //  - IsNull: empty record slot, nothing to account for.
+                //  - Invalid: record was elided from the hash chain and already disposed
+                //    (OnDispose(Deleted/Elided) or transferred to the revivification freelist).
+                //  - Tombstone: heap was already decremented at the delete site via
+                //    OnDispose(Deleted) or InPlaceDeleter.
+                //
+                // Sealed-but-Valid records are NOT skipped. A Sealed source record from a
+                // mutable-region CopyUpdate still owns its overflow key/value bytes (and
+                // possibly its value object if a checkpoint prevented eager clearing via
+                // ClearSourceValueObject). Skipping them would leak their heap contribution
+                // in the tracker.
+                if (logRecord.Info.IsNull || logRecord.Info.Invalid || logRecord.Info.Tombstone)
                 {
                     address += allocatedSize;
                     continue;
