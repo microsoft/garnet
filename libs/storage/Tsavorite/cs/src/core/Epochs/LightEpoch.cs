@@ -857,6 +857,35 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Compute the minimum value of the user-word at <paramref name="wordIndex"/> across all epoch
+        /// table entries, using a direct unsafe pointer walk. This avoids the overhead of the generic
+        /// visitor pattern (<see cref="ForEachUserWord{TVisitor}"/>) and gives the JIT the best chance
+        /// to emit a tight loop with no interface dispatch.
+        /// </summary>
+        /// <param name="wordIndex">User-word slot index (0-based).</param>
+        /// <returns>The minimum value observed across all entries.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetMinUserWord(int wordIndex)
+        {
+            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+
+            // tableAligned is a pinned Entry* with stride = kCacheLineBytes (64).
+            // Entries occupy indices 1..kTableSize (index 0 is kInvalidIndex, unused).
+            // Compute the byte offset of userWord0 within Entry, then add wordIndex * 8.
+            long min = long.MaxValue;
+            byte* basePtr = (byte*)(tableAligned + 1) + 16 + wordIndex * 8; // +1 skips entry 0, +16 reaches userWord0
+            int stride = kCacheLineBytes;
+            int count = kTableSize;
+
+            for (int i = 0; i < count; i++)
+            {
+                long v = Volatile.Read(ref Unsafe.AsRef<long>(basePtr + (long)i * stride));
+                if (v < min) min = v;
+            }
+            return min;
+        }
+
+        /// <summary>
         /// Get a ref to the user word at <paramref name="wordIndex"/> for entry <paramref name="entryIndex"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
