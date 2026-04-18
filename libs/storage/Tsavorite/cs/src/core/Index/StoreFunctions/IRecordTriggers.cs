@@ -34,12 +34,12 @@ namespace Tsavorite.core
         bool CallOnFlush { get; }
 
         /// <summary>
-        /// If true for the specified <paramref name="source"/>, <see cref="OnEvict(ref LogRecord, EvictionSource)"/>
-        /// is called per non-tombstoned record when a page is evicted past HeadAddress for that log
-        /// (main or read cache). Returning false lets the allocator skip the per-record eviction walk
-        /// entirely when the application has no work to do on that side.
+        /// If true, <see cref="OnEvict(ref LogRecord, EvictionSource)"/> is called per non-tombstoned
+        /// record when a page is evicted past HeadAddress. Returning false lets the allocator skip the
+        /// per-record OnEvict callback when the application has no work to do.
+        /// Note: Tsavorite's internal heap-size accounting runs regardless of this flag.
         /// </summary>
-        bool CallOnEvict(EvictionSource source);
+        bool CallOnEvict { get; }
 
         /// <summary>
         /// If true, <see cref="OnDiskRead(ref LogRecord)"/> is called per record loaded from
@@ -51,16 +51,8 @@ namespace Tsavorite.core
         /// Called when a record is disposed due to delete, expiration, CAS failure, elision,
         /// revivification, or other store-internal reasons. Use <paramref name="reason"/> to
         /// distinguish the event type (e.g. <see cref="DisposeReason.Deleted"/> for tombstoning).
-        /// <para>
-        /// For heap-size tracking, <see cref="DisposeReason.Deleted"/> is the primary reason to handle:
-        /// the record's full heap contribution (overflow key/value + value object) can be obtained via
-        /// <c>CalculateHeapMemorySize</c> and should be subtracted from the tracked total. The tombstone
-        /// bit is NOT yet set when this callback fires for Deleted, so the size is correct.
-        /// </para>
-        /// <para>
-        /// Copy-update source-slot clearing (<see cref="DisposeReason.CopyUpdated"/>) is handled
-        /// internally by the store's <c>logSizeTracker</c> and does NOT fire this callback.
-        /// </para>
+        /// Heap-size accounting is handled internally by the store — implementations only need
+        /// this callback for app-level resource cleanup (e.g. releasing native handles).
         /// NOT called for page eviction (use <see cref="OnEvict"/> instead).
         /// NOT called for transient records materialized from disk (use <see cref="OnDisposeDiskRecord"/>).
         /// Default implementation is a no-op.
@@ -70,10 +62,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Called when a transient <see cref="DiskLogRecord"/> is about to be disposed — e.g. a record
         /// deserialized from disk for a pending Read/RMW, delivered via scan iteration, or streamed
-        /// during cluster migration/replication. Unlike <see cref="OnDispose"/>, the value object (if any)
-        /// was never inserted into the store's in-memory accounting, so implementations must NOT adjust
-        /// heap-size totals here. If the value object implements <see cref="IDisposable"/> and holds
-        /// resources that this DiskLogRecord owns, the application should invoke
+        /// during cluster migration/replication. If the value object implements <see cref="IDisposable"/>
+        /// and holds resources that this DiskLogRecord owns, the application should invoke
         /// <see cref="IDisposable.Dispose"/> from this callback.
         /// <para>
         /// Caveat: scan iterators may briefly wrap an in-memory log record as a DiskLogRecord that
@@ -96,7 +86,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Called per non-tombstoned record when a page is evicted past HeadAddress.
         /// Allows the application to free external resources (e.g. native memory).
-        /// Only called when <see cref="CallOnEvict"/> returns true for the corresponding source.
+        /// Only called when <see cref="CallOnEvict"/> is true.
         /// </summary>
         /// <param name="logRecord">The record being evicted.</param>
         /// <param name="source">Which log (main or read cache) the record is being evicted from.</param>
@@ -123,7 +113,7 @@ namespace Tsavorite.core
         public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public bool CallOnEvict(EvictionSource source) => false;
+        public bool CallOnEvict => false;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
@@ -145,7 +135,7 @@ namespace Tsavorite.core
         public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public bool CallOnEvict(EvictionSource source) => false;
+        public bool CallOnEvict => false;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;

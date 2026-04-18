@@ -193,8 +193,8 @@ namespace Tsavorite.core
             }
             else if (rmwInfo.Action == RMWAction.ExpireAndStop)
             {
-                // Tombstone is set by the caller (InternalRMW) AFTER OnDispose(Deleted),
-                // so that CalculateHeapMemorySize sees the pre-tombstone state.
+                // Tombstone is set by the caller (InternalRMW) AFTER OnDispose,
+                // so that internal heap accounting reads the pre-tombstone value size.
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
             }
             else if (rmwInfo.Action == RMWAction.WrongType)
@@ -241,8 +241,7 @@ namespace Tsavorite.core
             if (!_clientSession.functions.InPlaceDeleter(ref logRecord, ref deleteInfo))
                 return false;
             // Tombstone and Dirty/Modified are set by the caller (InternalDelete) AFTER
-            // OnDispose(Deleted), so that CalculateHeapMemorySize sees the pre-tombstone
-            // state and IRecordTriggers can correctly account for the full heap contribution.
+            // OnDispose, so that internal heap accounting reads the pre-tombstone value size.
             return true;
         }
 

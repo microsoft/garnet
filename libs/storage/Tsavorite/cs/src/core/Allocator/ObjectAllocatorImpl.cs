@@ -398,7 +398,7 @@ namespace Tsavorite.core
                 {
                     heapSize = logRecord.CalculateHeapMemorySize();
 
-                    if (storeFunctions.CallOnEvict(source))
+                    if (storeFunctions.CallOnEvict)
                         storeFunctions.OnEvict(ref logRecord, source);
                 }
                 else

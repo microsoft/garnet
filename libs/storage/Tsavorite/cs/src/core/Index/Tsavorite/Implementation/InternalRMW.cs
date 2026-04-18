@@ -160,9 +160,8 @@ namespace Tsavorite.core
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         pendingContext.eTag = srcLogRecord.ETag;
 
-                        // Dispose all resources BEFORE setting Tombstone, so that
-                        // IRecordTriggers.OnDispose sees the pre-tombstone state and
-                        // CalculateHeapMemorySize returns the full heap contribution.
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
+                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                         srcLogRecord.InfoRef.SetTombstone();

@@ -17,7 +17,7 @@ namespace Garnet.server
         public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        public bool CallOnEvict(EvictionSource source) => false;
+        public bool CallOnEvict => false;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;

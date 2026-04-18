@@ -1422,7 +1422,7 @@ namespace Tsavorite.core
 
             // Per-record eviction walk handles internal heap accounting (key + value via
             // logSizeTracker) and optionally notifies the application via OnEvict.
-            if (logSizeTracker is not null || storeFunctions.CallOnEvict(source))
+            if (logSizeTracker is not null || storeFunctions.CallOnEvict)
             {
                 _wrapper.EvictRecordsInRange(start, end, source);
             }
@@ -1512,7 +1512,7 @@ namespace Tsavorite.core
                     // and value heap via logSizeTracker) and optionally notifies the application
                     // via OnEvict for app-level cleanup.
                     var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
-                    if (logSizeTracker is not null || storeFunctions.CallOnEvict(evictSource))
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict)
                         _wrapper.EvictRecordsInRange(start, end, evictSource);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)

@@ -26,7 +26,7 @@ namespace Tsavorite.test
         {
             internal readonly DisposeTracker tracker;
             public TrackingRecordTriggers(DisposeTracker tracker) => this.tracker = tracker;
-            public readonly bool CallOnEvict(EvictionSource source) => false;
+            public readonly bool CallOnEvict => false;
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
             public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => tracker?.RecordDispose(reason);
@@ -250,7 +250,7 @@ namespace Tsavorite.test
         {
             internal readonly ObjDisposeTracker tracker;
             public ObjTrackingRecordTriggers(ObjDisposeTracker tracker) => this.tracker = tracker;
-            public readonly bool CallOnEvict(EvictionSource source) => false;
+            public readonly bool CallOnEvict => false;
             public readonly bool CallOnFlush => false;
             public readonly bool CallOnDiskRead => false;
 

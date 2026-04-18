@@ -87,7 +87,7 @@ namespace Tsavorite.core
         public readonly bool CallOnFlush => recordTriggers.CallOnFlush;
 
         /// <inheritdoc/>
-        public readonly bool CallOnEvict(EvictionSource source) => recordTriggers.CallOnEvict(source);
+        public readonly bool CallOnEvict => recordTriggers.CallOnEvict;
 
         /// <inheritdoc/>
         public readonly bool CallOnDiskRead => recordTriggers.CallOnDiskRead;

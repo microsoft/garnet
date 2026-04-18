@@ -106,10 +106,9 @@ namespace Tsavorite.test
             // Tsavorite only walks the corresponding per-record paths when the application opts in.
             public bool CallOnFlushFlag;
             public bool CallOnDiskReadFlag;
-            // Per-source CallOnEvict mask. Default true/true preserves the behaviour expected by the
-            // original 8 tests; tests that verify gating set one side to false.
-            public bool CallOnEvictMainLog = true;
-            public bool CallOnEvictReadCache = true;
+            // CallOnEvict flag. Default true preserves the behaviour expected by the
+            // original tests; the gating test sets it to false.
+            public bool CallOnEvictFlag = true;
 
             // OnFlush(record) count and OnDiskRead(record) count
             public int FlushCount;
@@ -139,11 +138,7 @@ namespace Tsavorite.test
 
             public readonly bool CallOnFlush => tracker?.CallOnFlushFlag ?? false;
             public readonly bool CallOnDiskRead => tracker?.CallOnDiskReadFlag ?? false;
-            public readonly bool CallOnEvict(EvictionSource source)
-            {
-                if (tracker is null) return false;
-                return source == EvictionSource.ReadCache ? tracker.CallOnEvictReadCache : tracker.CallOnEvictMainLog;
-            }
+            public readonly bool CallOnEvict => tracker?.CallOnEvictFlag ?? false;
 
             public readonly void OnFlush(ref LogRecord logRecord)
             {
@@ -573,22 +568,21 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// <see cref="IRecordTriggers.CallOnEvict"/> is gated per <see cref="EvictionSource"/>. When an
-        /// application opts out of a source, Tsavorite's allocator must skip the per-record eviction walk
-        /// for that source entirely — no OnEvict calls should reach the trigger for it.
+        /// <see cref="IRecordTriggers.CallOnEvict"/> gates the OnEvict callback. When the application
+        /// opts out, no OnEvict calls should reach the trigger — but Tsavorite's internal heap
+        /// accounting still runs.
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void CallOnEvictSourceGatingSuppressesMainLogEviction()
+        public void CallOnEvictGatingSuppressesOnEvictCallback()
         {
-            tracker.CallOnEvictMainLog = false;   // opt out of main-log eviction callbacks
-            tracker.CallOnEvictReadCache = true;
+            tracker.CallOnEvictFlag = false;   // opt out of eviction callbacks
 
             const int n = 100;
             for (int i = 0; i < n; i++) Upsert(i, i);
             store.Log.FlushAndEvict(wait: true);
 
             ClassicAssert.AreEqual(0, tracker.EvictCount(EvictionSource.MainLog),
-                "CallOnEvict(MainLog)=false must fully suppress main-log OnEvict invocation");
+                "CallOnEvict=false must fully suppress OnEvict invocation");
             ClassicAssert.AreEqual(0, tracker.EvictCount(EvictionSource.ReadCache),
                 "No read-cache configured — ReadCache OnEvict must stay zero");
         }
