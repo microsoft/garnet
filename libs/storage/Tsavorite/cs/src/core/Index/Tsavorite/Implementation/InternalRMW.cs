@@ -156,17 +156,17 @@ namespace Tsavorite.core
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
-                        // Tombstone has been set by SessionFunctionsWrapper.InPlaceUpdater
-                        srcLogRecord.InfoRef.SetDirtyAndModified();
 
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         pendingContext.eTag = srcLogRecord.ETag;
 
-                        // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                        // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
-
-                        // Immediately dispose all resources at delete site.
+                        // Dispose all resources BEFORE setting Tombstone, so that
+                        // IRecordTriggers.OnDispose sees the pre-tombstone state and
+                        // CalculateHeapMemorySize returns the full heap contribution.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
+
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.

@@ -124,10 +124,13 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
-                        // Immediately dispose all resources: app callback (storeFunctions.OnDispose)
-                        // + ClearHeapFields + ClearOptionals — all via hlog.OnDispose.
+                        // Dispose all resources BEFORE setting Tombstone, so that
+                        // IRecordTriggers.OnDispose sees the pre-tombstone state and
+                        // CalculateHeapMemorySize returns the full heap contribution.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.

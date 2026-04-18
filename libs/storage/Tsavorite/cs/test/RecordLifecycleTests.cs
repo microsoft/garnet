@@ -459,10 +459,8 @@ namespace Tsavorite.test
         /// <summary>
         /// Filling the log well beyond its mutable window forces page eviction. OnEvict must fire for
         /// every non-tombstoned, non-invalid record evicted past HeadAddress — including sealed source
-        /// records from immutable-region deletes or CopyUpdates. Tombstoned records are skipped (heap
-        /// was decremented at the delete site). Invalid/elided records are skipped (heap was already
-        /// cleaned up). Sealed records are visited because they may still own overflow key/value bytes
-        /// or value objects (checkpoint path).
+        /// records from immutable-region deletes. Tombstoned records are skipped (heap was decremented
+        /// at the delete site). Invalid/elided records are skipped (already cleaned up).
         /// </summary>
         [Test, Category("TsavoriteKV")]
         public void PageEvictionFiresOnEvictForEveryLiveRecord()
@@ -470,42 +468,43 @@ namespace Tsavorite.test
             const int n = 500; // enough to push pages past HeadAddress given 32KB memory / 1KB pages
             for (int i = 0; i < n; i++) Upsert(i, i);
 
-            // Delete ~10% of records to create tombstones. OnDispose(Deleted) fires for each.
+            // Delete ~10% of records. Track which go through the immutable path (TailAddress moves)
+            // vs in-place mutable path (TailAddress stays).
             tracker.Reset();
             const int deleted = 50;
+            int mutableDeletes = 0;
             using (var s = NewSession())
             {
                 for (int i = 0; i < deleted; i++)
+                {
+                    var tailBefore = store.Log.TailAddress;
                     _ = s.BasicContext.Delete(new TestObjectKey { key = i });
+                    if (store.Log.TailAddress == tailBefore)
+                        mutableDeletes++;
+                }
             }
+            var immutableDeletes = deleted - mutableDeletes;
+
             ClassicAssert.AreEqual(deleted, tracker.DisposeCount(DisposeReason.Deleted),
                 "Each Delete should fire OnDispose(Deleted) exactly once");
             var deletedDisposeCountBeforeEvict = tracker.DisposeCount(DisposeReason.Deleted);
 
-            // Force all records out to disk. This triggers OnEvict for every non-tombstoned,
-            // non-invalid record on each evicted page.
+            // Force all records out to disk.
             store.Log.FlushAndEvict(wait: true);
 
-            // OnEvict fires for: (1) the n live records that were never deleted, plus (2) sealed
-            // source records from immutable-region deletes (these are not tombstoned — the tombstone
-            // is on a NEW record at the tail). In-place (mutable) deletes set tombstone directly on
-            // the source and are skipped. The exact split depends on the mutable-vs-readonly boundary
-            // at delete time, so we assert bounds rather than an exact count:
-            //  - Lower bound: at least n - deleted (the live records)
-            //  - Upper bound: at most n (if all deletes hit the readonly region, producing sealed sources)
-            var mainLogEvicts = tracker.EvictCount(EvictionSource.MainLog);
-            ClassicAssert.GreaterOrEqual(mainLogEvicts, n - deleted,
-                $"OnEvict(MainLog) must fire for at least the {n - deleted} non-deleted records");
-            ClassicAssert.LessOrEqual(mainLogEvicts, n,
-                $"OnEvict(MainLog) must not fire more than {n} times (n original + sealed sources, minus tombstones)");
-
+            // Precise count:
+            //  - (n - deleted) live records: visited by OnEvict.
+            //  - mutableDeletes records: tombstoned in-place, skipped by OnEvict.
+            //  - immutableDeletes sealed source records: NOT tombstoned, visited by OnEvict.
+            //  - immutableDeletes new tombstone records at tail: tombstoned, skipped by OnEvict.
+            // Total = (n - deleted) + immutableDeletes = n - mutableDeletes.
+            ClassicAssert.AreEqual(n - mutableDeletes, tracker.EvictCount(EvictionSource.MainLog),
+                $"OnEvict(MainLog) must fire exactly {n - mutableDeletes} times: " +
+                $"{n - deleted} live + {immutableDeletes} sealed sources, skipping {mutableDeletes} in-place tombstones");
             ClassicAssert.AreEqual(0, tracker.EvictCount(EvictionSource.ReadCache),
                 "No read cache is configured, OnEvict(ReadCache) must never fire");
-            // Tombstoned records must NOT produce a paired OnDispose(Deleted) during eviction; the
-            // OnDispose(Deleted) count should be unchanged from the pre-eviction snapshot.
             ClassicAssert.AreEqual(deletedDisposeCountBeforeEvict, tracker.DisposeCount(DisposeReason.Deleted),
                 "Page eviction must not re-fire OnDispose(Deleted) for tombstoned records");
-            // And OnDisposeDiskRecord must not fire during eviction — eviction uses OnEvict only.
             ClassicAssert.AreEqual(0, tracker.TotalDisposeDisk(),
                 "Page eviction must not route through OnDisposeDiskRecord");
         }

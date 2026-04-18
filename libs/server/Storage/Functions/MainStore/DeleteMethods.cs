@@ -28,14 +28,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            // Decrement here — before the wrapper sets Tombstone. After Tombstone is set,
-            // CalculateHeapMemorySize short-circuits to zero and EvictRecordsInRange skips
-            // the record, so any matching decrement would be lost and the creation-side
-            // increments in PostInitialUpdater/PostInitialWriter/InPlaceUpdater would leak.
-            var heap = logRecord.CalculateHeapMemorySize();
-            if (heap != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(-heap);
-
             logRecord.ClearOptionals();
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
