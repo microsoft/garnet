@@ -57,9 +57,6 @@ namespace Garnet.server
                 input.header.SetExpiredFlag();
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            if (logRecord.Info.ValueIsObject)
-                functionsState.cacheSizeTracker?.AddHeapSize(logRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
@@ -174,10 +171,6 @@ namespace Garnet.server
 
                 sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
-                // Track creation of the (v+1) value unconditionally; the matching decrement for the (v) value is
-                // emitted internally by Tsavorite via logSizeTracker when the source value-object slot is cleared
-                // eagerly (ClearSourceValueObject), or by OnEvict when the sealed source page later evicts.
-                functionsState.cacheSizeTracker?.AddHeapSize(value.HeapMemorySize);
             }
 
             if (functionsState.appendOnlyFile != null)

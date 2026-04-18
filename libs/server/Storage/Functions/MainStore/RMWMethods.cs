@@ -398,12 +398,6 @@ namespace Garnet.server
                 input.header.SetExpiredFlag();
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            // Account for value-side overflow heap of the newly created record.
-            // Key overflow is tracked internally by Tsavorite via logSizeTracker.
-            var heap = logRecord.GetValueHeapMemorySize();
-            if (heap != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
 
         /// <inheritdoc />
@@ -1713,10 +1707,6 @@ namespace Garnet.server
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
             // Account for the new record's value-side heap contribution.
-            // Key overflow is tracked internally by Tsavorite via logSizeTracker.
-            var newHeap = dstLogRecord.GetValueHeapMemorySize();
-            if (newHeap != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(newHeap);
             return true;
         }
 

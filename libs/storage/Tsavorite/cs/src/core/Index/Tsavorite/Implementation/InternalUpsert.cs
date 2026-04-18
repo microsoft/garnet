@@ -344,7 +344,7 @@ namespace Tsavorite.core
             success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
-                // Track key overflow internally — session functions only track value heap.
+                // Track key overflow internally — session functions only track in-place value deltas.
                 if (newLogRecord.Info.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
@@ -353,6 +353,13 @@ namespace Tsavorite.core
                 // Type arg specification is needed because we don't pass TContext
                 TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref newLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+
+                // Track new record's value heap — after PostInitialWriter so the value is fully populated.
+                {
+                    var valueHeap = newLogRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                }
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.

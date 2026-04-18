@@ -570,7 +570,7 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
-                // Track key overflow internally — session functions only track value heap.
+                // Track key overflow internally — session functions only track in-place value deltas.
                 if (newLogRecord.Info.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
 
@@ -582,7 +582,14 @@ namespace Tsavorite.core
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
                     if (!addTombstone)
+                    {
                         sessionFunctions.PostInitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+
+                        // Track new record's value heap — after Post* so the value is fully populated.
+                        var valueHeap = newLogRecord.GetValueHeapMemorySize();
+                        if (valueHeap != 0)
+                            hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                    }
                 }
                 else
                 {
@@ -599,6 +606,13 @@ namespace Tsavorite.core
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
                         {
+                            // Track new record's value heap — after PCU so the value is fully populated.
+                            {
+                                var newValueHeap = newLogRecord.GetValueHeapMemorySize();
+                                if (newValueHeap != 0)
+                                    hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
+                            }
+
                             if (rmwInfo.ClearSourceValueObject && isMemoryLogRecord)
                             {
                                 ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
@@ -710,7 +724,14 @@ namespace Tsavorite.core
                 {
                     // If IPU path, we need to complete PostInitialUpdater as well
                     if (isIpu)
+                    {
                         sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+
+                        // Track new value heap — this is an in-place reinit so there's no CAS success site to do it.
+                        var valueHeap = logRecord.GetValueHeapMemorySize();
+                        if (valueHeap != 0)
+                            hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                    }
 
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                     return true;

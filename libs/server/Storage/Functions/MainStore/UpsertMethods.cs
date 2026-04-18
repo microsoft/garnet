@@ -45,12 +45,6 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-
-            // Account for value-side overflow heap on the freshly-inserted record.
-            // Key overflow is tracked internally by Tsavorite via logSizeTracker.
-            var heap = logRecord.GetValueHeapMemorySize();
-            if (heap != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
 
         /// <inheritdoc />
@@ -67,10 +61,6 @@ namespace Garnet.server
                 Debug.Assert(!inputLogRecord.Info.ValueIsObject, "String store should not be called with IHeapObject");
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            var heap = logRecord.GetValueHeapMemorySize();
-            if (heap != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
 
         /// <inheritdoc />
