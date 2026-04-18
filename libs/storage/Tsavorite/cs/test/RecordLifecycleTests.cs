@@ -233,15 +233,17 @@ namespace Tsavorite.test
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TrackedObjectValue { value = value }, 0);
         }
 
-        #region OnDispose(CopyUpdated)
+        #region CopyUpdate — value-object slot clearing
 
         /// <summary>
         /// RMW on a record in the immutable region forces CopyUpdate. After the CAS succeeds,
-        /// Tsavorite fires <see cref="IRecordTriggers.OnDispose"/> with <see cref="DisposeReason.CopyUpdated"/>
-        /// to let the handler clear the source value slot (paired with PostCopyUpdater's +size add on the destination).
+        /// Tsavorite internally clears the source value-object slot and decrements the logSizeTracker
+        /// for the value-object's heap. The trigger is NOT involved — <see cref="DisposeReason.CopyUpdated"/>
+        /// does not fire via <see cref="IRecordTriggers.OnDispose"/>. The source record stays alive
+        /// (sealed) until eviction, where OnEvict picks up any remaining key overflow.
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void CopyUpdateFiresOnDisposeCopyUpdatedExactlyOnce()
+        public void CopyUpdateDoesNotFireOnDisposeCopyUpdated()
         {
             Upsert(1, 100);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
@@ -254,27 +256,25 @@ namespace Tsavorite.test
                 _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, ref output, 0);
             }
 
-            ClassicAssert.AreEqual(1, tracker.DisposeCount(DisposeReason.CopyUpdated),
-                "OnDispose(CopyUpdated) should fire exactly once after a successful CopyUpdate CAS");
+            ClassicAssert.AreEqual(0, tracker.DisposeCount(DisposeReason.CopyUpdated),
+                "CopyUpdated is handled internally by logSizeTracker — OnDispose must not fire for it");
             ClassicAssert.AreEqual(0, tracker.DisposeCount(DisposeReason.Deleted),
                 "Deleted must not fire on a CopyUpdate path");
-            // The source record survives on the (sealed) page; no eviction yet, so no OnEvict.
             ClassicAssert.AreEqual(0, tracker.TotalEvict(),
                 "No page eviction should have happened in this test window");
         }
 
         /// <summary>
-        /// With <see cref="LifecycleTracker.DisposeValuesOnDispose"/> set, the handler disposes the source
-        /// value object once during CopyUpdated. This asserts that Tsavorite itself never invokes Dispose
-        /// on the on-log value; only the handler does — and it does so at most once per record.
+        /// After CopyUpdate, the source value-object is cleared from the ObjectIdMap (via ClearValueIfHeap).
+        /// Tsavorite calls IHeapObject.Dispose on the freed object internally — the trigger is not involved.
+        /// Verify that exactly one IHeapObject.Dispose fires for the source value object.
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void CopyUpdateDisposesSourceValueExactlyOnceWhenHandlerOptsIn()
+        public void CopyUpdateDisposesSourceValueExactlyOnce()
         {
             Upsert(1, 100);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             tracker.Reset();
-            tracker.DisposeValuesOnDispose = true;
 
             using (var s = NewSession())
             {
@@ -283,8 +283,8 @@ namespace Tsavorite.test
                 _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, ref output, 0);
             }
 
-            ClassicAssert.AreEqual(1, tracker.DisposeCount(DisposeReason.CopyUpdated),
-                "OnDispose(CopyUpdated) should fire exactly once");
+            ClassicAssert.AreEqual(0, tracker.DisposeCount(DisposeReason.CopyUpdated),
+                "CopyUpdated must not fire — handled internally");
 
             var (total, max) = TrackedObjectValue.Snapshot();
             ClassicAssert.AreEqual(1, total, "Exactly one IHeapObject.Dispose call expected (the CU source object)");

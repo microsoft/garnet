@@ -57,25 +57,12 @@ namespace Garnet.server
             if (reason == DisposeReason.Deleted)
             {
                 // Decrement the full heap contribution of the dying record (overflow key/value bytes
-                // and/or value-object heap). CalculateHeapMemorySize returns 0 for tombstoned records,
-                // which naturally makes this a no-op on the mutable Delete() path where
-                // MainStore.InPlaceDeleter already subtracted before tombstone was set. On the RMW
-                // expire paths (ExpireAndResume, ExpireAndStop for objects) the tombstone is NOT yet
-                // set when OnDispose fires, so CalculateHeapMemorySize returns the correct non-zero value.
+                // and/or value-object heap). Tombstone is NOT yet set when this fires — Tsavorite sets
+                // it AFTER OnDispose returns — so CalculateHeapMemorySize returns the correct non-zero
+                // value. ClearHeapFields then physically frees the heap fields from the ObjectIdMap.
                 var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
                 if (size != 0)
                     cacheSizeTracker.AddHeapSize(-size);
-            }
-            else if (reason == DisposeReason.CopyUpdated)
-            {
-                // Source record's value-object slot is being cleared in place after a successful
-                // CopyUpdate CAS. The record itself stays alive on the sealed page until eviction,
-                // but the (v) object is about to be released — this is the paired decrement for
-                // PostCopyUpdater's unconditional +value.HeapMemorySize on the (v+1) value.
-                // Checkpoint/disk paths that leave the source alive don't reach this site; their
-                // decrement comes from OnEvict at page eviction.
-                if (logRecord.Info.ValueIsObject)
-                    cacheSizeTracker.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
             }
         }
 

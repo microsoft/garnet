@@ -597,13 +597,26 @@ namespace Tsavorite.core
                         {
                             if (rmwInfo.ClearSourceValueObject && isMemoryLogRecord)
                             {
-                                // Signal the source's value-object slot is being cleared in place (the record
-                                // itself stays alive on the sealed page until eviction). We pass the full
-                                // srcLogRecord + CopyUpdated reason so the application can distinguish this
-                                // slot-level dispose from a record-level Deleted dispose. The actual object
-                                // disposal is handled inside ClearValueIfHeap via ObjectIdMap.Free → IHeapObject.Dispose.
                                 ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                                storeFunctions.OnDispose(ref srcMemLogRecord, DisposeReason.CopyUpdated);
+
+                                // Decrement the value-object's heap contribution from the tracker and dispose
+                                // the object BEFORE clearing the slot. This is an internal accounting and
+                                // disposal step — the trigger is NOT involved because CopyUpdated is a
+                                // partial clear (value only, key stays) and expecting trigger implementers
+                                // to know that nuance is error-prone. The remaining key overflow (if any)
+                                // is decremented later by OnEvict when the sealed page is evicted.
+                                if (srcMemLogRecord.Info.ValueIsObject)
+                                {
+                                    var valueObject = srcMemLogRecord.ValueObject;
+                                    if (valueObject is not null)
+                                    {
+                                        var valueHeap = valueObject.HeapMemorySize;
+                                        if (valueHeap != 0)
+                                            hlogBase.logSizeTracker?.IncrementSize(-valueHeap);
+                                        valueObject.Dispose();
+                                    }
+                                }
+
                                 srcMemLogRecord.ClearValueIfHeap();
                             }
                         }

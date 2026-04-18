@@ -48,14 +48,19 @@ namespace Tsavorite.core
         bool CallOnDiskRead { get; }
 
         /// <summary>
-        /// Called when a record or one of its heap slots is disposed due to delete, CAS failure,
-        /// copy-update source-slot clearing, or other store-internal reasons. Use <paramref name="reason"/>
-        /// to distinguish record-level events (e.g. <see cref="DisposeReason.Deleted"/>) from
-        /// slot-level events (e.g. <see cref="DisposeReason.CopyUpdated"/>, which signals that only
-        /// the value-object slot is being cleared in place while the record itself remains on the
-        /// sealed page until eviction). If the value object implements <see cref="IDisposable"/> and
-        /// the application needs to release its resources, it should invoke <see cref="IDisposable.Dispose"/>
-        /// from this callback on the appropriate reasons.
+        /// Called when a record is disposed due to delete, expiration, CAS failure, elision,
+        /// revivification, or other store-internal reasons. Use <paramref name="reason"/> to
+        /// distinguish the event type (e.g. <see cref="DisposeReason.Deleted"/> for tombstoning).
+        /// <para>
+        /// For heap-size tracking, <see cref="DisposeReason.Deleted"/> is the primary reason to handle:
+        /// the record's full heap contribution (overflow key/value + value object) can be obtained via
+        /// <c>CalculateHeapMemorySize</c> and should be subtracted from the tracked total. The tombstone
+        /// bit is NOT yet set when this callback fires for Deleted, so the size is correct.
+        /// </para>
+        /// <para>
+        /// Copy-update source-slot clearing (<see cref="DisposeReason.CopyUpdated"/>) is handled
+        /// internally by the store's <c>logSizeTracker</c> and does NOT fire this callback.
+        /// </para>
         /// NOT called for page eviction (use <see cref="OnEvict"/> instead).
         /// NOT called for transient records materialized from disk (use <see cref="OnDisposeDiskRecord"/>).
         /// Default implementation is a no-op.
