@@ -376,6 +376,14 @@ namespace Tsavorite.core
         /// </summary>
         public long RefreshSafeTailAddress()
         {
+            // Fast path: if TailAddress hasn't moved beyond the cached SafeTailAddress, no new
+            // records have been allocated and scanning the inflight column cannot yield a higher
+            // value. Skip the expensive epoch-table scan entirely.
+            long tail = allocator.GetTailAddress();
+            long cached = Volatile.Read(ref cachedSafeTailAddress);
+            if (tail <= cached)
+                return cached;
+
             // Ordering is critical: read the tail *before* the inflight column, with a full fence in
             // between. Producers publish their inflight slot via a release store and then advance the
             // tail via an interlocked FAA. If we read inflight first and tail second, a reader could
@@ -384,7 +392,6 @@ namespace Tsavorite.core
             // range up to the new tail is safe even though the producer has not written its payload.
             // Reading tail first + memory barrier guarantees that if we observed the FAA we will
             // also observe the preceding BeginInflightEnqueue store.
-            long tail = allocator.GetTailAddress();
             Interlocked.MemoryBarrier();
             long minInflight = epoch.GetMinUserWord(inflightWord);
             long computed = minInflight < tail ? minInflight : tail;
