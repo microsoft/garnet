@@ -268,16 +268,21 @@ namespace Tsavorite.core
         // Producer protocol (must run inside epoch.Resume / before epoch.Suspend):
         //   1. BeginInflightEnqueue()   — publish a lower bound ≤ eventual slot start
         //   2. TryAllocateRetryNow(...) — FAA advances TailAddress and returns our slot start
-        //   3. CommitInflightEnqueue(start) — tighten publish to exact slot start
-        //   4. (payload write)
-        //   5. EndInflightEnqueue()     — publish InflightInactive, wake parked iterators
+        //   3. (payload write)
+        //   4. EndInflightEnqueue()     — publish InflightInactive, wake parked iterators
         // On allocation failure, call EndInflightEnqueue() to clear the lower bound before Suspend.
         //
-        // The Step 1 pre-reserve is required because otherwise a reader could observe TailAddress
+        // The Begin pre-publish is required because otherwise a reader could observe TailAddress
         // advanced past our slot while our in-flight slot still reads InflightInactive, erroneously
         // concluding that region is safe. By publishing a lower bound before the FAA, any reader that
         // sees TailAddress ≥ X is guaranteed (via release/acquire ordering) to also observe our slot at
         // some value ≤ X.
+        //
+        // The published lower bound may be slightly below our actual slot start (by the amount other
+        // threads allocated between our GetTailAddress read and our FAA). This makes SafeTailAddress
+        // lag by at most O(N_threads × entry_size) bytes — negligible compared to page-level
+        // granularity of downstream consumers. We tolerate this in exchange for removing one
+        // Volatile.Write per enqueue from the hot path.
 
         /// <summary>
         /// Publish a conservative lower bound into this thread's in-flight slot before the allocator's
@@ -288,15 +293,6 @@ namespace Tsavorite.core
         void BeginInflightEnqueue()
         {
             Volatile.Write(ref epoch.ThisThreadUserWord(inflightWord), allocator.GetTailAddress());
-        }
-
-        /// <summary>
-        /// Tighten this thread's in-flight publish to the exact slot start returned by the allocator.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void CommitInflightEnqueue(long logicalAddress)
-        {
-            Volatile.Write(ref epoch.ThisThreadUserWord(inflightWord), logicalAddress);
         }
 
         /// <summary>
@@ -793,7 +789,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
@@ -836,7 +831,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             foreach (var entry in entries)
@@ -880,7 +874,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = entry)
@@ -923,7 +916,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
@@ -960,7 +952,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = &entry.GetPinnableReference())
@@ -1263,7 +1254,6 @@ namespace Tsavorite.core
                 BeginInflightEnqueue();
                 if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                 {
-                    CommitInflightEnqueue(logicalAddress);
                     return logicalAddress;
                 }
 
@@ -1299,7 +1289,6 @@ namespace Tsavorite.core
                 allocator.TryAllocateRetryNow(recordSize, out var logicalAddress);
                 if (logicalAddress > 0)
                 {
-                    CommitInflightEnqueue(logicalAddress);
                     return logicalAddress;
                 }
 
@@ -1358,7 +1347,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
@@ -1402,7 +1390,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
@@ -1445,7 +1432,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
@@ -2513,7 +2499,6 @@ namespace Tsavorite.core
                 epoch.Suspend();
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             // Finish filling in all fields
             info.BeginAddress = BeginAddress;
@@ -2989,7 +2974,6 @@ namespace Tsavorite.core
                     throw cannedException;
                 return false;
             }
-            CommitInflightEnqueue(logicalAddress);
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             for (var i = 0; i < totalEntries; i++)
