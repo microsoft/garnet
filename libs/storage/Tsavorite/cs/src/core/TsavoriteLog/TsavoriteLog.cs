@@ -2326,11 +2326,22 @@ namespace Tsavorite.core
             return iter;
         }
 
+        /// <summary>
+        /// Registered single-waiter iterators (one per replica / pub-sub subscriber). Non-null when at
+        /// least one <see cref="TsavoriteLogScanSingleIterator"/> is active. Replaced atomically under
+        /// <c>lock(this)</c> on iterator add/remove — read without lock on the hot path
+        /// (<see cref="NotifyParkedWaiters"/>).
+        /// </summary>
         List<TsavoriteLogScanSingleIterator> activeSingleIterators;
 
-        /// <summary>Number of registered single iterators. Used by <see cref="NotifyParkedWaiters"/>
-        /// to decide whether to pre-refresh the cache before signaling (avoids redundant scans when
-        /// multiple iterators wake concurrently).</summary>
+        /// <summary>
+        /// Count of registered single iterators, mirroring <c>activeSingleIterators.Count</c>.
+        /// Read via <c>Volatile.Read</c> by <see cref="NotifyParkedWaiters"/> to
+        /// decide whether to pre-refresh <see cref="SafeTailAddress"/> before signaling iterators.
+        /// When <c>&gt; 1</c>, a single scan at the producer side prevents N redundant scans in the
+        /// N woken iterators. Stale reads are benign — see <see cref="NotifyParkedWaiters"/> comments.
+        /// Written under <c>lock(this)</c> alongside <see cref="activeSingleIterators"/>.
+        /// </summary>
         int activeSingleIteratorCount;
 
         public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
@@ -2349,6 +2360,7 @@ namespace Tsavorite.core
                         }
                     }
                     activeSingleIterators = newList;
+                    // Keep the count in sync; read without lock by NotifyParkedWaiters as a hint.
                     activeSingleIteratorCount = newList?.Count ?? 0;
                 }
             }
@@ -2370,6 +2382,7 @@ namespace Tsavorite.core
             {
                 List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
                 activeSingleIterators = newList;
+                // Keep the count in sync; read without lock by NotifyParkedWaiters as a hint.
                 activeSingleIteratorCount = newList.Count;
             }
 
