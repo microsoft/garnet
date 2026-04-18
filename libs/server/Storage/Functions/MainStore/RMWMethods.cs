@@ -399,9 +399,9 @@ namespace Garnet.server
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
 
-            // Account for any heap contribution (key/value overflow) of the newly created record;
-            // balances the decrement emitted by GarnetRecordTriggers.OnEvict on page eviction.
-            var heap = logRecord.CalculateHeapMemorySize();
+            // Account for value-side overflow heap of the newly created record.
+            // Key overflow is tracked internally by Tsavorite via logSizeTracker.
+            var heap = logRecord.GetValueHeapMemorySize();
             if (heap != 0)
                 functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
@@ -1712,15 +1712,9 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // Account for the new record's heap contribution so that the matching OnEvict decrement
-            // balances. We do NOT subtract srcLogRecord's heap: the source may be a main-log record
-            // (whose heap is tracked in mainLogTracker and will leak upward only by a bounded sealed-
-            // source amount — parity with ObjectStore's ClearSource=false branch and the legacy
-            // SubscribeEvictions path), a read-cache record (heap lives in readCacheTracker, unrelated
-            // to this write), or a pending-IO DiskLogRecord (heap never counted in any tracker).
-            // Subtracting unconditionally would undercount in the last two cases and could drive the
-            // counter negative.
-            var newHeap = dstLogRecord.CalculateHeapMemorySize();
+            // Account for the new record's value-side heap contribution.
+            // Key overflow is tracked internally by Tsavorite via logSizeTracker.
+            var newHeap = dstLogRecord.GetValueHeapMemorySize();
             if (newHeap != 0)
                 functionsState.cacheSizeTracker?.AddHeapSize(newHeap);
             return true;

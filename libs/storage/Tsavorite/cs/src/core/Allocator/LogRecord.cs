@@ -1097,7 +1097,11 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // TODOobjDispose: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
+                    // TODO: Clone the value object here so source and destination have independent
+                    // HeapMemorySize fields. Currently both records share the same IHeapObject instance,
+                    // which means mutations on the destination affect the source's reported heap size
+                    // at eviction time, causing accounting drift in logSizeTracker. A naive Clone()
+                    // here causes CanDoHashExpireLTM to crash — needs investigation in a follow-up.
                     Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
                     if (!TrySetValueObjectAndPrepareOptionals(srcLogRecord.ValueObject, in sizeInfo))
                         return false;

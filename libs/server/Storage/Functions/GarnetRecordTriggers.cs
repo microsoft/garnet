@@ -31,19 +31,10 @@ namespace Garnet.server
         public bool CallOnFlush => false;
 
         /// <inheritdoc/>
-        // Drives per-record heap-size decrement on page eviction. Mirrors the work the
-        // legacy SubscribeEvictions → LogSizeTracker.OnNext observer path used to perform
-        // (see CacheSizeTracker.Initialize for the wiring change). Gated per source so
-        // that enabling only a main-log or only a read-cache memory budget does not
-        // force a per-record eviction walk on the other allocator.
-        public bool CallOnEvict(EvictionSource source)
-        {
-            if (cacheSizeTracker is null)
-                return false;
-            return source == EvictionSource.ReadCache
-                ? cacheSizeTracker.readCacheTracker is not null
-                : cacheSizeTracker.mainLogTracker is not null;
-        }
+        // Heap-size accounting on eviction is now handled internally by Tsavorite's
+        // EvictRecordsInRange via logSizeTracker. The OnEvict trigger is only needed
+        // for app-level resource cleanup, which Garnet does not require.
+        public bool CallOnEvict(EvictionSource source) => false;
 
         /// <inheritdoc/>
         public bool CallOnDiskRead => false;
@@ -51,22 +42,11 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            if (cacheSizeTracker is null)
-                return;
-
-            if (reason == DisposeReason.Deleted)
-            {
-                // Decrement only the VALUE-side heap (value overflow bytes or value-object heap).
-                // Key overflow is NOT subtracted here because ClearHeapFields(clearKey=false) keeps the
-                // key alive for hash-chain traversal. Key overflow is handled separately:
-                //  - Mutable delete: record is tombstoned after OnDispose → OnEvict skips it → key overflow
-                //    is a bounded phantom (freed by GC when the page is freed, same as pre-IRecordTriggers).
-                //  - Immutable delete: source is sealed (not tombstoned) → OnEvict visits it and subtracts
-                //    the remaining key overflow via CalculateHeapMemorySize.
-                var size = logRecord.GetValueHeapMemorySize();
-                if (size != 0)
-                    cacheSizeTracker.AddHeapSize(-size);
-            }
+            // Heap-size accounting for destruction is handled internally by Tsavorite
+            // (logSizeTracker). This trigger is available for app-level resource cleanup
+            // (e.g. calling IDisposable.Dispose on value objects that hold external resources).
+            // Garnet's IHeapObject implementations (Hash/List/Set/SortedSet) hold no external
+            // resources, so this is a no-op.
         }
 
         /// <inheritdoc/>
@@ -81,22 +61,10 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnEvict(ref LogRecord logRecord, EvictionSource source)
         {
-            if (cacheSizeTracker is null)
-                return;
-
-            // Decrement heap size by this record's heap contribution. Uses the same sizing
-            // helper that LogSizeTracker.OnNext used to sum over an evicted iterator. Routes
-            // through the standard AddHeapSize/AddReadCacheHeapSize path so the assertion
-            // guarding against negative totals remains in force; creation sites on the main
-            // log (RMW PostInitialUpdater/PostCopyUpdater and in-place grow/shrink) must emit
-            // a matching positive bump so the account stays balanced.
-            var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
-            if (size == 0)
-                return;
-            if (source == EvictionSource.ReadCache)
-                cacheSizeTracker.AddReadCacheHeapSize(-size);
-            else
-                cacheSizeTracker.AddHeapSize(-size);
+            // Heap-size accounting for eviction is handled internally by Tsavorite
+            // (logSizeTracker decrements both key overflow and value heap in EvictRecordsInRange).
+            // This trigger is available for app-level resource cleanup on eviction.
+            // Garnet has no app-level eviction cleanup, so this is a no-op.
         }
     }
 }

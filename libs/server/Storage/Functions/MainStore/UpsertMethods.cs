@@ -46,9 +46,9 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // Account for overflow key/value heap on the freshly-inserted record so the matching
-            // OnEvict decrement balances.
-            var heap = logRecord.CalculateHeapMemorySize();
+            // Account for value-side overflow heap on the freshly-inserted record.
+            // Key overflow is tracked internally by Tsavorite via logSizeTracker.
+            var heap = logRecord.GetValueHeapMemorySize();
             if (heap != 0)
                 functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }
@@ -68,7 +68,7 @@ namespace Garnet.server
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
 
-            var heap = logRecord.CalculateHeapMemorySize();
+            var heap = logRecord.GetValueHeapMemorySize();
             if (heap != 0)
                 functionsState.cacheSizeTracker?.AddHeapSize(heap);
         }

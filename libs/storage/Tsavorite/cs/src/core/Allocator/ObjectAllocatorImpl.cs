@@ -328,6 +328,16 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
+                // For Deleted records, decrement the value-side heap from the tracker before clearing.
+                // Key overflow is handled at eviction time in EvictRecordsInRange. Tombstone has not
+                // been set yet when this is called, so GetValueHeapMemorySize returns the correct value.
+                if (disposeReason == DisposeReason.Deleted)
+                {
+                    var valueHeap = logRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        logSizeTracker?.IncrementSize(-valueHeap);
+                }
+
                 storeFunctions.OnDispose(ref logRecord, disposeReason);
 
                 logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted);
@@ -354,8 +364,6 @@ namespace Tsavorite.core
         /// </summary>
         internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source)
         {
-            // Clip to a single page: we don't cross page boundaries in one call, but be defensive in case the caller
-            // ever passes a multi-page range. The start-page PageHeader is skipped via GetFirstValidLogicalAddressOnPage.
             var startPage = GetPage(startAddress);
             var firstValidAddress = GetFirstValidLogicalAddressOnPage(startPage);
             var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
@@ -368,35 +376,38 @@ namespace Tsavorite.core
                 var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
                 var allocatedSize = logRecord.AllocatedSize;
 
-                // Guard against corrupt / zero-size records causing infinite loops. Also stop if the record would
-                // straddle the end of the page; ObjectScanIterator skips to the next page in that case, but our caller
-                // constrains the range to a single page so there is nothing further to visit here.
                 if (allocatedSize <= 0)
                     break;
                 var offset = GetOffsetOnPage(address);
                 if (offset == 0 || offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null, invalid, and tombstoned records:
-                //  - IsNull: empty record slot, nothing to account for.
-                //  - Invalid: record was elided from the hash chain and already disposed
-                //    (OnDispose(Deleted/Elided) or transferred to the revivification freelist).
-                //  - Tombstone: heap was already decremented at the delete site via
-                //    OnDispose(Deleted).
-                //
-                // Sealed-but-Valid records are NOT skipped. A Sealed source record from a
-                // mutable-region CopyUpdate still owns its overflow key/value bytes (and
-                // possibly its value object if a checkpoint prevented eager clearing via
-                // ClearSourceValueObject). Skipping them would leak their heap contribution
-                // in the tracker.
-                if (logRecord.Info.IsNull || logRecord.Info.Invalid || logRecord.Info.Tombstone)
+                // Skip null and invalid records (elided/disposed, heap already cleaned up).
+                if (logRecord.Info.IsNull || logRecord.Info.Invalid)
                 {
                     address += allocatedSize;
                     continue;
                 }
 
-                // Notify the application that this record is being evicted from memory.
-                storeFunctions.OnEvict(ref logRecord, source);
+                // Decrement the record's heap contribution in a single call.
+                // For non-tombstoned records, CalculateHeapMemorySize returns key + value heap.
+                // For tombstoned records, it returns 0 (by design), but the key overflow is still
+                // alive — value was already decremented at the delete site via OnDispose.
+                long heapSize;
+                if (!logRecord.Info.Tombstone)
+                {
+                    heapSize = logRecord.CalculateHeapMemorySize();
+
+                    if (storeFunctions.CallOnEvict(source))
+                        storeFunctions.OnEvict(ref logRecord, source);
+                }
+                else
+                {
+                    heapSize = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                }
+
+                if (heapSize != 0)
+                    logSizeTracker?.IncrementSize(-heapSize);
 
                 address += allocatedSize;
             }

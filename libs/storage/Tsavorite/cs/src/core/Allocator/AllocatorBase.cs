@@ -1419,21 +1419,19 @@ namespace Tsavorite.core
             var end = GetLogicalAddressOfStartOfPage(page + 1);
 
             var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
-            if (storeFunctions.CallOnEvict(source))
+
+            // Per-record eviction walk handles internal heap accounting (key + value via
+            // logSizeTracker) and optionally notifies the application via OnEvict.
+            if (logSizeTracker is not null || storeFunctions.CallOnEvict(source))
             {
-                // New per-record path: OnEvict handles heap-size decrement per record. Parity
-                // with the runtime eviction path in OnPagesClosedWorker.
                 _wrapper.EvictRecordsInRange(start, end, source);
             }
-            else if (logSizeTracker is not null)
+            else if (onEvictionObserver is not null)
             {
-                // Legacy observer path: materialize an iterator and push heap-size decrement to
-                // the LogSizeTracker.OnNext observer (kept for consumers still using SubscribeEvictions).
-                MemoryPageScan(start, end, logSizeTracker);
+                // Legacy observer path for consumers still using SubscribeEvictions.
+                MemoryPageScan(start, end, onEvictionObserver);
             }
 
-            // TODO: Currently we don't call OnDispose or OnDisposeValueObject on eviction; we defer to the OnEvictionObserver
-            // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
 
@@ -1510,9 +1508,11 @@ namespace Tsavorite.core
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
-                    // Notify application of records being evicted — allows cleanup of external resources.
+                    // Per-record eviction walk: handles internal heap-size accounting (key overflow
+                    // and value heap via logSizeTracker) and optionally notifies the application
+                    // via OnEvict for app-level cleanup.
                     var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
-                    if (storeFunctions.CallOnEvict(evictSource))
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict(evictSource))
                         _wrapper.EvictRecordsInRange(start, end, evictSource);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
