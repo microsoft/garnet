@@ -1146,7 +1146,7 @@ namespace Tsavorite.core
                 return ValueObject.HeapMemorySize;
 
             var (_ /*length*/, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-            return objectIdMap.GetOverflowByteArray(*(int*)dataAddress).TotalSize;
+            return objectIdMap.GetOverflowByteArray(*(int*)dataAddress).HeapMemorySize;
         }
 
         /// <summary>
