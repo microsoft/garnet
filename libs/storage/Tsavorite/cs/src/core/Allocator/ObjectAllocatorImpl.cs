@@ -345,12 +345,12 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Iterate records in the given logical address range and call <see cref="IStoreFunctions.OnEvict"/>
-        /// on each valid, non-tombstoned record. Used during page eviction to allow cleanup of external resources.
+        /// on each non-null, non-invalid, non-tombstoned record — including sealed source records that
+        /// may still own heap. Used during page eviction to allow cleanup of external resources.
         /// The caller constrains <paramref name="startAddress"/> / <paramref name="endAddress"/> to lie on a single page
         /// (see <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosedWorker"/> and
         /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.EvictPageForRecovery"/>), so this routine walks records
-        /// within that single page only — matching the <see cref="ObjectScanIterator{TStoreFunctions, TAllocator}"/>
-        /// semantics with <c>includeClosedRecords: false</c> that the legacy <c>SubscribeEvictions</c> path used.
+        /// within that single page only.
         /// </summary>
         internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source)
         {
@@ -382,7 +382,7 @@ namespace Tsavorite.core
                 //  - Invalid: record was elided from the hash chain and already disposed
                 //    (OnDispose(Deleted/Elided) or transferred to the revivification freelist).
                 //  - Tombstone: heap was already decremented at the delete site via
-                //    OnDispose(Deleted) or InPlaceDeleter.
+                //    OnDispose(Deleted).
                 //
                 // Sealed-but-Valid records are NOT skipped. A Sealed source record from a
                 // mutable-region CopyUpdate still owns its overflow key/value bytes (and
