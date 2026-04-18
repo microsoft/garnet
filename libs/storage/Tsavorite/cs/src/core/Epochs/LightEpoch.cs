@@ -557,7 +557,7 @@ namespace Tsavorite.core
 
             // Reset any per-thread user-word slots before giving up ownership so the next owner of this
             // entry starts from a known state. Also ensures that consumers scanning the column via
-            // ForEachUserWord do not observe stale in-flight values after a thread has released the epoch.
+            // GetMinUserWord do not observe stale in-flight values after a thread has released the epoch.
             ResetAllocatedUserWords(entry);
 
             // Clear "ThisInstanceProtected()" (non-static epoch table)
@@ -742,19 +742,6 @@ namespace Tsavorite.core
         #region User-word API
 
         /// <summary>
-        /// Visitor interface for <see cref="ForEachUserWord{TVisitor}"/>. Implementations should be
-        /// <c>struct</c>s to enable JIT specialization so that <see cref="Visit"/> inlines into the scan loop.
-        /// </summary>
-        public interface ILightEpochUserWordVisitor
-        {
-            /// <summary>
-            /// Invoked once per epoch table entry with the current value of the selected user word.
-            /// </summary>
-            /// <param name="value">Value read via acquire semantics from the entry's user word.</param>
-            void Visit(long value);
-        }
-
-        /// <summary>
         /// Number of entries in the epoch table.
         /// </summary>
         public int EntryCount => kTableSize;
@@ -769,7 +756,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Claim a per-thread user-word slot. Returns the word index to pass to
-        /// <see cref="ThisThreadUserWord(int)"/> and <see cref="ForEachUserWord{TVisitor}(int, ref TVisitor)"/>.
+        /// <see cref="ThisThreadUserWord(int)"/> and <see cref="GetMinUserWord(int)"/>.
         /// The column across all entries is initialized to <paramref name="initialValue"/>, and the same
         /// value will be used to reset the slot on entry recycle (thread exit / new thread acquiring an entry).
         /// Throws if all <see cref="MaxUserWords"/> slots are already claimed.
@@ -836,30 +823,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Iterate the user-word column across all epoch table entries, invoking
-        /// <see cref="ILightEpochUserWordVisitor.Visit(long)"/> once per entry. Entries belonging to
-        /// threads not currently registered will carry the slot's configured initial value (e.g.,
-        /// <see cref="long.MaxValue"/> for a <c>min</c> fold), so they contribute neutrally to folds
-        /// without the caller needing to filter on <c>threadId</c>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ForEachUserWord<TVisitor>(int wordIndex, ref TVisitor visitor)
-            where TVisitor : struct, ILightEpochUserWordVisitor
-        {
-            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
-            // Entries are 1..kTableSize; index 0 is kInvalidIndex and unused.
-            for (int i = 1; i <= kTableSize; i++)
-            {
-                long v = Volatile.Read(ref UserWordRef(i, wordIndex));
-                visitor.Visit(v);
-            }
-        }
-
-        /// <summary>
         /// Compute the minimum value of the user-word at <paramref name="wordIndex"/> across all epoch
-        /// table entries, using a direct unsafe pointer walk. This avoids the overhead of the generic
-        /// visitor pattern (<see cref="ForEachUserWord{TVisitor}"/>) and gives the JIT the best chance
-        /// to emit a tight loop with no interface dispatch.
+        /// table entries, using a direct unsafe pointer walk.
         /// </summary>
         /// <param name="wordIndex">User-word slot index (0-based).</param>
         /// <returns>The minimum value observed across all entries.</returns>
