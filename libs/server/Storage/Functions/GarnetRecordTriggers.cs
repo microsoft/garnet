@@ -13,13 +13,5 @@ namespace Garnet.server
     /// </summary>
     public readonly struct GarnetRecordTriggers : IRecordTriggers
     {
-        /// <inheritdoc/>
-        public bool CallOnFlush => false;
-
-        /// <inheritdoc/>
-        public bool CallOnEvict => false;
-
-        /// <inheritdoc/>
-        public bool CallOnDiskRead => false;
     }
 }

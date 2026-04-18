@@ -31,7 +31,7 @@ namespace Tsavorite.core
         /// If true, <see cref="OnFlush(ref LogRecord)"/> is called per valid record on the
         /// original in-memory page before it is flushed to disk.
         /// </summary>
-        bool CallOnFlush { get; }
+        bool CallOnFlush => false;
 
         /// <summary>
         /// If true, <see cref="OnEvict(ref LogRecord, EvictionSource)"/> is called per non-tombstoned
@@ -39,13 +39,13 @@ namespace Tsavorite.core
         /// per-record OnEvict callback when the application has no work to do.
         /// Note: Tsavorite's internal heap-size accounting runs regardless of this flag.
         /// </summary>
-        bool CallOnEvict { get; }
+        bool CallOnEvict => false;
 
         /// <summary>
         /// If true, <see cref="OnDiskRead(ref LogRecord)"/> is called per record loaded from
         /// disk into memory (recovery, delta log apply, pending reads, push scans).
         /// </summary>
-        bool CallOnDiskRead { get; }
+        bool CallOnDiskRead => false;
 
         /// <summary>
         /// Called when a record is disposed due to delete, expiration, CAS failure, elision,

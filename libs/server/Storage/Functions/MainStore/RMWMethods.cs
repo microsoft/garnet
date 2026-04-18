@@ -1706,7 +1706,6 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            // Account for the new record's value-side heap contribution.
             return true;
         }
 

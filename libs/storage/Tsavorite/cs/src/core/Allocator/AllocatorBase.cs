@@ -1426,9 +1426,8 @@ namespace Tsavorite.core
             {
                 _wrapper.EvictRecordsInRange(start, end, source);
             }
-            else if (onEvictionObserver is not null)
+            if (onEvictionObserver is not null)
             {
-                // Legacy observer path for consumers still using SubscribeEvictions.
                 MemoryPageScan(start, end, onEvictionObserver);
             }
 
