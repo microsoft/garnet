@@ -1426,7 +1426,7 @@ namespace Tsavorite.core
             {
                 _wrapper.EvictRecordsInRange(start, end, source);
             }
-            if (onEvictionObserver is not null && !ReferenceEquals(onEvictionObserver, logSizeTracker))
+            if (onEvictionObserver is not null)
             {
                 MemoryPageScan(start, end, onEvictionObserver);
             }
@@ -1504,7 +1504,7 @@ namespace Tsavorite.core
 
                     // Legacy observer path — skip if the observer IS the logSizeTracker, since
                     // EvictRecordsInRange below already handles heap accounting via logSizeTracker.
-                    if (onEvictionObserver is not null && !ReferenceEquals(onEvictionObserver, logSizeTracker))
+                    if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
                     // Per-record eviction walk: handles internal heap-size accounting (key overflow

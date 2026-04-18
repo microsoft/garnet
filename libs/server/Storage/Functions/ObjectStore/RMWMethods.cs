@@ -130,8 +130,12 @@ namespace Garnet.server
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
-                    // Heap disposal and cache size tracking are handled by
-                    // OnDispose(Deleted) in the ExpireAndStop path of InternalRMW.
+                    // Apply the mutation delta before the ExpireAndStop path disposes the record.
+                    // Operate already mutated the object (e.g. removed the last element), so
+                    // HeapMemorySize is now the post-removal size. Without this, the delta from
+                    // the removal is lost and the tracker permanently over-counts.
+                    if (sizeChange != 0)
+                        functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
