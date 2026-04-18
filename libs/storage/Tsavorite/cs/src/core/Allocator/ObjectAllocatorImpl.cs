@@ -328,14 +328,34 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
-                // For Deleted records, decrement the value-side heap from the tracker before clearing.
-                // Key overflow is handled at eviction time in EvictRecordsInRange. Tombstone has not
-                // been set yet when this is called, so GetValueHeapMemorySize returns the correct value.
+                // Decrement heap from the tracker before clearing fields. The amount depends on
+                // what's still alive on the record at dispose time:
+                //  - Deleted: value only (key stays for chain traversal; key accounted at eviction).
+                //    Tombstone is NOT yet set, so GetValueHeapMemorySize returns the correct value.
+                //  - Elided / RevivificationFreeList: full remaining heap (key + value). The record
+                //    is being removed from the chain entirely, so both key and value are freed.
+                //    Eviction skips invalid records, so this is the last chance to account for them.
+                //  - CAS failures / InsertAbandoned: no decrement needed — the record was never
+                //    CAS'd into the chain, so +key/+value were never added to the tracker.
                 if (disposeReason == DisposeReason.Deleted)
                 {
                     var valueHeap = logRecord.GetValueHeapMemorySize();
                     if (valueHeap != 0)
                         logSizeTracker?.IncrementSize(-valueHeap);
+                }
+                else if (disposeReason is DisposeReason.Elided or DisposeReason.RevivificationFreeList)
+                {
+                    // Subtract whatever heap remains. The record is being removed from the chain
+                    // entirely (or transferred to the freelist), so eviction will never visit it.
+                    // For tombstoned records, CalculateHeapMemorySize returns 0, but key overflow
+                    // is still alive and needs to be subtracted.
+                    long remainingHeap;
+                    if (!logRecord.Info.Tombstone)
+                        remainingHeap = logRecord.CalculateHeapMemorySize();
+                    else
+                        remainingHeap = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                    if (remainingHeap != 0)
+                        logSizeTracker?.IncrementSize(-remainingHeap);
                 }
 
                 storeFunctions.OnDispose(ref logRecord, disposeReason);

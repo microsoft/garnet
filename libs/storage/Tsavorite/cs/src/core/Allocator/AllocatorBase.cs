@@ -1426,7 +1426,7 @@ namespace Tsavorite.core
             {
                 _wrapper.EvictRecordsInRange(start, end, source);
             }
-            if (onEvictionObserver is not null)
+            if (onEvictionObserver is not null && !ReferenceEquals(onEvictionObserver, logSizeTracker))
             {
                 MemoryPageScan(start, end, onEvictionObserver);
             }
@@ -1502,9 +1502,9 @@ namespace Tsavorite.core
                     var start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     var end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
-                    // will have seen a record below the eviction range as "in mutable region".
-                    if (onEvictionObserver is not null)
+                    // Legacy observer path — skip if the observer IS the logSizeTracker, since
+                    // EvictRecordsInRange below already handles heap accounting via logSizeTracker.
+                    if (onEvictionObserver is not null && !ReferenceEquals(onEvictionObserver, logSizeTracker))
                         MemoryPageScan(start, end, onEvictionObserver);
 
                     // Per-record eviction walk: handles internal heap-size accounting (key overflow
