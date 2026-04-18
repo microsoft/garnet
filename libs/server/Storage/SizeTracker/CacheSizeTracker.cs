@@ -65,9 +65,9 @@ namespace Garnet.server
             => Initialize(store, targetSize, readCacheTargetSize, loggerFactory);
 
         /// <summary>
-        /// Initialize the tracker with a store. Wires the <see cref="LogSizeTracker"/> as the fast-path
-        /// size tracker for copy-to-tail / copy-to-readcache. Per-record heap-size decrement on page
-        /// eviction is driven by <see cref="GarnetRecordTriggers.OnEvict"/>.
+        /// Initialize the tracker with a store. Wires the <see cref="LogSizeTracker"/> for
+        /// heap-size tracking. Tsavorite handles all creation-site and destruction-site
+        /// accounting internally via <c>logSizeTracker</c>.
         /// </summary>
         public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
         {
