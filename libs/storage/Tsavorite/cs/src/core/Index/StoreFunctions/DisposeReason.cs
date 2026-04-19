@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The reason for a call to <see cref="IRecordTriggers.OnDisposeValueObject(IHeapObject, DisposeReason)"/>
+    /// The reason for a call to <see cref="IRecordTriggers.OnDispose(ref LogRecord, DisposeReason)"/>.
     /// </summary>
     public enum DisposeReason
     {

@@ -50,7 +50,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 return true;
             }
@@ -82,8 +82,6 @@ namespace Garnet.server
                 input.header.SetExpiredFlag();
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            functionsState.cacheSizeTracker?.AddHeapSize(dstLogRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
@@ -96,34 +94,29 @@ namespace Garnet.server
                 return true;
             }
 
-            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out long sizeChange))
+            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
                     rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                 return true;
             }
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            sizeChange = 0;
-
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                // Heap disposal and cache size tracking are handled by
-                // OnDispose(Deleted) in InternalRMW when processing ExpireAndResume.
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
+                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -132,8 +125,6 @@ namespace Garnet.server
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
-                    // Heap disposal and cache size tracking are handled by
-                    // OnDispose(Deleted) in the ExpireAndStop path of InternalRMW.
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
@@ -190,11 +181,11 @@ namespace Garnet.server
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
-            // the record was CASed into the hash chain before it gets modified
-            var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
-            var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
-            _ = dstLogRecord.TrySetValueObject(value);
+            // We perform the object update here (and not in CopyUpdater) so that we are guaranteed that the record
+            // was CASed into the hash chain before it gets modified. Tsavorite's CacheSerializedObjectData (called
+            // by InternalRMW right before PCU, for both memory and disk sources) has already cloned src.ValueObject
+            // into dstLogRecord. Reuse it directly — do not clone again.
+            var value = Unsafe.As<IGarnetObject>(dstLogRecord.ValueObject);
 
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags
@@ -203,7 +194,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -240,10 +231,6 @@ namespace Garnet.server
             }
 
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
-
-            // If oldValue has been set to null, subtract its size from the tracked heap size
-            var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-            functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF

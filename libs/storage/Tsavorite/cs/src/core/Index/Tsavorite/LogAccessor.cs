@@ -176,8 +176,6 @@ namespace Tsavorite.core
         public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator> evictionObserver)
         {
             allocatorBase.onEvictionObserver = evictionObserver;
-            if (evictionObserver is LogSizeTracker<TStoreFunctions, TAllocator> tracker)
-                allocatorBase.logSizeTracker = tracker;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 

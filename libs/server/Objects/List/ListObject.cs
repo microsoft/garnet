@@ -128,10 +128,8 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     byte respProtocolVersion)
         {
-            memorySizeChange = 0;
-
             if (input.header.type != GarnetObjectType.List)
             {
                 // Indicates an incorrect type of key
@@ -140,7 +138,6 @@ namespace Garnet.server
                 return true;
             }
 
-            var previousMemorySize = HeapMemorySize;
             switch (input.header.ListOp)
             {
                 case ListOperation.LPUSH:
@@ -185,8 +182,6 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
             }
-
-            memorySizeChange = HeapMemorySize - previousMemorySize;
 
             if (list.Count == 0)
                 output.OutputFlags |= ObjectOutputFlags.RemoveKey;

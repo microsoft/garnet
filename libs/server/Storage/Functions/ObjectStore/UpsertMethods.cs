@@ -49,8 +49,6 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            if (logRecord.Info.RecordHasObjects)
-                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -61,8 +59,6 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
-            if (logRecord.Info.RecordHasObjects)
-                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -74,8 +70,6 @@ namespace Garnet.server
             {
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-            if (logRecord.Info.RecordHasObjects)
-                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />

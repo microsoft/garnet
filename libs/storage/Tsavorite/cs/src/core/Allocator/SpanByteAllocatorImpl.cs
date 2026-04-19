@@ -15,7 +15,7 @@ namespace Tsavorite.core
         private OverflowPool<PageUnit<Empty>> freePagePool;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
-            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
+            : base(settings, storeFunctions, wrapperCreator, settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
             pageHeaderSize = PageHeader.Size;
@@ -204,7 +204,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
+        internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
 
         /// <summary>
         /// Dispose memory allocator
