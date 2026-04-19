@@ -1117,7 +1117,12 @@ namespace Garnet.test
                     }
                 });
             }
-            await Task.WhenAll(tasks);
+
+            var allTasks = Task.WhenAll(tasks);
+            var winner = await Task.WhenAny(allTasks, Task.Delay(TimeSpan.FromSeconds(30)));
+            if (winner != allTasks)
+                Assert.Fail("ListPushPopStressTest timed out after 30s");
+            await allTasks; // Propagate exceptions
 
             foreach (var key in keyArray)
             {
