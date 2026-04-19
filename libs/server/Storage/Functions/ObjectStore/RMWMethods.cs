@@ -50,7 +50,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 return true;
             }
@@ -94,34 +94,29 @@ namespace Garnet.server
                 return true;
             }
 
-            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out long sizeChange))
+            if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
                     rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                 return true;
             }
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            sizeChange = 0;
-
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                // Heap disposal and cache size tracking are handled by
-                // OnDispose(Deleted) in InternalRMW when processing ExpireAndResume.
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
+                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -130,12 +125,6 @@ namespace Garnet.server
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
-                    // Apply the mutation delta before the ExpireAndStop path disposes the record.
-                    // Operate already mutated the object (e.g. removed the last element), so
-                    // HeapMemorySize is now the post-removal size. Without this, the delta from
-                    // the removal is lost and the tracker permanently over-counts.
-                    if (sizeChange != 0)
-                        functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
@@ -205,7 +194,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)

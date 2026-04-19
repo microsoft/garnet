@@ -409,9 +409,6 @@ namespace Garnet.server
                 return false;
             }
 
-            // Skip heap measurement for the common inline-value case (single bit check).
-            var valueWasHeap = !logRecord.Info.ValueIsInline;
-            var preHeap = valueWasHeap ? logRecord.GetValueHeapMemorySize() : 0L;
             var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo);
             switch (ipuResult)
             {
@@ -422,13 +419,6 @@ namespace Garnet.server
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                    if (valueWasHeap || !logRecord.Info.ValueIsInline)
-                    {
-                        var postHeap = logRecord.Info.ValueIsInline ? 0L : logRecord.GetValueHeapMemorySize();
-                        var delta = postHeap - preHeap;
-                        if (delta != 0)
-                            functionsState.cacheSizeTracker?.AddHeapSize(delta);
-                    }
                     return true;
                 case IPUResult.NotUpdated:
                 default:
