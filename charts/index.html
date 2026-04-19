@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en" data-bs-theme="auto">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Benchmarks</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.2/dist/Chart.min.js"></script>
+</head>
+
+<body>
+    <header class="d-flex flex-wrap justify-content-between py-3 mb-4 px-3 border-bottom">
+        <a href="https://microsoft.github.io/garnet"
+            class="d-flex align-items-center mb-md-0 me-md-auto link-body-emphasis text-decoration-none" rel="noopener"
+            target="_blank">
+            <img src="https://microsoft.github.io/garnet/img/garnet-logo-diamond.png" class="me-2"
+                style="width: 40px; height: 40px;" alt="Garnet Logo">
+            <span class="fs-4">Garnet Benchmarks</span>
+        </a>
+
+        <div class="text-end d-flex align-items-center">
+            <button type="button" class="btn btn-outline-secondary me-2" id="dl-button">
+                <i class="bi bi-file-earmark-arrow-down"></i>
+                Download JSON Data
+            </button>
+            <a class="btn btn-secondary" id="repository-link" href="#" target="_blank" role="button">
+                <i class="bi bi-github"></i> GitHub
+            </a>
+        </div>
+    </header>
+
+    <main class="container px-4" style="max-width: 960px;">
+        <!-- Selectors -->
+        <form class="row g-2 mb-4">
+            <div class="col-sm-8">
+                <div class="form-floating">
+                    <select class="form-select mb-2" title="Select Benchmark set" id="benchmark-set-selector">
+                        <option value="FEATURED" selected>Featured Benchmarks</option>
+                    </select>
+                    <label for="benchmark-set-selector">Benchmark Group</label>
+                </div>
+                <div class="form-floating">
+                    <select class="form-select" title="Select Benchmark" id="benchmark-selector">
+                        <option value="SELECT_BENCHMARK" selected>All</option>
+                    </select>
+                    <label for="benchmark-selector">Benchmark</label>
+                </div>
+            </div>
+            <div class="col-sm-2">
+                <div class="form-floating">
+                    <select class="form-select mb-2" title="Select Benchmark Type" id="benchmark-type-selector">
+                        <option value="ALL" selected>All</option>
+                    </select>
+                    <label for="benchmark-type-selector">Type</label>
+                </div>
+                <div class="form-floating">
+                    <select class="form-select" title="Select Benchmark OS" id="benchmark-os-selector">
+                        <option value="ALL" selected>All</option>
+                        <option value="ubuntu">Ubuntu</option>
+                        <option value="windows">Windows</option>
+                    </select>
+                    <label for="benchmark-os-selector">OS</label>
+                </div>
+            </div>
+            <div class="col-sm-2 bg-primary1 d-flex flex-column">
+                <div class="form-floating">
+                    <select class="form-select mb-2" title="Select dot net version" id="framework-type-selector">
+                        <option value="ALL" selected>All</option>
+                        <option value="dotnet8.0">.NET 8.0</option>
+                        <option value="dotnet10.0">.NET 10.0</option>
+                    </select>
+                    <label for="framework-type-selector">Framework</label>
+                </div>
+                <button type="reset" class="btn btn-outline-secondary w-100 flex-grow-1" id="reset-filters-button"
+                    style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reset
+                    Filters</button>
+            </div>
+        </form>
+
+        <!-- Data loading status -->
+        <div class="container my-5">
+            <div id="loading" class="text-center py-5">
+                <div class="spinner-border" role="status" aria-hidden="true"></div>
+                <p class="mt-3 text-muted">Loading data...</p>
+            </div>
+
+            <div id="error" class="alert alert-danger d-none text-center" role="alert">
+                <!-- Error message will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Benchmarks -->
+        <div id="benchmarks-container"></div>
+        <br><br><br><br><br>
+    </main>
+
+    <footer class="footer d-flex p-3 flex-wrap justify-content-between align-items-center border-top fixed-bottom"
+        style="background-color: var(--bs-body-bg);">
+        <div>
+            <small class="text-body-secondary">Last update:</small>
+            <span class="badge text-bg-secondary" id="last-update"></span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-circle d-none" id="scroll-to-top-button"
+            title="Scroll to top" onclick="scrollToTop()">
+            <i class="bi bi-arrow-up"></i>
+        </button>
+        <small class="text-body-secondary">Powered by <a rel="noopener" target="_blank"
+                href="https://github.com/marketplace/actions/continuous-benchmark">github-action-benchmark</a></small>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+
+    <script>
+        window.onscroll = function () {
+            onScroll();
+        };
+
+        function onScroll() {
+            const button = document.getElementById("scroll-to-top-button");
+
+            if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+                button.classList.remove("d-none");
+            } else {
+                button.classList.add("d-none");
+            }
+        }
+
+        function scrollToTop() {
+            document.body.scrollTop = 0;
+            document.documentElement.scrollTop = 0;
+        }
+    </script>
+    <script>
+        // Automatic light/dark mode support
+        const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const theme = darkModeMediaQuery.matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-bs-theme', theme);
+
+        darkModeMediaQuery.addListener((e) => {
+            const theme = e.matches ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-bs-theme', theme);
+        });
+    </script>
+    <script>
+        'use strict';
+        // Colors from https://github.com/github/linguist/blob/master/lib/linguist/languages.yml
+        const TOOL_COLORS = {
+            cargo: '#dea584',
+            go: '#00add8',
+            benchmarkjs: '#f1e05a',
+            benchmarkluau: '#000080',
+            pytest: '#3572a5',
+            googlecpp: '#f34b7d',
+            catch2: '#f34b7d',
+            julia: '#a270ba',
+            jmh: '#b07219',
+            benchmarkdotnet: '#178600',
+            customBiggerIsBetter: '#38ff38',
+            customSmallerIsBetter: '#ff3838',
+            _: '#333333'
+        };
+
+        // Constants
+
+        const FEATURED_BENCHMARKS = Object.freeze([
+            'Operations.BasicOperations.InlinePing(Params: None)',
+            'Operations.RawStringOperations.Set(Params: None)',
+            'Operations.RawStringOperations.GetFound(Params: None)',
+            'Operations.RawStringOperations.GetNotFound(Params: None)',
+            'Operations.RawStringOperations.Increment(Params: None)',
+            'Operations.RawStringOperations.IncrementBy(Params: None)',
+            'Network.BasicOperations.InlinePing(Params: None)',
+            'Network.RawStringOperations.Set(Params: None)',
+            'Network.RawStringOperations.GetFound(Params: None)',
+            'Network.RawStringOperations.GetNotFound(Params: None)',
+            'Network.RawStringOperations.Increment(Params: None)',
+            'Network.RawStringOperations.IncrementBy(Params: None)',
+            'Operations.ObjectOperations.ZAddRem(Params: None)',
+            'Operations.ObjectOperations.LPushPop(Params: None)',
+            'Lua.LuaScripts.Script3(Params: Managed,None)',
+        ]).map(str => str.toLowerCase());;
+
+        const BENCHMARK_SET_TYPE = Object.freeze({
+            FEATURED: "FEATURED",
+        });
+
+        const BENCHMARK_TYPE = Object.freeze({
+            ALL: "ALL",
+        });
+
+        const OS_TYPE = Object.freeze({
+            ALL: "ALL",
+            UBUNTU: "ubuntu",
+            WINDOWS: "windows"
+        });
+
+        const FRAMEWORK_TYPE = Object.freeze({
+            ALL: "ALL",
+            DOTNET8_0: "dotnet8.0",
+            DOTNET10_0: "dotnet10.0"
+        });
+
+        const SELECTED_BENCHMARK_DEFAULT = "SELECT_BENCHMARK";
+
+        // Filters
+
+        let SELECTED_BENCHMARK_TYPE = BENCHMARK_TYPE.ALL;
+        let SELECTED_OS = OS_TYPE.ALL;
+        let SELECTED_FRAMEWORK = FRAMEWORK_TYPE.ALL;
+
+        // Benchmarks
+
+        let SELECTED_BENCHMARK_SET = BENCHMARK_SET_TYPE.FEATURED;
+        let SELECTED_BENCHMARK = SELECTED_BENCHMARK_DEFAULT;
+
+        // Load benchmark data
+
+        const BenchmarkStore = (function () {
+            let data = null;
+            let processedData = null;
+
+            async function fetchAndParseBenchmarkData(jsUrl) {
+                const raw = await fetch(jsUrl).then(res => {
+                    if (!res.ok) {
+                        throw new Error(`HTTP ${res.status} for ${jsUrl}`);
+                    }
+                    return res.text();
+                });
+
+                const prefix = 'window.BENCHMARK_DATA = ';
+                if (!raw.startsWith(prefix)) {
+                    throw new Error(`Invalid format in ${jsUrl}`);
+                }
+
+                const jsonText = raw.slice(prefix.length).trim().replace(/;?\s*$/, '');
+                return JSON.parse(jsonText);
+            }
+
+            function processData(data) {
+                function collectBenchesPerTestCase(entries) {
+                    const map = new Map();
+                    for (const entry of entries) {
+                        const { commit, date, tool, benches } = entry;
+                        for (const bench of benches) {
+                            const result = { commit, date, tool, bench };
+                            const arr = map.get(bench.name);
+                            if (arr === undefined) {
+                                map.set(bench.name, [result]);
+                            } else {
+                                arr.push(result);
+                            }
+                        }
+                    }
+                    // Sort entries by name
+                    const sortedMap = new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+                    return sortedMap;
+                }
+
+                // Prepare data points for charts
+                const dataSets = Object.keys(data.entries).map(name => ({
+                    name,
+                    dataSet: collectBenchesPerTestCase(data.entries[name]),
+                }));
+                // Sort data sets by name
+                dataSets.sort((a, b) => a.name.localeCompare(b.name));
+                return dataSets;
+            }
+
+            async function load() {
+                if (data !== null) {
+                    return data;
+                }
+
+                const [data8, data10] = await Promise.all([
+                    fetchAndParseBenchmarkData('https://microsoft.github.io/garnet/charts/data_net80.js'),
+                    fetchAndParseBenchmarkData('https://microsoft.github.io/garnet/charts/data.js')
+                ]);
+
+                if (!data8 && !data10) {
+                    throw new Error('No benchmark data available.');
+                    return;
+                }
+
+                // Remove unused properties
+                delete data8.entries.Benchmark;
+                delete data10.entries.Benchmark;
+
+                data = {
+                    lastUpdate: Math.max(
+                        ...([data8, data10]
+                            .filter(Boolean)
+                            .map(d => new Date(d.lastUpdate).getTime()))
+                    ),
+                    repoUrl: (data8?.repoUrl || data10?.repoUrl || ''),
+                    entries: (() => {
+                        // data.js should contain the latest data (.NET 10.0) and data_net80.js should contain the data for .NET 8.0.
+                        // Due to the way the data was structured, both can contain duplicate entries.
+                        // We need to merge them, keeping the latest entry for each benchmark.
+                        const mergedEntries = {};
+                        const allKeys = new Set([
+                            ...Object.keys(data8?.entries || {}),
+                            ...Object.keys(data10?.entries || {})
+                        ]);
+
+                        for (const key of allKeys) {
+                            const entry8 = data8?.entries?.[key] || [];
+                            const entry10 = data10?.entries?.[key] || [];
+
+                            const latestEntry8 = entry8.reduce((latest, item) =>
+                                !latest || new Date(item.date).getTime() > new Date(item.date).getTime() ? item : latest, null);
+                            const latestentry10 = entry10.reduce((latest, item) =>
+                                !latest || new Date(item.date).getTime() > new Date(item.date).getTime() ? item : latest, null);
+
+                            const latestDate8 = latestEntry8 ? new Date(latestEntry8.date).getTime() : -1;
+                            const latestDate10 = latestentry10 ? new Date(latestentry10.date).getTime() : -1;
+
+                            mergedEntries[key] = latestDate8 >= latestDate10 ? entry8 : entry10;
+                        }
+
+                        return mergedEntries;
+                    })()
+                };
+
+                processedData = processData(data);
+            }
+
+            function getData() {
+                return data;
+            }
+
+            function getProcessedData() {
+                return processedData;
+            }
+
+            return { load, getData, getProcessedData };
+        })();
+
+        // Utils
+        function setupComponents() {
+            const data = BenchmarkStore.getData();
+            const dateFormatter = new Intl.DateTimeFormat(navigator.language, {
+                year: 'numeric',
+                month: 'numeric',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            })
+            const date = dateFormatter.format(new Date(data.lastUpdate));
+            document.getElementById('last-update').textContent = date;
+
+            const repoLink = document.getElementById('repository-link');
+            repoLink.href = data.repoUrl;
+
+            document.getElementById('dl-button').onclick = () => {
+                const dataStr = JSON.stringify(data, null, 2);
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "benchmark_data.json";
+                document.body.appendChild(a);
+                a.click();
+
+                // Clean up
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+        }
+
+        function updateUrlParams() {
+            const url = new URL(window.location);
+
+            if (SELECTED_BENCHMARK_TYPE === BENCHMARK_TYPE.ALL) {
+                url.searchParams.delete("type");
+            } else {
+                url.searchParams.set("type", encodeURIComponent(SELECTED_BENCHMARK_TYPE));
+            }
+
+            if (SELECTED_OS === OS_TYPE.ALL) {
+                url.searchParams.delete("os");
+            } else {
+                url.searchParams.set("os", encodeURIComponent(SELECTED_OS));
+            }
+
+            if (SELECTED_FRAMEWORK === FRAMEWORK_TYPE.ALL) {
+                url.searchParams.delete("framework");
+            } else {
+                url.searchParams.set("framework", encodeURIComponent(SELECTED_FRAMEWORK));
+            }
+
+            if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
+                url.searchParams.delete("benchmark_group");
+            } else {
+                url.searchParams.set("benchmark_group", encodeURIComponent(SELECTED_BENCHMARK_SET));
+            }
+
+            if (SELECTED_BENCHMARK === SELECTED_BENCHMARK_DEFAULT) {
+                url.searchParams.delete("benchmark");
+            } else {
+                url.searchParams.set("benchmark", encodeURIComponent(SELECTED_BENCHMARK));
+
+                // If the user selected a benchmark while viewing Featured Benchmarks,
+                // we need to use the benchmark group name from the selector dropdown.
+                if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
+                    const benchmarkGroup = getSelectedOptgroup("benchmark-selector");
+                    url.searchParams.set("benchmark_group", encodeURIComponent(benchmarkGroup));
+                }
+            }
+
+            if (url.toString() !== window.location.href) {
+                window.history.pushState(null, "", url.toString());
+            }
+        }
+
+        function loadUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+
+            let type = params.get("type");
+            if (type) {
+                type = decodeURIComponent(type);
+                const selector = document.getElementById('benchmark-type-selector');
+                if (selector.querySelector(`option[value="${type}"]`)) {
+                    selector.value = type;
+                    SELECTED_BENCHMARK_TYPE = type;
+                }
+            }
+
+            let os = params.get("os");
+            if (os) {
+                os = decodeURIComponent(os);
+                const selector = document.getElementById('benchmark-os-selector');
+                if (selector.querySelector(`option[value="${os}"]`)) {
+                    selector.value = os;
+                    SELECTED_OS = os;
+                }
+            }
+
+            let framework = params.get("framework");
+            if (framework) {
+                framework = decodeURIComponent(framework);
+                const selector = document.getElementById('framework-type-selector');
+                if (selector.querySelector(`option[value="${framework}"]`)) {
+                    selector.value = framework;
+                    SELECTED_FRAMEWORK = framework;
+                }
+            }
+
+            if (type || os || framework) {
+                resetBenchmarks();
+            }
+
+            let benchmarkGroup = params.get("benchmark_group");
+            if (benchmarkGroup) {
+                benchmarkGroup = decodeURIComponent(benchmarkGroup);
+                const selector = document.getElementById('benchmark-set-selector');
+                if (selector.querySelector(`option[value="${benchmarkGroup}"]`)) {
+                    selector.value = benchmarkGroup;
+                    SELECTED_BENCHMARK_SET = benchmarkGroup;
+                    populateBenchmarkSelector();
+                    renderAllCharts();
+                }
+            }
+
+            let benchmarkName = params.get("benchmark");
+            if (benchmarkName) {
+                benchmarkName = decodeURIComponent(benchmarkName);
+                const selector = document.getElementById('benchmark-selector');
+                if (selector.querySelector(`option[value="${benchmarkName}"]`)) {
+                    selector.value = benchmarkName;
+                    SELECTED_BENCHMARK = benchmarkName;
+                    renderAllCharts();
+                }
+            }
+        }
+
+        function getSelectedOptgroup(selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) {
+                return null;
+            }
+
+            const selectedOption = select.options[select.selectedIndex]; // Get the currently selected <option>
+            if (!selectedOption) {
+                return null;
+            }
+
+            const optgroup = selectedOption.parentNode; // Get the parent <optgroup>
+            return optgroup.tagName === "OPTGROUP" ? optgroup.label : null;
+        }
+
+        function featuredDatasets(dataSets, featuredBenchmarks) {
+            const featuredDatasets = new Map();
+
+            // Make sure the order of the featured benchmarks is preserved
+            for (const featuredBenchmark of featuredBenchmarks) {
+                for (const { name, dataSet } of dataSets) {
+                    for (const benchName of dataSet.keys()) {
+                        if (benchName.toLowerCase().includes(featuredBenchmark)) {
+                            if (featuredDatasets.has(name)) {
+                                featuredDatasets.get(name).push(benchName);
+                            } else {
+                                featuredDatasets.set(name, [benchName]);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return featuredDatasets;
+        }
+
+        function renderAllCharts() {
+            function renderGraph(parent, name, dataset) {
+                const canvas = document.createElement('canvas');
+                canvas.setAttribute('data-graph-name', name);
+                parent.appendChild(canvas);
+
+                const color = TOOL_COLORS[dataset.length > 0 ? dataset[0].tool : '_'];
+                const data = {
+                    labels: dataset.map(d => d.commit.id.slice(0, 7)),
+                    datasets: [
+                        {
+                            label: name,
+                            data: dataset.map(d => d.bench.value),
+                            borderColor: color,
+                            backgroundColor: color + '60', // Add alpha for #rrggbbaa
+                        }
+                    ],
+                };
+                const options = {
+                    animation: false,
+                    scales: {
+                        xAxes: [
+                            {
+                                scaleLabel: {
+                                    display: true,
+                                    labelString: 'commit',
+                                },
+                            }
+                        ],
+                        yAxes: [
+                            {
+                                scaleLabel: {
+                                    display: true,
+                                    labelString: dataset.length > 0 ? dataset[0].bench.unit : '',
+                                },
+                                ticks: {
+                                    beginAtZero: true,
+                                }
+                            }
+                        ],
+                    },
+                    tooltips: {
+                        callbacks: {
+                            afterTitle: items => {
+                                const { index } = items[0];
+                                const data = dataset[index];
+                                return '\n' + data.commit.message + '\n\n' + data.commit.timestamp + ' committed by @' + data.commit.committer.username + '\n';
+                            },
+                            label: item => {
+                                let label = item.value;
+                                const { range, unit } = dataset[item.index].bench;
+                                label += ' ' + unit;
+                                if (range) {
+                                    label += ' (' + range + ')';
+                                }
+                                return label;
+                            },
+                            afterLabel: item => {
+                                const { extra } = dataset[item.index].bench;
+                                return extra ? '\n' + extra : '';
+                            }
+                        }
+                    },
+                    onClick: (_mouseEvent, activeElems) => {
+                        if (activeElems.length === 0) {
+                            return;
+                        }
+                        // XXX: Undocumented. How can we know the index?
+                        const index = activeElems[0]._index;
+                        const url = dataset[index].commit.url;
+                        window.open(url, '_blank');
+                    },
+                };
+
+                new Chart(canvas, {
+                    type: 'line',
+                    data,
+                    options,
+                });
+            }
+
+            function renderBenchSet(name, benchSet, main) {
+                const setElem = document.createElement('div');
+                setElem.className = 'mb-3';
+                setElem.id = 'benchmark-set-' + name;
+                main.appendChild(setElem);
+
+                const nameElem = document.createElement('h4');
+                nameElem.className = 'text-center mb-3';
+                nameElem.textContent = name;
+                setElem.appendChild(nameElem);
+
+                const graphsElem = document.createElement('div');
+                graphsElem.className = 'vstack gap-3';
+                setElem.appendChild(graphsElem);
+
+                for (const [benchName, benches] of benchSet.entries()) {
+                    if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED &&
+                        !FEATURED_BENCHMARKS.some(val => benchName.toLowerCase().includes(val.toLowerCase()))) {
+                        continue;
+                    } else if (SELECTED_BENCHMARK !== SELECTED_BENCHMARK_DEFAULT &&
+                        SELECTED_BENCHMARK.toLowerCase() !== benchName.toLowerCase()) {
+                        continue;
+                    }
+
+                    renderGraph(graphsElem, benchName, benches)
+                }
+            }
+
+            const dataSets = BenchmarkStore.getProcessedData();
+            const chartsContainer = document.getElementById('benchmarks-container');
+            chartsContainer.innerHTML = '';
+
+            if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
+                let didRenderBenchmarks = false;
+                const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
+                for (const featuredDataSetName of featuredDataSets.keys()) {
+                    const dataSet = dataSets.find(ds => ds.name === featuredDataSetName);
+                    if (shouldShowBenchmarkSet(dataSet.name)) {
+                        didRenderBenchmarks = true;
+                        renderBenchSet(dataSet.name, dataSet.dataSet, chartsContainer);
+                    }
+                }
+                if (!didRenderBenchmarks) {
+                    const chartsContainer = document.getElementById('benchmarks-container');
+                    chartsContainer.innerHTML = `
+                            <div class="px-4 py-5 my-5 text-center">
+                                <div class="fs-2 mb-3">
+                                    <i class="bi bi-filter-circle"></i>
+                                </div>
+                                <p class="mb-4">
+                                    No benchmarks match your selected filters. Try adjusting your filter settings.
+                                </p>
+                            </div>
+                        `;
+                }
+            } else {
+                for (const { name, dataSet } of dataSets) {
+                    if (name === SELECTED_BENCHMARK_SET) {
+                        renderBenchSet(name, dataSet, chartsContainer);
+                    }
+                }
+            }
+        }
+
+        function populateBenchmarkSetSelector() {
+            const dataSets = BenchmarkStore.getProcessedData();
+            const selector = document.getElementById('benchmark-set-selector');
+            selector.innerHTML = `<option value="${BENCHMARK_SET_TYPE.FEATURED}" selected>Featured Benchmarks</option>`;
+
+            dataSets.forEach(({ name }) => {
+                if (shouldShowBenchmarkSet(name)) {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    selector.appendChild(option);
+                }
+            });
+        }
+
+        function populateBenchmarkSelector() {
+            const dataSets = BenchmarkStore.getProcessedData();
+            const selector = document.getElementById('benchmark-selector');
+            selector.innerHTML = `<option value="${SELECTED_BENCHMARK_DEFAULT}" selected>All</option>`;
+
+            if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
+                const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
+                for (const [name, benches] of featuredDataSets.entries()) {
+                    if (!shouldShowBenchmarkSet(name)) {
+                        continue;
+                    }
+
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = name;
+                    selector.appendChild(optgroup);
+
+                    for (const benchName of benches) {
+                        const option = document.createElement('option');
+                        option.value = benchName;
+                        option.textContent = benchName;
+                        optgroup.appendChild(option);
+                    }
+                }
+            } else {
+                const selectedDataSet = dataSets.find(ds => ds.name === SELECTED_BENCHMARK_SET);
+                if (selectedDataSet) {
+                    for (const benchName of selectedDataSet.dataSet.keys()) {
+                        const option = document.createElement('option');
+                        option.value = benchName;
+                        option.textContent = benchName;
+                        selector.appendChild(option);
+                    }
+                }
+            }
+        }
+
+        function populateBenchmarkTypeSelector() {
+            const dataSets = BenchmarkStore.getProcessedData();
+            // Get unique benchmark types
+            const benchmarkTypes = dataSets.map(ds => ds.name.split('.')[0])
+                .filter((value, index, self) => self.indexOf(value) === index);
+
+            const selector = document.getElementById('benchmark-type-selector');
+            selector.innerHTML = `<option value="${BENCHMARK_TYPE.ALL}" selected>All</option>`;
+
+            benchmarkTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type.toLowerCase();
+                option.textContent = type;
+                selector.appendChild(option);
+            });
+        }
+
+        function shouldShowBenchmarkSet(name) {
+            const nameLower = name.toLowerCase();
+
+            // Check benchmark type
+            if (SELECTED_BENCHMARK_TYPE !== BENCHMARK_TYPE.ALL &&
+                !nameLower.startsWith(SELECTED_BENCHMARK_TYPE)) {
+                return false;
+            }
+
+            // Check OS
+            switch (SELECTED_OS.toLowerCase()) {
+                case OS_TYPE.ALL:
+                    break;
+                case OS_TYPE.UBUNTU:
+                    if (!nameLower.includes(OS_TYPE.UBUNTU)) {
+                        return false;
+                    }
+                    break;
+                case OS_TYPE.WINDOWS:
+                    if (!nameLower.includes(OS_TYPE.WINDOWS)) {
+                        return false;
+                    }
+                    break;
+            }
+
+            // Check framework type
+            switch (SELECTED_FRAMEWORK) {
+                case FRAMEWORK_TYPE.ALL:
+                    // When "All" is selected, exclude .NET 9.0 (only show 8.0 and 10.0)
+                    if (nameLower.includes('net9.0')) {
+                        return false;
+                    }
+                    break;
+                case FRAMEWORK_TYPE.DOTNET8_0:
+                    if (!nameLower.includes('net8.0')) {
+                        return false;
+                    }
+                    break;
+                case FRAMEWORK_TYPE.DOTNET10_0:
+                    if (!nameLower.includes('net10.0')) {
+                        return false;
+                    }
+                    break;
+            }
+
+            // If the user selected a benchmark while viewing Featured Benchmarks,
+            // we need to use the benchmark group name from the selector dropdown.
+            if (SELECTED_BENCHMARK_SET === BENCHMARK_SET_TYPE.FEATURED) {
+                const benchmarkGroup = getSelectedOptgroup("benchmark-selector");
+                if (benchmarkGroup && benchmarkGroup !== name) {
+                    return false
+                }
+            }
+
+            return true;
+        }
+
+        function resetBenchmarks() {
+            SELECTED_BENCHMARK_SET = BENCHMARK_SET_TYPE.FEATURED;
+            SELECTED_BENCHMARK = SELECTED_BENCHMARK_DEFAULT;
+
+            populateBenchmarkSetSelector();
+            populateBenchmarkSelector();
+            renderAllCharts();
+        }
+
+        document.getElementById('benchmark-type-selector').addEventListener('change', function () {
+            SELECTED_BENCHMARK_TYPE = this.value;
+            resetBenchmarks();
+            updateUrlParams();
+        });
+
+        document.getElementById('benchmark-os-selector').addEventListener('change', function () {
+            SELECTED_OS = this.value;
+            resetBenchmarks();
+            updateUrlParams();
+        });
+
+        document.getElementById('framework-type-selector').addEventListener('change', function () {
+            SELECTED_FRAMEWORK = this.value;
+            resetBenchmarks();
+            updateUrlParams();
+        });
+
+        document.getElementById('reset-filters-button').onclick = () => {
+            SELECTED_BENCHMARK_TYPE = BENCHMARK_TYPE.ALL;
+            SELECTED_OS = OS_TYPE.ALL;
+            SELECTED_FRAMEWORK = FRAMEWORK_TYPE.ALL;
+
+            resetBenchmarks();
+            updateUrlParams();
+        };
+
+        document.getElementById('benchmark-set-selector').addEventListener('change', function () {
+            SELECTED_BENCHMARK_SET = this.value;
+            SELECTED_BENCHMARK = SELECTED_BENCHMARK_DEFAULT;
+
+            populateBenchmarkSelector();
+            renderAllCharts();
+            updateUrlParams();
+        });
+
+        document.getElementById('benchmark-selector').addEventListener('change', function () {
+            SELECTED_BENCHMARK = this.value;
+
+            renderAllCharts();
+            updateUrlParams();
+        });
+
+        async function initializeApp() {
+            const loadingElement = document.getElementById('loading');
+            const errorElement = document.getElementById('error');
+
+            try {
+                await BenchmarkStore.load();
+                loadingElement.remove();
+
+                setupComponents()
+                populateBenchmarkSetSelector();
+                populateBenchmarkTypeSelector();
+                populateBenchmarkSelector();
+                renderAllCharts();
+
+                loadUrlParams();
+            } catch (err) {
+                loadingElement.remove();
+                errorElement.classList.remove('d-none');
+                errorElement.textContent = 'Error loading benchmark data';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeApp();
+        });
+    </script>
+</body>
+
+</html>
