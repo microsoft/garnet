@@ -723,10 +723,20 @@ namespace Tsavorite.core
             advancedStatusCode |= StatusCode.Expired;
 
             // Dispose the expired record's resources before reinitializing.
-            // For IPU, this is the old in-place record about to be overwritten.
+            // For IPU, skip the heap-tracker decrement because the outer pre/post delta
+            // tracking in InternalRMW captures the net heap change across the entire IPU.
+            // We still need the disposal side-effects (trigger + ClearHeapFields).
             // For CU, this is the newly allocated record (source was already disposed at the decision site).
             if (isIpu)
+            {
+                storeFunctions.OnDispose(ref logRecord, DisposeReason.Deleted);
+                logRecord.ClearHeapFields(clearKey: false);
+                logRecord.ClearOptionals();
+            }
+            else
+            {
                 OnDispose(ref logRecord, DisposeReason.Deleted);
+            }
 
             if (!sessionFunctions.NeedInitialUpdate(logRecord, ref input, ref output, ref rmwInfo))
             {
@@ -749,16 +759,11 @@ namespace Tsavorite.core
             {
                 if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
-                    // If IPU path, we need to complete PostInitialUpdater as well
+                    // If IPU path, we need to complete PostInitialUpdater as well.
+                    // No explicit heap tracking here — the outer pre/post delta in InternalRMW
+                    // captures the net change (old value → new value).
                     if (isIpu)
-                    {
                         sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
-
-                        // Track new value heap — this is an in-place reinit so there's no CAS success site to do it.
-                        var valueHeap = logRecord.GetValueHeapMemorySize();
-                        if (valueHeap != 0)
-                            hlogBase.logSizeTracker?.IncrementSize(valueHeap);
-                    }
 
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                     return true;
