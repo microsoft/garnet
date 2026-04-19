@@ -143,8 +143,21 @@ namespace Tsavorite.core
 
                     var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
 
+                    // Track value heap delta across in-place update. Only measure when value is
+                    // heap-allocated (overflow or object); inline values have zero heap cost.
+                    var ipuPreInline = srcLogRecord.Info.ValueIsInline;
+                    var ipuPreHeap = ipuPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+
                     if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
                     {
+                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
+                        {
+                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                            var ipuDelta = ipuPostHeap - ipuPreHeap;
+                            if (ipuDelta != 0)
+                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
+                        }
+
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // status has been set by InPlaceUpdater
@@ -155,6 +168,16 @@ namespace Tsavorite.core
 
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
+                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed)
+                        // before IPU returned false. Track the delta before OnDispose subtracts the
+                        // remaining empty-collection overhead.
+                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
+                        {
+                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                            var ipuDelta = ipuPostHeap - ipuPreHeap;
+                            if (ipuDelta != 0)
+                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
+                        }
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
