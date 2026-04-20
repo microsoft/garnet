@@ -37,8 +37,14 @@ namespace Garnet.cluster
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out var errorMessageSpan, logger: logger))
-                    return (false, errorMessageSpan.ToArray());
+                if (options.TryAddReplica)
+                {
+                    var (success, error) = await clusterProvider.clusterManager.TryAddReplicaAsync(options.NodeId, options.Force, options.UpgradeLock, logger: logger).ConfigureAwait(false); ;
+                    if (!success)
+                    {
+                        return (false, error);
+                    }
+                }
 
                 // Wait for threads to agree
                 if (session != null)
@@ -131,7 +137,7 @@ namespace Garnet.cluster
                     storeWrapper.Reset();
 
                     // Suspend background tasks that may interfere with AOF
-                    await storeWrapper.SuspendPrimaryOnlyTasks().ConfigureAwait(false);
+                    await storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data

@@ -58,7 +58,7 @@ namespace Garnet.server
             cts.Cancel();
             try
             {
-                CancelAsync(TaskPlacementCategory.All).Wait();
+                AsyncUtils.BlockingWait(CancelAsync(TaskPlacementCategory.All));
             }
             finally
             {
@@ -105,7 +105,7 @@ namespace Garnet.server
             {
                 logger?.LogError(ex, "Failed starting task {taskType} with {method}", taskType, nameof(RegisterAndRun));
                 // Remove and cleanup registered entry when exception gets triggered
-                CancelAsync(taskType).Wait();
+                AsyncUtils.BlockingWait(CancelAsync(taskType));
                 return false;
             }
             finally
