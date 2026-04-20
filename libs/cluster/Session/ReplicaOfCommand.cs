@@ -45,8 +45,8 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
 
-                    // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
-                    UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
+                    // Cannot avoid blocking here we're on the network thread
+                    AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
 
                     clusterProvider.storeWrapper.SuspendReplicaOnlyTasks().Wait();
                     clusterProvider.storeWrapper.StartPrimaryTasks();
@@ -85,12 +85,13 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
+                // Cannot avoid blocking here we're on the network thread
                 var (success, errorMessage) =
-                    (clusterProvider.serverOptions.ReplicaDisklessSync ?
-                        clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
-                        clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
-                    ).GetAwaiter().GetResult();
+                    AsyncUtils.BlockingWait(
+                        clusterProvider.serverOptions.ReplicaDisklessSync ?
+                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
+                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
+                    );
 
                 clusterProvider.storeWrapper.StartReplicaTasks();
 

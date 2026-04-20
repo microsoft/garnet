@@ -214,8 +214,8 @@ namespace Garnet.networking
                 throw new Exception("Cannot provide SslClientAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
 
-            // Synchronous reads from SslStream aren't allowed, so we must call .GetResult() and sync-over-async this
-            AuthenticateAsClientAsync(tlsOptions, remoteEndpointName, token).GetAwaiter().GetResult();
+            // Synchronous reads from SslStream aren't allowed, so we must block
+            AsyncUtils.BlockingWait(AuthenticateAsClientAsync(tlsOptions, remoteEndpointName, token));
         }
 
         /// <summary>
@@ -362,8 +362,8 @@ namespace Garnet.networking
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 if (result.IsCompletedSuccessfully)
                 {
-                    // .GetResult() is unavoidable here, but safe since we've checked IsCompletedSuccessfully
-                    transportBytesRead += result.GetAwaiter().GetResult();
+                    // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
+                    transportBytesRead += AsyncUtils.BlockingWait(result);
 
                     // Read task has control, process the decrypted transport bytes
                     Process();

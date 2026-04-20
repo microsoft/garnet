@@ -219,8 +219,8 @@ namespace Garnet.client
 
                 if (authTask != null)
                 {
-                    // Cannot avoid .GetResult() here as synchronous version would still block
-                    authTask.GetAwaiter().GetResult();
+                    // Cannot avoid blocking here
+                    AsyncUtils.BlockingWait(authTask);
                 }
             }
             catch (Exception e)

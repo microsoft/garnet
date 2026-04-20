@@ -39,26 +39,6 @@ namespace Garnet.server
         => storeWrapper.clusterProvider?.IsReplica() ?? false;
 
         /// <summary>
-        /// Commit AOF
-        /// </summary>
-        /// <param name="spinWait">True if should wait until all commits complete</param>
-        /// <returns>false if the commit was ignored due to node state or config</returns>
-        public bool CommitAOF(bool spinWait = false)
-        {
-            using (PreventRoleChange(out var acquired))
-            {
-                if (!acquired || IsReplica)
-                {
-                    return false;
-                }
-
-                // If we're in a cluster, we need to wait for the commit to succeed no matter what
-                var effectiveSpinWait = spinWait || storeWrapper.clusterProvider != null;
-                return storeWrapper.CommitAOF(effectiveSpinWait);
-            }
-        }
-
-        /// <summary>
         /// Wait for commit
         /// </summary>
         /// <returns>false if the commit was ignored due to node state or config</returns>

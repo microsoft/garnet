@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -37,9 +38,9 @@ namespace Garnet.server
         }
     }
 
-    internal sealed unsafe partial class RespServerSession : ServerSessionBase
+    internal sealed partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkCONFIG_GET()
+        private unsafe bool NetworkCONFIG_GET()
         {
             if (parseState.Count == 0)
             {
@@ -105,7 +106,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCONFIG_REWRITE()
+        private unsafe bool NetworkCONFIG_REWRITE()
         {
             if (parseState.Count != 0)
             {
@@ -119,7 +120,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCONFIG_SET()
+        private unsafe bool NetworkCONFIG_SET()
         {
             if (parseState.Count == 0 || parseState.Count % 2 != 0)
             {
@@ -214,10 +215,16 @@ namespace Garnet.server
                     HandleMemorySizeChange(objLogMemory, sbErrorMsg, mainStore: false);
 
                 if (index != null)
-                    HandleIndexSizeChange(index, sbErrorMsg);
+                {
+                    // Must block, we're on the network thread
+                    AsyncUtils.BlockingWait(HandleIndexSizeChangeAsync(index, sbErrorMsg));
+                }
 
                 if (objIndex != null)
-                    HandleIndexSizeChange(objIndex, sbErrorMsg, mainStore: false);
+                {
+                    // Must block, we're on the network thread
+                    AsyncUtils.BlockingWait(HandleIndexSizeChangeAsync(objIndex, sbErrorMsg, mainStore: false));
+                }
 
                 if (objHeapMemory != null)
                     HandleObjHeapMemorySizeChange(objHeapMemory, sbErrorMsg);
@@ -284,13 +291,11 @@ namespace Garnet.server
             }
         }
 
-        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool mainStore = true)
+        private async Task HandleIndexSizeChangeAsync(string indexSize, StringBuilder sbErrorMsg, bool mainStore = true)
         {
-            var option = mainStore ? CmdStrings.Index : CmdStrings.ObjIndex;
-
             if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, GetOption(mainStore));
                 return;
             }
 
@@ -298,7 +303,7 @@ namespace Garnet.server
             var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
             if (adjNewIndexSize != newIndexSize)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizePowerOfTwo, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizePowerOfTwo, GetOption(mainStore));
                 return;
             }
 
@@ -306,7 +311,7 @@ namespace Garnet.server
             if ((mainStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0) ||
                 (!mainStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0))
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeAutoGrow, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeAutoGrow, GetOption(mainStore));
                 return;
             }
 
@@ -322,25 +327,33 @@ namespace Garnet.server
             // If the new index size is smaller than the current index size, return an error
             if (currIndexSize > adjNewIndexSize)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, GetOption(mainStore));
                 return;
             }
 
             // Try to grow the index size by doubling it until it reaches the new size
             while (currIndexSize < adjNewIndexSize)
             {
-                var isSuccessful = mainStore
-                    ? storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult()
-                    : storeWrapper.objectStore.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                var isSuccessful =
+                    await
+                        (mainStore
+                            ? storeWrapper.store.GrowIndexAsync()
+                            : storeWrapper.objectStore.GrowIndexAsync()
+                        )
+                        .ConfigureAwait(false);
 
                 if (!isSuccessful)
                 {
-                    AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, option);
+                    AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, GetOption(mainStore));
                     return;
                 }
 
                 currIndexSize *= 2;
             }
+
+            // Can't keep Span local in async method, so helper to get one on demand
+            static ReadOnlySpan<byte> GetOption(bool mainStore)
+            => mainStore ? CmdStrings.Index : CmdStrings.ObjIndex;
         }
 
         private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)

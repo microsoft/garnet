@@ -97,11 +97,13 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
+                // Cannot avoid blocking here we're on the network thread
                 var (success, errorMessage) =
-                    (clusterProvider.serverOptions.ReplicaDisklessSync ?
-                        clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
-                        clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)).GetAwaiter().GetResult();
+                    AsyncUtils.BlockingWait(
+                        clusterProvider.serverOptions.ReplicaDisklessSync ?
+                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
+                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
+                    );
 
                 if (success)
                 {
@@ -300,8 +302,8 @@ namespace Garnet.cluster
 
             var beginPrimarySyncTask = clusterProvider.replicationManager.TryBeginPrimarySyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
 
-            // No choice but to call .GetResult() here, we're on the network thread
-            var (success, errorMessage) = beginPrimarySyncTask.GetAwaiter().GetResult();
+            // No choice but to block here, we're on the network thread
+            var (success, errorMessage) = AsyncUtils.BlockingWait(beginPrimarySyncTask);
 
             if (!success)
             {
@@ -479,8 +481,8 @@ namespace Garnet.cluster
             {
                 var attachTask = clusterProvider.replicationManager.TryAttachSyncAsync(syncMetadata);
 
-                // Using .GetResult() here because we're on the network thread
-                var (_, err) = attachTask.GetAwaiter().GetResult();
+                // Must block here because we're on the network thread
+                var (_, err) = AsyncUtils.BlockingWait(attachTask);
                 errorMessage = err.Span;
             }
             else

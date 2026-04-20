@@ -123,8 +123,8 @@ namespace Garnet.cluster
                 clusterProvider.clusterManager.TryResetReplica();
             }
 
-            // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
-            UnsafeBumpAndWaitForEpochTransitionAsync().GetAwaiter().GetResult();
+            // Cannot avoid blocking here we're on the network thread
+            AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
 
             while (!RespWriteUtils.TryWriteInt64(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
                 SendAndReset();
@@ -154,8 +154,8 @@ namespace Garnet.cluster
                 return true;
             }
 
-            // Cannot avoid blocking here we're on the network thread, so .GetResult() is fine
-            var rOffset = clusterProvider.replicationManager.WaitForReplicationOffsetAsync(primaryReplicationOffset).GetAwaiter().GetResult();
+            // Cannot avoid blocking here we're on the network thread
+            var rOffset = AsyncUtils.BlockingWait(clusterProvider.replicationManager.WaitForReplicationOffsetAsync(primaryReplicationOffset));
             while (!RespWriteUtils.TryWriteInt64(rOffset, ref dcurr, dend))
                 SendAndReset();
 

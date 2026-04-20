@@ -358,8 +358,8 @@ namespace Garnet.cluster
                 //Start migration task
                 var startMigrationTask = mSession.TryStartMigrationTaskAsync();
 
-                // No choice but to use .GetResult() here, as we're on the network thread
-                var (success, errorMessage) = startMigrationTask.GetAwaiter().GetResult();
+                // No choice but to block as we're on the network thread
+                var (success, errorMessage) = AsyncUtils.BlockingWait(startMigrationTask);
                 if (!success)
                 {
                     while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
