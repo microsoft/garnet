@@ -1091,33 +1091,77 @@ namespace Garnet.test
             ClassicAssert.AreEqual(keyCount, keys.Count, "Unique key initialization failed!");
 
             var keyArray = keys.ToArray();
+            var pushCounts = new int[keyArray.Length];
+            var popCounts = new int[keyArray.Length];
+            var pushErrors = new Exception[keyArray.Length];
+            var popErrors = new Exception[keyArray.Length];
+
             Task[] tasks = new Task[keyArray.Length << 1];
             for (int i = 0; i < tasks.Length; i += 2)
             {
                 int idx = i;
+                int keyIdx = idx >> 1;
                 tasks[i] = Task.Run(async () =>
                 {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
-                        await db.ListLeftPushAsync(key, j).ConfigureAwait(false);
+                    try
+                    {
+                        var key = keyArray[keyIdx];
+                        for (int j = 0; j < ppCount; j++)
+                        {
+                            await db.ListLeftPushAsync(key, j).ConfigureAwait(false);
+                            Interlocked.Increment(ref pushCounts[keyIdx]);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        pushErrors[keyIdx] = ex;
+                        throw;
+                    }
                 });
 
                 tasks[i + 1] = Task.Run(async () =>
                 {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
+                    try
                     {
-                        var value = await db.ListRightPopAsync(key).ConfigureAwait(false);
-                        while (value.IsNull)
+                        var key = keyArray[keyIdx];
+                        for (int j = 0; j < ppCount; j++)
                         {
-                            await Task.Delay(1).ConfigureAwait(false);
-                            value = await db.ListRightPopAsync(key).ConfigureAwait(false);
+                            var value = await db.ListRightPopAsync(key).ConfigureAwait(false);
+                            while (value.IsNull)
+                            {
+                                await Task.Delay(1).ConfigureAwait(false);
+                                value = await db.ListRightPopAsync(key).ConfigureAwait(false);
+                            }
+                            Interlocked.Increment(ref popCounts[keyIdx]);
+                            ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                         }
-                        ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
+                    }
+                    catch (Exception ex)
+                    {
+                        popErrors[keyIdx] = ex;
+                        throw;
                     }
                 });
             }
-            await Task.WhenAll(tasks);
+
+            var allDone = Task.WhenAll(tasks);
+            if (await Task.WhenAny(allDone, Task.Delay(TimeSpan.FromMinutes(5))) != allDone)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("ListPushPopStressTest timed out after 5 minutes. Per-key status (incomplete keys only):");
+                for (int k = 0; k < keyArray.Length; k++)
+                {
+                    if (pushCounts[k] == ppCount && popCounts[k] == ppCount)
+                        continue;
+                    var listLen = -1L;
+                    try { listLen = db.ListLength(keyArray[k]); } catch { }
+                    sb.AppendLine($"  key[{k}]={keyArray[k]}: pushed={pushCounts[k]}/{ppCount}, popped={popCounts[k]}/{ppCount}, listLen={listLen}" +
+                        (pushErrors[k] != null ? $", pushErr={pushErrors[k].GetType().Name}: {pushErrors[k].Message}" : "") +
+                        (popErrors[k] != null ? $", popErr={popErrors[k].GetType().Name}: {popErrors[k].Message}" : ""));
+                }
+                ClassicAssert.Fail(sb.ToString());
+            }
+            await allDone;
 
             foreach (var key in keyArray)
             {
