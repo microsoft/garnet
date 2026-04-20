@@ -1092,6 +1092,7 @@ namespace Garnet.test
 
             var keyArray = keys.ToArray();
             var errors = new Exception[keyArray.Length * 2];
+            var stop = new ManualResetEventSlim(false);
 
             // Use dedicated background threads — no threadpool involvement at all.
             // The original async Task.Run pattern causes threadpool starvation
@@ -1105,7 +1106,7 @@ namespace Garnet.test
                     try
                     {
                         var key = keyArray[idx >> 1];
-                        for (int j = 0; j < ppCount; j++)
+                        for (int j = 0; j < ppCount && !stop.IsSet; j++)
                             db.ListLeftPush(key, j);
                     }
                     catch (Exception ex) { errors[idx] = ex; }
@@ -1116,14 +1117,15 @@ namespace Garnet.test
                     try
                     {
                         var key = keyArray[idx >> 1];
-                        for (int j = 0; j < ppCount; j++)
+                        for (int j = 0; j < ppCount && !stop.IsSet; j++)
                         {
                             var value = db.ListRightPop(key);
-                            while (value.IsNull)
+                            while (value.IsNull && !stop.IsSet)
                             {
                                 Thread.Sleep(1);
                                 value = db.ListRightPop(key);
                             }
+                            if (stop.IsSet) break;
                             ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                         }
                     }
@@ -1131,29 +1133,49 @@ namespace Garnet.test
                 }) { IsBackground = true };
             }
 
+            string failureMessage = null;
             foreach (var t in threads) t.Start();
-
-            // Wait with a single overall deadline, not per-thread.
-            var joinDeadline = DateTime.UtcNow.AddMinutes(5);
-            foreach (var t in threads)
+            try
             {
-                var remaining = joinDeadline - DateTime.UtcNow;
-                if (remaining <= TimeSpan.Zero || !t.Join(remaining))
-                    ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes");
+                // Wait with a single overall deadline, not per-thread.
+                var joinDeadline = DateTime.UtcNow.AddMinutes(5);
+                foreach (var t in threads)
+                {
+                    var remaining = joinDeadline - DateTime.UtcNow;
+                    if (remaining <= TimeSpan.Zero || !t.Join(remaining))
+                    {
+                        failureMessage = "ListPushPopStressTest timed out after 5 minutes";
+                        return;
+                    }
+                }
+
+                // Report any errors
+                for (int i = 0; i < errors.Length; i++)
+                {
+                    if (errors[i] != null)
+                    {
+                        failureMessage = $"Thread {i} (key={keyArray[i >> 1]}) failed: {errors[i]}";
+                        return;
+                    }
+                }
+
+                foreach (var key in keyArray)
+                {
+                    var count = db.ListLength(key);
+                    ClassicAssert.AreEqual(0, count);
+                }
+            }
+            finally
+            {
+                // Signal all threads to stop and wait for them to exit before
+                // returning, so no background threads outlive this test.
+                stop.Set();
+                foreach (var t in threads)
+                    t.Join(TimeSpan.FromSeconds(30));
             }
 
-            // Report any errors
-            for (int i = 0; i < errors.Length; i++)
-            {
-                if (errors[i] != null)
-                    ClassicAssert.Fail($"Thread {i} (key={keyArray[i >> 1]}) failed: {errors[i]}");
-            }
-
-            foreach (var key in keyArray)
-            {
-                var count = db.ListLength(key);
-                ClassicAssert.AreEqual(0, count);
-            }
+            if (failureMessage != null)
+                ClassicAssert.Fail(failureMessage);
         }
 
         [Test]
