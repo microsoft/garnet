@@ -190,9 +190,9 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             if (!parseState.TryGetInt(1, out var physicalSublogIdx) ||
-                !parseState.TryGetLong(2, out var previousAddress) ||
-                !parseState.TryGetLong(3, out var currentAddress) ||
-                !parseState.TryGetLong(4, out var nextAddress))
+                !parseState.TryGetLong(2, allowLeadingZeros: true, out var previousAddress) ||
+                !parseState.TryGetLong(3, allowLeadingZeros: true, out var currentAddress) ||
+                !parseState.TryGetLong(4, allowLeadingZeros: true, out var nextAddress))
             {
                 logger?.LogError("{str}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER));
                 return true;

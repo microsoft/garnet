@@ -65,6 +65,7 @@ namespace Resp.benchmark
             {
                 options.EnableCluster = true;
                 var instance = new GarnetServerInstance(options);
+                aofGen.primaryId = instance.primaryId;
                 aofReplayStream = [.. Enumerable.Range(0, options.AofPhysicalSublogCount).Select(
                     x => new AofReplayStream(instance, threadId: x, startAddress: 64, options))];
             }
@@ -104,7 +105,7 @@ namespace Resp.benchmark
                         AofBenchType.Replay => new Thread(() => RunAofReplayBench(x)),
                         AofBenchType.ReplayNoResp => new Thread(() => RunAofReplayBenchNoResp(x)),
                         AofBenchType.ReplayDirect => new Thread(() => RunAofReplayBenchDirect(x)),
-                        AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x)),
+                        AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueueBench(x)),
                         _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                     };
                 }
@@ -159,7 +160,7 @@ namespace Resp.benchmark
             }
         }
 
-        unsafe void RunAofEnqueBench(int threadId)
+        unsafe void RunAofEnqueueBench(int threadId)
         {
             waiter.Wait();
             var kvPairs = aofGen.GetKVPairBuffer(threadId);
@@ -202,13 +203,16 @@ namespace Resp.benchmark
 
         unsafe void RunAofReplayBench(int threadId)
         {
-            var buffers = aofGen.GetPageBuffers(threadId);
+            var messages = aofGen.GetRespReplayMessages(threadId);
             var offset = 0;
-            var currentAddress = 64L;
-            var nextAddress = 64L;
             var pagesSend = 0L;
             var totalBytes = 0L;
             var recordsReplayedCount = 0L;
+            var pageSize = 1 << options.AofPageSizeBits();
+
+            // Track monotonically increasing addresses for circular replay
+            var previousAddress = 64L;
+            var currentAddress = 64L;
 
             waiter.Wait();
 
@@ -217,20 +221,28 @@ namespace Resp.benchmark
 
             while (!done)
             {
-                var pos = offset++ % buffers.Length;
-                var currPage = buffers[pos];
-                fixed (byte* payloadPtr = currPage.payload)
-                {
-                    nextAddress = currentAddress + currPage.payloadLength;
-                    aofReplayStream[threadId].Consume(payloadPtr, currPage.payloadLength, currentAddress, nextAddress, isProtected: false);
+                var pos = offset++ % messages.Length;
+                var msg = messages[pos];
+                var nextAddress = currentAddress + msg.payloadLength;
 
-                    // First page has a valid address from 64.
-                    // After that currentAddress starts from beginning of bage (i.e. multiple of page size)
-                    currentAddress = currentAddress == 64 ? currPage.Length : currentAddress + currPage.Length;
+                fixed (byte* ptr = msg.buffer)
+                {
+                    // Update fixed-width address fields in-place for the current replay position.
+                    // Addresses are zero-padded to max digits during generation (see WriterClusterAppendLogFixedWidth)
+                    // so overwriting here does not change message length.
+                    AofGen.PatchAddress(ptr, msg.previousAddressDigitOffset, previousAddress);
+                    AofGen.PatchAddress(ptr, msg.currentAddressDigitOffset, currentAddress);
+                    AofGen.PatchAddress(ptr, msg.nextAddressDigitOffset, nextAddress);
+
+                    aofReplayStream[threadId].ConsumeResp(ptr + msg.messageOffset, msg.messageLength);
+
                     pagesSend++;
-                    totalBytes += currPage.payloadLength;
-                    recordsReplayedCount += currPage.recordCount;
+                    totalBytes += msg.payloadLength;
+                    recordsReplayedCount += msg.recordCount;
                 }
+
+                previousAddress = nextAddress;
+                currentAddress = currentAddress == 64 ? pageSize : currentAddress + pageSize;
             }
 
             //Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");

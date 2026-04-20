@@ -3,22 +3,18 @@
 
 using System.Net;
 using Embedded.server;
-using Garnet.client;
 using Garnet.cluster;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-using Tsavorite.core;
 
 namespace Resp.benchmark
 {
-    internal sealed class AofReplayStream : IBulkLogEntryConsumer, IDisposable
+    internal sealed class AofReplayStream : IDisposable
     {
         const int maxChunkSize = 1 << 20;
         readonly Options options;
         readonly int threadId;
         readonly CancellationTokenSource cts = new();
-        GarnetClientSession garnetClient;
         readonly long startAddress;
         long previousAddress;
         readonly ILogger logger = null;
@@ -43,7 +39,6 @@ namespace Resp.benchmark
             this.instance = instance;
             this.threadId = threadId;
             this.primaryId = instance.primaryId;
-            garnetClient = null;
             this.startAddress = startAddress;
             previousAddress = startAddress;
             buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
@@ -103,7 +98,7 @@ namespace Resp.benchmark
             {
                 fixed (byte* ptr = buffer)
                 {
-                    var respMessageSize = WriterClusterAppendLog(
+                    var respMessageSize = AofGen.WriterClusterAppendLog(
                         ptr,
                         buffer.Length,
                         nodeId: primaryId,
@@ -118,63 +113,13 @@ namespace Resp.benchmark
             }
         }
 
-        unsafe int WriterClusterAppendLog(
-            byte* bufferPtr,
-            int bufferLength,
-            string nodeId,
-            int physicalSublogIdx,
-            long previousAddress,
-            long currentAddress,
-            long nextAddress,
-            long payloadPtr,
-            int payloadLength)
-        {
-            var CLUSTER = "$7\r\nCLUSTER\r\n"u8;
-            var appendLog = "APPENDLOG"u8;
-
-            var curr = bufferPtr;
-            var end = bufferPtr + bufferLength;
-
-            var arraySize = 8;
-
-            // 
-            if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 1
-            if (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 2
-            if (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 3
-            if (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 4
-            if (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 5
-            if (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 6
-            if (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 7
-            if (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-            // 8
-            if (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
-                throw new GarnetException("Not enough space in buffer");
-
-            return (int)(curr - bufferPtr);
-        }
-
         public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
         {
             try
             {
                 fixed (byte* ptr = buffer)
                 {
-                    var respMessageSize = WriterClusterAppendLog(
+                    var respMessageSize = AofGen.WriterClusterAppendLog(
                         ptr,
                         buffer.Length,
                         nodeId: primaryId,
@@ -192,6 +137,19 @@ namespace Resp.benchmark
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.AofSyncTaskInfo.Consume");
+                throw;
+            }
+        }
+
+        public unsafe void ConsumeResp(byte* respMessagePtr, int respMessageLength)
+        {
+            try
+            {
+                _ = instance.sessions[threadId].TryConsumeMessages(respMessagePtr, respMessageLength);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.AofSyncTaskInfo.ConsumeResp");
                 throw;
             }
         }
@@ -238,10 +196,6 @@ namespace Resp.benchmark
         }
 
         public void Throttle()
-        {
-            // Trigger flush while we are out of epoch protection
-            garnetClient.CompletePending(false);
-            garnetClient.Throttle();
-        }
+        { }
     }
 }

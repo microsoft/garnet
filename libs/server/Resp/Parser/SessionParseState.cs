@@ -425,6 +425,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Try to get long argument at the given index
+        /// </summary>
+        /// <returns>True if long parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetLong(int i, bool allowLeadingZeros, out long value)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadLong(*(bufferPtr + i), allowLeadingZeros, out value);
+        }
+
+        /// <summary>
         /// Get double argument at the given index
         /// </summary>
         /// <returns></returns>
