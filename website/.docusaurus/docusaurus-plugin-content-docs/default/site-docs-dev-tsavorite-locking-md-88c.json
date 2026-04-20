@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/locking",
+  "title": "Locking",
+  "description": "There are three modes of locking in Tsavorite, set by a ConcurrencyControlMode value on the Tsavorite constructor:",
+  "source": "@site/docs/dev/tsavorite/locking.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/locking",
+  "permalink": "/garnet/docs/dev/tsavorite/locking",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/locking.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "locking",
+    "sidebar_label": "Locking",
+    "title": "Locking"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Revivification",
+    "permalink": "/garnet/docs/dev/tsavorite/reviv"
+  },
+  "next": {
+    "title": "StoreFunctions",
+    "permalink": "/garnet/docs/dev/tsavorite/storefunctions"
+  }
+}

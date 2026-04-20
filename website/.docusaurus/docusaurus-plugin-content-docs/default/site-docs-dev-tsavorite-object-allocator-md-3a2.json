@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/object-allocator",
+  "title": "ObjectAllocator",
+  "description": "The ObjectAllocator replaces the GenericAllocator to provide two important improvements:",
+  "source": "@site/docs/dev/tsavorite/object-allocator.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/object-allocator",
+  "permalink": "/garnet/docs/dev/tsavorite/object-allocator",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/object-allocator.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "object-allocator",
+    "sidebar_label": "ObjectAllocator",
+    "title": "ObjectAllocator"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "LogRecord",
+    "permalink": "/garnet/docs/dev/tsavorite/logrecord"
+  },
+  "next": {
+    "title": "Transactions",
+    "permalink": "/garnet/docs/dev/transactions"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "commands/generic-commands",
+  "title": "Generic API",
+  "description": "Connection Commands",
+  "source": "@site/docs/commands/generic-commands.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/generic",
+  "permalink": "/garnet/docs/commands/generic",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/generic-commands.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "generic-commands",
+    "sidebar_label": "Generic",
+    "title": "Generic API",
+    "slug": "generic"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Raw String",
+    "permalink": "/garnet/docs/commands/raw-string"
+  },
+  "next": {
+    "title": "Analytics",
+    "permalink": "/garnet/docs/commands/analytics"
+  }
+}
