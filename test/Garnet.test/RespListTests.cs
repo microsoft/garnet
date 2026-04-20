@@ -1083,7 +1083,6 @@ namespace Garnet.test
 
             int keyCount = 10;
             int ppCount = 100;
-            //string[] keys = new string[keyCount];
             HashSet<string> keys = [];
             for (int i = 0; i < keyCount; i++)
                 while (!keys.Add(r.Next().ToString())) { }
@@ -1091,91 +1090,59 @@ namespace Garnet.test
             ClassicAssert.AreEqual(keyCount, keys.Count, "Unique key initialization failed!");
 
             var keyArray = keys.ToArray();
-            var errors = new Exception[keyArray.Length * 2];
             var stop = new ManualResetEventSlim(false);
 
-            // Use dedicated background threads — no threadpool involvement at all.
-            // The original async Task.Run pattern causes threadpool starvation
-            // on small CI runners (2-4 cores).
-            Thread[] threads = new Thread[keyArray.Length * 2];
-            for (int i = 0; i < threads.Length; i += 2)
+            // Use dedicated threads to avoid threadpool starvation on small CI runners.
+            var threads = new Thread[keyCount * 2];
+            for (int i = 0; i < keyCount; i++)
             {
-                int idx = i;
-                threads[i] = new Thread(() =>
+                var key = keyArray[i];
+
+                threads[i * 2] = new Thread(() =>
                 {
-                    try
-                    {
-                        var key = keyArray[idx >> 1];
-                        for (int j = 0; j < ppCount && !stop.IsSet; j++)
-                            db.ListLeftPush(key, j);
-                    }
-                    catch (Exception ex) { errors[idx] = ex; }
+                    for (int j = 0; j < ppCount && !stop.IsSet; j++)
+                        db.ListLeftPush(key, j);
                 }) { IsBackground = true };
 
-                threads[i + 1] = new Thread(() =>
+                threads[i * 2 + 1] = new Thread(() =>
                 {
-                    try
+                    for (int j = 0; j < ppCount && !stop.IsSet; j++)
                     {
-                        var key = keyArray[idx >> 1];
-                        for (int j = 0; j < ppCount && !stop.IsSet; j++)
+                        var value = db.ListRightPop(key);
+                        while (value.IsNull && !stop.IsSet)
                         {
-                            var value = db.ListRightPop(key);
-                            while (value.IsNull && !stop.IsSet)
-                            {
-                                Thread.Sleep(1);
-                                value = db.ListRightPop(key);
-                            }
-                            if (stop.IsSet) break;
-                            ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
+                            Thread.Sleep(1);
+                            value = db.ListRightPop(key);
                         }
+                        if (!stop.IsSet)
+                            ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                     }
-                    catch (Exception ex) { errors[idx + 1] = ex; }
                 }) { IsBackground = true };
             }
 
-            string failureMessage = null;
             foreach (var t in threads) t.Start();
             try
             {
-                // Wait with a single overall deadline, not per-thread.
-                var joinDeadline = DateTime.UtcNow.AddMinutes(5);
+                var deadline = DateTime.UtcNow.AddMinutes(5);
                 foreach (var t in threads)
                 {
-                    var remaining = joinDeadline - DateTime.UtcNow;
+                    var remaining = deadline - DateTime.UtcNow;
                     if (remaining <= TimeSpan.Zero || !t.Join(remaining))
-                    {
-                        failureMessage = "ListPushPopStressTest timed out after 5 minutes";
-                        return;
-                    }
-                }
-
-                // Report any errors
-                for (int i = 0; i < errors.Length; i++)
-                {
-                    if (errors[i] != null)
-                    {
-                        failureMessage = $"Thread {i} (key={keyArray[i >> 1]}) failed: {errors[i]}";
-                        return;
-                    }
-                }
-
-                foreach (var key in keyArray)
-                {
-                    var count = db.ListLength(key);
-                    ClassicAssert.AreEqual(0, count);
+                        ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes");
                 }
             }
             finally
             {
-                // Signal all threads to stop and wait for them to exit before
-                // returning, so no background threads outlive this test.
                 stop.Set();
                 foreach (var t in threads)
                     t.Join(TimeSpan.FromSeconds(30));
             }
 
-            if (failureMessage != null)
-                ClassicAssert.Fail(failureMessage);
+            foreach (var key in keyArray)
+            {
+                var count = db.ListLength(key);
+                ClassicAssert.AreEqual(0, count);
+            }
         }
 
         [Test]
