@@ -1093,7 +1093,7 @@ namespace Garnet.test
             var keyArray = keys.ToArray();
             var errors = new Exception[keyArray.Length * 2];
 
-            // Use dedicated threads — no threadpool involvement at all.
+            // Use dedicated background threads — no threadpool involvement at all.
             // The original async Task.Run pattern causes threadpool starvation
             // on small CI runners (2-4 cores).
             Thread[] threads = new Thread[keyArray.Length * 2];
@@ -1109,7 +1109,7 @@ namespace Garnet.test
                             db.ListLeftPush(key, j);
                     }
                     catch (Exception ex) { errors[idx] = ex; }
-                });
+                }) { IsBackground = true };
 
                 threads[i + 1] = new Thread(() =>
                 {
@@ -1128,15 +1128,17 @@ namespace Garnet.test
                         }
                     }
                     catch (Exception ex) { errors[idx + 1] = ex; }
-                });
+                }) { IsBackground = true };
             }
 
             foreach (var t in threads) t.Start();
 
-            // Wait with a timeout — all threads are dedicated, no threadpool dependency.
+            // Wait with a single overall deadline, not per-thread.
+            var joinDeadline = DateTime.UtcNow.AddMinutes(5);
             foreach (var t in threads)
             {
-                if (!t.Join(TimeSpan.FromMinutes(5)))
+                var remaining = joinDeadline - DateTime.UtcNow;
+                if (remaining <= TimeSpan.Zero || !t.Join(remaining))
                     ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes");
             }
 
