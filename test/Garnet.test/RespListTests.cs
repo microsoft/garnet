@@ -1102,7 +1102,8 @@ namespace Garnet.test
                 {
                     for (int j = 0; j < ppCount && !stop.IsSet; j++)
                         db.ListLeftPush(key, j);
-                }) { IsBackground = true };
+                })
+                { IsBackground = true };
 
                 threads[i * 2 + 1] = new Thread(() =>
                 {
@@ -1117,7 +1118,8 @@ namespace Garnet.test
                         if (!stop.IsSet)
                             ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                     }
-                }) { IsBackground = true };
+                })
+                { IsBackground = true };
             }
 
             foreach (var t in threads) t.Start();
