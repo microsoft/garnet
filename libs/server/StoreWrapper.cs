@@ -904,7 +904,7 @@ namespace Garnet.server
         /// Suspend background task that may interfere with the replicas AOF
         /// </summary>
         /// <returns></returns>
-        public async Task SuspendPrimaryOnlyTasks()
+        public async Task SuspendPrimaryOnlyTasksAsync()
         {
             await taskManager.CancelAsync(TaskPlacementCategory.Primary);
         }
@@ -913,7 +913,7 @@ namespace Garnet.server
         /// Suspend background task that may interfere with the primary store.
         /// </summary>
         /// <returns></returns>
-        public async Task SuspendReplicaOnlyTasks()
+        public async Task SuspendReplicaOnlyTasksAsync()
         {
             await taskManager.CancelAsync(TaskPlacementCategory.Replica);
         }

@@ -320,7 +320,7 @@ namespace Garnet.cluster
                 // Attach to old replicas, and old primary if DEFAULT option
                 await IssueAttachReplicas();
 
-                await clusterProvider.storeWrapper.SuspendReplicaOnlyTasks();
+                await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync();
                 clusterProvider.storeWrapper.StartPrimaryTasks();
 
                 return true;
