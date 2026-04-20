@@ -93,7 +93,7 @@ namespace Tsavorite.core
         {
             if (diskLogRecord.IsSet)
             {
-                hlogBase._wrapper.OnDispose(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
             }
             diskLogRecord = default;
@@ -236,7 +236,7 @@ namespace Tsavorite.core
                             var remapPtr = recordBuffer.GetValidPointer();
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
                             var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
-                            diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
+                            diskLogRecord = new DiskLogRecord(in memoryLogRecord);
                         }
                         finally
                         {
@@ -247,9 +247,8 @@ namespace Tsavorite.core
                     else
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail (SpanByteAllocator has no objects).
-                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap),
-                                            obj => store.storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                        // SpanByteAllocator has no objects, so no value-object disposal is required.
+                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap));
                     }
                 }
                 finally
@@ -360,7 +359,7 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueIfHeap(Action<IHeapObject> disposer) { }  // Not relevant for "iterator as logrecord"
+        public void ClearValueIfHeap() { }  // Not relevant for "iterator as logrecord"
 
         /// <inheritdoc/>
         public bool IsMemoryLogRecord => false;
@@ -410,7 +409,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             if (diskLogRecord.IsSet)
-                hlogBase._wrapper.OnDispose(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             frame?.Dispose();

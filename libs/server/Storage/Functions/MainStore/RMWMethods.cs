@@ -1701,6 +1701,7 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+
             return true;
         }
 

@@ -198,8 +198,14 @@ namespace Tsavorite.core
             return true;
 
         Fail:
-            var logRecord = hlog.CreateLogRecord(newLogicalAddress);
-            OnDispose(ref logRecord, DisposeReason.CASAndRetryFailed);
+            // Only dispose if the record is still in memory. If the page was evicted (address < HeadAddress),
+            // the record's heap fields were already cleared by OnDispose before SaveAllocationForRetry, and
+            // the page memory may have been recycled — accessing it would crash or corrupt live records.
+            if (newLogicalAddress >= hlogBase.HeadAddress)
+            {
+                var logRecord = hlog.CreateLogRecord(newLogicalAddress);
+                OnDispose(ref logRecord, DisposeReason.CASAndRetryFailed);
+            }
             newPhysicalAddress = 0;
             return false;
         }

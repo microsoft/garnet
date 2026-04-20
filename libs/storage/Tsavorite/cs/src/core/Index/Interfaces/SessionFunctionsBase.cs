@@ -130,7 +130,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual bool InitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo)
         {
-            dstLogRecord.ClearValueIfHeap(_ => { });
+            dstLogRecord.ClearValueIfHeap();
             return true;
         }
         public virtual void PostInitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo) { }

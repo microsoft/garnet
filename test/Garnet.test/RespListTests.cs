@@ -1110,14 +1110,27 @@ namespace Garnet.test
                         var value = await db.ListRightPopAsync(key).ConfigureAwait(false);
                         while (value.IsNull)
                         {
-                            await Task.Delay(1).ConfigureAwait(false);
+                            // Use Thread.Sleep instead of Task.Delay to avoid threadpool scheduling
+                            // pressure — Task.Delay(1) in a tight retry loop across many tasks can
+                            // cause threadpool starvation on small CI runners.
+                            Thread.Sleep(1);
                             value = await db.ListRightPopAsync(key).ConfigureAwait(false);
                         }
                         ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                     }
                 });
             }
-            await Task.WhenAll(tasks);
+
+            // Use LongRunning to get a dedicated thread for the timeout — Task.Delay can't
+            // fire under threadpool starvation since its timer callback needs a pool thread.
+            var timeoutTask = Task.Factory.StartNew(
+                () => Thread.Sleep(TimeSpan.FromMinutes(5)),
+                TaskCreationOptions.LongRunning);
+
+            var allDone = Task.WhenAll(tasks);
+            if (await Task.WhenAny(allDone, timeoutTask) != allDone)
+                ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes — possible threadpool starvation or lost values");
+            await allDone;
 
             foreach (var key in keyArray)
             {

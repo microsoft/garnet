@@ -94,11 +94,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) => recordTriggers.OnDisposeValueObject(valueObject, reason);
+        public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => recordTriggers.OnDispose(ref logRecord, reason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => recordTriggers.OnDispose(ref logRecord, reason);
+        public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) => recordTriggers.OnDisposeDiskRecord(ref logRecord, reason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -106,7 +106,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void OnEvict(ref LogRecord logRecord) => recordTriggers.OnEvict(ref logRecord);
+        public readonly void OnEvict(ref LogRecord logRecord, EvictionSource source) => recordTriggers.OnEvict(ref logRecord, source);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
