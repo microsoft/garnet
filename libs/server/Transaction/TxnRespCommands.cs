@@ -29,8 +29,8 @@ namespace Garnet.server
             txnManager.txnStartHead = readHead;
             txnManager.state = TxnState.Started;
             txnManager.operationCntTxn = 0;
-            // Track receive buffer ptr for key pointer adjustment at EXEC time
-            txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
+            // Track receive buffer for incremental key materialization during queuing
+            txnManager.BeginKeyTrackingForCurrentBuffer(recvBufferPtr);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -184,11 +184,8 @@ namespace Garnet.server
                 return true;
             }
 
-            if (clusterSession != null && recvBufferPtr != txnManager.saveKeyRecvBufferPtr)
-            {
-                txnManager.CopyExistingKeysToScratchBuffer();
-                txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
-            }
+            if (clusterSession != null)
+                txnManager.OnRecvBufferChanged(recvBufferPtr);
 
             txnManager.LockKeys(commandInfo);
 
