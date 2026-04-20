@@ -20,7 +20,7 @@ namespace Garnet.cluster
             var client = migrateOperation[0].Client;
             try
             {
-                if (!CheckConnection(client))
+                if (!await CheckConnectionAsync(client).ConfigureAwait(false))
                 {
                     Status = MigrateState.FAIL;
                     return false;
@@ -92,21 +92,20 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin migration task
         /// </summary>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryStartMigrationTaskAsync()
         {
-            errorMessage = default;
+            ReadOnlyMemory<byte> errorMessage = default;
             if (transferOption == TransferOption.KEYS)
             {
                 try
                 {
                     // This executes synchronously and serves the keys variant of resp command
-                    if (!MigrateKeys())
+                    if (!await MigrateKeysAsync().ConfigureAwait(false))
                     {
-                        errorMessage = "IOERR Migrate keys failed."u8;
+                        errorMessage = "IOERR Migrate keys failed."u8.ToArray();
                         Status = MigrateState.FAIL;
-                        return false;
+                        return (false, errorMessage);
                     }
 
                     Status = MigrateState.SUCCESS;
@@ -120,17 +119,20 @@ namespace Garnet.cluster
             else
             {
                 // This will execute as a background task for the slots or slotsrange variant
-                _ = Task.Run(BeginAsyncMigrationTask);
+                _ = BeginAsyncMigrationTaskAsync();
             }
 
-            return true;
+            return (true, errorMessage);
         }
 
         /// <summary>
         /// Migrate slots session background task
         /// </summary>
-        private async Task BeginAsyncMigrationTask()
+        private async Task BeginAsyncMigrationTaskAsync()
         {
+            // Force async
+            await Task.Yield();
+
             var configResumed = true;
             try
             {
@@ -155,7 +157,7 @@ namespace Garnet.cluster
                     return;
                 }
 
-                if (!clusterProvider.BumpAndWaitForEpochTransition()) return;
+                if (!await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false)) return;
                 #endregion
 
                 // Acquire namespaces at this point, after slots have been switch to migration

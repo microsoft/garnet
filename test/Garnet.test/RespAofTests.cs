@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
@@ -77,7 +78,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreAutoCommitRecoverTest()
+        public async Task AofUpsertStoreAutoCommitRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -86,7 +87,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
 
-            server.Store.WaitForCommit();
+            await server.Store.WaitForCommitAsync();
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -103,7 +104,7 @@ namespace Garnet.test
 
         [Test]
         [CancelAfter(10_000)]
-        public void AofUpsertStoreCommitTaskRecoverTest()
+        public async Task AofUpsertStoreCommitTaskRecoverTestAsync()
         {
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitFrequencyMs: 100);
@@ -116,7 +117,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
 
-            server.Store.WaitForCommit();
+            await server.Store.WaitForCommitAsync();
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();

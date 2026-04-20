@@ -74,7 +74,7 @@ namespace Garnet.cluster
             WriteInto(writeIntoCkptDevice, (ulong)startAddress, data, data.Length, segmentId);
 
 #if DEBUG
-            ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false).GetAwaiter().GetResult();
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
 #endif
         }
 

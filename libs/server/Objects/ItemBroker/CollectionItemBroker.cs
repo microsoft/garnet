@@ -143,7 +143,7 @@ namespace Garnet.server
             try
             {
                 // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token);
+                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

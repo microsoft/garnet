@@ -154,13 +154,23 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
         {
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            var checkpointTask = Task.Run(async () =>
+            var checkpointTask = TakeCheckpointHelperAsync();
+
+            if (background)
+                return true;
+
+            return await checkpointTask.ConfigureAwait(false);
+
+            async Task<bool> TakeCheckpointHelperAsync()
             {
+                // Force async 
+                await Task.Yield();
+
                 var checkpointLockTaken = false;
 
                 try
@@ -187,16 +197,11 @@ namespace Garnet.server
 
                     databasesContentLock.ReadUnlock();
                 }
-            }, token).GetAwaiter();
-
-            if (background)
-                return true;
-
-            return checkpointTask.GetResult();
+            }
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
@@ -206,29 +211,27 @@ namespace Garnet.server
             if (!TryPauseCheckpoints(dbId))
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
-                t =>
-                {
-                    try
-                    {
-                        if (t.IsCompletedSuccessfully)
-                        {
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
-                            UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
-                        }
-                    }
-                    finally
-                    {
-                        ResumeCheckpoints(dbId);
-                    }
-                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
+            var checkpointTask = TakeCheckpointHelperAsync(databasesMapSnapshot, dbId, logger, token);
 
             if (background)
                 return true;
 
-            checkpointTask.GetResult();
+            await checkpointTask.ConfigureAwait(false);
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase[] databasesMapSnapshot, int dbId, ILogger logger, CancellationToken token)
+            {
+                try
+                {
+                    var (storeTailAddress, objectStoreTailAddress) = await TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ConfigureAwait(false);
+
+                    UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+                }
+                finally
+                {
+                    ResumeCheckpoints(dbId);
+                }
+            }
         }
 
         /// <inheritdoc/>
@@ -356,9 +359,7 @@ namespace Garnet.server
                 {
                     if (!t.IsFaulted || t.Exception == null) continue;
 
-                    logger?.LogError(t.Exception,
-                        "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
-                        t.Result.Item1, t.Result.Item2);
+                    logger?.LogError(t.Exception, "Exception raised while committing to AOF.");
                 }
 
                 if (exThrown)
@@ -1013,21 +1014,10 @@ namespace Garnet.server
                     if (!TryPauseCheckpoints(dbId))
                         continue;
 
-                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
-                        t =>
-                        {
-                            ResumeCheckpoints(dbId);
-
-                            if (!t.IsCompletedSuccessfully)
-                                return;
-
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
-                            UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
-                        }, TaskContinuationOptions.ExecuteSynchronously);
+                    checkpointTasks[currIdx] = TakeCheckpointHelperAsync(databaseMapSnapshot, dbId);
                 }
 
-                await Task.WhenAll(checkpointTasks);
+                await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -1039,6 +1029,28 @@ namespace Garnet.server
             }
 
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase[] databaseMapSnapshot, int dbId)
+            {
+                var needsResume = true;
+
+                try
+                {
+                    var (storeTailAddress, objectStoreTailAddress) = await TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ConfigureAwait(false);
+
+                    ResumeCheckpoints(dbId);
+                    needsResume = false;
+
+                    UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+                }
+                finally
+                {
+                    if (needsResume)
+                    {
+                        ResumeCheckpoints(dbId);
+                    }
+                }
+            }
         }
 
         private void UpdateLastSaveData(int dbId, long? storeTailAddress, long? objectStoreTailAddress)

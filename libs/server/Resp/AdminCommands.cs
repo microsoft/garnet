@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.Custom;
 using Microsoft.Extensions.Logging;
@@ -165,10 +166,8 @@ namespace Garnet.server
             }
         }
 
-        void CommitAof(int dbId = -1)
-        {
-            storeWrapper.CommitAOFAsync(dbId).ConfigureAwait(false).GetAwaiter().GetResult();
-        }
+        ValueTask<bool> CommitAofAsync(int dbId = -1)
+        => storeWrapper.CommitAOFAsync(dbId);
 
         private bool NetworkMonitor()
         {
@@ -606,7 +605,9 @@ namespace Garnet.server
                     return true;
             }
 
-            CommitAof(dbId);
+            // Have to block as we're on network thread, so .GetResult() call is ok
+            _ = CommitAofAsync(dbId).GetAwaiter().GetResult();
+
             while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                 SendAndReset();
 
@@ -878,7 +879,12 @@ namespace Garnet.server
                     return true;
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
+            var checkpointTask = storeWrapper.TakeCheckpointAsync(false, dbId: dbId, logger: logger);
+
+            // No choice but to call .GetResult(), we're on the network thread
+            var success = checkpointTask.GetAwaiter().GetResult();
+
+            if (!success)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
@@ -995,7 +1001,11 @@ namespace Garnet.server
                 }
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, dbId: dbId, logger: logger);
+            var checkpointTask = storeWrapper.TakeCheckpointAsync(true, dbId: dbId, logger: logger);
+
+            // No choice but to call .GetResult(), we're on the network thread
+            var success = checkpointTask.GetAwaiter().GetResult();
+
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))

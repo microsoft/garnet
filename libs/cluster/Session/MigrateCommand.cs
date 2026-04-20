@@ -60,7 +60,7 @@ namespace Garnet.cluster
             return false;
         }
 
-        private bool TryMIGRATE(out bool invalidParameters)
+        private bool NetworkTryMIGRATE(out bool invalidParameters)
         {
             invalidParameters = false;
 
@@ -121,7 +121,7 @@ namespace Garnet.cluster
                     // targetAddress is not a valid IP, try to resolve it as hostname
                     try
                     {
-                        var hostEntry = Dns.GetHostEntryAsync(targetAddress).ConfigureAwait(false).GetAwaiter().GetResult();
+                        var hostEntry = Dns.GetHostEntry(targetAddress);
                         if (hostEntry.AddressList.Length > 0)
                         {
                             // Try each resolved IP address to find one that matches cluster config
@@ -356,9 +356,13 @@ namespace Garnet.cluster
             else
             {
                 //Start migration task
-                if (!mSession.TryStartMigrationTask(out var errorMessage))
+                var startMigrationTask = mSession.TryStartMigrationTaskAsync();
+
+                // No choice but to use .GetResult() here, as we're on the network thread
+                var (success, errorMessage) = startMigrationTask.GetAwaiter().GetResult();
+                if (!success)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
                         SendAndReset();
                 }
                 else

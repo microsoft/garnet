@@ -177,12 +177,12 @@ namespace Garnet.cluster
         /// <param name="nodeId"></param>
         /// <param name="logger"></param>
         /// <returns>True if connection was added, false otherwise</returns>
-        public async Task<(bool, GarnetServerNode)> GetOrAdd(ClusterProvider clusterProvider, IPEndPoint endpoint, IGarnetTlsOptions tlsOptions, string nodeId, ILogger logger = null)
+        public async ValueTask<(bool, GarnetServerNode)> GetOrAddAsync(ClusterProvider clusterProvider, IPEndPoint endpoint, IGarnetTlsOptions tlsOptions, string nodeId, ILogger logger = null)
         {
             GarnetServerNode conn = null;
             try
             {
-                await AcquireWriteLockAsync();
+                await AcquireWriteLockAsync().ConfigureAwait(false);
 
                 // Fail on disposed
                 if (_disposed) return (false, conn);
@@ -211,11 +211,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId">Node-id to search for.</param>
         /// <returns>True on successful removal of connection otherwise false.</returns>
-        public async Task<bool> TryRemoveConnection(string nodeId)
+        public async Task<bool> TryRemoveConnectionAsync(string nodeId)
         {
             try
             {
-                await AcquireWriteLockAsync();
+                await AcquireWriteLockAsync().ConfigureAwait(false);
 
                 // Fail on disposed
                 if (_disposed) return false;

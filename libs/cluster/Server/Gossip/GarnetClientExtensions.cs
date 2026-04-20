@@ -65,7 +65,7 @@ namespace Garnet.cluster
             return await client.ExecuteForLongResultWithCancellationAsync(GarnetClient.CLUSTER, args, cancellationToken).ConfigureAwait(false);
         }
 
-        public static void ClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
-            => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, ref channel, ref message, cancellationToken);
+        public static void ClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, Span<byte> channel, Span<byte> message, CancellationToken cancellationToken = default)
+            => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, channel, message, cancellationToken);
     }
 }

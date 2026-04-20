@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -11,7 +12,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         internal sealed partial class MigrateOperation
         {
@@ -51,10 +52,11 @@ namespace Garnet.cluster
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
-            public bool Initialize()
+            public async ValueTask<bool> InitializeAsync()
             {
-                if (!session.CheckConnection(gcs))
+                if (!await session.CheckConnectionAsync(gcs).ConfigureAwait(false))
                     return false;
+
                 gcs.InitializeIterationBuffer(session.clusterProvider.storeWrapper.loggingFrequency);
                 return true;
             }
@@ -84,13 +86,18 @@ namespace Garnet.cluster
             /// </summary>
             /// <param name="storeType"></param>
             /// <returns></returns>
-            public bool TransmitSlots(StoreType storeType)
+            public async Task<bool> TransmitSlotsAsync(StoreType storeType)
             {
                 var bufferSize = 1 << 10;
                 SectorAlignedMemory buffer = new(bufferSize, 1);
-                var bufPtr = buffer.GetValidPointer();
-                var bufPtrEnd = bufPtr + bufferSize;
-                var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
+                IntPtr bufPtr, bufPtrEnd;
+                SpanByteAndMemory o;
+                unsafe
+                {
+                    bufPtr = (IntPtr)buffer.GetValidPointer();
+                    bufPtrEnd = bufPtr + bufferSize;
+                    o = new SpanByteAndMemory((byte*)bufPtr, (int)(bufPtrEnd - bufPtr));
+                }
                 var input = new RawStringInput(RespCommandAccessor.MIGRATE);
 
                 try
@@ -100,7 +107,7 @@ namespace Garnet.cluster
                         foreach (var key in sketch.argSliceVector)
                         {
                             var spanByte = key;
-                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, ref spanByte, ref input, ref o, out _))
+                            if (!await session.WriteOrSendMainStoreKeyValuePairAsync(gcs, localServerSession, ref spanByte, ref input, ref o, out _).ConfigureAwait(false))
                                 return false;
 
                             // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
@@ -112,13 +119,13 @@ namespace Garnet.cluster
                         foreach (var key in sketch.argSliceVector)
                         {
                             var argSlice = key;
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, ref argSlice, out _))
+                            if (!await session.WriteOrSendObjectStoreKeyValuePairAsync(gcs, localServerSession, ref argSlice, out _).ConfigureAwait(false))
                                 return false;
                         }
                     }
 
                     // Flush final data in client buffer
-                    if (!session.HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                    if (!await session.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
                         return false;
                 }
                 finally
@@ -132,13 +139,18 @@ namespace Garnet.cluster
             /// <summary>
             /// Move keys in sketch out of the given store, UNLESS they are also in <paramref name="vectorSetKeysToIgnore"/>.
             /// </summary>
-            public bool TransmitKeys(StoreType storeType, Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
+            public async Task<bool> TransmitKeysAsync(StoreType storeType, Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
             {
                 var bufferSize = 1 << 10;
                 SectorAlignedMemory buffer = new(bufferSize, 1);
-                var bufPtr = buffer.GetValidPointer();
-                var bufPtrEnd = bufPtr + bufferSize;
-                var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
+                IntPtr bufPtr, bufPtrEnd;
+                SpanByteAndMemory o;
+                unsafe
+                {
+                    bufPtr = (IntPtr)buffer.GetValidPointer();
+                    bufPtrEnd = bufPtr + bufferSize;
+                    o = new SpanByteAndMemory((byte*)bufPtr, (int)(bufPtrEnd - bufPtr));
+                }
                 var input = new RawStringInput(RespCommandAccessor.MIGRATE);
 
                 try
@@ -170,7 +182,7 @@ namespace Garnet.cluster
                                 continue;
                             }
 
-                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, ref spanByte, ref input, ref o, out var status))
+                            if (!await session.WriteOrSendMainStoreKeyValuePairAsync(gcs, localServerSession, ref spanByte, ref input, ref o, out var status).ConfigureAwait(false))
                                 return false;
 
                             // Skip if key NOTFOUND
@@ -192,7 +204,7 @@ namespace Garnet.cluster
                                 continue;
 
                             var spanByte = keys[i].Item1.SpanByte;
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, ref spanByte, out var status))
+                            if (!await session.WriteOrSendObjectStoreKeyValuePairAsync(gcs, localServerSession, ref spanByte, out var status).ConfigureAwait(false))
                                 return false;
 
                             // Skip if key NOTFOUND
@@ -205,7 +217,7 @@ namespace Garnet.cluster
                     }
 
                     // Flush final data in client buffer
-                    if (!session.HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                    if (!await session.HandleMigrateTaskResponseAsync(gcs.SendAndResetIterationBuffer()).ConfigureAwait(false))
                         return false;
                 }
                 finally
@@ -220,11 +232,11 @@ namespace Garnet.cluster
             /// 
             /// Doesn't delete anything, just scans and transmits.
             /// </summary>
-            public bool TransmitKeysNamespaces(ILogger logger)
+            public async ValueTask<bool> TransmitKeysNamespaces(ILogger logger)
             {
                 var migrateOperation = this;
 
-                if (!migrateOperation.Initialize())
+                if (!await migrateOperation.InitializeAsync().ConfigureAwait(false))
                     return false;
 
                 var workerStartAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.BeginAddress;
@@ -246,10 +258,10 @@ namespace Garnet.cluster
 
                     // Transition EPSM to MIGRATING
                     migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
-                    migrateOperation.session.WaitForConfigPropagation();
+                    await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Transmit all keys gathered
-                    if (!migrateOperation.TransmitSlots(StoreType.Main))
+                    if (!await migrateOperation.TransmitSlotsAsync(StoreType.Main).ConfigureAwait(false))
                     {
                         logger?.LogWarning("TransmitSlots failed for {cursor} to {current} (with {count} keys)", cursor, current, migrateOperation.sketch.argSliceVector.Count);
                         return false;
@@ -257,7 +269,7 @@ namespace Garnet.cluster
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
-                    migrateOperation.session.WaitForConfigPropagation();
+                    await migrateOperation.session.WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Clear keys from buffer
                     migrateOperation.sketch.Clear();

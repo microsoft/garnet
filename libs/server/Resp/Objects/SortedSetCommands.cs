@@ -1574,7 +1574,7 @@ namespace Garnet.server
                 keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
             }
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).GetAwaiter().GetResult();
 
             if (result.IsForceUnblocked)
             {
@@ -1686,7 +1686,7 @@ namespace Garnet.server
 
             cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs).Result;
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs).GetAwaiter().GetResult();
 
             if (result.IsForceUnblocked)
             {

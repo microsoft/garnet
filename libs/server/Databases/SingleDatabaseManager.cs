@@ -129,49 +129,45 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
         {
             // Check if checkpoint already in progress
             if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(
-                t =>
-                {
-                    try
-                    {
-                        if (t.IsCompletedSuccessfully)
-                        {
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
-
-                            if (storeTailAddress.HasValue)
-                                defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-                            if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                                defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
-
-                            defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
-                        }
-                    }
-                    finally
-                    {
-                        ResumeCheckpoints(defaultDatabase.Id);
-                    }
-                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
-
+            var checkpointTask = TakeCheckpointHelperAsync(defaultDatabase, logger, token);
             if (background)
                 return true;
 
-            checkpointTask.GetResult();
+            await checkpointTask.ConfigureAwait(false);
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
+            {
+                try
+                {
+                    var (storeTailAddress, objectStoreTailAddress) = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
+
+                    if (storeTailAddress.HasValue)
+                        defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                    if (ObjectStore != null && objectStoreTailAddress.HasValue)
+                        defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+
+                    defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                }
+                finally
+                {
+                    ResumeCheckpoints(defaultDatabase.Id);
+                }
+            }
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return TakeCheckpoint(background, logger, token);
+            return TakeCheckpointAsync(background, logger, token);
         }
 
         /// <inheritdoc/>
@@ -215,7 +211,7 @@ namespace Garnet.server
             var aofSize = AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
             if (aofSize <= aofSizeLimit) return;
 
-            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            if (!await TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).ConfigureAwait(false))
                 return;
 
             try
@@ -230,7 +226,7 @@ namespace Garnet.server
                 logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
                     aofSize, aofSizeLimit);
 
-                var (storeTailAddress, objectStoreTailAddress) = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
+                var (storeTailAddress, objectStoreTailAddress) = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
 
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;

@@ -256,17 +256,17 @@ namespace Garnet.cluster
                 // At this point we need to hold the lock until this upcoming task completes
                 suppressUnlock = true;
                 _ = Task.Run(
-                    () =>
+                    async () =>
                     {
                         try
                         {
                             // Because of lock shenanigans we can't use Background: true here
                             ReplicateSyncOptions syncOpts = new(primaryId, Background: false, Force: true, TryAddReplica: true, AllowReplicaResetOnFailure: false, UpgradeLock: true);
-                            ReadOnlySpan<byte> errorMessage;
-                            var success =
-                                    clusterProvider.serverOptions.ReplicaDisklessSync ?
-                                    clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, syncOpts, out errorMessage) :
-                                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, syncOpts, out errorMessage);
+                            var (success, errorMessage) =
+                                    await
+                                        (clusterProvider.serverOptions.ReplicaDisklessSync ?
+                                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(activeSession, syncOpts) :
+                                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(activeSession, syncOpts)).ConfigureAwait(false);
 
                             if (success)
                             {
@@ -274,7 +274,7 @@ namespace Garnet.cluster
                             }
                             else
                             {
-                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage.Span));
                             }
                         }
                         catch (Exception ex)
@@ -559,7 +559,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="primaryReplicationOffset"></param>
         /// <returns></returns>
-        public async Task<long> WaitForReplicationOffset(long primaryReplicationOffset)
+        public async Task<long> WaitForReplicationOffsetAsync(long primaryReplicationOffset)
         {
             while (ReplicationOffset < primaryReplicationOffset)
             {
@@ -591,12 +591,15 @@ namespace Garnet.cluster
                     AllowReplicaResetOnFailure: false,
                     UpgradeLock: false
                 );
-                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    TryReplicateDisklessSync(null, syncOpts, out var errorMessage) :
-                    TryReplicateDiskbasedSync(null, syncOpts, out errorMessage);
+
+                // Cannot avoid blocking here, so calling .GetResult() is fine
+                var (success, errorMessage) =
+                    (clusterProvider.serverOptions.ReplicaDisklessSync ?
+                        TryReplicateDisklessSyncAsync(null, syncOpts) :
+                        TryReplicateDiskbasedSyncAsync(null, syncOpts)).GetAwaiter().GetResult();
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!success)
-                    logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage.Span));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {

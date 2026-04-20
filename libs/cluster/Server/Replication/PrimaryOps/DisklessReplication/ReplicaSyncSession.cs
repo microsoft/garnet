@@ -53,10 +53,10 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="commands"></param>
         /// <returns></returns>
-        public Task<string> ExecuteAsync(params string[] commands)
+        public async Task<string> ExecuteAsync(params string[] commands)
         {
-            WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.ExecuteAsync(commands);
+            await WaitForFlush().ConfigureAwait(false);
+            return await AofSyncTask.garnetClient.ExecuteAsync(commands).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -152,16 +152,20 @@ namespace Garnet.cluster
         {
             if (task != null)
             {
-                flushTask = task.ContinueWith(resp =>
+                flushTask = ContinueFlushTaskAsync(task).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+            }
+
+            async Task<bool> ContinueFlushTaskAsync(Task<string> task)
+            {
+                var resp = await task.ConfigureAwait(false);
+                if (!resp.Equals("OK", StringComparison.Ordinal))
                 {
-                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    {
-                        logger?.LogError("ReplicaSyncSession: {errorMsg}", resp.Result);
-                        SetStatus(SyncStatus.FAILED, resp.Result);
-                        return false;
-                    }
-                    return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+                    logger?.LogError("ReplicaSyncSession: {errorMsg}", resp);
+                    SetStatus(SyncStatus.FAILED, resp);
+                    return false;
+                }
+
+                return true;
             }
         }
 
@@ -173,12 +177,12 @@ namespace Garnet.cluster
         {
             try
             {
-                if (flushTask != null) _ = await flushTask;
+                if (flushTask != null) _ = await flushTask.ConfigureAwait(false);
                 flushTask = null;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.WaitForFlush)}");
+                logger?.LogError(ex, "{method}", $"{nameof(WaitForFlush)}");
                 SetStatus(SyncStatus.FAILED, "Flush task faulted");
             }
         }
@@ -191,7 +195,7 @@ namespace Garnet.cluster
         {
             try
             {
-                await signalCompletion.WaitAsync(token);
+                await signalCompletion.WaitAsync(token).ConfigureAwait(false);
                 Debug.Assert(ssInfo.syncStatus is SyncStatus.SUCCESS or SyncStatus.FAILED);
             }
             catch (Exception ex)
@@ -251,7 +255,7 @@ namespace Garnet.cluster
                     currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
                     checkpointEntry: null);
 
-                var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray());
+                var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray()).ConfigureAwait(false);
                 if (!long.TryParse(result, out var syncFromAofAddress))
                 {
                     logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSync));
@@ -274,7 +278,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.BeginAofSync)}");
+                logger?.LogError(ex, "{method}", $"{nameof(BeginAofSync)}");
                 SetStatus(SyncStatus.FAILED, ex.Message);
                 _ = clusterProvider.replicationManager.TryRemoveReplicationTask(AofSyncTask);
             }
