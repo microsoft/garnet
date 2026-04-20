@@ -1076,7 +1076,7 @@ namespace Garnet.test
 
         [Test]
         [Repeat(10)]
-        public async Task ListPushPopStressTest()
+        public void ListPushPopStressTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1091,46 +1091,61 @@ namespace Garnet.test
             ClassicAssert.AreEqual(keyCount, keys.Count, "Unique key initialization failed!");
 
             var keyArray = keys.ToArray();
-            Task[] tasks = new Task[keyArray.Length << 1];
-            for (int i = 0; i < tasks.Length; i += 2)
+            var errors = new Exception[keyArray.Length * 2];
+
+            // Use dedicated threads — no threadpool involvement at all.
+            // The original async Task.Run pattern causes threadpool starvation
+            // on small CI runners (2-4 cores).
+            Thread[] threads = new Thread[keyArray.Length * 2];
+            for (int i = 0; i < threads.Length; i += 2)
             {
                 int idx = i;
-                tasks[i] = Task.Run(async () =>
+                threads[i] = new Thread(() =>
                 {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
-                        await db.ListLeftPushAsync(key, j).ConfigureAwait(false);
+                    try
+                    {
+                        var key = keyArray[idx >> 1];
+                        for (int j = 0; j < ppCount; j++)
+                            db.ListLeftPush(key, j);
+                    }
+                    catch (Exception ex) { errors[idx] = ex; }
                 });
 
-                tasks[i + 1] = Task.Run(async () =>
+                threads[i + 1] = new Thread(() =>
                 {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
+                    try
                     {
-                        var value = await db.ListRightPopAsync(key).ConfigureAwait(false);
-                        while (value.IsNull)
+                        var key = keyArray[idx >> 1];
+                        for (int j = 0; j < ppCount; j++)
                         {
-                            // Use Thread.Sleep instead of Task.Delay to avoid threadpool scheduling
-                            // pressure — Task.Delay(1) in a tight retry loop across many tasks can
-                            // cause threadpool starvation on small CI runners.
-                            Thread.Sleep(1);
-                            value = await db.ListRightPopAsync(key).ConfigureAwait(false);
+                            var value = db.ListRightPop(key);
+                            while (value.IsNull)
+                            {
+                                Thread.Sleep(1);
+                                value = db.ListRightPop(key);
+                            }
+                            ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                         }
-                        ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                     }
+                    catch (Exception ex) { errors[idx + 1] = ex; }
                 });
             }
 
-            // Use LongRunning to get a dedicated thread for the timeout — Task.Delay can't
-            // fire under threadpool starvation since its timer callback needs a pool thread.
-            var timeoutTask = Task.Factory.StartNew(
-                () => Thread.Sleep(TimeSpan.FromMinutes(5)),
-                TaskCreationOptions.LongRunning);
+            foreach (var t in threads) t.Start();
 
-            var allDone = Task.WhenAll(tasks);
-            if (await Task.WhenAny(allDone, timeoutTask) != allDone)
-                ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes — possible threadpool starvation or lost values");
-            await allDone;
+            // Wait with a timeout — all threads are dedicated, no threadpool dependency.
+            foreach (var t in threads)
+            {
+                if (!t.Join(TimeSpan.FromMinutes(5)))
+                    ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes");
+            }
+
+            // Report any errors
+            for (int i = 0; i < errors.Length; i++)
+            {
+                if (errors[i] != null)
+                    ClassicAssert.Fail($"Thread {i} (key={keyArray[i >> 1]}) failed: {errors[i]}");
+            }
 
             foreach (var key in keyArray)
             {
