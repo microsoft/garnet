@@ -243,12 +243,12 @@ namespace Garnet.cluster
                 GarnetServerNode gsn;
                 if (getOrAddTask.IsCompletedSuccessfully)
                 {
-                    // Cannot remove .Result here, but it's gated by IsCompletedSuccessfully so safe
-                    (_, gsn) = getOrAddTask.Result;
+                    // Cannot remove .GetResult here, but it's gated by IsCompletedSuccessfully so safe
+                    (_, gsn) = getOrAddTask.GetAwaiter().GetResult();
                 }
                 else
                 {
-                    // Otherwise copy channl & message and go async
+                    // Otherwise copy channel & message and go async
                     return new(GoAsyncHelperAsync(getOrAddTask, default, entryIx, null, cmd, channel.ToArray(), message.ToArray()));
                 }
 
