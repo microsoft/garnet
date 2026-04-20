@@ -94,7 +94,6 @@ namespace Garnet.server
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             RecordSizeInfo sizeInfo = new();
-            var oldSize = logRecord.GetValueHeapMemorySize();
 
             if (logRecord.Info.ValueIsInline && (!inputHasETag || logRecord.Info.HasETag) && (expiration == 0 || logRecord.Info.HasExpiration))
             {
@@ -112,9 +111,6 @@ namespace Garnet.server
                     return false;
             }
 
-            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
-            if (sizeChange != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
 
             UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);
@@ -128,7 +124,6 @@ namespace Garnet.server
                 ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            var oldSize = logRecord.GetValueHeapMemorySize();
 
             // Create local sizeInfo
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
@@ -137,9 +132,6 @@ namespace Garnet.server
             if (!logRecord.TrySetValueObjectAndPrepareOptionals(newValue, in sizeInfo))
                 return false;
 
-            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
-            if (sizeChange != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
 
             UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);
@@ -155,16 +147,12 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            var oldSize = logRecord.GetValueHeapMemorySize();
 
             // Create local sizeInfo
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, inputLogRecord, ref input) };
             functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
-            if (sizeChange != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
 
             UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);

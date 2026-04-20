@@ -188,6 +188,7 @@ namespace Tsavorite.core
                 };
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
+                allocatorSettings.IsReadCache = true;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
                 readcacheBase = readcache.GetBase<TAllocator>();
                 readcacheBase.Initialize();

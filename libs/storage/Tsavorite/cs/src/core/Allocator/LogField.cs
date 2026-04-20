@@ -154,7 +154,7 @@ namespace Tsavorite.core
         /// Called when disposing a record, to free an Object or Overflow allocation and convert to inline so the lengths are set for record scanning or revivification.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey, Action<IHeapObject> objectDisposer = null)
+        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
         {
             Debug.Assert(isKey ? !recordInfo.KeyIsInline : !recordInfo.ValueIsInline);
 
@@ -164,7 +164,7 @@ namespace Tsavorite.core
             var objectId = *(int*)fieldAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
-                objectIdMap.Free(objectId, objectDisposer);
+                objectIdMap.Free(objectId);
                 *(int*)fieldAddress = ObjectIdMap.InvalidObjectId;
             }
 

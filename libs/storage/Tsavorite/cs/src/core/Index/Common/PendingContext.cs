@@ -184,16 +184,15 @@ namespace Tsavorite.core
             /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
             /// <param name="bufferPool">The memory pool used for allocating the space for inline data to be copied</param>
             /// <param name="transientObjectIdMap">The objectIdMap to reassign the objectIds to</param>
-            /// <param name="objectDisposer">The object disposer function to call</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
+            internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
                 if (srcLogRecord.IsMemoryLogRecord)
                 {
                     ref var memoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                    diskLogRecord = DiskLogRecord.CopyFrom(in memoryLogRecord, bufferPool, transientObjectIdMap, objectDisposer);
+                    diskLogRecord = DiskLogRecord.CopyFrom(in memoryLogRecord, bufferPool, transientObjectIdMap);
                     return;
                 }
 

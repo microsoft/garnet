@@ -136,10 +136,22 @@ namespace Tsavorite.core
 
                     var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
 
+                    // Track value heap delta across in-place write.
+                    var ipwPreInline = srcLogRecord.Info.ValueIsInline;
+                    var ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+
                     // Type arg specification is needed because we don't pass TContext
                     if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions))
                     {
+                        if (!ipwPreInline || !srcLogRecord.Info.ValueIsInline)
+                        {
+                            var ipwPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                            var ipwDelta = ipwPostHeap - ipwPreHeap;
+                            if (ipwDelta != 0)
+                                hlogBase.logSizeTracker?.IncrementSize(ipwDelta);
+                        }
+
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         pendingContext.eTag = srcLogRecord.ETag;
@@ -227,6 +239,12 @@ namespace Tsavorite.core
                 {
                     TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                             ref logRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+
+                    // Track revived record's heap — key was already tracked when the tombstone was created,
+                    // but value heap was subtracted at OnDispose(Deleted). Re-add it now.
+                    var valueHeap = logRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        hlogBase.logSizeTracker?.IncrementSize(valueHeap);
 
                     // Success
                     MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -344,11 +362,22 @@ namespace Tsavorite.core
             success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track in-place value deltas.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Type arg specification is needed because we don't pass TContext
                 TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref newLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+
+                // Track new record's value heap — after PostInitialWriter so the value is fully populated.
+                {
+                    var valueHeap = newLogRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                }
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
