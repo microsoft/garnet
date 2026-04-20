@@ -605,8 +605,8 @@ namespace Garnet.server
                     return true;
             }
 
-            // Have to block as we're on network thread, so .GetResult() call is ok
-            _ = CommitAofAsync(dbId).GetAwaiter().GetResult();
+            // Have to block as we're on network thread
+            _ = AsyncUtils.BlockingWait(CommitAofAsync(dbId));
 
             while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                 SendAndReset();
@@ -881,8 +881,8 @@ namespace Garnet.server
 
             var checkpointTask = storeWrapper.TakeCheckpointAsync(false, dbId: dbId, logger: logger);
 
-            // No choice but to call .GetResult(), we're on the network thread
-            var success = checkpointTask.GetAwaiter().GetResult();
+            // No choice but to block, we're on the network thread
+            var success = AsyncUtils.BlockingWait(checkpointTask);
 
             if (!success)
             {
@@ -1003,8 +1003,8 @@ namespace Garnet.server
 
             var checkpointTask = storeWrapper.TakeCheckpointAsync(true, dbId: dbId, logger: logger);
 
-            // No choice but to call .GetResult(), we're on the network thread
-            var success = checkpointTask.GetAwaiter().GetResult();
+            // No choice but to block, we're on the network thread
+            var success = AsyncUtils.BlockingWait(checkpointTask);
 
             if (success)
             {

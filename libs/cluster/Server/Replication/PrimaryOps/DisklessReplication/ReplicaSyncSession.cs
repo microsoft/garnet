@@ -53,7 +53,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<string> ExecuteAsync(params string[] commands)
         {
-            await WaitForFlush().ConfigureAwait(false);
+            await WaitForFlushAsync().ConfigureAwait(false);
             return await AofSyncTask.garnetClient.ExecuteAsync(commands).ConfigureAwait(false);
         }
 
@@ -62,7 +62,7 @@ namespace Garnet.cluster
         /// </summary>
         public void InitializeIterationBuffer()
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             AofSyncTask.garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
         }
 
@@ -71,7 +71,7 @@ namespace Garnet.cluster
         /// </summary>
         public void SetClusterSyncHeader()
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             if (AofSyncTask.garnetClient.NeedsInitialization)
                 AofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId);
         }
@@ -82,7 +82,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, MigrationRecordSpanType recordSpanType, out Task<string> task)
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             return AofSyncTask.garnetClient.TryWriteRecordSpan(recordSpan, recordSpanType, out task);
         }
 
@@ -92,7 +92,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public void SendAndResetIterationBuffer()
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             SetFlushTask(AofSyncTask.garnetClient.SendAndResetIterationBuffer());
         }
         #endregion
@@ -153,7 +153,7 @@ namespace Garnet.cluster
         /// Wait for network buffer flush
         /// </summary>
         /// <returns></returns>
-        public async Task WaitForFlush()
+        public async Task WaitForFlushAsync()
         {
             try
             {
@@ -162,7 +162,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", $"{nameof(WaitForFlush)}");
+                logger?.LogError(ex, "{method}", $"{nameof(WaitForFlushAsync)}");
                 SetStatus(SyncStatus.FAILED, "Flush task faulted");
             }
         }

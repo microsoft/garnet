@@ -1174,7 +1174,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoHashExpireWithAofRecovery()
+        public async Task CanDoHashExpireWithAofRecoveryAsync()
         {
             // Test AOF recovery of hash entries with expiry
 
@@ -1237,7 +1237,7 @@ namespace Garnet.test
             }
 
             // Commit to AOF and restart server
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();

@@ -569,11 +569,13 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here, so calling .GetResult() is fine
+                // Cannot avoid blocking here
                 var (success, errorMessage) =
-                    (clusterProvider.serverOptions.ReplicaDisklessSync ?
-                        TryReplicateDisklessSyncAsync(null, syncOpts) :
-                        TryReplicateDiskbasedSyncAsync(null, syncOpts)).GetAwaiter().GetResult();
+                    AsyncUtils.BlockingWait(
+                        (clusterProvider.serverOptions.ReplicaDisklessSync ?
+                            TryReplicateDisklessSyncAsync(null, syncOpts) :
+                            TryReplicateDiskbasedSyncAsync(null, syncOpts))
+                   );
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!success)
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage.Span));

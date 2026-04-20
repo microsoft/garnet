@@ -73,13 +73,13 @@ namespace Garnet.cluster
         /// Wait for network flush to complete for all sessions
         /// </summary>
         /// <returns></returns>
-        public async Task WaitForFlush()
+        public async Task WaitForFlushAsync()
         {
             for (var i = 0; i < NumSessions; i++)
             {
                 if (!IsActive(i)) continue;
                 // Wait for network flush
-                await Sessions[i].WaitForFlush();
+                await Sessions[i].WaitForFlushAsync().ConfigureAwait(false);
                 if (Sessions[i].Failed) Sessions[i] = null;
             }
         }
@@ -268,7 +268,7 @@ namespace Garnet.cluster
                 }
 
                 // Flush network buffers for all active sessions
-                await WaitForFlush();
+                await WaitForFlushAsync().ConfigureAwait(false);
                 #endregion
 
                 return fullSync;

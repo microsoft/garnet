@@ -280,7 +280,8 @@ namespace Garnet.server
             if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
                 return AbortWithErrorMessage(error);
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).GetAwaiter().GetResult();
+            // Must block as we're on the network thread
+            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout));
 
             if (result.IsForceUnblocked)
             {
@@ -905,7 +906,8 @@ namespace Garnet.server
 
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).GetAwaiter().GetResult();
+            // Must block, we're on the networking thread
+            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs));
 
             if (result.IsForceUnblocked)
             {

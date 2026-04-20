@@ -1204,7 +1204,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(24)]
         [Category("REPLICATION")]
-        public void ClusterReplicationManualCheckpointing()
+        public async Task ClusterReplicationManualCheckpointingAsync()
         {
             // Use case here is, outside of the cluster, period COMMITAOFs are requested.
             // Done so in recovery scenarios, if a primary does NOT come back there's still confidence
@@ -1245,9 +1245,9 @@ namespace Garnet.test.cluster
             }
 
             // Commit outside of cluster logic
-            var primaryCommit = context.nodes[0].Store.CommitAOF();
+            var primaryCommit = await context.nodes[0].Store.CommitAOFAsync(default);
             ClassicAssert.IsTrue(primaryCommit);
-            var secondCommit = context.nodes[1].Store.CommitAOF();
+            var secondCommit = await context.nodes[1].Store.CommitAOFAsync(default);
             ClassicAssert.IsFalse(secondCommit);
 
             // Check cluster remains in good state
