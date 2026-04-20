@@ -1176,7 +1176,7 @@ namespace Garnet.cluster
                     // will not be able to claim the slot without outside intervention
                     if (currentOwnerNodeId != null && currentOwnerNodeId.Equals(senderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase))
                     {
-                        logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
+                        // logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
                         newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                         newSlotMap[i]._state = SlotState.OFFLINE;
                     }

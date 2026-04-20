@@ -29,7 +29,7 @@ const sidebars = {
 		  "dev/custom-commands",
 		  "dev/multi-db",
 		  "dev/collection-broker",
-		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration"]},
+		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration", "dev/cluster/replication-dev"]},
 		  "dev/contributing"]},
 		/*
 		{type: 'category', label: 'Command Reference', items: ["commands", "pubsub", "transactions"]},

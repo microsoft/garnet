@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -18,7 +16,6 @@ namespace Garnet.server
     public sealed unsafe partial class AofProcessor
     {
         readonly StoreWrapper storeWrapper;
-        readonly RespServerSession respServerSession;
         readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
@@ -27,22 +24,14 @@ namespace Garnet.server
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
         /// </summary>
-        public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
-
-        /// <summary>Basic (Ephemeral locking) Session Context for main store</summary>
-        StringBasicContext stringBasicContext;
-        /// <summary>Transactional Session Context for main store</summary>
-        StringTransactionalContext stringTransactionalContext;
-
-        /// <summary>Basic (Ephemeral locking) Session Context for object store</summary>
-        ObjectBasicContext objectBasicContext;
-        /// <summary>Transactional Session Context for object store</summary>
-        ObjectTransactionalContext objectTransactionalContext;
-
-        /// <summary>Basic (Ephemeral locking) Session Context for unified store</summary>
-        UnifiedBasicContext unifiedBasicContext;
-        /// <summary>Transactional Session Context for unified store</summary>
-        UnifiedTransactionalContext unifiedTransactionalContext;
+        public void SetReadWriteSession()
+        {
+            for (var i = 0; i < storeWrapper.serverOptions.AofVirtualSublogCount; i++)
+            {
+                var respServerSession = aofReplayCoordinator.GetReplayContext(i).respServerSession;
+                respServerSession.clusterSession.SetReadWriteSession();
+            }
+        }
 
         readonly StoreWrapper replayAofStoreWrapper;
         readonly IClusterProvider clusterProvider;
@@ -50,6 +39,7 @@ namespace Garnet.server
         readonly Func<RespServerSession> obtainServerSession;
 
         readonly ILogger logger;
+        readonly bool usingShardedLog;
 
         /// <summary>
         /// Create new AOF processor
@@ -61,24 +51,19 @@ namespace Garnet.server
             ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
-
             this.clusterProvider = clusterProvider;
-            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            this.replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
-            obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+            this.activeDbId = 0;
+            this.usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1 || storeWrapper.serverOptions.AofReplayTaskCount > 1;
+            this.obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
-            activeDbId = 0;
-            respServerSession = ObtainServerSession();
+            this.aofReplayCoordinator = new AofReplayCoordinator(storeWrapper.serverOptions, this, logger);
+            this.logger = logger;
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
-
-            aofReplayCoordinator = new AofReplayCoordinator(this, logger);
-            this.logger = logger;
         }
-
-        private RespServerSession ObtainServerSession()
-            => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -87,109 +72,47 @@ namespace Garnet.server
         {
             activeVectorManager?.WaitForVectorOperationsToComplete();
             activeVectorManager?.ShutdownReplayTasks();
-
-            aofReplayCoordinator.Dispose();
-            respServerSession.Dispose();
+            aofReplayCoordinator?.Dispose();
         }
 
-        /// <summary>
-        /// Recover store using AOF
-        /// </summary>
-        /// <param name="db">Database to recover</param>
-        /// <param name="untilAddress">Tail address for recovery</param>
-        /// <returns>Tail address</returns>
-        public long Recover(GarnetDatabase db, long untilAddress = -1)
+        private RespServerSession ObtainServerSession()
+            => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+
+        private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
         {
-            var start = Stopwatch.GetTimestamp();
-            var total_number_of_replayed_records = 0L;
-            try
+            for (var i = 0; i < storeWrapper.serverOptions.AofVirtualSublogCount; i++)
             {
-                logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
-                return RecoverReplay(db, untilAddress);
-            }
-            finally
-            {
-                var end = Stopwatch.GetTimestamp();
-                var elapsed = Stopwatch.GetElapsedTime(start, end);
-                var seconds = elapsed.TotalMilliseconds / 1000.0;
-                var aofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
-                var recordsPerSec = total_number_of_replayed_records / seconds;
-                var gigabytesPerSec = (aofSize / seconds) / (double)1_000_000_000;
-
-                logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
-                logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0} bytes", total_number_of_replayed_records);
-                logger?.LogInformation("Throughput {recordsPerSec:N2} records/sec", recordsPerSec);
-                logger?.LogInformation("AOF Recovery size {aofSize:N0}", aofSize);
-                logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", gigabytesPerSec);
-            }
-
-            long RecoverReplay(GarnetDatabase db, long untilAddress)
-            {
-                // Begin replay for specified database
-                logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
-                try
+                var respServerSession = aofReplayCoordinator.GetReplayContext(i).respServerSession;
+                // Switch the session's context to match the specified database, if necessary
+                if (respServerSession.activeDbId != db.Id)
                 {
-                    // Fetch the database AOF and update the current database context for the processor
-                    var appendOnlyFile = db.AppendOnlyFile;
-                    SwitchActiveDatabaseContext(db);
-
-                    // Set the tail address for replay recovery to the tail address of the AOF if none specified
-                    if (untilAddress == -1)
-                        untilAddress = appendOnlyFile.TailAddress;
-
-                    // Run recover replay task
-                    RecoverReplayTask(untilAddress);
-
-                    void RecoverReplayTask(long untilAddress)
-                    {
-                        var count = 0;
-                        using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
-
-                        // Replay each AOF record in the current database context
-                        while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out var nextAofAddress))
-                        {
-                            count++;
-                            ProcessAofRecord(entry, length);
-                            if (count % 100_000 == 0)
-                                logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
-                        }
-
-                        logger?.LogInformation("Completed full AOF sublog replay of {count:N0} records (DB ID: {id})", count, db.Id);
-                        _ = Interlocked.Add(ref total_number_of_replayed_records, count);
-                    }
-
-                    unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length)
-                    {
-                        fixed (byte* ptr = entry.Memory.Span)
-                            ProcessAofRecordInternal(ptr, length, asReplica: false, out _);
-                        entry.Dispose();
-                    }
-
-                    return untilAddress;
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
-
-                    if (storeWrapper.serverOptions.FailOnRecoveryError)
-                        throw;
+                    var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
+                    Debug.Assert(switchDbSuccessful);
                 }
 
-                return -1;
+                // Switch the storage context to match the session, if necessary
+                if (activeDbId != db.Id || initialSetup)
+                {
+                    activeDbId = db.Id;
+                    activeVectorManager = db.VectorManager;
+                }
             }
         }
 
         /// <summary>
         /// Process AOF record internal
+        /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
+        /// <param name="virtualSublogIdx"></param>
         /// <param name="ptr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <param name="isCheckpointStart"></param>
-        public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
+        public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
-            var replayContext = aofReplayCoordinator.GetReplayContext();
+            var shardedHeader = default(AofShardedHeader);
+            var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
 
             // StoreRMW can queue VADDs onto different threads
@@ -201,7 +124,7 @@ namespace Garnet.server
             }
 
             // Handle transactions
-            if (aofReplayCoordinator.AddOrReplayTransactionOperation(ptr, length, asReplica))
+            if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, ptr, length, asReplica))
                 return;
 
             switch (header.opType)
@@ -213,12 +136,17 @@ namespace Garnet.server
                     {
                         if (replayContext.inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region",
-                                aofReplayCoordinator.FuzzyRegionBufferCount());
-                            aofReplayCoordinator.ClearFuzzyRegionBuffer();
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(virtualSublogIdx));
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer(virtualSublogIdx);
                         }
                         Debug.Assert(!replayContext.inFuzzyRegion);
                         replayContext.inFuzzyRegion = true;
+                    }
+
+                    if (usingShardedLog)
+                    {
+                        shardedHeader = *(AofShardedHeader*)ptr;
+                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -230,16 +158,28 @@ namespace Garnet.server
                         }
                         else
                         {
+                            Debug.Assert(replayContext.inFuzzyRegion);
                             replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                if (!usingShardedLog)
+                                {
+                                    _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                }
+                                else
+                                {
+                                    aofReplayCoordinator.ProcessSynchronizedOperation(
+                                        virtualSublogIdx,
+                                        ptr,
+                                        (int)LeaderBarrierType.CHECKPOINT,
+                                        () => storeWrapper.TakeCheckpoint(background: false, logger));
+                                }
                             }
 
                             // Process buffered records
-                            aofReplayCoordinator.ProcessFuzzyRegionOperations(storeWrapper.store.CurrentVersion, asReplica);
-                            aofReplayCoordinator.ClearFuzzyRegionBuffer();
+                            aofReplayCoordinator.ProcessFuzzyRegionOperations(virtualSublogIdx, storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer(virtualSublogIdx);
                         }
                     }
                     break;
@@ -247,25 +187,73 @@ namespace Garnet.server
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                        storeWrapper.store.SetVersion(header.storeVersion);
+                    {
+                        if (!usingShardedLog)
+                        {
+                            storeWrapper.store.SetVersion(header.storeVersion);
+                        }
+                        else
+                        {
+                            aofReplayCoordinator.ProcessSynchronizedOperation(
+                                virtualSublogIdx,
+                                ptr,
+                                (int)LeaderBarrierType.STREAMING_CHECKPOINT,
+                                () => storeWrapper.store.SetVersion(header.storeVersion));
+                        }
+                    }
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointEndCommit:
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    if (usingShardedLog)
+                    {
+                        shardedHeader = *(AofShardedHeader*)ptr;
+                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
+                    }
                     break;
                 case AofEntryType.FlushAll:
-                    storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
+                    if (!usingShardedLog)
+                    {
+                        storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
+                    }
+                    else
+                    {
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            virtualSublogIdx,
+                            ptr,
+                            (int)LeaderBarrierType.FLUSH_DB_ALL,
+                            () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
+                    }
                     break;
                 case AofEntryType.FlushDb:
-                    storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
+                    if (!usingShardedLog)
+                    {
+                        storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
+                    }
+                    else
+                    {
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            virtualSublogIdx,
+                            ptr,
+                            (int)LeaderBarrierType.FLUSH_DB,
+                            () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
+                    }
                     break;
                 default:
-                    _ = ReplayOp(stringBasicContext, objectBasicContext, unifiedBasicContext, ptr, length, asReplica);
+                    _ = ReplayOp(
+                        virtualSublogIdx,
+                        replayContext.StringBasicContext,
+                        replayContext.ObjectBasicContext,
+                        replayContext.UnifiedBasicContext,
+                        ptr,
+                        length,
+                        asReplica);
                     break;
             }
         }
 
-        private unsafe bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
+        private bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
+                int sublogIdx,
                 TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
                 byte* entryPtr, int length, bool asReplica)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
@@ -273,7 +261,7 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var header = *(AofHeader*)entryPtr;
-            var replayContext = aofReplayCoordinator.GetReplayContext();
+            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
 
             // StoreRMW can queue VADDs onto different threads
             // but everything else needs to WAIT for those to complete
@@ -284,49 +272,58 @@ namespace Garnet.server
             }
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(replayContext.inFuzzyRegion, entryPtr, length, asReplica))
+            if (SkipRecord(sublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica))
                 return false;
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
-            var keyPtr = entryPtr + sizeof(AofHeader);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(stringContext, keyPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    StoreUpsert(stringContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(stringContext, activeVectorManager, respServerSession, obtainServerSession, keyPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    StoreRMW(stringContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession, obtainServerSession, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(stringContext, keyPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    StoreDelete(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectContext, keyPtr, bufferPtr, bufferLength);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    ObjectStoreRMW(objectContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectContext, storeWrapper.GarnetObjectSerializer, keyPtr, bufferPtr, bufferLength);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    ObjectStoreUpsert(objectContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(objectContext, keyPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    ObjectStoreDelete(objectContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.UnifiedStoreRMW:
-                    UnifiedStoreRMW(unifiedContext, keyPtr, bufferPtr, bufferLength);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    UnifiedStoreRMW(unifiedContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    UnifiedStoreStringUpsert(unifiedContext, keyPtr, bufferPtr, bufferLength);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    UnifiedStoreStringUpsert(unifiedContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
-                    UnifiedStoreObjectUpsert(unifiedContext, storeWrapper.GarnetObjectSerializer, keyPtr, bufferPtr, bufferLength);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    UnifiedStoreObjectUpsert(unifiedContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreDelete:
-                    UnifiedStoreDelete(unifiedContext, activeVectorManager, respServerSession.storageSession, keyPtr);
+                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    UnifiedStoreDelete(unifiedContext, activeVectorManager, replayContext.respServerSession.storageSession, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoredProcedure:
-                    aofReplayCoordinator.ReplayStoredProc(header.procedureId, entryPtr);
+                    aofReplayCoordinator.ReplayStoredProc(sublogIdx, header.procedureId, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
-                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(entryPtr, asReplica);
+                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -335,35 +332,15 @@ namespace Garnet.server
             return true;
         }
 
-        private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
+        private void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
         {
-            // Switch the session's context to match the specified database, if necessary
-            if (respServerSession.activeDbId != db.Id)
-            {
-                var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
-                Debug.Assert(switchDbSuccessful);
-            }
-
-            // Switch the storage context to match the session, if necessary
-            if (activeDbId != db.Id || initialSetup)
-            {
-                stringBasicContext = respServerSession.storageSession.stringBasicContext;
-                stringTransactionalContext = respServerSession.storageSession.stringTransactionalContext;
-                unifiedBasicContext = respServerSession.storageSession.unifiedBasicContext;
-                unifiedTransactionalContext = respServerSession.storageSession.unifiedTransactionalContext;
-
-                if (!storeWrapper.serverOptions.DisableObjects)
-                {
-                    objectBasicContext = respServerSession.storageSession.objectBasicContext.Session.BasicContext;
-                    objectTransactionalContext = respServerSession.storageSession.objectTransactionalContext.Session.TransactionalContext;
-                }
-
-                activeDbId = db.Id;
-                activeVectorManager = db.VectorManager;
-            }
+            var shardedHeader = *(AofShardedHeader*)ptr;
+            var curr = ptr + sizeof(AofShardedHeader);
+            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+            storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(sublogIdx, key, shardedHeader.sequenceNumber);
         }
 
-        static void StoreUpsert<TStringContext>(TStringContext stringContext, byte* keyPtr)
+        static void StoreUpsert<TStringContext>(TStringContext stringContext, ref SessionParseState parseState, byte* keyPtr)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
@@ -372,7 +349,7 @@ namespace Garnet.server
             var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += value.TotalSize;
 
-            var stringInput = new StringInput();
+            var stringInput = new StringInput { parseState = parseState };
             _ = stringInput.DeserializeFrom(curr);
 
             StringOutput output = default;
@@ -381,19 +358,13 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void StoreRMW<TStringContext>(
-            TStringContext stringContext,
-            VectorManager vectorManager,
-            RespServerSession activeServerSession,
-            Func<RespServerSession> obtainServerSession,
-            byte* keyPtr
-        )
+        static void StoreRMW<TStringContext>(TStringContext stringContext, ref SessionParseState parseState, VectorManager vectorManager, RespServerSession activeServerSession, Func<RespServerSession> obtainServerSession, byte* keyPtr)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
 
-            var stringInput = new StringInput();
+            var stringInput = new StringInput { parseState = parseState };
             _ = stringInput.DeserializeFrom(curr);
 
             // VADD requires special handling, shove it over to the VectorManager
@@ -426,7 +397,7 @@ namespace Garnet.server
 
         static void StoreDelete<TStringContext>(TStringContext stringContext, byte* keyPtr)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        => stringContext.Delete((FixedSpanByteKey)PinnedSpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+            => stringContext.Delete((FixedSpanByteKey)PinnedSpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
 
         static void ObjectStoreUpsert<TObjectContext>(TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* keyPtr, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
@@ -443,13 +414,13 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void ObjectStoreRMW<TObjectContext>(TObjectContext objectContext, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void ObjectStoreRMW<TObjectContext>(TObjectContext objectContext, ref SessionParseState parseState, byte* keyPtr, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
 
-            var objectInput = new ObjectInput();
+            var objectInput = new ObjectInput { parseState = parseState };
             _ = objectInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
@@ -466,7 +437,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => objectContext.Delete((FixedSpanByteKey)SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
 
-        static void UnifiedStoreStringUpsert<TUnifiedContext>(TUnifiedContext unifiedContext, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void UnifiedStoreStringUpsert<TUnifiedContext>(TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* keyPtr, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
@@ -475,7 +446,7 @@ namespace Garnet.server
             var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += value.TotalSize;
 
-            var unifiedInput = new UnifiedInput();
+            var unifiedInput = new UnifiedInput { parseState = parseState };
             _ = unifiedInput.DeserializeFrom(curr);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
@@ -499,13 +470,13 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void UnifiedStoreRMW<TUnifiedContext>(TUnifiedContext unifiedContext, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void UnifiedStoreRMW<TUnifiedContext>(TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* keyPtr, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
             var curr = keyPtr + key.TotalSize();
 
-            var unifiedInput = new UnifiedInput();
+            var unifiedInput = new UnifiedInput { parseState = parseState };
             _ = unifiedInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & UnifiedInput
@@ -537,32 +508,132 @@ namespace Garnet.server
         /// <summary>
         /// On recovery apply records with header.version greater than CurrentVersion.
         /// </summary>
+        /// <param name="sublogIdx"></param>
         /// <param name="inFuzzyRegion"></param>
         /// <param name="entryPtr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool SkipRecord(bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
+        bool SkipRecord(int sublogIdx, bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
         {
             var header = *(AofHeader*)entryPtr;
-            return (asReplica && inFuzzyRegion)     // Buffer logic only for AOF version > 1
-                ? BufferNewVersionRecord(header, entryPtr, length)
-                : IsOldVersionRecord(header);
+            return (asReplica && inFuzzyRegion) ? // Buffer logic only for AOF version > 1
+                BufferNewVersionRecord(sublogIdx, header, entryPtr, length) :
+                IsOldVersionRecord(header);
 
-            bool BufferNewVersionRecord(AofHeader header, byte* entryPtr, int length)
+            bool BufferNewVersionRecord(int sublogIdx, AofHeader header, byte* entryPtr, int length)
             {
                 if (IsNewVersionRecord(header))
                 {
-                    aofReplayCoordinator.AddFuzzyRegionOperation(new ReadOnlySpan<byte>(entryPtr, length));
+                    aofReplayCoordinator.AddFuzzyRegionOperation(sublogIdx, new ReadOnlySpan<byte>(entryPtr, length));
                     return true;
                 }
                 return false;
             }
+
+            bool IsOldVersionRecord(AofHeader header)
+                => header.storeVersion < storeWrapper.store.CurrentVersion;
+
+            bool IsNewVersionRecord(AofHeader header)
+                => header.storeVersion > storeWrapper.store.CurrentVersion;
         }
 
-        bool IsOldVersionRecord(AofHeader header) => header.storeVersion < storeWrapper.store.CurrentVersion;
+        /// <summary>
+        /// Check if the calling parallel replay task should replay this entry
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="replayTaskIdx"></param>
+        /// <param name="sequenceNumber"></param>
+        /// <returns></returns>
+        /// <exception cref="GarnetException"></exception>
+        public bool CanReplay(byte* ptr, int replayTaskIdx, out long sequenceNumber)
+        {
+            var header = *(AofHeader*)ptr;
+            var replayHeaderType = (AofHeaderType)header.padding;
+            sequenceNumber = 0L;
+            switch (replayHeaderType)
+            {
+                // Check if should replay entry by inspecting key
+                case AofHeaderType.ShardedHeader:
+                    var shardedHeader = *(AofShardedHeader*)ptr;
+                    sequenceNumber = shardedHeader.sequenceNumber;
+                    var curr = AofHeader.SkipHeader(ptr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                    var hash = GarnetLog.HASH(key);
+                    var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
+                    return replayTaskIdx == _replayTaskIdx;
+                // If no key to inspect, check bit vector for participating replay tasks in the transaction
+                // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
+                case AofHeaderType.TransactionHeader:
+                    var txnHeader = *(AofTransactionHeader*)ptr;
+                    sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
+                    var bitVector = BitVector.CopyFrom(new Span<byte>(txnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                    return bitVector.IsSet(replayTaskIdx);
+                default:
+                    throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
+            }
+        }
 
-        bool IsNewVersionRecord(AofHeader header) => header.storeVersion > storeWrapper.store.CurrentVersion;
+        /// <summary>
+        /// Calculates the index of the replay task associated with the specified AOF header pointer.
+        /// </summary>
+        /// <param name="ptr">A pointer to a byte array representing the AOF header.</param>
+        /// <returns>The zero-based index of the replay task to which the entry should be assigned. Returns -1 if the header type
+        /// does not contain a key for task assignment.</returns>
+        /// <exception cref="GarnetException">Thrown when the AOF header type referenced by <paramref name="ptr"/> is not supported.</exception>
+        public int GetReplayTaskIdx(byte* ptr)
+        {
+            var header = *(AofHeader*)ptr;
+            var replayHeaderType = (AofHeaderType)header.padding;
+            switch (replayHeaderType)
+            {
+                // Check if should replay entry by inspecting key
+                case AofHeaderType.ShardedHeader:
+                    var shardedHeader = *(AofShardedHeader*)ptr;
+                    var curr = AofHeader.SkipHeader(ptr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                    var hash = GarnetLog.HASH(key);
+                    var _replayTaskIdx = (int)(hash % storeWrapper.serverOptions.AofReplayTaskCount);
+                    return _replayTaskIdx;
+                // If no key to inspect, check bit vector for participating replay tasks in the transaction
+                // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
+                case AofHeaderType.TransactionHeader:
+                    return -1;
+                default:
+                    throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
+            }
+        }
+
+        /// <summary>
+        /// Determines whether the specified log entry should be skipped during replay based on its sequence number.
+        /// </summary>
+        /// <param name="ptr">A pointer to the start of the log entry header in memory. Must point to a valid header structure.</param>
+        /// <param name="untilSequenceNumber">The sequence number threshold. Entries with a sequence number greater than this value will be skipped.
+        /// Specify -1 to skip all entries.</param>
+        /// <param name="entrySequenceNumber">When this method returns, contains the sequence number of the current log entry, or -1 if unavailable.</param>
+        /// <returns>true if the log entry should be skipped; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown if the log entry header type is not supported.</exception>
+        public bool SkipReplay(byte* ptr, long untilSequenceNumber, out long entrySequenceNumber)
+        {
+            entrySequenceNumber = -1;
+            if (untilSequenceNumber == -1)
+                return true;
+            var header = *(AofHeader*)ptr;
+            var replayHeaderType = (AofHeaderType)header.padding;
+            switch (replayHeaderType)
+            {
+                case AofHeaderType.ShardedHeader:
+                    var shardedHeader = *(AofShardedHeader*)ptr;
+                    entrySequenceNumber = shardedHeader.sequenceNumber;
+                    return shardedHeader.sequenceNumber > untilSequenceNumber;
+                case AofHeaderType.TransactionHeader:
+                    var txnHeader = *(AofTransactionHeader*)ptr;
+                    entrySequenceNumber = txnHeader.shardedHeader.sequenceNumber;
+                    return txnHeader.shardedHeader.sequenceNumber > untilSequenceNumber;
+                default:
+                    throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
+            }
+        }
     }
 }

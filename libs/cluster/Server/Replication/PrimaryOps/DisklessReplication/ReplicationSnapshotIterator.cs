@@ -31,7 +31,7 @@ namespace Garnet.cluster
         long currentFlushEventCount = 0;
         long lastFlushEventCount = 0;
 
-        public long CheckpointCoveredAddress { get; private set; }
+        AofAddress CheckpointCoveredAddress { get; set; }
 
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
         {
@@ -42,7 +42,7 @@ namespace Garnet.cluster
             sessions = replicationSyncManager.Sessions;
             numSessions = replicationSyncManager.NumSessions;
 
-            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
             for (var i = 0; i < numSessions; i++)
             {
                 if (!replicationSyncManager.IsActive(i)) continue;

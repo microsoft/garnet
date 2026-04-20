@@ -10,6 +10,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ namespace Garnet.test.cluster
         public EndPointCollection endpoints;
         public TextWriter logTextWriter = TestContext.Progress;
         public ILoggerFactory loggerFactory;
+        public NUnitLoggerProvider loggerProvider;
         public ILogger logger;
 
         public int defaultShards = 3;
@@ -44,15 +46,21 @@ namespace Garnet.test.cluster
 
         public CancellationTokenSource cts;
 
+        public void EnableGarnetLoggingEvents(GarnetTestLoggingEventType[] events)
+        {
+            foreach (var e in events)
+                loggerProvider.GarnetTestLoggingEvents[(int)e] = true;
+        }
+
         public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
-            var logLevel = LogLevel.Error;
+            var logLevel = LogLevel.Warning;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
                 logLevel = value;
-            loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
+            (loggerFactory, loggerProvider) = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
             logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.FullName);
             logger.LogDebug("0. Setup >>>>>>>>>>>>");
             r = new Random(674386);
@@ -117,7 +125,6 @@ namespace Garnet.test.cluster
             nodes[nodeIndex] = new GarnetServer(nodeOptions[nodeIndex], loggerFactory);
             nodes[nodeIndex].Start();
         }
-
 
         public void TearDown()
         {
@@ -233,6 +240,7 @@ namespace Garnet.test.cluster
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
         /// <param name="deviceType"></param>
+        /// <param name="sublogCount"></param>
         /// <param name="clusterReplicationReestablishmentTimeout"></param>
         /// <param name="aofSizeLimit"></param>
         /// <param name="compactionFrequencySecs"></param>
@@ -292,6 +300,8 @@ namespace Garnet.test.cluster
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
@@ -351,6 +361,8 @@ namespace Garnet.test.cluster
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                 replicaSyncTimeout: replicaSyncTimeout,
+                sublogCount: sublogCount,
+                replayTaskCount: replayTaskCount,
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
@@ -389,6 +401,7 @@ namespace Garnet.test.cluster
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
         /// <param name="asyncReplay"></param>
+        /// <param name="sublogCount"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
@@ -418,6 +431,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            int sublogCount = 1,
             int vectorSetReplayTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
@@ -428,6 +442,7 @@ namespace Garnet.test.cluster
                 TestFolder,
                 TestFolder,
                 endpoint,
+                logger: loggerFactory?.CreateLogger("GarnetServer"),
                 enableCluster: enableCluster,
                 disablePubSub: true,
                 disableObjects: disableObjects,
@@ -450,6 +465,7 @@ namespace Garnet.test.cluster
                 fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
+                sublogCount: sublogCount,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
@@ -467,7 +483,7 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                _ = Parallel.For(0, nodes.Length, i =>
+                for (var i = 0; i < nodes.Length; i++)
                 {
                     if (nodes[i] != null)
                     {
@@ -477,7 +493,7 @@ namespace Garnet.test.cluster
                         node.Dispose(true);
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }
-                });
+                }
             }
         }
 
@@ -577,14 +593,14 @@ namespace Garnet.test.cluster
             //Populate Primary
             if (disableObjects)
             {
-                PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+                if (!performRMW)
+                    PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+                else
+                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
             }
             else
             {
-                if (!performRMW)
-                    PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
-                else
-                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
+                PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
             }
         }
 

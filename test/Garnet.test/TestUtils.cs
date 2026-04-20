@@ -455,13 +455,20 @@ namespace Garnet.test
         /// <param name="recvOnly"></param>
         /// <param name="matchLevel"></param>
         /// <returns></returns>
-        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "", HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false)
+        public static (ILoggerFactory, NUnitLoggerProvider) CreateLoggerFactoryInstance(
+            TextWriter textWriter,
+            LogLevel logLevel,
+            string scope = "",
+            HashSet<string> skipCmd = null,
+            bool recvOnly = false,
+            bool matchLevel = false)
         {
-            return LoggerFactory.Create(builder =>
+            var provider = new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel);
+            return (LoggerFactory.Create(builder =>
             {
-                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel));
+                builder.AddProvider(provider);
                 builder.SetMinimumLevel(logLevel);
-            });
+            }), provider);
         }
 
         public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
@@ -517,6 +524,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
@@ -584,6 +593,8 @@ namespace Garnet.test
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout,
+                    sublogCount: sublogCount,
+                    replayTaskCount: replayTaskCount,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
@@ -665,6 +676,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
@@ -792,6 +805,8 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                AofPhysicalSublogCount = sublogCount,
+                AofReplayTaskCount = replayTaskCount,
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,

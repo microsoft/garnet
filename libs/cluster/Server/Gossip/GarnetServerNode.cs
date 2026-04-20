@@ -79,7 +79,8 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                endpoint, tlsOptions,
+                endpoint,
+                tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
@@ -161,7 +162,9 @@ namespace Garnet.cluster
             if (conf != lastConfig)
             {
                 lastConfig = conf;
-                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                // TODO: update info correctly
+                if (clusterProvider.replicationManager != null)
+                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset[0]);
                 byteArray = lastConfig.ToByteArray();
             }
             else
@@ -178,7 +181,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         private Task Gossip(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray).ContinueWith(t =>
+            return gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
             {
                 try
                 {
@@ -212,7 +215,7 @@ namespace Garnet.cluster
         public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var resp = await gc.GossipWithMeet(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).ConfigureAwait(false);
             return resp;
         }
 
@@ -297,7 +300,7 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+                gc.ExecuteClusterPublishNoResponse(cmd, ref channel, ref message);
             }
             finally
             {

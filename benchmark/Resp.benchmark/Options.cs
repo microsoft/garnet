@@ -113,6 +113,15 @@ namespace Resp.benchmark
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
 
+        [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
+        public bool AofBench { get; set; }
+
+        [Option("aof-bench-type", Required = false, Default = AofBenchType.Replay, HelpText = "Run AOF bench at replica.")]
+        public AofBenchType AofBenchType { get; set; }
+
+        [Option("aof-gen-pages", Required = false, Default = 64, HelpText = "DB size")]
+        public int AofGenPages { get; set; }
+
         /*
          * InProc/AofBench server options
          */
@@ -134,11 +143,17 @@ namespace Resp.benchmark
         [Option("aof-physical-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
         public int AofPhysicalSublogCount { get; set; }
 
+        [Option("aof-replay-task-count", Required = false, Default = 1, HelpText = "Number of replay tasks per physical sublog at the replica.")]
+        public int AofReplayTaskCount { get; set; }
+
         [Option("aof-memory-size", Required = false, Default = "64m", HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.")]
         public string AofMemorySize { get; set; }
 
         [Option("aof-page-size", Required = false, Default = "4m", HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
+
+        [Option("aof-tail-ref-freq", Required = false, Default = 100, HelpText = "Aof Tail Refresh Frequency.")]
+        public int AofReplicationRefreshFrequencyMs { get; set; }
 
         /// <summary>
         /// Parse size from string specification
@@ -205,5 +220,8 @@ namespace Resp.benchmark
             v |= v >> 32;
             return v - (v >> 1);
         }
+
+        public bool IsReplayEnabled
+            => AofBenchType is AofBenchType.Replay or AofBenchType.ReplayNoResp or AofBenchType.ReplayDirect;
     }
 }

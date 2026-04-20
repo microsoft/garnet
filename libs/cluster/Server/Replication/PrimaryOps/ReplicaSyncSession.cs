@@ -17,13 +17,13 @@ namespace Garnet.cluster
     internal sealed partial class ReplicaSyncSession(
         StoreWrapper storeWrapper,
         ClusterProvider clusterProvider,
+        AofAddress replicaAofBeginAddress,
+        AofAddress replicaAofTailAddress,
         SyncMetadata replicaSyncMetadata = null,
         CancellationToken token = default,
         string replicaNodeId = null,
         string replicaAssignedPrimaryId = null,
         CheckpointEntry replicaCheckpointEntry = null,
-        long replicaAofBeginAddress = 0,
-        long replicaAofTailAddress = 0,
         ILogger logger = null) : IDisposable
     {
         readonly StoreWrapper storeWrapper = storeWrapper;
@@ -36,8 +36,8 @@ namespace Garnet.cluster
 
         public readonly string replicaNodeId = replicaNodeId;
         public readonly string replicaAssignedPrimaryId = replicaAssignedPrimaryId;
-        private readonly long replicaAofBeginAddress = replicaAofBeginAddress;
-        private readonly long replicaAofTailAddress = replicaAofTailAddress;
+        private readonly AofAddress replicaAofBeginAddress = replicaAofBeginAddress;
+        private readonly AofAddress replicaAofTailAddress = replicaAofTailAddress;
 
         private readonly CheckpointEntry replicaCheckpointEntry = replicaCheckpointEntry;
 
@@ -49,8 +49,8 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            AofSyncTask?.garnetClient?.Dispose();
-            AofSyncTask = null;
+            AofSyncDriver?.DisposeClient();
+            AofSyncDriver = null;
             cts.Cancel();
             cts.Dispose();
             signalCompletion?.Dispose();
@@ -107,20 +107,22 @@ namespace Garnet.cluster
                 tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword,
+                clientName: nameof(ReplicaSyncSession.SendCheckpoint),
                 logger: logger);
             CheckpointEntry localEntry = default;
-            AofSyncTaskInfo aofSyncTaskInfo = null;
+            AofSyncDriver aofSyncDriver = null;
 
             try
             {
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion}",
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion);
 
+
                 logger?.LogInformation("Attempting to acquire checkpoint");
-                (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
+                (localEntry, aofSyncDriver) = await AcquireCheckpointEntry().ConfigureAwait(false);
                 logger?.LogInformation("Checkpoint search completed");
 
-                gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds);
+                gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
 
                 var index_size = -1L;
                 var hlog_size = default(LogFileInfo);
@@ -143,126 +145,70 @@ namespace Garnet.cluster
                     if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > PageHeader.Size)
                     {
                         //send hlog file segments and object file segments
-                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
+                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress).ConfigureAwait(false);
                         if (hlog_size.hasSnapshotObjects)
-                            await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG_OBJ, hlog_size.hybridLogObjectFileStartAddress, hlog_size.hybridLogObjectFileEndAddress);
+                            await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG_OBJ, hlog_size.hybridLogObjectFileStartAddress, hlog_size.hybridLogObjectFileEndAddress).ConfigureAwait(false);
                     }
 
                     // 2.Send index file segments
-                    await SendFileSegments(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
+                    await SendFileSegments(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size).ConfigureAwait(false);
 
                     // 3. Send snapshot files
                     if (hlog_size.snapshotFileEndAddress > PageHeader.Size)
                     {
                         //send snapshot file segments and object file segments
-                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
+                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress).ConfigureAwait(false);
                         if (hlog_size.hasSnapshotObjects)
-                            await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, 0, hlog_size.snapshotObjectFileEndAddress);
+                            await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, 0, hlog_size.snapshotObjectFileEndAddress).ConfigureAwait(false);
                     }
 
                     // 4. Send delta log segments
                     var dlog_size = hlog_size.deltaLogTailAddress;
-                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size);
+                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size).ConfigureAwait(false);
 
                     // 5.Send index metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken);
+                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken).ConfigureAwait(false);
 
                     // 6. Send snapshot metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken);
+                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken).ConfigureAwait(false);
                 }
 
                 #endregion
 
                 #region startAofSync
                 var recoverFromRemote = !skipLocalMainStoreCheckpoint;
-                var replayAOF = false;
                 var checkpointAofBeginAddress = localEntry.GetMinAofCoveredAddress();
                 var beginAddress = checkpointAofBeginAddress;
-                if (!recoverFromRemote)
-                {
-                    // If replica is ahead of this primary it will force itself to forget and start syncing from RecoveredReplicationOffset
-                    if (replicaAofBeginAddress > ReplicationManager.kFirstValidAofAddress && replicaAofBeginAddress > checkpointAofBeginAddress)
-                    {
-                        logger?.LogInformation(
-                            "ReplicaSyncSession: replicaAofBeginAddress {replicaAofBeginAddress} > PrimaryCheckpointRecoveredReplicationOffset {RecoveredReplicationOffset}, cannot use remote AOF",
-                            replicaAofBeginAddress, checkpointAofBeginAddress);
-                    }
-                    else
-                    {
-                        // Tail address cannot be behind the recovered address since above we checked replicaAofBeginAddress and it appears after RecoveredReplicationOffset
-                        // unless we are performing MainMemoryReplication
-                        // TODO: shouldn't we use the remote cEntry's tail address here since replica will recover to that?
-                        if (replicaAofTailAddress < checkpointAofBeginAddress && !clusterProvider.serverOptions.FastAofTruncate)
-                        {
-                            logger?.LogCritical("ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {RecoveredReplicationOffset}", replicaAofTailAddress, checkpointAofBeginAddress);
-                            throw new Exception($"ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {checkpointAofBeginAddress}");
-                        }
+                var sameHistory2 = string.IsNullOrEmpty(clusterProvider.replicationManager.PrimaryReplId2) && clusterProvider.replicationManager.PrimaryReplId2.Equals(replicaAssignedPrimaryId);
 
-                        // If we are behind this primary we need to decide until where to replay
-                        var replayUntilAddress = replicaAofTailAddress;
-                        // Replica tail is further ahead than committed address of primary
-                        if (storeWrapper.appendOnlyFile.CommittedUntilAddress < replayUntilAddress)
-                        {
-                            replayUntilAddress = storeWrapper.appendOnlyFile.CommittedUntilAddress;
-                        }
-
-                        // Replay only if records not included in checkpoint
-                        if (replayUntilAddress > checkpointAofBeginAddress)
-                        {
-                            logger?.LogInformation("ReplicaSyncSession: have to replay remote AOF from {beginAddress} until {untilAddress}", beginAddress, replayUntilAddress);
-                            replayAOF = true;
-                            // Bound replayUntilAddress to ReplicationOffset2 to avoid replaying divergent history only if connecting replica was attached to old primary
-                            if (!string.IsNullOrEmpty(clusterProvider.replicationManager.PrimaryReplId2) &&
-                                clusterProvider.replicationManager.PrimaryReplId2.Equals(replicaAssignedPrimaryId) &&
-                                replayUntilAddress > clusterProvider.replicationManager.ReplicationOffset2)
-                                replayUntilAddress = clusterProvider.replicationManager.ReplicationOffset2;
-                            checkpointAofBeginAddress = replayUntilAddress;
-                        }
-
-                        var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(replicaCheckpointEntry.metadata.storePrimaryReplId) && replicaCheckpointEntry.metadata.storePrimaryReplId.Equals(localEntry.metadata.storePrimaryReplId);
-                        if (!sameMainStoreCheckpointHistory)
-                        {
-                            // If we are not in the same checkpoint history, we need to stream the AOF from the primary's beginning address
-                            checkpointAofBeginAddress = beginAddress;
-                            replayAOF = false;
-                            logger?.LogInformation("ReplicaSyncSession: not in same checkpoint history, will replay from beginning address {checkpointAofBeginAddress}", checkpointAofBeginAddress);
-                        }
-                    }
-                }
+                // Calculate replay AOF range
+                var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(replicaCheckpointEntry.metadata.storePrimaryReplId) && replicaCheckpointEntry.metadata.storePrimaryReplId.Equals(localEntry.metadata.storePrimaryReplId);
+                var replayAOFMap = clusterProvider.storeWrapper.appendOnlyFile.ComputeAofSyncReplayAddress(
+                    recoverFromRemote,
+                    sameMainStoreCheckpointHistory,
+                    sameHistory2,
+                    clusterProvider.replicationManager.ReplicationOffset2,
+                    replicaAofBeginAddress,
+                    replicaAofTailAddress,
+                    beginAddress,
+                    ref checkpointAofBeginAddress);
 
                 // Signal replica to recover from local/remote checkpoint
                 // Make replica replayAOF if needed and replay from provided beginAddress to RecoveredReplication Address
-                var resp = await gcs.ExecuteBeginReplicaRecover(
+                var resp = await gcs.ExecuteClusterBeginReplicaRecover(
                     !skipLocalMainStoreCheckpoint,
-                    replayAOF,
+                    replayAOFMap,
                     clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
-                    beginAddress,
-                    checkpointAofBeginAddress).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
-                var syncFromAofAddress = long.Parse(resp);
+                    beginAddress.Span,
+                    checkpointAofBeginAddress.Span).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                var syncFromAofAddress = AofAddress.FromString(resp);
 
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
                     (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
-
-                if (!possibleAofDataLoss)
-                {
-                    if (syncFromAofAddress < storeWrapper.appendOnlyFile.BeginAddress)
-                    {
-                        logger?.LogError("syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, storeWrapper.appendOnlyFile.BeginAddress);
-                        logger?.LogCheckpointEntry(LogLevel.Error, "Requested replay address truncated", localEntry);
-                        throw new Exception("Failed syncing because replica requested truncated AOF address");
-                    }
-                }
-                else // possible AOF data loss
-                {
-                    if (syncFromAofAddress < storeWrapper.appendOnlyFile.BeginAddress)
-                    {
-                        logger?.LogWarning("AOF truncated, unsafe attach: syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, storeWrapper.appendOnlyFile.BeginAddress);
-                        logger?.LogCheckpointEntry(LogLevel.Warning, "Unsafe replay due to truncated AOF address", localEntry);
-                    }
-                }
+                clusterProvider.storeWrapper.appendOnlyFile.DataLossCheck(possibleAofDataLoss, syncFromAofAddress, logger);
 
                 // Check what happens if we fail after recovery and start AOF stream
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);
@@ -270,9 +216,9 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                if (!clusterProvider.replicationManager.TryAddReplicationTask(replicaNodeId, syncFromAofAddress, out aofSyncTaskInfo))
+                if (!clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaNodeId, ref syncFromAofAddress, out aofSyncDriver))
                     throw new GarnetException("Failed trying to try update replication task");
-                if (!clusterProvider.replicationManager.TryConnectToReplica(replicaNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
+                if (!clusterProvider.replicationManager.TryConnectToReplica(replicaNodeId, ref syncFromAofAddress, aofSyncDriver, out _))
                     throw new GarnetException("Failed connecting to replica for aofSync");
                 #endregion
             }
@@ -283,7 +229,8 @@ namespace Garnet.cluster
                 else
                     logger?.LogError("Error at attaching: {ex}", ex.Message);
 
-                if (aofSyncTaskInfo != null) _ = clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
+                if (aofSyncDriver != null)
+                    _ = clusterProvider.replicationManager.AofSyncDriverStore.TryRemove(aofSyncDriver);
                 errorMsg = ex.Message;// this is error sent to remote client
                 return false;
             }
@@ -297,9 +244,9 @@ namespace Garnet.cluster
             return true;
         }
 
-        public async Task<(CheckpointEntry, AofSyncTaskInfo)> AcquireCheckpointEntry()
+        private async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntry()
         {
-            AofSyncTaskInfo aofSyncTaskInfo;
+            AofSyncDriver aofSyncDriver;
             CheckpointEntry cEntry;
 
             // This loop tries to provide the following two guarantees
@@ -308,13 +255,14 @@ namespace Garnet.cluster
             var iteration = 0;
             var numOdcAttempts = 0;
             const int maxOdcAttempts = 2;
+
             while (true)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 logger?.LogInformation("AcquireCheckpointEntry iteration {iteration}", iteration);
                 iteration++;
 
-                aofSyncTaskInfo = null;
+                aofSyncDriver = null;
                 cEntry = default;
 
                 // Acquire startSaveTime to identify if an external task might have taken the checkpoint for us
@@ -350,26 +298,29 @@ namespace Garnet.cluster
                 // TryAddReplicationTask is guaranteed to return true in this scenario.
                 var validMetadata = ValidateMetadata(cEntry, out _, out _, out _);
                 if (clusterProvider.serverOptions.OnDemandCheckpoint &&
-                    (startAofAddress < clusterProvider.replicationManager.AofTruncatedUntil || !validMetadata))
+                    (startAofAddress.AnyLesser(clusterProvider.replicationManager.AofSyncDriverStore.TruncatedUntil) || !validMetadata))
                 {
                     if (numOdcAttempts >= maxOdcAttempts && clusterProvider.AllowDataLoss)
                     {
-                        logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts. Possible data loss, startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}.", numOdcAttempts, startAofAddress, clusterProvider.replicationManager.AofTruncatedUntil);
+                        logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts. Possible data loss, startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}.", numOdcAttempts, startAofAddress, clusterProvider.replicationManager.AofSyncDriverStore.TruncatedUntil);
                     }
                     else
                     {
                         cEntry.RemoveReader();
                         numOdcAttempts++;
                         logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
-                        await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
+                        await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime).ConfigureAwait(false);
                         await Task.Yield();
                         continue;
                     }
                 }
 
+                // Validate that AofSyncDriver has been terminated
+                clusterProvider.replicationManager.AofSyncDriverStore.AssertDoesNotExist(replicaNodeId);
+
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
-                if (clusterProvider.replicationManager.TryAddReplicationTask(replicaNodeId, startAofAddress, out aofSyncTaskInfo))
+                if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaNodeId, ref startAofAddress, out aofSyncDriver))
                     break;
 
                 // Unlock last checkpoint because associated startAofAddress is no longer available
@@ -379,7 +330,7 @@ namespace Garnet.cluster
                 await Task.Yield();
             }
 
-            return (cEntry, aofSyncTaskInfo);
+            return (cEntry, aofSyncDriver);
         }
 
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
@@ -404,7 +355,7 @@ namespace Garnet.cluster
                         }
                     }
 
-                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    var resp = await gcs.ExecuteClusterSendCheckpointMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
@@ -443,7 +394,8 @@ namespace Garnet.cluster
                     var num_bytes = startAddress + batchSize < endAddress ? batchSize : (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    resp = await gcs.ExecuteClusterSendCheckpointFileSegment(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).
+                        WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -454,7 +406,8 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                resp = await gcs.ExecuteClusterSendCheckpointFileSegment(fileTokenBytes, (int)type, startAddress, []).
+                    WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);

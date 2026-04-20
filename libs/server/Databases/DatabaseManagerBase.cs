@@ -63,7 +63,7 @@ namespace Garnet.server
         public abstract void RecoverAOF();
 
         /// <inheritdoc/>
-        public abstract long ReplayAOF(long untilAddress = -1);
+        public abstract AofAddress ReplayAOF(AofAddress untilAddress);
 
         /// <inheritdoc/>
         public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
@@ -120,7 +120,7 @@ namespace Garnet.server
         public TsavoriteKV<StoreFunctions, StoreAllocator> Store => DefaultDatabase.Store;
 
         /// <inheritdoc/>
-        public TsavoriteLog AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
+        public GarnetAppendOnlyFile AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
 
         /// <inheritdoc/>
         public DateTimeOffset LastSaveTime => DefaultDatabase.LastSaveTime;
@@ -203,7 +203,7 @@ namespace Garnet.server
                     tryIncremental = false;
 
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger);
+                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger).ConfigureAwait(false);
 
                 return full ? lastSaveStoreTailAddress : null;
             }
@@ -238,9 +238,9 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-            db.AppendOnlyFile.Recover();
+            db.AppendOnlyFile.Log.Recover();
             Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}, DB ID: {id}",
-                db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress, db.Id);
+                db.AppendOnlyFile.Log.BeginAddress, db.AppendOnlyFile.Log.TailAddress, db.Id);
         }
 
         /// <summary>
@@ -250,13 +250,13 @@ namespace Garnet.server
         /// <param name="db">Database to replay</param>
         /// <param name="untilAddress">Tail address</param>
         /// <returns>Tail address</returns>
-        protected long ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, long untilAddress = -1)
+        protected AofAddress ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, AofAddress untilAddress)
         {
-            long replicationOffset = 0;
             try
             {
-                replicationOffset = aofProcessor.Recover(db, untilAddress);
+                var replicationOffset = aofProcessor.Recover(db, untilAddress);
                 db.LastSaveTime = DateTimeOffset.UtcNow;
+                return replicationOffset;
             }
             catch (Exception ex)
             {
@@ -265,7 +265,7 @@ namespace Garnet.server
                     throw;
             }
 
-            return replicationOffset;
+            return default;
         }
 
         /// <summary>
@@ -276,9 +276,9 @@ namespace Garnet.server
         {
             try
             {
-                if (db.Store.Log.TailAddress > PageHeader.Size)
+                if (db.Store.Log.TailAddress > 64)
                     db.Store.Reset();
-                db.AppendOnlyFile?.Reset();
+                db.AppendOnlyFile?.Log.Reset();
 
                 var lastSave = DateTimeOffset.FromUnixTimeSeconds(0);
                 db.LastSaveTime = lastSave;
@@ -299,14 +299,7 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-            AofHeader header = new()
-            {
-                opType = entryType,
-                storeVersion = version,
-                sessionID = -1
-            };
-
-            db.AppendOnlyFile.Enqueue(header, out _);
+            db.AppendOnlyFile.Log.EnqueueDatabaseCommit(entryType, version);
         }
 
         /// <summary>
@@ -320,7 +313,7 @@ namespace Garnet.server
             db.Store.Log.ShiftBeginAddress(db.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
 
             if (truncateAof)
-                db.AppendOnlyFile?.TruncateUntil(db.AppendOnlyFile.TailAddress);
+                db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);
         }
 
         /// <summary>
@@ -336,7 +329,7 @@ namespace Garnet.server
             {
                 var store = DefaultDatabase.Store;
                 if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                        () => store.IndexSize, async () => await store.GrowIndexAsync()))
+                        () => store.IndexSize, async () => await store.GrowIndexAsync().ConfigureAwait(false)))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -361,8 +354,7 @@ namespace Garnet.server
                 var scratchBufferBuilder = new ScratchBufferBuilder();
                 var scratchBufferAllocator = new ScratchBufferAllocator();
                 db.StoreCollectionDbStorageSession =
-                    new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, db.VectorManager, Logger);
-
+                    new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, readSessionState: null, db.VectorManager, Logger);
             }
 
             ExecuteHashCollect(db.StoreCollectionDbStorageSession);
@@ -398,7 +390,7 @@ namespace Garnet.server
             {
                 logger?.LogError(ex,
                     "Exception raised during compaction. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; DB ID = {id}",
-                    db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress, db.Id);
+                    db.AppendOnlyFile.Log.TailAddress, db.AppendOnlyFile.Log.CommittedUntilAddress, db.Id);
                 throw;
             }
         }
@@ -495,11 +487,11 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
                 {
                     if (!StoreWrapper.serverOptions.EnableFastCommit)
-                        db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                        db.AppendOnlyFile?.Log.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
                 else
                 {
-                    db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                    db.AppendOnlyFile?.Log.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
         }
@@ -518,18 +510,18 @@ namespace Garnet.server
         {
             logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, dbId = {dbId}", full, checkpointType, tryIncremental, db.Id);
 
-            long checkpointCoveredAofAddress = 0;
+            var checkpointCoveredAofAddress = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
             if (db.AppendOnlyFile != null)
             {
                 if (StoreWrapper.serverOptions.EnableCluster)
-                    StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
+                    StoreWrapper.clusterProvider.OnCheckpointInitiated(ref checkpointCoveredAofAddress);
                 else
                 {
-                    checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
-                    StoreWrapper.StoreCheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
+                    checkpointCoveredAofAddress = db.AppendOnlyFile.Log.TailAddress;
+                    StoreWrapper.StoreCheckpointManager.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
                 }
 
-                if (checkpointCoveredAofAddress > 0)
+                if (checkpointCoveredAofAddress.AnyGreater(0))
                     logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
             }
 
@@ -549,18 +541,18 @@ namespace Garnet.server
                     : Checkpoint.HybridLogOnly(db.Store, checkpointType, out checkpointResult.token);
             }
 
-            checkpointResult.success = await db.StateMachineDriver.RunAsync(sm);
+            checkpointResult.success = await db.StateMachineDriver.RunAsync(sm).ConfigureAwait(false);
 
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
-                StoreWrapper.clusterProvider.SafeTruncateAOF(full, checkpointCoveredAofAddress,
+                StoreWrapper.clusterProvider.AddNewCheckpointEntry(full, checkpointCoveredAofAddress,
                     checkpointResult.token, checkpointResult.token);
             }
             else
             {
-                db.AppendOnlyFile?.TruncateUntil(checkpointCoveredAofAddress);
-                db.AppendOnlyFile?.Commit();
+                db.AppendOnlyFile?.Log.TruncateUntil(checkpointCoveredAofAddress);
+                db.AppendOnlyFile?.Log.Commit();
             }
 
             // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
@@ -607,7 +599,7 @@ namespace Garnet.server
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
                 var scratchBufferAllocator = new ScratchBufferAllocator();
-                db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, db.VectorManager, Logger);
+                db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, readSessionState: null, db.VectorManager, Logger);
             }
 
             var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
@@ -646,7 +638,7 @@ namespace Garnet.server
             {
                 var scratchBufferBuilder = new ScratchBufferBuilder();
                 var scratchBufferAllocator = new ScratchBufferAllocator();
-                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, db.VectorManager, Logger);
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferBuilder, scratchBufferAllocator, null, null, db.Id, readSessionState: null, db.VectorManager, Logger);
             }
 
             using var session = store.NewSession<FixedSpanByteKey, TInput, TOutput, long, ISessionFunctions<TInput, TOutput, long>>(sessionFunctions);

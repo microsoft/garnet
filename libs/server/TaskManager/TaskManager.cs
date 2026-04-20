@@ -97,7 +97,7 @@ namespace Garnet.server
 
                 // Execute task factory
                 if (cleanupOnCompletion)
-                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await Cancel(taskType)).Unwrap();
+                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await Cancel(taskType).ConfigureAwait(false)).Unwrap();
                 else
                     taskMetadata.Task = taskFactory(taskMetadata.Cts.Token);
             }
@@ -131,7 +131,7 @@ namespace Garnet.server
                     {
                         taskMetadata.Cts.Cancel();
                         if (taskMetadata.Task != null)
-                            await taskMetadata.Task.WaitAsync(disposed ? default : cts.Token);
+                            await taskMetadata.Task.WaitAsync(disposed ? default : cts.Token).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)
@@ -149,7 +149,7 @@ namespace Garnet.server
         public async Task Cancel(TaskPlacementCategory taskPlacementCategory)
         {
             foreach (var taskType in TaskTypeExtensions.GetTaskTypes(taskPlacementCategory))
-                await Cancel(taskType);
+                await Cancel(taskType).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -171,7 +171,7 @@ namespace Garnet.server
         {
             if (registry.TryGetValue(taskType, out var taskInfo))
             {
-                await taskInfo.Task.WaitAsync(token);
+                await taskInfo.Task.WaitAsync(token).ConfigureAwait(false);
                 return true;
             }
             return false;

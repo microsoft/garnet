@@ -44,6 +44,9 @@ namespace Garnet.server
         public readonly int Count
         => session.parseState.Count;
 
+        public readonly ReadOnlySpan<PinnedSpanByte> Parameters
+            => session.parseState.Parameters;
+
         /// <inheritdoc/>
         public readonly void GetInput(int i, out StringInput input)
         => input = new(RespCommand.GET, arg1: -1);
@@ -127,6 +130,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly int Count
         => session.parseState.Count;
+
+        public readonly ReadOnlySpan<PinnedSpanByte> Parameters
+            => session.parseState.Parameters;
 
         private readonly bool HasGoneAsync
         => !runningStatus.IsEmpty;

@@ -3,6 +3,10 @@
 
 using System;
 using System.Text;
+#if DEBUG
+using Garnet.common;
+#endif
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -17,7 +21,7 @@ namespace Garnet.cluster
         /// <param name="replicaSyncMetadata"></param>
         /// <param name="errorMessage"></param>
         /// <returns></returns>
-        public bool TryAttachSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
+        public bool TryBeginDisklessSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
@@ -29,33 +33,16 @@ namespace Garnet.cluster
                     logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 }
 
+#if DEBUG
+                ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).GetAwaiter().GetResult();
+#endif
+
                 var status = replicationSyncManager.ReplicationSyncDriver(replicaSyncSession).GetAwaiter().GetResult();
                 if (status.syncStatus == SyncStatus.FAILED)
                     errorMessage = Encoding.ASCII.GetBytes(status.error);
             }
 
             return true;
-        }
-
-        /// <summary>
-        /// Start sync of remote replica from this primary
-        /// </summary>
-        /// <param name="replicaNodeId"></param>
-        /// <param name="replicaAssignedPrimaryId"></param>
-        /// <param name="replicaCheckpointEntry"></param>
-        /// <param name="replicaAofBeginAddress"></param>
-        /// <param name="replicaAofTailAddress"></param>
-        /// <param name="errorMessage"></param>
-        /// <returns></returns>
-        public bool TryBeginPrimarySync(
-            string replicaNodeId,
-            string replicaAssignedPrimaryId,
-            CheckpointEntry replicaCheckpointEntry,
-            long replicaAofBeginAddress,
-            long replicaAofTailAddress,
-            out ReadOnlySpan<byte> errorMessage)
-        {
-            return TryBeginDiskSync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, out errorMessage);
         }
 
         /// <summary>
@@ -68,12 +55,12 @@ namespace Garnet.cluster
         /// <param name="replicaAofTailAddress">AOF tail address at replica</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryBeginDiskSync(
+        public bool TryBeginDiskbasedSync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
-            long replicaAofBeginAddress,
-            long replicaAofTailAddress,
+            AofAddress replicaAofBeginAddress,
+            AofAddress replicaAofTailAddress,
             out ReadOnlySpan<byte> errorMessage)
         {
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress))
@@ -96,6 +83,10 @@ namespace Garnet.cluster
                         return false;
                     }
 
+#if DEBUG
+                    ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).GetAwaiter().GetResult();
+#endif
+
                     if (!session.SendCheckpoint().GetAwaiter().GetResult())
                     {
                         errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
@@ -107,7 +98,8 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    replicaSyncSessionTaskStore.TryRemove(replicaId);
+                    if (!replicaSyncSessionTaskStore.TryRemove(replicaId))
+                        logger?.LogError("Unable to remove replica sync session for remote node {replicaId}", replicaId);
                 }
             }
         }

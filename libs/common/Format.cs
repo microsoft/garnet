@@ -117,7 +117,7 @@ namespace Garnet.common
                     foreach (var entry in ipAddresses)
                     {
                         var endpoint = new IPEndPoint(entry, port);
-                        var IsListening = await TryConnect(endpoint);
+                        var IsListening = await TryConnect(endpoint).ConfigureAwait(false);
                         if (IsListening) return [endpoint];
                     }
                 }
@@ -149,7 +149,7 @@ namespace Garnet.common
                 {
                     try
                     {
-                        await tcpClient.ConnectAsync(endpoint.Address, endpoint.Port);
+                        await tcpClient.ConnectAsync(endpoint.Address, endpoint.Port).ConfigureAwait(false);
                         logger?.LogTrace("Reachable {ip} {port}", endpoint.Address, endpoint.Port);
                         return true;
                     }
