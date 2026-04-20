@@ -1,13 +1,29 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Per-record and store-level lifecycle callbacks invoked by the store at key events:
-    /// flush to disk, eviction, disposal, disk read, and checkpoint.
+    /// Identifies which log a record eviction originated from. Main log and read cache are
+    /// separate <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/> instances but share
+    /// a single <see cref="IStoreFunctions"/>; this enum lets an <see cref="IRecordTriggers"/>
+    /// implementation tell the two apart when reacting to <see cref="IRecordTriggers.OnEvict"/>.
+    /// </summary>
+    public enum EvictionSource
+    {
+        /// <summary>The record is being evicted from the main hybrid log.</summary>
+        MainLog,
+
+        /// <summary>The record is being evicted from the read cache.</summary>
+        ReadCache,
+    }
+
+    /// <summary>
+    /// Per-record lifecycle callbacks invoked by the store at key events:
+    /// flush to disk, eviction, disposal, and disk read.
     /// </summary>
     public interface IRecordTriggers
     {
@@ -15,31 +31,50 @@ namespace Tsavorite.core
         /// If true, <see cref="OnFlush(ref LogRecord)"/> is called per valid record on the
         /// original in-memory page before it is flushed to disk.
         /// </summary>
-        bool CallOnFlush { get; }
+        bool CallOnFlush => false;
 
         /// <summary>
-        /// If true, <see cref="OnEvict(ref LogRecord)"/> is called per non-tombstoned record
-        /// when a page is evicted past HeadAddress.
+        /// If true, <see cref="OnEvict(ref LogRecord, EvictionSource)"/> is called per non-tombstoned
+        /// record when a page is evicted past HeadAddress. Returning false lets the allocator skip the
+        /// per-record OnEvict callback when the application has no work to do.
+        /// Note: Tsavorite's internal heap-size accounting runs regardless of this flag.
         /// </summary>
-        bool CallOnEvict { get; }
+        bool CallOnEvict => false;
 
         /// <summary>
         /// If true, <see cref="OnDiskRead(ref LogRecord)"/> is called per record loaded from
         /// disk into memory (recovery, delta log apply, pending reads, push scans).
         /// </summary>
-        bool CallOnDiskRead { get; }
+        bool CallOnDiskRead => false;
 
         /// <summary>
-        /// Called when a heap value object needs to be disposed (e.g. during ClearHeapFields).
-        /// </summary>
-        void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason);
-
-        /// <summary>
-        /// Called when a record is disposed due to delete, CAS failure, or other store-internal reasons.
+        /// Called when a record is disposed due to delete, expiration, CAS failure, elision,
+        /// revivification, or other store-internal reasons. Use <paramref name="reason"/> to
+        /// distinguish the event type (e.g. <see cref="DisposeReason.Deleted"/> for tombstoning).
+        /// Heap-size accounting is handled internally by the store — implementations only need
+        /// this callback for app-level resource cleanup (e.g. releasing native handles).
         /// NOT called for page eviction (use <see cref="OnEvict"/> instead).
+        /// NOT called for transient records materialized from disk (use <see cref="OnDisposeDiskRecord"/>).
         /// Default implementation is a no-op.
         /// </summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason) { }
+
+        /// <summary>
+        /// Called when a transient <see cref="DiskLogRecord"/> is about to be disposed — e.g. a record
+        /// deserialized from disk for a pending Read/RMW, delivered via scan iteration, or streamed
+        /// during cluster migration/replication. If the value object implements <see cref="IDisposable"/>
+        /// and holds resources that this DiskLogRecord owns, the application should invoke
+        /// <see cref="IDisposable.Dispose"/> from this callback.
+        /// <para>
+        /// Caveat: scan iterators may briefly wrap an in-memory log record as a DiskLogRecord that
+        /// <em>shares</em> its value-object reference with the live on-log record. Implementations that
+        /// hold external resources should either gate disposal on <paramref name="reason"/> or avoid
+        /// disposing the value object from this callback; uncritical disposal there would corrupt the
+        /// still-alive on-log record.
+        /// </para>
+        /// Default implementation is a no-op.
+        /// </summary>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
 
         /// <summary>
         /// Called per valid record on the original in-memory page before flush to disk.
@@ -51,9 +86,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Called per non-tombstoned record when a page is evicted past HeadAddress.
         /// Allows the application to free external resources (e.g. native memory).
-        /// Only called when <see cref="CallOnEvict"/> is true. Default implementation is a no-op.
+        /// Only called when <see cref="CallOnEvict"/> is true.
         /// </summary>
-        void OnEvict(ref LogRecord logRecord) { }
+        /// <param name="logRecord">The record being evicted.</param>
+        /// <param name="source">Which log (main or read cache) the record is being evicted from.</param>
+        void OnEvict(ref LogRecord logRecord, EvictionSource source) { }
 
         /// <summary>
         /// Called per record loaded from disk into memory. Allows the application to invalidate
@@ -64,26 +101,18 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Called once before recovering records from a checkpoint snapshot file.
-        /// Provides the checkpoint token so the application knows which snapshot files to use.
         /// Default implementation is a no-op.
         /// </summary>
         void OnRecovery(System.Guid checkpointToken) { }
 
         /// <summary>
         /// Called per record recovered from a checkpoint snapshot file (above FlushedUntilAddress).
-        /// Allows the application to mark stubs so the restore path uses the checkpoint snapshot.
         /// Only called when <see cref="CallOnDiskRead"/> is true. Default implementation is a no-op.
         /// </summary>
         void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
 
         /// <summary>
         /// Called at checkpoint lifecycle points identified by <paramref name="trigger"/>.
-        /// <list type="bullet">
-        /// <item><see cref="CheckpointTrigger.VersionShift"/>: PREPARE → IN_PROGRESS transition.
-        /// Set a barrier to block v+1 operations on external resources.</item>
-        /// <item><see cref="CheckpointTrigger.FlushBegin"/>: WAIT_FLUSH, after all v threads
-        /// completed. Snapshot external resources and clear the barrier.</item>
-        /// </list>
         /// Default implementation is a no-op.
         /// </summary>
         void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) { }
@@ -108,7 +137,8 @@ namespace Tsavorite.core
         public bool CallOnDiskRead => false;
 
         /// <inheritdoc/>
-        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
     }
 
     /// <summary>
@@ -130,6 +160,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason) { }
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason) { }
     }
 }

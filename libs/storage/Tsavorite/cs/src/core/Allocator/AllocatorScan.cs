@@ -193,6 +193,7 @@ namespace Tsavorite.core
             }
             finally
             {
+                _wrapper.OnDisposeDiskRecord(ref request.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 request.DisposeRecord();
             }
             return !stop;

@@ -536,7 +536,9 @@ namespace Garnet.cluster
 
                         diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
                         _ = basicGarnetApi.SET(in diskLogRecord);
+                        storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
+                        diskLogRecord = default; // prevent double-trigger in catch
                     }
                     else
                     {
@@ -549,7 +551,11 @@ namespace Garnet.cluster
             catch
             {
                 // Dispose the diskLogRecord if there was an exception in SET
-                diskLogRecord.Dispose();
+                if (diskLogRecord.IsSet)
+                {
+                    storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    diskLogRecord.Dispose();
+                }
                 throw;
             }
 

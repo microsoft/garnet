@@ -59,17 +59,17 @@ namespace Tsavorite.core
         /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
         bool CallOnDiskRead { get; }
 
-        /// <inheritdoc cref="IRecordTriggers.OnDisposeValueObject"/>
-        void OnDisposeValueObject(IHeapObject valueObject, DisposeReason reason);
-
         /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason);
+
+        /// <inheritdoc cref="IRecordTriggers.OnDisposeDiskRecord"/>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
 
         /// <inheritdoc cref="IRecordTriggers.OnFlush"/>
         void OnFlush(ref LogRecord logRecord);
 
         /// <inheritdoc cref="IRecordTriggers.OnEvict"/>
-        void OnEvict(ref LogRecord logRecord);
+        void OnEvict(ref LogRecord logRecord, EvictionSource source);
 
         /// <inheritdoc cref="IRecordTriggers.OnDiskRead"/>
         void OnDiskRead(ref LogRecord logRecord);

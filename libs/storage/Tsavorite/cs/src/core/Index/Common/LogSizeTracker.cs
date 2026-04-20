@@ -33,7 +33,7 @@ namespace Tsavorite.core
     /// <summary>Tracks and controls size of log</summary>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
-    public sealed class LogSizeTracker<TStoreFunctions, TAllocator> : LogSizeTracker, IObserver<ITsavoriteScanIterator>
+    public sealed class LogSizeTracker<TStoreFunctions, TAllocator> : LogSizeTracker
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -188,22 +188,6 @@ namespace Tsavorite.core
             // Only signal if we are shrinking; growth is handled normally as we add pages and records.
             if (shrink)
                 resizeTaskEvent.Set();
-        }
-
-        /// <summary>Callback on allocator completion</summary>
-        public void OnCompleted() { }
-
-        /// <summary>Callback on allocator error</summary>
-        public void OnError(Exception error) { }
-
-        /// <summary>Callback on allocator evicting a page to disk</summary>
-        public void OnNext(ITsavoriteScanIterator recordIter)
-        {
-            long size = 0;
-            while (recordIter.GetNext())
-                size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
-            if (size != 0)
-                heapSize.Increment(-size); // Reduce size as records are being evicted
         }
 
         /// <summary>Adds size to the tracked total count</summary>

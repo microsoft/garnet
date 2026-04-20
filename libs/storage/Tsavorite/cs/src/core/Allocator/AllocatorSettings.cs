@@ -23,6 +23,12 @@ namespace Tsavorite.core
         /// <summary>The action to call on page eviction; used only for readcache</summary>
         internal Action<long, long> evictCallback;
 
+        /// <summary>
+        /// Whether this allocator is the read cache (as opposed to the main hybrid log).
+        /// Used to tag per-record eviction callbacks so applications can distinguish the source.
+        /// </summary>
+        internal bool IsReadCache;
+
         /// <summary>The action to execute on flush completion; used only for <see cref="TsavoriteLog"/></summary>
         internal Action<CommitInfo> flushCallback;
 

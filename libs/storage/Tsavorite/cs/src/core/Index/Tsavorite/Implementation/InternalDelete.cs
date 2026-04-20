@@ -124,10 +124,12 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
-                        // Immediately dispose all resources: app callback (storeFunctions.OnDispose)
-                        // + ClearHeapFields + ClearOptionals — all via hlog.OnDispose.
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
+                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
@@ -254,6 +256,10 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track value heap.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus

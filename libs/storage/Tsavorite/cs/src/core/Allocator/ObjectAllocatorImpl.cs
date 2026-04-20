@@ -74,7 +74,7 @@ namespace Tsavorite.core
         public override string ToString() => BaseToString($" (LI {LastIssuedFlushedUntilAddress}, OG {OngoingFlushedUntilAddress}, No {NoFlushUntilAddress})");
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
-            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, transientObjectIdMap: new ObjectIdMap())
+            : base(settings, storeFunctions, wrapperCreator, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
@@ -328,57 +328,106 @@ namespace Tsavorite.core
         {
             if (logRecord.IsSet)
             {
+                // Decrement heap from the tracker before clearing fields. The amount depends on
+                // what's still alive on the record at dispose time:
+                //  - Deleted: value only (key stays for chain traversal; key accounted at eviction).
+                //    Tombstone is NOT yet set, so GetValueHeapMemorySize returns the correct value.
+                //  - Elided / RevivificationFreeList: full remaining heap (key + value). The record
+                //    is being removed from the chain entirely, so both key and value are freed.
+                //    Eviction skips invalid records, so this is the last chance to account for them.
+                //  - CAS failures / InsertAbandoned: no decrement needed — the record was never
+                //    CAS'd into the chain, so +key/+value were never added to the tracker.
+                if (disposeReason == DisposeReason.Deleted)
+                {
+                    var valueHeap = logRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        logSizeTracker?.IncrementSize(-valueHeap);
+                }
+                else if (disposeReason is DisposeReason.Elided or DisposeReason.RevivificationFreeList)
+                {
+                    // Subtract whatever heap remains. The record is being removed from the chain
+                    // entirely (or transferred to the freelist), so eviction will never visit it.
+                    // For tombstoned records, CalculateHeapMemorySize returns 0, but key overflow
+                    // is still alive and needs to be subtracted.
+                    long remainingHeap;
+                    if (!logRecord.Info.Tombstone)
+                        remainingHeap = logRecord.CalculateHeapMemorySize();
+                    else
+                        remainingHeap = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                    if (remainingHeap != 0)
+                        logSizeTracker?.IncrementSize(-remainingHeap);
+                }
+
                 storeFunctions.OnDispose(ref logRecord, disposeReason);
 
-                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.OnDisposeValueObject(obj, disposeReason));
+                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted);
                 logRecord.ClearOptionals();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void OnDispose(ref DiskLogRecord logRecord, DisposeReason disposeReason)
+        internal void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
-            // Clear the IHeapObject if we deserialized it
-            if (logRecord.IsSet && logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
-                storeFunctions.OnDisposeValueObject(logRecord.ValueObject, disposeReason);
+            // Route to the store-level trigger; the app (e.g. Garnet) decides whether to Dispose()
+            // the value object. DiskLogRecord.Dispose() is responsible for releasing the record buffer.
+            storeFunctions.OnDisposeDiskRecord(ref logRecord, disposeReason);
         }
 
         /// <summary>
         /// Iterate records in the given logical address range and call <see cref="IStoreFunctions.OnEvict"/>
-        /// on each valid, non-tombstoned record. Used during page eviction to allow cleanup of external resources.
+        /// on each non-null, non-invalid, non-tombstoned record — including sealed source records that
+        /// may still own heap. Used during page eviction to allow cleanup of external resources.
+        /// The caller constrains <paramref name="startAddress"/> / <paramref name="endAddress"/> to lie on a single page
+        /// (see <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosedWorker"/> and
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.EvictPageForRecovery"/>), so this routine walks records
+        /// within that single page only.
         /// </summary>
-        internal void EvictRecordsInRange(long startAddress, long endAddress)
+        internal void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source)
         {
-            // Ensure we start after the page header
-            var page = GetPage(startAddress);
-            var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+            var startPage = GetPage(startAddress);
+            var firstValidAddress = GetFirstValidLogicalAddressOnPage(startPage);
             var address = startAddress < firstValidAddress ? firstValidAddress : startAddress;
+            var pageEndAddress = GetLogicalAddressOfStartOfPage(startPage + 1);
+            var stopAddress = endAddress < pageEndAddress ? endAddress : pageEndAddress;
 
-            while (address < endAddress)
+            while (address < stopAddress)
             {
                 var physicalAddress = GetPhysicalAddress(address);
                 var logRecord = new LogRecord(physicalAddress, objectPages[GetPageIndexForAddress(address)].objectIdMap);
                 var allocatedSize = logRecord.AllocatedSize;
 
-                // Guard against corrupt records causing infinite loops
                 if (allocatedSize <= 0)
                     break;
-
-                // If record does not fit on page, stop (shouldn't happen within a single-page eviction range)
                 var offset = GetOffsetOnPage(address);
-                if (offset + allocatedSize > PageSize)
+                if (offset == 0 || offset + allocatedSize > PageSize)
                     break;
 
-                // Skip null, closed/sealed, and tombstoned records (tombstoned records were already
-                // disposed with DisposeReason.Deleted at the delete site)
-                if (logRecord.Info.IsNull || logRecord.Info.SkipOnScan || logRecord.Info.Tombstone)
+                // Skip null and invalid records (elided/disposed, heap already cleaned up).
+                if (logRecord.Info.IsNull || logRecord.Info.Invalid)
                 {
                     address += allocatedSize;
                     continue;
                 }
 
-                // Notify the application that this record is being evicted from memory.
-                storeFunctions.OnEvict(ref logRecord);
+                // Decrement the record's heap contribution in a single call.
+                // For non-tombstoned records, CalculateHeapMemorySize returns key + value heap.
+                // For tombstoned records, it returns 0 (by design), but the key overflow is still
+                // alive — value was already decremented at the delete site via OnDispose.
+                long heapSize;
+                if (!logRecord.Info.Tombstone)
+                {
+                    heapSize = logRecord.CalculateHeapMemorySize();
+
+                    if (storeFunctions.CallOnEvict)
+                        storeFunctions.OnEvict(ref logRecord, source);
+                }
+                else
+                {
+                    heapSize = logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow.HeapMemorySize : 0;
+                }
+
+                if (heapSize != 0)
+                    logSizeTracker?.IncrementSize(-heapSize);
 
                 address += allocatedSize;
             }
@@ -1010,9 +1059,9 @@ namespace Tsavorite.core
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
             if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
-                // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
-                ctx.diskLogRecord.objectDisposer = obj => storeFunctions.OnDisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
-
+                // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
+                // is disposed (ObjectIdMap.Free → IHeapObject.Dispose), unless the object is transferred out
+                // (e.g. via CopyToTail) in which case the transient ObjectIdMap slot is cleared without disposing.
                 // Default the output arguments for reading a previous record.
                 prevAddressToRead = 0;
                 return true;
@@ -1090,10 +1139,18 @@ namespace Tsavorite.core
 
                     if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
-                        // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits);
-                        logSizeTracker?.UpdateSize(in logRecord, add: true);
+                        // CalculateHeapMemorySize returns 0 for tombstones, but eviction subtracts
+                        // key overflow for tombstoned records. Add it here so the tracker stays balanced.
+                        if (logRecord.Info.Tombstone)
+                        {
+                            if (logRecord.Info.KeyIsOverflow)
+                                logSizeTracker?.IncrementSize(logRecord.KeyOverflow.HeapMemorySize);
+                        }
+                        else
+                        {
+                            logSizeTracker?.UpdateSize(in logRecord, add: true);
+                        }
                     }
                 }
 

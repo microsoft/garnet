@@ -57,9 +57,6 @@ namespace Garnet.server
                 input.header.SetExpiredFlag();
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            if (logRecord.Info.ValueIsObject)
-                functionsState.cacheSizeTracker?.AddHeapSize(logRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
@@ -152,7 +149,6 @@ namespace Garnet.server
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
-                var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
 
                 // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
@@ -175,9 +171,6 @@ namespace Garnet.server
 
                 sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
-                // If oldValue has been set to null, subtract its size from the tracked heap size
-                var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
             }
 
             if (functionsState.appendOnlyFile != null)
@@ -189,7 +182,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out var sizeChange);
+            var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo);
             switch (ipuResult)
             {
                 case IPUResult.Failed:
@@ -199,8 +192,6 @@ namespace Garnet.server
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                    if (logRecord.Info.ValueIsObject)
-                        functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                     return true;
                 case IPUResult.NotUpdated:
                 default:
@@ -208,9 +199,8 @@ namespace Garnet.server
             }
         }
 
-        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            sizeChange = 0;
             var cmd = input.header.cmd;
 
             // Expired data

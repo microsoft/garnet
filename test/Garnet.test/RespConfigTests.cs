@@ -682,59 +682,64 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET
-        /// incurs a reduction in the used memory of the store.
+        /// This test verifies that dynamically shrinking the main-log memory target via CONFIG SET memory
+        /// drives the log size tracker to evict pages / release heap so that total memory usage is reduced.
         /// </summary>
-        /// <param name="largerSize">Heap size larger than configured size</param>
+        /// <param name="smallerSize">Memory size smaller than the current total log+heap usage</param>
         [Test]
         [TestCase("8192")]
-        [Explicit("Currently hangs due to waiting for eviction callback.")]
-        public void ConfigSetHeapMemorySizeUtilizationTest(string largerSize)
+        public void ConfigSetHeapMemorySizeUtilizationTest(string smallerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var option = "memory";
 
-            // Verify that initial allocated page count is the minimum (before we've added anything)
             var store = server.Provider.StoreWrapper.store;
             var tracker = store.Log.LogSizeTracker;
+
+            // Verify initial state: no data yet, allocated page count at the minimum.
+            ClassicAssert.AreEqual(RespConfigTests.MinLogAllocatedPageCount, store.Log.AllocatedPageCount);
 
             using var trimCompleteEvent = new ManualResetEventSlim(false);
             tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
 
-            var initialApc = RespConfigTests.MinLogAllocatedPageCount;
-            ClassicAssert.AreEqual(initialApc, store.Log.AllocatedPageCount);
-
-            // TODO make this larger. Assert that HA has advanced before reaching MaxAllocatedPageCount
-
-
-            // Add objects to store to fill up heap
+            // Insert enough list objects so that (a) the inline log grows beyond MinResizeTargetPageCount pages
+            // (required before DetermineEvictionRange can evict anything), and (b) the tracked heap size is
+            // well above the new target we're about to configure. Each list contributes ~4KB of heap
+            // (16 items * 256 bytes), and each record adds a small inline entry to the log.
+            const int numKeys = 128;
             var values = new RedisValue[16];
+            var valPayload = new string('x', 256);
             for (var i = 0; i < values.Length; i++)
-                values[i] = "x";
+                values[i] = valPayload;
+            for (var i = 0; i < numKeys; i++)
+                _ = db.ListRightPush($"key{i:00000}", values);
 
-            for (var i = 0; i < 8; i++)
-                _ = db.ListRightPush($"key{i++:00000}", values);
+            // Sanity-check the preconditions for the shrink/eviction we are about to trigger.
+            var apcBefore = store.Log.AllocatedPageCount;
+            var heapBefore = tracker.LogHeapSizeBytes;
+            Assert.That(apcBefore, Is.GreaterThan(LogSizeTracker.MinResizeTargetPageCount),
+                "Test precondition: need more than MinResizeTargetPageCount pages for eviction to be possible.");
+            Assert.That(heapBefore, Is.GreaterThan(0), "Test precondition: heap should be non-empty after inserts.");
 
-            // Wait for the logSizeTracker to stabilize.
-            Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker.ResizeTaskDelaySeconds)),
-                "Timeout occurred. Resizing did not happen within the specified time.");
-
-            // Verify that allocated page count has decreased
-            ClassicAssert.Less(store.Log.AllocatedPageCount, initialApc);
-            var prevApc = store.Log.AllocatedPageCount;
-
-            // TODO verify that the HeadAddress has moved
-
-            //////////////////////////////////////////////////////
-            // Try to set heap size to a larger value than current
-            var result = db.Execute("CONFIG", "SET", option, largerSize);
+            // Shrink the memory target. The 'shrink' branch of LogSizeTracker.UpdateTargetSize signals the
+            // resizer task; because TotalSize is now well above highTargetSize, the task calls
+            // DetermineEvictionRange + ShiftAddresses and then invokes PostMemoryTrim.
+            var result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
+            var smallerTarget = ServerOptions.ParseSize(smallerSize, out _);
+            Assert.That(tracker.TargetSize, Is.EqualTo(smallerTarget));
 
-            // There is no need to wait for the logSizeTracker to stabilize, as it will simply increase the page count.
+            // Wait for the trim callback.
+            Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker.ResizeTaskDelaySeconds)),
+                "Timeout occurred. PostMemoryTrim was not invoked after CONFIG SET memory shrink.");
 
-            // Verify that MaxAllocatedPageCount has increased.
-            ClassicAssert.Less(store.Log.AllocatedPageCount, prevApc);
+            // Verify that memory usage actually dropped: we expect at least one of the allocated page count
+            // or the tracked heap size to have decreased as a result of the eviction scan.
+            var apcAfter = store.Log.AllocatedPageCount;
+            var heapAfter = tracker.LogHeapSizeBytes;
+            Assert.That(apcAfter < apcBefore || heapAfter < heapBefore, Is.True,
+                $"Expected APC ({apcBefore}->{apcAfter}) or heap ({heapBefore}->{heapAfter}) to decrease after trim.");
         }
     }
 }
