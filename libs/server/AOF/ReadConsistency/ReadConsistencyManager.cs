@@ -61,10 +61,7 @@ namespace Garnet.server
         /// <param name="keyHash"></param>
         /// <returns></returns>
         long GetSublogFrontierSequenceNumber(long keyHash)
-        {
-            var sublogIdx = (byte)(keyHash % serverOptions.AofVirtualSublogCount);
-            return vsrs[sublogIdx].GetFrontierSequenceNumber(keyHash);
-        }
+            => vsrs[appendOnlyFile.Log.GetVirtualSublogIdx(keyHash)].GetFrontierSequenceNumber(keyHash);
 
         /// <summary>
         /// Get key specific sequence number for provided hash
@@ -72,10 +69,7 @@ namespace Garnet.server
         /// <param name="keyHash"></param>
         /// <returns></returns>
         long GetKeySequenceNumber(long keyHash)
-        {
-            var sublogIdx = (byte)(keyHash % serverOptions.AofVirtualSublogCount);
-            return vsrs[sublogIdx].GetKeySequenceNumber(keyHash);
-        }
+            => vsrs[appendOnlyFile.Log.GetVirtualSublogIdx(keyHash)].GetKeySequenceNumber(keyHash);
 
         /// <summary>
         /// Update physical sublog max sequence number
@@ -102,13 +96,10 @@ namespace Garnet.server
         /// Update key sequence number of virtual sublog associated with the specified virtual sublogIdx.
         /// </summary>
         /// <param name="virtualSublogIdx"></param>
-        /// <param name="key"></param>
+        /// <param name="keyHash"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, ReadOnlySpan<byte> key, long sequenceNumber)
-        {
-            var keyHash = GarnetLog.HASH(key);
-            vsrs[virtualSublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
-        }
+        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, long keyHash, long sequenceNumber)
+            => vsrs[virtualSublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
 
         /// <summary>
         /// Update key sequence number of virtual sublog associated with the specified keyHash.
@@ -116,10 +107,7 @@ namespace Garnet.server
         /// <param name="keyHash"></param>
         /// <param name="sequenceNumber"></param>
         public void UpdateVirtualSublogKeySequenceNumber(long keyHash, long sequenceNumber)
-        {
-            var virtualSublogIdx = (byte)(keyHash % serverOptions.AofVirtualSublogCount);
-            vsrs[virtualSublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
-        }
+            => vsrs[appendOnlyFile.Log.GetVirtualSublogIdx(keyHash)].UpdateKeySequenceNumber(keyHash, sequenceNumber);
 
         /// <summary>
         /// Ensures that the specified replica read session context is synchronized with the current session version.
@@ -142,31 +130,31 @@ namespace Garnet.server
         /// <summary>
         /// Verify key freshness before allowing reads.
         /// </summary>
-        /// <param name="hash"></param>
+        /// <param name="keyHash"></param>
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="ct"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void VerifyKeyFreshness(long hash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+        void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
         {
-            var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
+            var virtualSublogIdx = appendOnlyFile.Log.GetVirtualSublogIdx(keyHash);
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
             if (replicaReadSessionContext.lastVirtualSublogIdx != -1 && replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx)
             {
                 // Optimistic check without lock
-                while (replicaReadSessionContext.maximumSessionSequenceNumber >= GetSublogFrontierSequenceNumber(hash))
+                while (replicaReadSessionContext.maximumSessionSequenceNumber >= GetSublogFrontierSequenceNumber(keyHash))
                 {
                     vsrs[virtualSublogIdx].WaitForSequenceNumber(
-                        hash,
+                        keyHash,
                         replicaReadSessionContext.maximumSessionSequenceNumber,
                         ct);
                 }
             }
 
             // Store for future update
-            replicaReadSessionContext.lastVirtualSublogIdx = virtualSublogIdx;
-            replicaReadSessionContext.lastHash = hash;
+            replicaReadSessionContext.lastVirtualSublogIdx = (short)virtualSublogIdx;
+            replicaReadSessionContext.lastHash = keyHash;
         }
 
         /// <summary>

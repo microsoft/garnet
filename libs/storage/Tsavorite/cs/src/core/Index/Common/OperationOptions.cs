@@ -105,7 +105,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The hashcode of the key for this operation
         /// </summary>
-        public long? KeyHash { get; internal set; }
+        public long? KeyHash { get; set; }
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";
@@ -119,7 +119,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The hashcode of the key for this operation
         /// </summary>
-        public long? KeyHash { get; internal set; }
+        public long? KeyHash { get; set; }
 
         /// <inheritdoc/>
         public override readonly string ToString() => $"keyHash {Utility.GetHashString(KeyHash)}";

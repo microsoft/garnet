@@ -10,6 +10,53 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    unsafe ref struct PreparedParameters
+    {
+        public Span<byte> Key;
+        public long KeyHash;
+        public byte* PayloadPtr;
+    }
+
+    interface IPrepareKey
+    {
+        public abstract unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters);
+    }
+
+    struct ShardedLogPrepareKey : IPrepareKey
+    {
+        public GarnetAppendOnlyFile appendOnlyFile;
+
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters)
+        {
+            var shardedHeader = *(AofShardedHeader*)entryPtr;
+            var keyPtr = entryPtr + sizeof(AofShardedHeader);
+            preparedParameters = new()
+            {
+                Key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr)
+            };
+            preparedParameters.KeyHash = GarnetLog.HASH(preparedParameters.Key);
+            preparedParameters.PayloadPtr = keyPtr + preparedParameters.Key.TotalSize();
+            appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(
+                virtualSublogIdx,
+                preparedParameters.KeyHash,
+                shardedHeader.sequenceNumber);
+        }
+    }
+
+    struct SingleLogPrepareKey : IPrepareKey
+    {
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters)
+        {
+            var keyPtr = entryPtr + sizeof(AofHeader);
+            preparedParameters = new()
+            {
+                Key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr)
+            };
+            preparedParameters.KeyHash = GarnetLog.HASH(preparedParameters.Key);
+            preparedParameters.PayloadPtr = keyPtr + preparedParameters.Key.TotalSize();
+        }
+    }
+
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>
@@ -40,6 +87,7 @@ namespace Garnet.server
 
         readonly ILogger logger;
         readonly bool usingShardedLog;
+        readonly IPrepareKey aofPrepareKey;
 
         /// <summary>
         /// Create new AOF processor
@@ -56,6 +104,7 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1 || storeWrapper.serverOptions.AofReplayTaskCount > 1;
+            this.aofPrepareKey = usingShardedLog ? new ShardedLogPrepareKey() { appendOnlyFile = storeWrapper.appendOnlyFile } : new SingleLogPrepareKey();
             this.obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
             this.aofReplayCoordinator = new AofReplayCoordinator(storeWrapper.serverOptions, this, logger);
@@ -239,9 +288,17 @@ namespace Garnet.server
                             () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
                     }
                     break;
+                case AofEntryType.StoredProcedure:
+                    aofReplayCoordinator.ReplayStoredProc(virtualSublogIdx, header.procedureId, ptr);
+                    break;
+                case AofEntryType.TxnCommit:
+                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(virtualSublogIdx, ptr, asReplica);
+                    break;
                 default:
                     _ = ReplayOp(
                         virtualSublogIdx,
+                        header,
+                        replayContext,
                         replayContext.StringBasicContext,
                         replayContext.ObjectBasicContext,
                         replayContext.UnifiedBasicContext,
@@ -253,16 +310,17 @@ namespace Garnet.server
         }
 
         private bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
-                int sublogIdx,
-                TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
+                int virtualSublogIdx,
+                AofHeader header,
+                AofReplayContext replayContext,
+                TStringContext stringContext,
+                TObjectContext objectContext,
+                TUnifiedContext unifiedContext,
                 byte* entryPtr, int length, bool asReplica)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var header = *(AofHeader*)entryPtr;
-            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
-
             // StoreRMW can queue VADDs onto different threads
             // but everything else needs to WAIT for those to complete
             // otherwise we might loose consistency
@@ -272,58 +330,43 @@ namespace Garnet.server
             }
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(sublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica))
+            if (SkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica))
                 return false;
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
+            aofPrepareKey.PrepareKey(virtualSublogIdx, entryPtr, out var preparedParameters);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    StoreUpsert(stringContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr));
+                    StoreUpsert(preparedParameters, stringContext, ref replayContext.parseState);
                     break;
                 case AofEntryType.StoreRMW:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    StoreRMW(stringContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession, obtainServerSession, AofHeader.SkipHeader(entryPtr));
+                    StoreRMW(preparedParameters, stringContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession, obtainServerSession);
                     break;
                 case AofEntryType.StoreDelete:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    StoreDelete(stringContext, AofHeader.SkipHeader(entryPtr));
-                    break;
-                case AofEntryType.ObjectStoreRMW:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    ObjectStoreRMW(objectContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
+                    StoreDelete(preparedParameters, stringContext);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    ObjectStoreUpsert(objectContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
+                    ObjectStoreUpsert(preparedParameters, objectContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
+                    break;
+                case AofEntryType.ObjectStoreRMW:
+                    ObjectStoreRMW(preparedParameters, objectContext, ref replayContext.parseState, bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    ObjectStoreDelete(objectContext, AofHeader.SkipHeader(entryPtr));
-                    break;
-                case AofEntryType.UnifiedStoreRMW:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    UnifiedStoreRMW(unifiedContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
+                    ObjectStoreDelete(preparedParameters, objectContext);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    UnifiedStoreStringUpsert(unifiedContext, ref replayContext.parseState, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
+                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                    break;
+                case AofEntryType.UnifiedStoreRMW:
+                    UnifiedStoreRMW(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    UnifiedStoreObjectUpsert(unifiedContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
+                    UnifiedStoreObjectUpsert(preparedParameters, unifiedContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreDelete:
-                    if (usingShardedLog) UpdateKeySequenceNumber(sublogIdx, entryPtr);
-                    UnifiedStoreDelete(unifiedContext, activeVectorManager, replayContext.respServerSession.storageSession, AofHeader.SkipHeader(entryPtr));
-                    break;
-                case AofEntryType.StoredProcedure:
-                    aofReplayCoordinator.ReplayStoredProc(sublogIdx, header.procedureId, entryPtr);
-                    break;
-                case AofEntryType.TxnCommit:
-                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
+                    UnifiedStoreDelete(preparedParameters, unifiedContext, activeVectorManager, replayContext.respServerSession.storageSession);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -332,20 +375,10 @@ namespace Garnet.server
             return true;
         }
 
-        private void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
-        {
-            var shardedHeader = *(AofShardedHeader*)ptr;
-            var curr = ptr + sizeof(AofShardedHeader);
-            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-            storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(sublogIdx, key, shardedHeader.sequenceNumber);
-        }
-
-        static void StoreUpsert<TStringContext>(TStringContext stringContext, ref SessionParseState parseState, byte* keyPtr)
+        static void StoreUpsert<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext, ref SessionParseState parseState)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
-
+            var curr = preparedParameters.PayloadPtr;
             var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += value.TotalSize;
 
@@ -353,24 +386,23 @@ namespace Garnet.server
             _ = stringInput.DeserializeFrom(curr);
 
             StringOutput output = default;
-            _ = stringContext.Upsert((FixedSpanByteKey)key, ref stringInput, value, ref output);
+            var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
+            _ = stringContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref stringInput, value, ref output, ref upsertOptions);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void StoreRMW<TStringContext>(TStringContext stringContext, ref SessionParseState parseState, VectorManager vectorManager, RespServerSession activeServerSession, Func<RespServerSession> obtainServerSession, byte* keyPtr)
+        static void StoreRMW<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext, ref SessionParseState parseState, VectorManager vectorManager, RespServerSession activeServerSession, Func<RespServerSession> obtainServerSession)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
-
+            var curr = preparedParameters.PayloadPtr;
             var stringInput = new StringInput { parseState = parseState };
             _ = stringInput.DeserializeFrom(curr);
 
             // VADD requires special handling, shove it over to the VectorManager
             if (stringInput.header.cmd == RespCommand.VADD)
             {
-                vectorManager.HandleVectorSetAddReplication(activeServerSession.storageSession, obtainServerSession, key, ref stringInput);
+                vectorManager.HandleVectorSetAddReplication(activeServerSession.storageSession, obtainServerSession, preparedParameters.Key, ref stringInput);
                 return;
             }
             else
@@ -381,51 +413,50 @@ namespace Garnet.server
                 // VREM is also read-like, so requires special handling - shove it over to the VectorManager
                 if (stringInput.header.cmd == RespCommand.VREM)
                 {
-                    vectorManager.HandleVectorSetRemoveReplication(activeServerSession.storageSession, key, ref stringInput);
+                    vectorManager.HandleVectorSetRemoveReplication(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
                     return;
                 }
             }
 
             var output = StringOutput.FromPinnedSpan(stackalloc byte[32]);
-
-            var status = stringContext.RMW((FixedSpanByteKey)key, ref stringInput, ref output);
+            var rmwOptions = new RMWOptions { KeyHash = preparedParameters.KeyHash };
+            var status = stringContext.RMW((FixedSpanByteKey)preparedParameters.Key, ref stringInput, ref output, ref rmwOptions);
             if (status.IsPending)
                 StorageSession.CompletePendingForSession(ref status, ref output, ref stringContext);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void StoreDelete<TStringContext>(TStringContext stringContext, byte* keyPtr)
+        static void StoreDelete<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            => stringContext.Delete((FixedSpanByteKey)PinnedSpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+            => stringContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
-        static void ObjectStoreUpsert<TObjectContext>(TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void ObjectStoreUpsert<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
-
+            var curr = preparedParameters.PayloadPtr;
             var valueSpan = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             var valueObject = garnetObjectSerializer.Deserialize(valueSpan.ToArray()); // TODO native deserializer to avoid alloc and copy
 
             var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
-            _ = objectContext.Upsert((FixedSpanByteKey)key, valueObject);
+            var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
+            _ = objectContext.Upsert((FixedSpanByteKey)preparedParameters.Key, valueObject, ref upsertOptions);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void ObjectStoreRMW<TObjectContext>(TObjectContext objectContext, ref SessionParseState parseState, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void ObjectStoreRMW<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
+            var curr = preparedParameters.PayloadPtr;
 
             var objectInput = new ObjectInput { parseState = parseState };
             _ = objectInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
-            var status = objectContext.RMW((FixedSpanByteKey)key, ref objectInput, ref output);
+            var rmwOptions = new RMWOptions { KeyHash = preparedParameters.KeyHash };
+            var status = objectContext.RMW((FixedSpanByteKey)preparedParameters.Key, ref objectInput, ref output, ref rmwOptions);
             if (status.IsPending)
                 StorageSession.CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
 
@@ -433,15 +464,14 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void ObjectStoreDelete<TObjectContext>(TObjectContext objectContext, byte* keyPtr)
+        static void ObjectStoreDelete<TObjectContext>(PreparedParameters preparedParameters, TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => objectContext.Delete((FixedSpanByteKey)SpanByte.FromLengthPrefixedPinnedPointer(keyPtr));
+            => objectContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
-        static void UnifiedStoreStringUpsert<TUnifiedContext>(TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
+            var curr = preparedParameters.PayloadPtr;
 
             var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += value.TotalSize;
@@ -450,38 +480,38 @@ namespace Garnet.server
             _ = unifiedInput.DeserializeFrom(curr);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, ref unifiedInput, value, ref output);
+            var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
+            _ = unifiedContext.Upsert((FixedSpanByteKey)preparedParameters.Key, ref unifiedInput, value, ref output, ref upsertOptions);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void UnifiedStoreObjectUpsert<TUnifiedContext>(TUnifiedContext unifiedContext, GarnetObjectSerializer garnetObjectSerializer, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void UnifiedStoreObjectUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
+            var curr = preparedParameters.PayloadPtr;
 
             var valueSpan = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             var valueObject = garnetObjectSerializer.Deserialize(valueSpan.ToArray()); // TODO native deserializer to avoid alloc and copy
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            _ = unifiedContext.Upsert((FixedSpanByteKey)key, valueObject);
+            var upsertOptions = new UpsertOptions() { KeyHash = preparedParameters.KeyHash };
+            _ = unifiedContext.Upsert((FixedSpanByteKey)preparedParameters.Key, valueObject, ref upsertOptions);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void UnifiedStoreRMW<TUnifiedContext>(TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* keyPtr, byte* outputPtr, int outputLength)
+        static void UnifiedStoreRMW<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-            var curr = keyPtr + key.TotalSize();
-
+            var curr = preparedParameters.PayloadPtr;
             var unifiedInput = new UnifiedInput { parseState = parseState };
             _ = unifiedInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & UnifiedInput
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            var status = unifiedContext.RMW((FixedSpanByteKey)key, ref unifiedInput, ref output);
+            var rmwOptions = new RMWOptions { KeyHash = preparedParameters.KeyHash };
+            var status = unifiedContext.RMW((FixedSpanByteKey)preparedParameters.Key, ref unifiedInput, ref output, ref rmwOptions);
             if (status.IsPending)
                 StorageSession.CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
 
@@ -489,17 +519,15 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void UnifiedStoreDelete<TUnifiedContext>(TUnifiedContext unifiedContext, VectorManager vectorManager, StorageSession storageSession, byte* keyPtr)
+        static void UnifiedStoreDelete<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, VectorManager vectorManager, StorageSession storageSession)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr);
-
-            var res = unifiedContext.Delete((FixedSpanByteKey)key);
+            var res = unifiedContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
             if (res.IsCanceled)
             {
                 // Might be a vector set
-                res = vectorManager.TryDeleteVectorSet(storageSession, key, out _);
+                res = vectorManager.TryDeleteVectorSet(storageSession, preparedParameters.Key, out _);
                 if (res.IsPending)
                     _ = unifiedContext.CompletePending(true);
             }
@@ -560,8 +588,7 @@ namespace Garnet.server
                     sequenceNumber = shardedHeader.sequenceNumber;
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                    var hash = GarnetLog.HASH(key);
-                    var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
+                    var _replayTaskIdx = storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
                     return replayTaskIdx == _replayTaskIdx;
                 // If no key to inspect, check bit vector for participating replay tasks in the transaction
                 // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
@@ -593,8 +620,7 @@ namespace Garnet.server
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                    var hash = GarnetLog.HASH(key);
-                    var _replayTaskIdx = (int)(hash % storeWrapper.serverOptions.AofReplayTaskCount);
+                    var _replayTaskIdx = storeWrapper.appendOnlyFile.Log.GetReplayTaskIdx(key);
                     return _replayTaskIdx;
                 // If no key to inspect, check bit vector for participating replay tasks in the transaction
                 // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)

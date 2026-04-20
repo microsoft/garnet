@@ -273,8 +273,7 @@ namespace Resp.benchmark
             while (true)
             {
                 var keyData = Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(options.KeyLength, 8)));
-                var hash = GarnetLog.HASH(keyData.AsSpan());
-                var physicalSublogIdx = (int)(hash % garnetLog.Size);
+                var physicalSublogIdx = garnetLog.GetPhysicalSublogIdx(keyData);
                 if (physicalSublogIdx == threadId) return keyData;
             }
         }

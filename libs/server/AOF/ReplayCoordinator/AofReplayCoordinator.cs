@@ -215,14 +215,19 @@ namespace Garnet.server
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
+                    {
+                        var header = *(AofHeader*)entryPtr;
                         _ = aofProcessor.ReplayOp(
                             sublogIdx,
+                            header,
+                            replayContext,
                             replayContext.StringBasicContext,
                             replayContext.ObjectBasicContext,
                             replayContext.UnifiedBasicContext,
                             entryPtr,
                             entry.Length,
                             asReplica);
+                    }
                 }
             }
 
@@ -318,17 +323,23 @@ namespace Garnet.server
                     where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
                     where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
+                    var replayContext = aofProcessor.aofReplayCoordinator.GetReplayContext(txnGroup.VirtualSublogIdx);
                     foreach (var entry in txnGroup.Operations)
                     {
                         fixed (byte* entryPtr = entry)
+                        {
+                            var header = *(AofHeader*)entryPtr;
                             _ = aofProcessor.ReplayOp(
                                 txnGroup.VirtualSublogIdx,
+                                header,
+                                replayContext,
                                 stringContext,
                                 objectContext,
                                 unifiedContext,
                                 entryPtr,
                                 entry.Length,
                                 asReplica: asReplica);
+                        }
                     }
                 }
             }

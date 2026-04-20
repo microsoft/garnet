@@ -514,13 +514,13 @@ namespace Garnet.server
             if (!serverOptions.MultiLogEnabled)
                 return;
 
-            var hash = GarnetLog.HASH(key);
+            var keyHash = GarnetLog.HASH(key);
             if (proc.customProcKeyHashCollection == null)
             {
                 // Used with parallel replay, this BitVector will track which replay tasks should participate in the parallel replay of this custom proc.
                 proc.replayTaskAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorBytes))];
-                var physicalSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
-                var replayIdx = (int)(hash % appendOnlyFile.Log.ReplayTaskCount);
+                var physicalSublogIdx = appendOnlyFile.Log.GetPhysicalSublogIdx(keyHash);
+                var replayIdx = appendOnlyFile.Log.GetReplayTaskIdx(keyHash);
 
                 // Mark physical sublog participating in custom txn proc to help with replay coordination.
                 proc.physicalSublogAccessVector |= 1UL << physicalSublogIdx;
@@ -529,7 +529,7 @@ namespace Garnet.server
             }
             else
                 // Keep track of key hashes to update sequence numbers of keys at end of replay
-                proc.customProcKeyHashCollection.AddHash(hash);
+                proc.customProcKeyHashCollection.AddHash(keyHash);
         }
 
         /// <summary>
@@ -558,9 +558,9 @@ namespace Garnet.server
             for (var i = 0; i < txnKeysParseState.Count; i++)
             {
                 ref var key = ref txnKeysParseState.GetArgSliceByRef(i);
-                var hash = GarnetLog.HASH(key.ReadOnlySpan);
-                var physicalSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
-                var replayIdx = (int)(hash % appendOnlyFile.Log.ReplayTaskCount);
+                var keyHash = GarnetLog.HASH(key.ReadOnlySpan);
+                var physicalSublogIdx = appendOnlyFile.Log.GetPhysicalSublogIdx(keyHash);
+                var replayIdx = appendOnlyFile.Log.GetReplayTaskIdx(keyHash);
                 physicalSublogAccessVector |= 1UL << physicalSublogIdx;
                 // Calculate sublog access vector for participating replay tasks
                 participantCount += virtualSublogAccessVector[physicalSublogIdx].SetBit(replayIdx) ? 1 : 0;

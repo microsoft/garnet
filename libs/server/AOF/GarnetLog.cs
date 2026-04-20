@@ -27,6 +27,9 @@ namespace Garnet.server
         readonly Func<byte[]> cookieGeneratorCallback;
         readonly bool usingSingleLog;
         readonly bool usingSinglePhysicalLog;
+        readonly uint physicalSublogMask;
+        readonly uint physicalSublogCountUpperBound;
+        readonly uint replayTaskCountMask;
 
         public static unsafe long GetSequenceNumberFromCookie(byte[] cookie)
         {
@@ -67,6 +70,11 @@ namespace Garnet.server
             {
                 this.shardedLog = new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger);
             }
+
+            var roundUp = BitOperations.RoundUpToPowerOf2((uint)serverOptions.AofPhysicalSublogCount);
+            physicalSublogMask = roundUp - 1;
+            physicalSublogCountUpperBound = (uint)BitOperations.PopCount(physicalSublogMask);
+            replayTaskCountMask = BitOperations.RoundUpToPowerOf2((uint)serverOptions.AofReplayTaskCount) - 1;
         }
 
         public TsavoriteLog SingleLog => singleLog.log;
@@ -81,7 +89,21 @@ namespace Garnet.server
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HASH(ReadOnlySpan<byte> key)
-            => GarnetKeyComparer.Instance.GetHashCode64((FixedSpanByteKey)key) & long.MaxValue;
+            => GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)key);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetPhysicalSublogIdx(long hash) => (int)((ulong)hash & physicalSublogMask);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetReplayTaskIdx(long hash) => (byte)(((ulong)hash >> (int)physicalSublogCountUpperBound) & replayTaskCountMask);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetVirtualSublogIdx(long hash) => GetPhysicalSublogIdx(hash) * serverOptions.AofReplayTaskCount + GetReplayTaskIdx(hash);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetPhysicalSublogIdx(ReadOnlySpan<byte> key) => GetPhysicalSublogIdx(HASH(key));
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetReplayTaskIdx(ReadOnlySpan<byte> key) => GetReplayTaskIdx(HASH(key));
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetVirtualSublogIdx(ReadOnlySpan<byte> key) => GetVirtualSublogIdx(HASH(key));
 
         public AofAddress BeginAddress
         {
@@ -582,8 +604,7 @@ namespace Garnet.server
                 // Multi physical sublogs and multi-replay support
                 else
                 {
-                    var hash = HASH(key);
-                    var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+                    var physicalSublogIdx = GetPhysicalSublogIdx(key);
                     shardedLog.sublog[physicalSublogIdx].Enqueue(
                         shardedHeader,
                         key,
@@ -644,8 +665,7 @@ namespace Garnet.server
                 // Multi physical sublogs and multi-replay support
                 else
                 {
-                    var hash = HASH(key);
-                    var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+                    var physicalSublogIdx = GetPhysicalSublogIdx(key);
                     shardedLog.sublog[physicalSublogIdx].Enqueue(
                         shardedHeader,
                         key,
@@ -704,8 +724,7 @@ namespace Garnet.server
                 // Multi physical sublogs and multi-replay support
                 else
                 {
-                    var hash = HASH(key);
-                    var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+                    var physicalSublogIdx = GetPhysicalSublogIdx(key);
                     shardedLog.sublog[physicalSublogIdx].Enqueue(
                         shardedHeader,
                         key,
