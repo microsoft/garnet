@@ -83,6 +83,10 @@
                            TargetPath="runtimes/osx-x64/native/libbftree_garnet.dylib"
                            CopyToOutputDirectory="PreserveNewest"
                            Condition="Exists('runtimes/osx-x64/native/libbftree_garnet.dylib')" />
+    <ContentWithTargetPath Include="runtimes/osx-arm64/native/libbftree_garnet.dylib"
+                           TargetPath="runtimes/osx-arm64/native/libbftree_garnet.dylib"
+                           CopyToOutputDirectory="PreserveNewest"
+                           Condition="Exists('runtimes/osx-arm64/native/libbftree_garnet.dylib')" />
   </ItemGroup>
 
   <!-- Exclude Rust build artifacts from the C# project -->
