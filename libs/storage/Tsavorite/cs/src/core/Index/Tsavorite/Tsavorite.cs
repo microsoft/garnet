@@ -495,7 +495,7 @@ namespace Tsavorite.core
             token.ThrowIfCancellationRequested();
             try
             {
-                await stateMachineDriver.CompleteAsync(token);
+                await stateMachineDriver.CompleteAsync(token).ConfigureAwait(false);
             }
             catch
             {
@@ -831,7 +831,7 @@ namespace Tsavorite.core
 
             var indexResizeTask = new IndexResizeSMTask<TStoreFunctions, TAllocator>(this);
             var indexResizeSM = new IndexResizeSM(indexResizeTask);
-            return await stateMachineDriver.RunAsync(indexResizeSM);
+            return await stateMachineDriver.RunAsync(indexResizeSM).ConfigureAwait(false);
         }
 
         /// <summary>
