@@ -71,7 +71,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                return await storeWrapper.WaitForCommitAsync(token: token);
+                return await storeWrapper.WaitForCommitAsync(token: token).ConfigureAwait(false);
             }
         }
 
@@ -105,7 +105,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                return await storeWrapper.CommitAOFAsync(token: token);
+                return await storeWrapper.CommitAOFAsync(token: token).ConfigureAwait(false);
             }
         }
 

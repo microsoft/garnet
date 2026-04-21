@@ -86,7 +86,7 @@ namespace Garnet.cluster
 
             // Send store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, storePageSize);
+            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, storePageSize).ConfigureAwait(false);
             if (!success) return false;
 
             return true;

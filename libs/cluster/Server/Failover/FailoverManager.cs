@@ -89,7 +89,7 @@ namespace Garnet.cluster
                 logger: logger);
             _ = Task.Run(async () =>
             {
-                var success = await currentFailoverSession.BeginAsyncReplicaFailover();
+                var success = await currentFailoverSession.BeginAsyncReplicaFailover().ConfigureAwait(false);
                 lastFailoverStatus = success ? FailoverStatus.FAILOVER_COMPLETED : FailoverStatus.FAILOVER_ABORTED;
                 Reset();
             });
@@ -121,7 +121,7 @@ namespace Garnet.cluster
                 logger: logger);
             _ = Task.Run(async () =>
             {
-                _ = await currentFailoverSession.BeginAsyncPrimaryFailover();
+                _ = await currentFailoverSession.BeginAsyncPrimaryFailover().ConfigureAwait(false);
                 Reset();
             });
             return true;

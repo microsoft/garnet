@@ -136,7 +136,7 @@ namespace Garnet.common
                         NoDelay = true
                     };
 
-                    if (await TryConnectSocketAsync(socket, endpoint, cancellationToken))
+                    if (await TryConnectSocketAsync(socket, endpoint, cancellationToken).ConfigureAwait(false))
                         return socket;
                 }
             }
@@ -146,7 +146,7 @@ namespace Garnet.common
                 if (endpoint is not UnixDomainSocketEndPoint)
                     socket.NoDelay = true;
 
-                if (await TryConnectSocketAsync(socket, endpoint, cancellationToken))
+                if (await TryConnectSocketAsync(socket, endpoint, cancellationToken).ConfigureAwait(false))
                     return socket;
             }
 

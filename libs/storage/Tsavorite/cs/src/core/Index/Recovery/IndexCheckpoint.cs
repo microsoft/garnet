@@ -67,7 +67,6 @@ namespace Tsavorite.core
             await t2.ConfigureAwait(false);
         }
 
-
         // Implementation of an asynchronous checkpointing scheme 
         // for main hash index of Tsavorite
         private int mainIndexCheckpointCallbackCount;
@@ -166,7 +165,7 @@ namespace Tsavorite.core
             await mainIndexCheckpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
-        private unsafe void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
+        private void AsyncPageFlushCallback(uint errorCode, uint numBytes, object context)
         {
             // Set the page status to flushed
             var mem = ((HashIndexPageAsyncFlushResult)context).mem;

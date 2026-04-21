@@ -457,13 +457,20 @@ namespace Garnet.test
         /// <param name="recvOnly"></param>
         /// <param name="matchLevel"></param>
         /// <returns></returns>
-        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "", HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false)
+        public static (ILoggerFactory, NUnitLoggerProvider) CreateLoggerFactoryInstance(
+            TextWriter textWriter,
+            LogLevel logLevel,
+            string scope = "",
+            HashSet<string> skipCmd = null,
+            bool recvOnly = false,
+            bool matchLevel = false)
         {
-            return LoggerFactory.Create(builder =>
+            var provider = new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel);
+            return (LoggerFactory.Create(builder =>
             {
-                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel));
+                builder.AddProvider(provider);
                 builder.SetMinimumLevel(logLevel);
-            });
+            }), provider);
         }
 
         public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(

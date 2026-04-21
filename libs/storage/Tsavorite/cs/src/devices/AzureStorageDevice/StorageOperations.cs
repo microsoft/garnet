@@ -27,7 +27,7 @@ namespace Tsavorite.devices
             {
                 if (semaphore != null)
                 {
-                    await semaphore.WaitAsync();
+                    await semaphore.WaitAsync().ConfigureAwait(false);
                 }
 
                 Stopwatch stopwatch = new();
@@ -49,7 +49,7 @@ namespace Tsavorite.devices
                             }
 
                             Interlocked.Increment(ref LeaseUsers);
-                            await ConfirmLeaseIsGoodForAWhileAsync();
+                            await ConfirmLeaseIsGoodForAWhileAsync().ConfigureAwait(false);
                         }
 
                         StorageErrorHandler.Token.ThrowIfCancellationRequested();

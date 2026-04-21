@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Text;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
@@ -242,6 +243,8 @@ namespace Garnet.cluster
                 return true;
             }
 
+            LogPrimaryStream(previousAddress, currentAddress, nextAddress, logger);
+
             var sbRecord = parseState.GetArgSliceByRef(4);
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -261,6 +264,18 @@ namespace Garnet.cluster
 
                 clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
+            }
+
+            [Conditional("DEBUG")]
+            static void LogPrimaryStream(long previousAddress, long currentAddress, long nextAddress, ILogger logger)
+            {
+                var state = new GarnetTestLoggingEvent()
+                {
+                    Type = GarnetTestLoggingEventType.LogPrimaryStreamType,
+                    Message = $"previousAddress: {previousAddress}, currentAddress: {currentAddress}, nextAddress: {nextAddress}",
+                };
+
+                logger?.LogTesting(state);
             }
 
             return true;
