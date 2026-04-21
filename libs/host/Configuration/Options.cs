@@ -780,6 +780,12 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
+            if (!EnableAOF.GetValueOrDefault())
+            {
+                if (!string.IsNullOrEmpty(AofSizeLimit))
+                    throw new Exception("AofSizeLimit cannot be enforced with disabled AOF!");
+            }
+
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
             {
                 if (!string.IsNullOrEmpty(AzureStorageConnectionString))
