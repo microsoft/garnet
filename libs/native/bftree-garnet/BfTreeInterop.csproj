@@ -26,8 +26,9 @@
     <NativePrebuilt>$(MSBuildThisFileDirectory)runtimes/osx-x64/native/libbftree_garnet.dylib</NativePrebuilt>
   </PropertyGroup>
 
-  <!-- Build Rust crate if cargo is available; otherwise require a pre-built binary -->
-  <Target Name="BuildRustCdylib" BeforeTargets="Build">
+  <!-- Build Rust crate once in the outer cross-targeting build to avoid parallel
+       cargo/rustup races when multiple TFMs build simultaneously. -->
+  <Target Name="BuildRustCdylib" BeforeTargets="Build" Condition="'$(IsCrossTargetingBuild)' == 'true' or '$(TargetFrameworks)' == ''">
     <Exec Command="cargo --version"
           IgnoreExitCode="true"
           StandardOutputImportance="low"
