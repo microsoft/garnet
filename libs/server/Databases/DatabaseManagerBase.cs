@@ -69,7 +69,7 @@ namespace Garnet.server
         public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
-        public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public abstract ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract void ExecuteObjectCollection();
@@ -328,15 +328,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to grow store indexes for</param>
         /// <returns>True if both store indexes are maxed out</returns>
-        protected bool GrowIndexesIfNeeded(GarnetDatabase db)
+        protected async ValueTask<bool> GrowIndexesIfNeededAsync(GarnetDatabase db)
         {
             var indexesMaxedOut = true;
 
             if (!DefaultDatabase.StoreIndexMaxedOut)
             {
                 var store = DefaultDatabase.Store;
-                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                        () => store.IndexSize, async () => await store.GrowIndexAsync()))
+                if (await GrowIndexIfNeededAsync(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
+                        () => store.IndexSize, () => store.GrowIndexAsync()).ConfigureAwait(false))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -413,7 +413,7 @@ namespace Garnet.server
         /// <param name="indexSizeRetriever"></param>
         /// <param name="growAction"></param>
         /// <returns>True if index has reached its max size</returns>
-        protected bool GrowIndexIfNeeded(long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        protected async ValueTask<bool> GrowIndexIfNeededAsync(long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Func<Task> growAction)
         {
             Logger?.LogDebug(
                 $"IndexAutoGrowTask: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
@@ -425,7 +425,7 @@ namespace Garnet.server
                 Logger?.LogInformation(
                     $"IndexAutoGrowTask: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
                     overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
-                growAction();
+                await growAction().ConfigureAwait(false);
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;

@@ -192,7 +192,7 @@ namespace Garnet.cluster
             /// 
             /// Doesn't delete anything, just scans and transmits.
             /// </summary>
-            public async Task<bool> TransmitKeysNamespacesAsync(ILogger logger)
+            public async ValueTask<bool> TransmitKeysNamespacesAsync(ILogger logger)
             {
                 var migrateOperation = this;
 

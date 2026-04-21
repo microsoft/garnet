@@ -163,6 +163,7 @@ namespace Garnet.cluster
 
                     // Exception injection point for testing cluster reset during disk-based replication
                     await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+
                     var resp = await gcs.ExecuteReplicaSync(
                         nodeId,
                         PrimaryReplId,

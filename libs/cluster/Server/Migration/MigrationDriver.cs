@@ -175,7 +175,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 // Migrate actual data
-                if (!await MigrateSlotsDriverInline().ConfigureAwait(false))
+                if (!await MigrateSlotsDriverInlineAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);

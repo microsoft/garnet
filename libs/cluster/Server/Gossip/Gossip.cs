@@ -103,7 +103,7 @@ namespace Garnet.cluster
 
             // Startup gossip background task
             _ = Interlocked.Increment(ref numActiveTasks);
-            _ = Task.Run(GossipMain);
+            _ = Task.Run(GossipMainAsync);
         }
 
         /// <summary>
@@ -144,7 +144,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="port"></param>
         public void RunMeetTask(string address, int port)
-            => Task.Run(async () => await TryMeetAsync(address, port));
+            => _ = Task.Run(() => TryMeetAsync(address, port));
 
         /// <summary>
         /// This task will immediately communicate with the new node and try to merge the retrieve configuration to its own.
@@ -199,7 +199,7 @@ namespace Garnet.cluster
                     // If failed to add newly created connection dispose of it to reclaim resources
                     // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
                     // After connection is added we are no longer the owner. Background gossip task will be owner
-                    if (created && !await clusterConnectionStore.AddConnection(gsn))
+                    if (created && !await clusterConnectionStore.AddConnectionAsync(gsn))
                         gsn.Dispose();
                 }
             }
@@ -318,7 +318,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Main gossip async task
         /// </summary>
-        async Task GossipMain()
+        async Task GossipMainAsync()
         {
             // Main gossip loop
             try
@@ -334,7 +334,7 @@ namespace Garnet.cluster
                     else
                         await GossipSampleSendAsync().ConfigureAwait(false);
 
-                    await Task.Delay(gossipDelay, ctsGossip.Token);
+                    await Task.Delay(gossipDelay, ctsGossip.Token).ConfigureAwait(false);
                 }
             }
             catch (TaskCanceledException) when (ctsGossip.Token.IsCancellationRequested)
@@ -361,7 +361,7 @@ namespace Garnet.cluster
             // Initialize connections for nodes that have either been dispose due to banlist (after expiry) or timeout
             async Task InitConnectionsAsync()
             {
-                DisposeBannedWorkerConnections();
+                await DisposeBannedWorkerConnectionsAsync().ConfigureAwait(false);
 
                 var current = currentConfig;
                 var addresses = current.GetWorkerInfoForGossip();
@@ -397,7 +397,7 @@ namespace Garnet.cluster
                     }
                 }
 
-                async void DisposeBannedWorkerConnections()
+                async Task DisposeBannedWorkerConnectionsAsync()
                 {
                     foreach (var w in workerBanList)
                     {
@@ -414,7 +414,6 @@ namespace Garnet.cluster
                         else // Remove worker from ban list
                             _ = workerBanList.TryRemove(nodeId, out var _);
                     }
-
 
                     static bool Expired(long expiry) => expiry < DateTimeOffset.UtcNow.Ticks;
                 }

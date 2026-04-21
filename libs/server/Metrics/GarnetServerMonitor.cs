@@ -74,7 +74,7 @@ namespace Garnet.server
 
         public void Start()
         {
-            Task.Run(() => MainMonitorTask(cts.Token));
+            _ = Task.Run(() => MainMonitorTaskAsync(cts.Token));
         }
 
         public void AddMetricsHistorySessionDispose(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics)
@@ -224,7 +224,7 @@ namespace Garnet.server
             }
         }
 
-        private async void MainMonitorTask(CancellationToken token)
+        private async Task MainMonitorTaskAsync(CancellationToken token)
         {
             try
             {

@@ -29,7 +29,8 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="KeraLua" />
-		<PackageReference Include="diskann-garnet" />
+    <PackageReference Include="diskann-garnet" />
+		<PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" IncludeAssets="analyzers"/>
   </ItemGroup>
 
   <ItemGroup>

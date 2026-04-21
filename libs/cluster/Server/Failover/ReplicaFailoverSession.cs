@@ -66,7 +66,7 @@ namespace Garnet.cluster
         /// Send stop writes message to PRIMARY
         /// </summary>
         /// <returns>True on success, false otherwise</returns>
-        private async Task<bool> PauseWritesAndWaitForSync()
+        private async Task<bool> PauseWritesAndWaitForSyncAsync()
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
             var client = await GetConnectionAsync(primaryId);
@@ -84,7 +84,7 @@ namespace Garnet.cluster
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
-                var primaryReplicationOffset = await client.failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var primaryReplicationOffset = await client.FailStopWritesAsync(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
@@ -186,7 +186,7 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                var resp = await client.Gossip(configByteArray).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var resp = await client.GossipAsync(configByteArray).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
                 try
                 {
@@ -233,7 +233,7 @@ namespace Garnet.cluster
         /// Issue attach message to remote replicas
         /// </summary>
         /// <returns></returns>
-        private async Task IssueAttachReplicas()
+        private async Task IssueAttachReplicasAsync()
         {
             // Get information of local node from newConfig
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -288,7 +288,7 @@ namespace Garnet.cluster
         /// REPLICA main failover task
         /// </summary>
         /// <returns></returns>
-        public async Task<bool> BeginAsyncReplicaFailover()
+        public async Task<bool> BeginAsyncReplicaFailoverAsync()
         {
             // CLUSTER FAILOVER OPTIONS
             // FORCE: Do not await for the primary since it might be unreachable
@@ -297,7 +297,7 @@ namespace Garnet.cluster
             try
             {
                 // Issue stop writes and on ack wait for replica to catch up
-                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSync().ConfigureAwait(false))
+                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSyncAsync().ConfigureAwait(false))
                 {
                     return false;
                 }
@@ -316,7 +316,7 @@ namespace Garnet.cluster
                 failoverSucceeded = true;
 
                 // Attach to old replicas, and old primary if DEFAULT option
-                await IssueAttachReplicas();
+                await IssueAttachReplicasAsync();
 
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync();
                 clusterProvider.storeWrapper.StartPrimaryTasks();
@@ -342,7 +342,7 @@ namespace Garnet.cluster
                         logger?.LogWarning("Attempting to reset primary after failed failover");
                         if (primaryClient != null)
                         {
-                            _ = await primaryClient.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                            _ = await primaryClient.FailStopWritesAsync(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
                         }
                     }
                     catch (Exception ex)

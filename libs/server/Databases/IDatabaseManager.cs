@@ -166,7 +166,7 @@ namespace Garnet.server
         /// Grows indexes of both main store and object store for all active databases if current size is too small
         /// </summary>
         /// <returns>True if indexes are maxed out</returns>
-        public bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <summary>
         /// Executes a store-wide object collect operation

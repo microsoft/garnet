@@ -369,8 +369,11 @@ namespace Garnet.server
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer(pSrcDir, 1);
             cmdArgs[2] = PinnedSpanByte.FromPinnedPointer(pDstDir, 1);
 
-            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
-                cmdArgs).Result;
+            // On the networking thread, no choice but to block
+            var result =
+                AsyncUtils.BlockingWait(
+                    storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout, cmdArgs)
+                );
 
             if (result.IsForceUnblocked)
             {

@@ -73,7 +73,7 @@ namespace Garnet.cluster
         /// Migrate Slots inline driver
         /// </summary>
         /// <returns></returns>
-        public async Task<bool> MigrateSlotsDriverInline()
+        public async Task<bool> MigrateSlotsDriverInlineAsync()
         {
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
@@ -86,14 +86,15 @@ namespace Garnet.cluster
 
             // Send store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, storePageSize).ConfigureAwait(false);
+
+            var success = await CreateAndRunMigrateTasksAsync(storeBeginAddress, storeTailAddress, storePageSize);
             if (!success) return false;
 
             return true;
 
-            async Task<bool> CreateAndRunMigrateTasks(long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> CreateAndRunMigrateTasksAsync(long beginAddress, long tailAddress, int pageSize)
             {
-                logger?.LogTrace("{method} > Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), beginAddress, tailAddress);
+                logger?.LogTrace("{method} > Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress);
                 var migrateOperationRunners = new Task<bool>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
 
                 var i = 0;
@@ -189,8 +190,8 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasks), beginAddress, tailAddress, pageSize);
-                    _cts.Cancel();
+                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), beginAddress, tailAddress, pageSize);
+                    await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
                 return true;

@@ -148,7 +148,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="conn">Connection object to add.</param>
         /// <returns>True on success, false otherwise</returns>
-        public async Task<bool> AddConnection(GarnetServerNode conn)
+        public async Task<bool> AddConnectionAsync(GarnetServerNode conn)
         {
             try
             {
