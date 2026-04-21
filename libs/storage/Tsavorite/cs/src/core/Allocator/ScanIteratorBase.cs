@@ -29,7 +29,7 @@ namespace Tsavorite.core
         protected readonly LightEpoch epoch;
 
         /// <summary>Number of deferred DoReadPage drain callbacks that have been registered but not yet executed.</summary>
-        int pendingDrainCallbacks;
+        protected int pendingDrainCallbacks;
 
         /// <summary>Current address for iteration</summary>
         protected long currentAddress;
@@ -204,7 +204,7 @@ namespace Tsavorite.core
                         var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
 
                         var frameIndex = i;
-                        Interlocked.Increment(ref pendingDrainCallbacks);
+                        _ = Interlocked.Increment(ref pendingDrainCallbacks);
                         if (epoch != null)
                             epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
                         else
@@ -219,7 +219,7 @@ namespace Tsavorite.core
                             }
                             catch
                             {
-                                Interlocked.Decrement(ref pendingDrainCallbacks);
+                                _ = Interlocked.Decrement(ref pendingDrainCallbacks);
                                 throw;
                             }
                             loadedPages[nextFrame] = pageEndAddress;
@@ -278,16 +278,22 @@ namespace Tsavorite.core
 
         protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context)
         {
-            var result = (PageAsyncReadResult<Empty>)context;
-
-            if (errorCode == 0)
-                _ = result.handle?.Signal();
-            else
+            try
             {
-                logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
-                result.cts?.Cancel();
+                var result = (PageAsyncReadResult<Empty>)context;
+
+                if (errorCode == 0)
+                    _ = result.handle?.Signal();
+                else
+                {
+                    logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
+                    result.cts?.Cancel();
+                }
             }
-            Interlocked.Decrement(ref pendingDrainCallbacks);
+            finally
+            {
+                _ = Interlocked.Decrement(ref pendingDrainCallbacks);
+            }
         }
 
         /// <summary>
