@@ -52,15 +52,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Flag set when a RESP error response is written during command execution.
-        /// Used by CommandStats to detect failed commands.
+        /// Used by CommandStats to detect failed commands. Note: only covers error paths
+        /// that go through WriteError() or AbortWithErrorMessage(); direct TryWriteError
+        /// calls in some command handlers may not set this flag.
         /// </summary>
         bool commandErrorWritten;
-
-        /// <summary>
-        /// Flag set when SendAndReset flushes the output buffer during command execution.
-        /// Used to invalidate the RESP prefix pointer check for error detection.
-        /// </summary>
-        bool bufferFlushedDuringCommand;
 
         /// <summary>
         /// Get a copy of sessionMetrics
@@ -617,13 +613,8 @@ namespace Garnet.server
                 {
                     var noScriptPassed = true;
 
-                    // Capture state for command stats tracking
-                    byte* responseStartBefore = commandStats != null ? dcurr : null;
-                    if (commandStats != null)
-                    {
-                        commandErrorWritten = false;
-                        bufferFlushedDuringCommand = false;
-                    }
+                    // Reset error flag unconditionally (only read when commandStats != null)
+                    commandErrorWritten = false;
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
@@ -648,18 +639,10 @@ namespace Garnet.server
                                 _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                         }
 
-                        // Track per-command stats: calls, failures, latency
                         if (commandStats != null)
                         {
                             commandStats.IncrementCalls(cmd);
-
-                            // Detect error response via flag (set by WriteError/AbortWithErrorMessage),
-                            // or check RESP '-' error prefix at response start when buffer wasn't flushed
-                            bool failed = commandErrorWritten;
-                            if (!failed && !bufferFlushedDuringCommand &&
-                                responseStartBefore != null && dcurr > responseStartBefore)
-                                failed = *responseStartBefore == '-';
-                            if (failed)
+                            if (commandErrorWritten)
                                 commandStats.IncrementFailed(cmd);
                         }
                     }
@@ -1307,7 +1290,6 @@ namespace Garnet.server
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
-                bufferFlushedDuringCommand |= commandStats != null;
             }
             else
             {

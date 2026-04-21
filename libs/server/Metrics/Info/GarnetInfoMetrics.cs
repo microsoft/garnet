@@ -292,7 +292,9 @@ namespace Garnet.server
                 if (entry.Calls == 0 && entry.RejectedCalls == 0)
                     continue;
 
-                string cmdName = cmd.ToString().ToLowerInvariant().Replace('_', '|');
+                string cmdName = RespCommandsInfo.GetRespCommandName(cmd).ToLowerInvariant();
+                if (cmdName == "unknown")
+                    continue;
 
                 items.Add(new($"cmdstat_{cmdName}",
                     $"calls={entry.Calls},usec=0,usec_per_call=0.00,rejected_calls={entry.RejectedCalls},failed_calls={entry.FailedCalls}"));

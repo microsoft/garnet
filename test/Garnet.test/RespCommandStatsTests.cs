@@ -17,7 +17,7 @@ namespace Garnet.test
     {
         GarnetServer server;
 
-        private void StartServer(bool commandStatsMonitor = true, int metricsSamplingFreq = 1)
+        private void StartServer(bool commandStatsMonitor = true, int metricsSamplingFreq = 0)
         {
             server = TestUtils.CreateGarnetServer(
                 TestUtils.MethodTestDir,
@@ -45,13 +45,11 @@ namespace Garnet.test
         {
             // When CommandStatsMonitor is off, INFO COMMANDSTATS should return a disabled message
             StartServer(commandStatsMonitor: false);
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             db.StringSet("key1", "value1");
-            Thread.Sleep(metricsUpdateDelay);
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             ClassicAssert.IsTrue(infoResult.Contains("Commandstats"), "Expected Commandstats section header");
@@ -62,7 +60,6 @@ namespace Garnet.test
         public void CommandStatsCallsTrackingTest()
         {
             StartServer();
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -75,8 +72,6 @@ namespace Garnet.test
 
             for (int i = 0; i < getCount; i++)
                 db.StringGet($"key{i}");
-
-            Thread.Sleep(metricsUpdateDelay);
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             string[] lines = infoResult.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
@@ -98,49 +93,41 @@ namespace Garnet.test
         public void CommandStatsFailedCallsTest()
         {
             StartServer();
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
-            // Create a Set key in the object store, then try a list operation on it
-            // to trigger a WRONGTYPE error (both are object-store types, but different)
-            db.SetAdd("mykey", "member1");
-
+            // SETRANGE with a non-integer offset triggers AbortWithErrorMessage,
+            // which sets commandErrorWritten and is tracked as a failed call.
             try
             {
-                db.ListLeftPush("mykey", "item1");
+                db.Execute("SETRANGE", "mykey", "not_a_number", "value");
             }
             catch (RedisServerException)
             {
-                // Expected WRONGTYPE error
+                // Expected error: value is not an integer
             }
-
-            Thread.Sleep(metricsUpdateDelay);
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             string[] lines = infoResult.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
 
-            // The LPUSH command should show a failed call
-            string lpushLine = lines.FirstOrDefault(l => l.StartsWith("cmdstat_lpush:"));
-            ClassicAssert.IsNotNull(lpushLine, "Expected cmdstat_lpush entry");
-            ulong failedCalls = ParseCommandStatField(lpushLine, "failed_calls");
-            ClassicAssert.GreaterOrEqual(failedCalls, (ulong)1, "Expected at least 1 failed LPUSH call");
+            // The SETRANGE command should show a failed call
+            string setrangeLine = lines.FirstOrDefault(l => l.StartsWith("cmdstat_setrange:"));
+            ClassicAssert.IsNotNull(setrangeLine, "Expected cmdstat_setrange entry");
+            ulong failedCalls = ParseCommandStatField(setrangeLine, "failed_calls");
+            ClassicAssert.GreaterOrEqual(failedCalls, (ulong)1, "Expected at least 1 failed SETRANGE call");
         }
 
         [Test]
         public void CommandStatsUsecFieldsZeroTest()
         {
             StartServer();
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             for (int i = 0; i < 100; i++)
                 db.StringSet($"key{i}", $"value{i}");
-
-            Thread.Sleep(metricsUpdateDelay);
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             string[] lines = infoResult.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
@@ -161,7 +148,6 @@ namespace Garnet.test
         public void CommandStatsMultipleCommandsTest()
         {
             StartServer();
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -171,8 +157,6 @@ namespace Garnet.test
             db.StringGet("k1");
             db.Execute("DEL", "k1");
             db.Execute("PING");
-
-            Thread.Sleep(metricsUpdateDelay);
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             string[] lines = infoResult.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
@@ -187,8 +171,8 @@ namespace Garnet.test
         [Test]
         public void CommandStatsSuccessRateTest()
         {
-            StartServer();
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
+            // Use periodic sampling to cover the MetricsSamplingFrequency > 0 aggregation path
+            StartServer(metricsSamplingFreq: 1);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -197,7 +181,7 @@ namespace Garnet.test
             for (int i = 0; i < 5; i++)
                 db.StringSet($"key{i}", $"value{i}");
 
-            Thread.Sleep(metricsUpdateDelay);
+            Thread.Sleep(TimeSpan.FromSeconds(1.5));
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             string[] lines = infoResult.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
@@ -231,13 +215,11 @@ namespace Garnet.test
         public void CommandStatsFormatMatchesRedisConvention()
         {
             StartServer();
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.5);
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             db.StringSet("k", "v");
-            Thread.Sleep(metricsUpdateDelay);
 
             string infoResult = db.Execute("INFO", "COMMANDSTATS").ToString();
             string[] lines = infoResult.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
