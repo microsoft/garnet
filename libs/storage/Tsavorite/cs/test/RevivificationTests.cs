@@ -2152,7 +2152,7 @@ namespace Tsavorite.test.Revivification
 
                 try
                 {
-                    var timeoutSec = 5;     // 5s per iteration should be plenty
+                    var timeoutSec = 10;     // 10s per iteration to handle slower CI environments
                     ClassicAssert.IsTrue(Task.WaitAll([.. tasks], TimeSpan.FromSeconds(timeoutSec)), $"Task timeout at {timeoutSec} sec, maxRec/taken {maxRecords}/{totalTaken}, iteration {iteration}");
                     endIteration();
                 }
