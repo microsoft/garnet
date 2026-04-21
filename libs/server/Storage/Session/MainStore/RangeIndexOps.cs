@@ -224,8 +224,10 @@ namespace Garnet.server
                 var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
                 if (insertResult == BfTreeInsertResult.InvalidKV)
                 {
+                    ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);
                     result = RangeIndexResult.Error;
-                    errorMsg = "ERR invalid key or value size"u8;
+                    errorMsg = System.Text.Encoding.UTF8.GetBytes(
+                        $"ERR key+value size must be between {stub.MinRecordSize} and {stub.MaxRecordSize} bytes (got {field.Length + value.Length}), max key length {stub.MaxKeyLen} (got {field.Length})");
                     return GarnetStatus.OK;
                 }
 

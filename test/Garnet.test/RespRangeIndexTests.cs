@@ -707,7 +707,7 @@ namespace Garnet.test
             var longField = new string('k', 17);
             var ex = Assert.Throws<RedisServerException>(() =>
                 db.Execute("RI.SET", "myindex", longField, "value1"));
-            ClassicAssert.IsTrue(ex.Message.Contains("invalid key or value size"),
+            ClassicAssert.IsTrue(ex.Message.Contains("key+value size must be between"),
                 $"Expected InvalidKV error, got: {ex.Message}");
         }
 
@@ -731,7 +731,7 @@ namespace Garnet.test
             var longValue = new string('v', 128);
             var ex = Assert.Throws<RedisServerException>(() =>
                 db.Execute("RI.SET", "myindex", "field1", longValue));
-            ClassicAssert.IsTrue(ex.Message.Contains("invalid key or value size"),
+            ClassicAssert.IsTrue(ex.Message.Contains("key+value size must be between"),
                 $"Expected InvalidKV error, got: {ex.Message}");
         }
 
@@ -755,7 +755,7 @@ namespace Garnet.test
             // key="a" (1 byte) + value="b" (1 byte) = 2 bytes, well below MINRECORD=128
             var ex = Assert.Throws<RedisServerException>(() =>
                 db.Execute("RI.SET", "myindex", "a", "b"));
-            ClassicAssert.IsTrue(ex.Message.Contains("invalid key or value size"),
+            ClassicAssert.IsTrue(ex.Message.Contains("key+value size must be between"),
                 $"Expected InvalidKV error for record below MINRECORD, got: {ex.Message}");
         }
 
