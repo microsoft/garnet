@@ -298,8 +298,8 @@ namespace Garnet.server
         public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(defaultDatabase);
 
         /// <inheritdoc/>
-        public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
-            GrowIndexesIfNeeded(defaultDatabase);
+        public override ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default) =>
+            GrowIndexesIfNeededAsync(defaultDatabase);
 
         /// <inheritdoc/>
         public override void ExecuteObjectCollection() =>

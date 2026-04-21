@@ -63,7 +63,7 @@ namespace Garnet.cluster
                 if ((_namespaces?.Count ?? 0) > 0)
                 {
                     // Actually move element data over
-                    if (!await migrateTask.TransmitKeysNamespaces(logger).ConfigureAwait(false))
+                    if (!await migrateTask.TransmitKeysNamespacesAsync(logger).ConfigureAwait(false))
                     {
                         logger?.LogError("Failed to transmit vector set (namespaced) element data, migration failed");
                         return false;

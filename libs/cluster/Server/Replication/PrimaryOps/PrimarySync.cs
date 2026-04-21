@@ -92,7 +92,7 @@ namespace Garnet.cluster
                         return (false, (ReadOnlyMemory<byte>)errorMessage.AsMemory());
                     }
 
-                    if (!await session.SendCheckpoint().ConfigureAwait(false))
+                    if (!await session.SendCheckpointAsync().ConfigureAwait(false))
                     {
                         var errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
                         return (false, (ReadOnlyMemory<byte>)errorMessage.AsMemory());

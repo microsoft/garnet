@@ -135,7 +135,9 @@ namespace Garnet.server
         /// <summary>
         /// GET - async version
         /// </summary>
+#pragma warning disable VSTHRD200 // Use "Async" suffix for async methods
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
+#pragma warning restore VSTHRD200 // Use "Async" suffix for async methods
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
@@ -1663,7 +1665,7 @@ namespace Garnet.server
             }
 
             if (async)
-                Task.Run(() => ExecuteFlushDb(cmd, unsafeTruncateLog)).ConfigureAwait(false);
+                _ = Task.Run(() => ExecuteFlushDb(cmd, unsafeTruncateLog));
             else
                 ExecuteFlushDb(cmd, unsafeTruncateLog);
 

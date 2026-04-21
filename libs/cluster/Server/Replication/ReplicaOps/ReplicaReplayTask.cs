@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -90,7 +91,7 @@ namespace Garnet.cluster
             }
         }
 
-        public async void ReplicaReplayTask()
+        public async Task ReplicaReplayTaskAsync()
         {
             try
             {
@@ -100,7 +101,7 @@ namespace Garnet.cluster
                     this,
                     clusterProvider.serverOptions.ReplicaSyncDelayMs,
                     maxChunkSize: 1 << 20,
-                    replicaReplayTaskCts.Token);
+                    replicaReplayTaskCts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

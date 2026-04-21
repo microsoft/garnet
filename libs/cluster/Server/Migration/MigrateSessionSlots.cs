@@ -68,7 +68,7 @@ namespace Garnet.cluster
         /// Migrate Slots inline driver
         /// </summary>
         /// <returns></returns>
-        public async Task<bool> MigrateSlotsDriverInline()
+        public async Task<bool> MigrateSlotsDriverInlineAsync()
         {
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
@@ -76,12 +76,12 @@ namespace Garnet.cluster
 
 #if DEBUG
             // Only on Debug mode
-            await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).ConfigureAwait(false);
+            await ExceptionInjectionHelper.WaitOnSetAsync(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).ConfigureAwait(false);
 #endif
 
             // Send main store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            var success = await CreateAndRunMigrateTasksAsync(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
             if (!success) return false;
 
             // Send object store
@@ -91,15 +91,15 @@ namespace Garnet.cluster
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
                 logger?.LogWarning("Object Store migrate scan range [{objectStoreBeginAddress}, {objectStoreTailAddress}]", objectStoreBeginAddress, objectStoreTailAddress);
-                success = await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                success = await CreateAndRunMigrateTasksAsync(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
                 if (!success) return false;
             }
 
             return true;
 
-            async Task<bool> CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> CreateAndRunMigrateTasksAsync(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
-                logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
+                logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasksAsync), storeType, beginAddress, tailAddress);
                 var migrateOperationRunners = new Task<bool>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 var i = 0;
                 while (i < migrateOperationRunners.Length)
@@ -207,8 +207,8 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {storeType} {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress, pageSize);
-                    _cts.Cancel();
+                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {storeType} {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasksAsync), storeType, beginAddress, tailAddress, pageSize);
+                    await _cts.CancelAsync().ConfigureAwait(false);
                     return false;
                 }
 

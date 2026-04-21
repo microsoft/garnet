@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -340,7 +341,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    aofTasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
+                    aofTasks[i] = AwaitCommitAsync(db, db.AppendOnlyFile.CommitAsync(token: token));
                 }
 
                 var exThrown = false;
@@ -368,6 +369,13 @@ namespace Garnet.server
             finally
             {
                 databasesContentLock.ReadUnlock();
+            }
+
+            static async Task<(long, long)> AwaitCommitAsync(GarnetDatabase db, ValueTask task)
+            {
+                await task.ConfigureAwait(false);
+
+                return (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress);
             }
         }
 
@@ -517,10 +525,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool GrowIndexesIfNeeded(CancellationToken token = default)
+        public override async ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default)
         {
-            var allIndexesMaxedOut = true;
-
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
@@ -530,16 +536,18 @@ namespace Garnet.server
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
                 var databasesMapSnapshot = databases.Map;
 
+                var growTasks = new Task<bool>[activeDbIdsMapSize];
+
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
 
-                    var indexesMaxedOut = GrowIndexesIfNeeded(databasesMapSnapshot[dbId]);
-                    if (allIndexesMaxedOut && !indexesMaxedOut)
-                        allIndexesMaxedOut = false;
+                    growTasks[i] = GrowIndexesIfNeededAsync(databasesMapSnapshot[dbId]).AsTask();
                 }
 
-                return allIndexesMaxedOut;
+                var indexMaxedOuts = await Task.WhenAll(growTasks).ConfigureAwait(false);
+
+                return indexMaxedOuts.All(static x => x);
             }
             finally
             {

@@ -90,7 +90,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="exceptionType"></param>
         /// <returns></returns>
-        public static async Task WaitOnSet(ExceptionInjectionType exceptionType)
+        public static async Task WaitOnSetAsync(ExceptionInjectionType exceptionType)
         {
             if (exceptionType == ExceptionInjectionType.None)
             {

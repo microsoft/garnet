@@ -98,7 +98,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Start sending the latest checkpoint to replica
         /// </summary>
-        public async Task<bool> SendCheckpoint()
+        public async Task<bool> SendCheckpointAsync()
         {
             errorMsg = default;
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
@@ -130,7 +130,7 @@ namespace Garnet.cluster
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion, replicaCheckpointEntry.metadata.objectStoreVersion);
 
                 logger?.LogInformation("Attempting to acquire checkpoint");
-                (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
+                (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntryAsync().ConfigureAwait(false);
                 logger?.LogInformation("Checkpoint search completed");
 
                 await gcs.ConnectAsync((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds).ConfigureAwait(false);
@@ -157,24 +157,24 @@ namespace Garnet.cluster
 
                     // 1. send hlog file segments
                     if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > 64)
-                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
+                        await SendFileSegmentsAsync(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress).ConfigureAwait(false);
 
                     // 2.Send index file segments
                     //var index_size = storeWrapper.store.GetIndexFileSize(localEntry.storeIndexToken);
-                    await SendFileSegments(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
+                    await SendFileSegmentsAsync(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size).ConfigureAwait(false);
 
                     // 3. Send snapshot file segments
-                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
+                    await SendFileSegmentsAsync(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress).ConfigureAwait(false);
 
                     // 4. Send delta log segments
                     var dlog_size = hlog_size.deltaLogTailAddress;
-                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size);
+                    await SendFileSegmentsAsync(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size).ConfigureAwait(false);
 
                     // 5.Send index metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken);
+                    await SendCheckpointMetadataAsync(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken).ConfigureAwait(false);
 
                     // 6. Send snapshot metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken);
+                    await SendCheckpointMetadataAsync(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken).ConfigureAwait(false);
                 }
 
                 if (!skipLocalObjectStoreCheckpoint)
@@ -185,37 +185,37 @@ namespace Garnet.cluster
                     if (clusterProvider.serverOptions.EnableStorageTier && obj_hlog_size.hybridLogFileEndAddress > 24)
                     {
                         //send object hlog file segments
-                        await SendFileSegments(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG, obj_hlog_size.hybridLogFileStartAddress, obj_hlog_size.hybridLogFileEndAddress);
+                        await SendFileSegmentsAsync(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG, obj_hlog_size.hybridLogFileStartAddress, obj_hlog_size.hybridLogFileEndAddress).ConfigureAwait(false);
 
                         var hlogSegmentCount = ((obj_hlog_size.hybridLogFileEndAddress - obj_hlog_size.hybridLogFileStartAddress) >> clusterProvider.serverOptions.ObjectStoreSegmentSizeBits()) + 1;
-                        await SendObjectFiles(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG_OBJ, (int)hlogSegmentCount);
+                        await SendObjectFilesAsync(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG_OBJ, (int)hlogSegmentCount).ConfigureAwait(false);
                     }
 
                     // 2. Send object store snapshot files
                     if (obj_hlog_size.snapshotFileEndAddress > 24)
                     {
                         //send snapshot file segments
-                        await SendFileSegments(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT, 0, obj_hlog_size.snapshotFileEndAddress);
+                        await SendFileSegmentsAsync(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT, 0, obj_hlog_size.snapshotFileEndAddress).ConfigureAwait(false);
 
                         //send snapshot.obj file segments
                         var snapshotSegmentCount = (obj_hlog_size.snapshotFileEndAddress >> clusterProvider.serverOptions.ObjectStoreSegmentSizeBits()) + 1;
-                        await SendObjectFiles(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ, (int)snapshotSegmentCount);
+                        await SendObjectFilesAsync(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ, (int)snapshotSegmentCount).ConfigureAwait(false);
                     }
 
                     // 3. Send object store index file segments
                     if (obj_index_size > 0)
-                        await SendFileSegments(gcs, localEntry.metadata.objectStoreIndexToken, CheckpointFileType.OBJ_STORE_INDEX, 0, obj_index_size);
+                        await SendFileSegmentsAsync(gcs, localEntry.metadata.objectStoreIndexToken, CheckpointFileType.OBJ_STORE_INDEX, 0, obj_index_size).ConfigureAwait(false);
 
                     // 4. Send object store delta file segments
                     var obj_dlog_size = obj_hlog_size.deltaLogTailAddress;
                     if (obj_dlog_size > 0)
-                        await SendFileSegments(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_DLOG, 0, obj_dlog_size);
+                        await SendFileSegmentsAsync(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_DLOG, 0, obj_dlog_size).ConfigureAwait(false);
 
                     // 5. Send object store index metadata
-                    await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_INDEX, localEntry.metadata.objectStoreIndexToken);
+                    await SendCheckpointMetadataAsync(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_INDEX, localEntry.metadata.objectStoreIndexToken).ConfigureAwait(false);
 
                     // 6. Send object store snapshot metadata
-                    await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_SNAPSHOT, localEntry.metadata.objectStoreHlogToken);
+                    await SendCheckpointMetadataAsync(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_SNAPSHOT, localEntry.metadata.objectStoreHlogToken).ConfigureAwait(false);
                 }
                 #endregion
 
@@ -345,7 +345,7 @@ namespace Garnet.cluster
             return true;
         }
 
-        public async Task<(CheckpointEntry, AofSyncTaskInfo)> AcquireCheckpointEntry()
+        public async Task<(CheckpointEntry, AofSyncTaskInfo)> AcquireCheckpointEntryAsync()
         {
             AofSyncTaskInfo aofSyncTaskInfo;
             CheckpointEntry cEntry;
@@ -386,7 +386,7 @@ namespace Garnet.cluster
 
 #if DEBUG
                 // Only on Debug mode
-                await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+                await ExceptionInjectionHelper.WaitOnSetAsync(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition).ConfigureAwait(false);
 #endif
 
                 // Calculate the minimum start address covered by this checkpoint
@@ -408,7 +408,7 @@ namespace Garnet.cluster
                         cEntry.RemoveReader();
                         numOdcAttempts++;
                         logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
-                        await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
+                        await storeWrapper.TakeOnDemandCheckpointAsync(lastSaveTime);
                         await Task.Yield();
                         continue;
                     }
@@ -429,7 +429,7 @@ namespace Garnet.cluster
             return (cEntry, aofSyncTaskInfo);
         }
 
-        private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
+        private async Task SendCheckpointMetadataAsync(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
             var retryCount = validateMetadataMaxRetryCount;
             while (true)
@@ -473,7 +473,7 @@ namespace Garnet.cluster
             }
         }
 
-        private async Task SendFileSegments(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
+        private async Task SendFileSegmentsAsync(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
         {
             var fileTokenBytes = token.ToByteArray();
             var device = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
@@ -491,7 +491,7 @@ namespace Garnet.cluster
                     var num_bytes = startAddress + batchSize < endAddress ?
                         batchSize :
                         (int)(endAddress - startAddress);
-                    var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
+                    var (pbuffer, readBytes) = await ReadIntoAsync(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
 
                     resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
@@ -518,7 +518,7 @@ namespace Garnet.cluster
             logger?.LogInformation("<Complete sending checkpoint file segments {guid} {type} {startAddress} {endAddress}", token, type, startAddress, endAddress);
         }
 
-        private async Task SendObjectFiles(GarnetClientSession gcs, Guid token, CheckpointFileType type, int segmentCount, int batchSize = 1 << 17)
+        private async Task SendObjectFilesAsync(GarnetClientSession gcs, Guid token, CheckpointFileType type, int segmentCount, int batchSize = 1 << 17)
         {
             var fileTokenBytes = token.ToByteArray();
             IDevice device = null;
@@ -536,7 +536,7 @@ namespace Garnet.cluster
                     while (startAddress < size)
                     {
                         var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
-                        var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes, segment).ConfigureAwait(false);
+                        var (pbuffer, readBytes) = await ReadIntoAsync(device, (ulong)startAddress, num_bytes, segment).ConfigureAwait(false);
 
                         resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).
                             WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
@@ -573,7 +573,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="size"></param>
         /// <param name="segmentId"></param>
-        private async Task<(SectorAlignedMemory, int)> ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
+        private async Task<(SectorAlignedMemory, int)> ReadIntoAsync(IDevice device, ulong address, int size, int segmentId = -1)
         {
             bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
 

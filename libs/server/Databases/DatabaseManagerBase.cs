@@ -75,7 +75,7 @@ namespace Garnet.server
         public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
-        public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public abstract ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract void ExecuteObjectCollection();
@@ -368,16 +368,16 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to grow store indexes for</param>
         /// <returns>True if both store indexes are maxed out</returns>
-        protected bool GrowIndexesIfNeeded(GarnetDatabase db)
+        protected async ValueTask<bool> GrowIndexesIfNeededAsync(GarnetDatabase db)
         {
             var indexesMaxedOut = true;
 
             if (!DefaultDatabase.MainStoreIndexMaxedOut)
             {
                 var dbMainStore = DefaultDatabase.MainStore;
-                if (GrowIndexIfNeeded(StoreType.Main,
+                if (await GrowIndexIfNeededAsync(StoreType.Main,
                         StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                        () => dbMainStore.IndexSize, async () => await dbMainStore.GrowIndexAsync()))
+                        () => dbMainStore.IndexSize, () => dbMainStore.GrowIndexAsync()).ConfigureAwait(false))
                 {
                     db.MainStoreIndexMaxedOut = true;
                 }
@@ -390,10 +390,10 @@ namespace Garnet.server
             if (!db.ObjectStoreIndexMaxedOut)
             {
                 var dbObjectStore = db.ObjectStore;
-                if (GrowIndexIfNeeded(StoreType.Object,
+                if (await GrowIndexIfNeededAsync(StoreType.Object,
                         StoreWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
                         dbObjectStore.OverflowBucketAllocations,
-                        () => dbObjectStore.IndexSize, async () => await dbObjectStore.GrowIndexAsync()))
+                        () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndexAsync()).ConfigureAwait(false))
                 {
                     db.ObjectStoreIndexMaxedOut = true;
                 }
@@ -475,7 +475,7 @@ namespace Garnet.server
         /// <param name="indexSizeRetriever"></param>
         /// <param name="growAction"></param>
         /// <returns>True if index has reached its max size</returns>
-        protected bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        protected async ValueTask<bool> GrowIndexIfNeededAsync(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Func<Task> growAction)
         {
             Logger?.LogDebug(
                 $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
@@ -487,7 +487,7 @@ namespace Garnet.server
                 Logger?.LogInformation(
                     $"IndexAutoGrowTask[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
                     storeType, overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
-                growAction();
+                await growAction().ConfigureAwait(false);
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;

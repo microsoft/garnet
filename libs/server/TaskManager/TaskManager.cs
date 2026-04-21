@@ -97,7 +97,7 @@ namespace Garnet.server
 
                 // Execute task factory
                 if (cleanupOnCompletion)
-                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await CancelAsync(taskType)).Unwrap();
+                    taskMetadata.Task = WrapWithCleanupAsync(taskFactory(taskMetadata.Cts.Token), taskType);
                 else
                     taskMetadata.Task = taskFactory(taskMetadata.Cts.Token);
             }
@@ -114,6 +114,21 @@ namespace Garnet.server
             }
 
             return true;
+
+            async Task WrapWithCleanupAsync(Task toAwait, TaskType taskType)
+            {
+                // Force async
+                await Task.Yield();
+
+                try
+                {
+                    await toAwait.ConfigureAwait(false);
+                }
+                finally
+                {
+                    await CancelAsync(taskType).ConfigureAwait(false);
+                }
+            }
         }
 
         /// <summary>

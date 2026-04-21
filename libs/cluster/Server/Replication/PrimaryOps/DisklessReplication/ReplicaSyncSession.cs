@@ -191,7 +191,7 @@ namespace Garnet.cluster
         /// Wait until sync of checkpoint is completed
         /// </summary>
         /// <returns></returns>
-        public async Task WaitForSyncCompletion()
+        public async Task WaitForSyncCompletionAsync()
         {
             try
             {
@@ -200,7 +200,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method} failed waiting for sync", nameof(WaitForSyncCompletion));
+                logger?.LogError(ex, "{method} failed waiting for sync", nameof(WaitForSyncCompletionAsync));
                 SetStatus(SyncStatus.FAILED, "Wait for sync task faulted");
             }
         }
@@ -235,7 +235,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin syncing AOF to the replica
         /// </summary>
-        public async Task BeginAofSync()
+        public async Task BeginAofSyncAsync()
         {
             var aofSyncTask = AofSyncTask;
             try
@@ -258,7 +258,7 @@ namespace Garnet.cluster
                 var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray()).ConfigureAwait(false);
                 if (!long.TryParse(result, out var syncFromAofAddress))
                 {
-                    logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSync));
+                    logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSyncAsync));
                     SetStatus(SyncStatus.FAILED, "Failed to parse recovery offset");
                     return;
                 }
@@ -278,7 +278,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", $"{nameof(BeginAofSync)}");
+                logger?.LogError(ex, "{method}", $"{nameof(BeginAofSyncAsync)}");
                 SetStatus(SyncStatus.FAILED, ex.Message);
                 _ = clusterProvider.replicationManager.TryRemoveReplicationTask(AofSyncTask);
             }

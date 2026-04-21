@@ -136,9 +136,9 @@ namespace Garnet.common
                 if (!socket.ReceiveAsync(receiveEventArgs))
                 {
                     if (useTLS)
-                        Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
+                        _ = Task.Run(() => RecvEventArgCompletedWithTLS(null, receiveEventArgs));
                     else
-                        Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
+                        _ = Task.Run(() => RecvEventArgCompletedWithoutTLS(null, receiveEventArgs));
                 }
             }
             catch (Exception ex)

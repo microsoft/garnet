@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#pragma warning disable VSTHRD002 // The whole point of this class is to segregate propoblematic blocking
+
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 

@@ -414,8 +414,11 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
-                cmdArgs).Result;
+            // On the networking thread, no choice but to block
+            var result =
+                AsyncUtils.BlockingWait(
+                    storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout, cmdArgs)
+                );
 
             if (result.IsForceUnblocked)
             {

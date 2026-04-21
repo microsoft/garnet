@@ -179,7 +179,7 @@ namespace Garnet.cluster
         {
             try
             {
-                using var resp = await gc.Gossip(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                using var resp = await gc.GossipAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
@@ -207,7 +207,7 @@ namespace Garnet.cluster
         public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var resp = await gc.GossipWithMeetAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
             return resp;
         }
 
