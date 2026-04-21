@@ -20,7 +20,7 @@ namespace Garnet.common
 
     public static class LoggingExtensions
     {
-        public static void LogTesting(this ILogger logger, LogLevel logLevel, GarnetTestLoggingEvent state)
+        public static void LogTesting(this ILogger logger, GarnetTestLoggingEvent state)
         {
             logger?.Log(LogLevel.Critical,
                 eventId: default,

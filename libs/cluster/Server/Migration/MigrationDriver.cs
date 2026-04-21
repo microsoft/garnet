@@ -83,7 +83,7 @@ namespace Garnet.cluster
 
                 // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
                 // we need to reserve destination sets on the other side
-                if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync())
+                if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to reserve destination vector sets, migration failed");
                     TryRecoverFromFailure();

@@ -180,5 +180,4 @@ namespace BDN.benchmark.Cluster
         public void Consume(byte* ptr, int length)
             => session.TryConsumeMessages(ptr, length);
     }
-
 }

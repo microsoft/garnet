@@ -85,6 +85,7 @@ namespace Garnet.cluster
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
+
                 var resp = await client.ExecuteClusterFailStopWrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
                 var primaryReplicationOffset = AofAddress.FromString(resp);
 

@@ -241,7 +241,7 @@ namespace Garnet.cluster
                     Message = $"physicalSublogIdx: {physicalSublogIdx}, previousAddress: {previousAddress}, currentAddress: {currentAddress}, nextAddress: {nextAddress}",
                 };
 
-                logger?.LogTesting(LogLevel.Critical, state);
+                logger?.LogTesting(state);
             }
         }
 

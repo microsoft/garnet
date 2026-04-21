@@ -10,7 +10,7 @@ using Garnet.server;
 
 namespace Garnet.cluster
 {
-    internal static partial class GarnetClientExtensions
+    internal static class GarnetClientExtensions
     {
         static readonly Memory<byte> GOSSIP = "GOSSIP"u8.ToArray();
         static readonly Memory<byte> WITHMEET = "WITHMEET"u8.ToArray();
@@ -53,7 +53,7 @@ namespace Garnet.cluster
         /// <param name="primaryReplicationOffset"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.NetworkClusterFailReplicationOffset"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.NetworkClusterFailReplicationOffset"/>
         public static async Task<string> ExecuteClusterFailReplicationOffset(this GarnetClient client, AofAddress primaryReplicationOffset, CancellationToken cancellationToken = default)
         {
             var args = new Memory<byte>[] {
@@ -64,14 +64,14 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Issue CLUSTER PUBLISH
+        /// Publishes a message to a specified channel in a clustered Garnet environment without waiting for a server
+        /// response.
         /// </summary>
-        /// <param name="client"></param>
-        /// <param name="cmd"></param>
-        /// <param name="channel"></param>
-        /// <param name="message"></param>
-        /// <param name="cancellationToken"></param>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.NetworkClusterPublish"/>
+        /// <param name="client">The Garnet client instance used to send the publish command.</param>
+        /// <param name="cmd">The RESP command to execute. Must be either PUBLISH or SPUBLISH.</param>
+        /// <param name="channel">A span containing the channel name to which the message will be published.</param>
+        /// <param name="message">A span containing the message to publish to the channel.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         public static void ExecuteClusterPublishNoResponse(this GarnetClient client, RespCommand cmd, ref Span<byte> channel, ref Span<byte> message, CancellationToken cancellationToken = default)
             => client.ExecuteNoResponse(GarnetClient.CLUSTER, RespCommand.PUBLISH == cmd ? GarnetClient.PUBLISH : GarnetClient.SPUBLISH, ref channel, ref message, cancellationToken);
     }

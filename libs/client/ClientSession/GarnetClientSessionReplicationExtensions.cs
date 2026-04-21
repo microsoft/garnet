@@ -32,7 +32,7 @@ namespace Garnet.client
         /// <param name="aofBeginAddress"></param>
         /// <param name="aofTailAddress"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterInitiateReplicaSync"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterInitiateReplicaSync"/>
         public Task<string> ExecuteClusterInitiateReplicaSync(string nodeId, string primary_replid, byte[] checkpointEntryData, Span<byte> aofBeginAddress, Span<byte> aofTailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -114,7 +114,7 @@ namespace Garnet.client
         /// <param name="fileTokenBytes"></param>
         /// <param name="fileType"></param>
         /// <param name="data"></param>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointMetadata"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointMetadata"/>
         public Task<string> ExecuteClusterSendCheckpointMetadata(Memory<byte> fileTokenBytes, int fileType, Memory<byte> data)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -181,7 +181,7 @@ namespace Garnet.client
         /// <param name="startAddress"></param>
         /// <param name="data"></param>
         /// <param name="segmentId"></param>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointFileSegment"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointFileSegment"/>
         public Task<string> ExecuteClusterSendCheckpointFileSegment(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data, int segmentId = -1)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -267,7 +267,7 @@ namespace Garnet.client
         /// <param name="beginAddress"></param>
         /// <param name="tailAddress"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterBeginReplicaRecover"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterBeginReplicaRecover"/>
         public Task<string> ExecuteClusterBeginReplicaRecover(
             bool sendStoreCheckpoint,
             ulong replayAOF,
@@ -362,7 +362,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="syncMetadata"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAttachSync"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterAttachSync"/>
         public Task<string> ExecuteClusterAttachSync(byte[] syncMetadata)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -411,7 +411,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <seealso cref="T:Garnet.cluster.SnapshotIteratorManager"/>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSync"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSync"/>
         public void SetClusterSyncHeader(string sourceNodeId)
         {
             // Unlike Migration, where we don't know at the time of header initialization if we have a record or not, in Replication 
@@ -470,7 +470,7 @@ namespace Garnet.client
         /// <param name="sequenceNumber"></param>
         /// <param name="aofAddress"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAdvanceTime"/>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterAdvanceTime"/>
         public Task<string> ExecuteClusterAdvanceTime(long sequenceNumber, Span<byte> aofAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);

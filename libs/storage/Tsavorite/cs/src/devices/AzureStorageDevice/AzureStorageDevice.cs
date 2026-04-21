@@ -666,27 +666,27 @@ namespace Tsavorite.devices
         {
             WriteToBlobAsync(blobEntry, sourceAddress, (long)destinationAddress, numBytesToWrite, id)
                 .ContinueWith((Task t) =>
+                {
+                    if (pendingReadWriteOperations.TryRemove(id, out ReadWriteRequestInfo request))
                     {
-                        if (pendingReadWriteOperations.TryRemove(id, out ReadWriteRequestInfo request))
+                        if (t.IsFaulted)
                         {
-                            if (t.IsFaulted)
-                            {
-                                BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id} (Failure)");
-                                request.Callback(uint.MaxValue, request.NumBytes, request.Context);
-                            }
-                            else
-                            {
-                                BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id}");
-                                request.Callback(0, request.NumBytes, request.Context);
-                            }
+                            BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id} (Failure)");
+                            request.Callback(uint.MaxValue, request.NumBytes, request.Context);
                         }
-
-                        if (underLease)
+                        else
                         {
-                            InitialWriterSemaphore.Release();
+                            BlobManager?.StorageTracer?.TsavoriteStorageProgress($"StorageOpReturned AzureStorageDevice.WriteAsync id={id}");
+                            request.Callback(0, request.NumBytes, request.Context);
                         }
+                    }
 
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                    if (underLease)
+                    {
+                        InitialWriterSemaphore.Release();
+                    }
+
+                }, TaskContinuationOptions.ExecuteSynchronously);
         }
 
         async Task WriteToBlobAsync(BlobEntry blobEntry, IntPtr sourceAddress, long destinationAddress, uint numBytesToWrite, long id)
