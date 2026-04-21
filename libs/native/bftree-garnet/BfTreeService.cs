@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using Tsavorite.core;
 
 namespace Garnet.server.BfTreeInterop
@@ -97,7 +98,7 @@ namespace Garnet.server.BfTreeInterop
     public sealed unsafe class BfTreeService : IDisposable
     {
         private nint _tree;
-        private bool _disposed;
+        private int _disposed;
         private readonly StorageBackendType _storageBackend;
         private readonly string _filePath;
 
@@ -324,7 +325,7 @@ namespace Garnet.server.BfTreeInterop
         /// </summary>
         public BfTreeInsertResult Insert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             fixed (byte* kp = key, vp = value)
                 return Insert(
                     PinnedSpanByte.FromPinnedPointer(kp, key.Length),
@@ -336,7 +337,7 @@ namespace Garnet.server.BfTreeInterop
         /// </summary>
         public BfTreeReadResult Read(ReadOnlySpan<byte> key, Span<byte> outputBuffer, out int bytesWritten)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             fixed (byte* kp = key, bp = outputBuffer)
                 return Read(
                     PinnedSpanByte.FromPinnedPointer(kp, key.Length),
@@ -349,7 +350,7 @@ namespace Garnet.server.BfTreeInterop
         /// </summary>
         public BfTreeReadResult Read(ReadOnlySpan<byte> key, out byte[] value)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             value = [];
             Span<byte> buffer = stackalloc byte[4096];
             var result = Read(key, buffer, out int bytesWritten);
@@ -363,7 +364,7 @@ namespace Garnet.server.BfTreeInterop
         /// </summary>
         public void Delete(ReadOnlySpan<byte> key)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             fixed (byte* kp = key)
                 Delete(PinnedSpanByte.FromPinnedPointer(kp, key.Length));
         }
@@ -385,7 +386,7 @@ namespace Garnet.server.BfTreeInterop
             ScanRecordAction onRecord,
             ScanReturnField returnField = ScanReturnField.KeyAndValue)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             nint handle;
             fixed (byte* skp = startKey)
             {
@@ -411,7 +412,7 @@ namespace Garnet.server.BfTreeInterop
             ReadOnlySpan<byte> startKey, int count,
             ScanReturnField returnField = ScanReturnField.KeyAndValue)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             nint handle;
             fixed (byte* skp = startKey)
             {
@@ -435,7 +436,7 @@ namespace Garnet.server.BfTreeInterop
             ReadOnlySpan<byte> startKey, ReadOnlySpan<byte> endKey,
             ScanReturnField returnField = ScanReturnField.KeyAndValue)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             nint handle;
             fixed (byte* skp = startKey, ekp = endKey)
             {
@@ -476,7 +477,7 @@ namespace Garnet.server.BfTreeInterop
         /// <param name="snapshotPath">Target snapshot file path (used for memory-only trees; ignored for disk).</param>
         public void Snapshot(string snapshotPath = null)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             if (_storageBackend == StorageBackendType.Disk)
             {
                 int result = NativeBfTreeMethods.bftree_snapshot(_tree);
@@ -507,7 +508,7 @@ namespace Garnet.server.BfTreeInterop
         /// <param name="targetPath">Target file path for the snapshot.</param>
         public void SnapshotToFile(string targetPath)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
             if (string.IsNullOrEmpty(targetPath))
                 throw new ArgumentException("targetPath is required.", nameof(targetPath));
 
@@ -644,9 +645,8 @@ namespace Garnet.server.BfTreeInterop
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (!_disposed)
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
             {
-                _disposed = true;
                 if (_tree != 0)
                 {
                     NativeBfTreeMethods.bftree_drop(_tree);

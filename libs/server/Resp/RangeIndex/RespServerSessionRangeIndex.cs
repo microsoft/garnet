@@ -43,11 +43,11 @@ namespace Garnet.server
 
             // Defaults
             byte storageBackend = 0; // Disk by default
-            ulong cacheSize = 16 * 1024 * 1024; // 16 MiB
-            uint minRecordSize = 64;
-            uint maxRecordSize = 1024;
-            uint maxKeyLen = 128;
-            uint leafPageSize = 0; // 0 = auto-compute from maxRecordSize
+            long cacheSize = 16 * 1024 * 1024; // 16 MiB
+            long minRecordSize = 64;
+            long maxRecordSize = 1024;
+            long maxKeyLen = 128;
+            long leafPageSize = 0; // 0 = auto-compute from maxRecordSize
 
             // Parse optional keyword arguments
             var idx = 1;
@@ -74,7 +74,7 @@ namespace Garnet.server
                             SendAndReset();
                         return true;
                     }
-                    cacheSize = (ulong)parseState.GetLong(idx);
+                    cacheSize = parseState.GetLong(idx);
                     idx++;
                 }
                 else if (arg.EqualsUpperCaseSpanIgnoringCase("MINRECORD"u8))
@@ -86,7 +86,7 @@ namespace Garnet.server
                             SendAndReset();
                         return true;
                     }
-                    minRecordSize = (uint)parseState.GetLong(idx);
+                    minRecordSize = parseState.GetLong(idx);
                     idx++;
                 }
                 else if (arg.EqualsUpperCaseSpanIgnoringCase("MAXRECORD"u8))
@@ -98,7 +98,7 @@ namespace Garnet.server
                             SendAndReset();
                         return true;
                     }
-                    maxRecordSize = (uint)parseState.GetLong(idx);
+                    maxRecordSize = parseState.GetLong(idx);
                     idx++;
                 }
                 else if (arg.EqualsUpperCaseSpanIgnoringCase("MAXKEYLEN"u8))
@@ -110,7 +110,7 @@ namespace Garnet.server
                             SendAndReset();
                         return true;
                     }
-                    maxKeyLen = (uint)parseState.GetLong(idx);
+                    maxKeyLen = parseState.GetLong(idx);
                     idx++;
                 }
                 else if (arg.EqualsUpperCaseSpanIgnoringCase("PAGESIZE"u8))
@@ -122,7 +122,7 @@ namespace Garnet.server
                             SendAndReset();
                         return true;
                     }
-                    leafPageSize = (uint)parseState.GetLong(idx);
+                    leafPageSize = parseState.GetLong(idx);
                     idx++;
                 }
                 else
@@ -134,7 +134,7 @@ namespace Garnet.server
             }
 
             // Validate numeric options
-            if (cacheSize == 0 || minRecordSize == 0 || maxRecordSize == 0 || maxKeyLen == 0)
+            if (cacheSize <= 0 || minRecordSize <= 0 || maxRecordSize <= 0 || maxKeyLen <= 0)
             {
                 while (!RespWriteUtils.TryWriteError("ERR numeric options must be greater than zero"u8, ref dcurr, dend))
                     SendAndReset();
@@ -149,7 +149,7 @@ namespace Garnet.server
             }
 
             var status = storageApi.RangeIndexCreate(key, storageBackend,
-                cacheSize, minRecordSize, maxRecordSize, maxKeyLen, leafPageSize,
+                (ulong)cacheSize, (uint)minRecordSize, (uint)maxRecordSize, (uint)maxKeyLen, (uint)leafPageSize,
                 out var result, out var errorMsg);
 
             if (result == RangeIndexResult.OK)
