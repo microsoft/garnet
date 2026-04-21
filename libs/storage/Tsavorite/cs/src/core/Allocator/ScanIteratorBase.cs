@@ -208,8 +208,14 @@ namespace Tsavorite.core
 
                         void DoReadPage(int frameIndex)
                         {
+                            // The drain callback may execute after the iterator has been disposed (loadCompletionEvents set to null),
+                            // because the callback is deferred via BumpCurrentEpoch and only runs when SafeToReclaimEpoch advances.
+                            // This can happen for read-ahead pages (frameIndex > 0) when the scan completes before the callback runs.
+                            var events = loadCompletionEvents;
+                            if (events is null)
+                                return;
                             AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
-                                context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                                context: Empty.Default, out events[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
