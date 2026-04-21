@@ -28,6 +28,9 @@ namespace Tsavorite.core
         /// <summary>Epoch from the store</summary>
         protected readonly LightEpoch epoch;
 
+        /// <summary>Number of deferred DoReadPage drain callbacks that have been registered but not yet executed.</summary>
+        int pendingDrainCallbacks;
+
         /// <summary>Current address for iteration</summary>
         protected long currentAddress;
         /// <summary>Next address for iteration</summary>
@@ -201,6 +204,7 @@ namespace Tsavorite.core
                         var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
 
                         var frameIndex = i;
+                        Interlocked.Increment(ref pendingDrainCallbacks);
                         if (epoch != null)
                             epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
                         else
@@ -208,14 +212,16 @@ namespace Tsavorite.core
 
                         void DoReadPage(int frameIndex)
                         {
-                            // The drain callback may execute after the iterator has been disposed (loadCompletionEvents set to null),
-                            // because the callback is deferred via BumpCurrentEpoch and only runs when SafeToReclaimEpoch advances.
-                            // This can happen for read-ahead pages (frameIndex > 0) when the scan completes before the callback runs.
-                            var events = loadCompletionEvents;
-                            if (events is null)
-                                return;
-                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
-                                context: Empty.Default, out events[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                            try
+                            {
+                                AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
+                                    context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                            }
+                            catch
+                            {
+                                Interlocked.Decrement(ref pendingDrainCallbacks);
+                                throw;
+                            }
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
@@ -281,7 +287,7 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
                 result.cts?.Cancel();
             }
-            Interlocked.MemoryBarrier();
+            Interlocked.Decrement(ref pendingDrainCallbacks);
         }
 
         /// <summary>
@@ -322,6 +328,14 @@ namespace Tsavorite.core
         /// </summary>
         public virtual void Dispose()
         {
+            // Wait for all deferred DoReadPage callbacks and their async I/O to complete before freeing
+            // resources. The counter is incremented before BumpCurrentEpoch registration and decremented
+            // in AsyncReadPageFromDeviceToFrameCallback when I/O completes, so reaching zero guarantees
+            // no outstanding access to our state. The deferred callbacks will be drained by other threads'
+            // epoch operations (Resume, Suspend, ProtectAndDrain).
+            while (Volatile.Read(ref pendingDrainCallbacks) > 0)
+                Thread.Yield();
+
             for (var i = 0; i < frameSize; i++)
             {
                 // Wait for ongoing reads to complete/fail; if the wait throws (e.g. due to cancellation), we still
