@@ -35,7 +35,7 @@
       <Output TaskParameter="ExitCode" PropertyName="CargoProbeExitCode" />
     </Exec>
 
-    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml"
+    <Exec Command="cargo build --release --locked --manifest-path=$(MSBuildThisFileDirectory)Cargo.toml"
           Condition="'$(CargoProbeExitCode)' == '0'" />
 
     <Error Condition="'$(CargoProbeExitCode)' != '0' and !Exists('$(NativeBuildOutput)') and !Exists('$(NativePrebuilt)')"
