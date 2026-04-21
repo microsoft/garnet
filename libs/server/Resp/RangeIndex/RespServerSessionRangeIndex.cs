@@ -380,6 +380,13 @@ namespace Garnet.server
                 return true;
             }
 
+            if (result == RangeIndexResult.MemoryModeNotSupported)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR RI.SCAN is not supported for MEMORY-mode indexes"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (result != RangeIndexResult.OK)
             {
                 while (!RespWriteUtils.TryWriteError("ERR range index not found"u8, ref dcurr, dend))
@@ -434,6 +441,13 @@ namespace Garnet.server
             if (status == GarnetStatus.WRONGTYPE)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (result == RangeIndexResult.MemoryModeNotSupported)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR RI.RANGE is not supported for MEMORY-mode indexes"u8, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

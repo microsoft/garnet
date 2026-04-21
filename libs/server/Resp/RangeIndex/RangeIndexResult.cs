@@ -20,5 +20,7 @@ namespace Garnet.server
         InvalidKey,
         /// <summary>Operation failed with an error (see accompanying error message).</summary>
         Error,
+        /// <summary>Operation not supported for MEMORY-mode indexes.</summary>
+        MemoryModeNotSupported,
     }
 }

@@ -456,6 +456,12 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
+                if (RangeIndexManager.ReadIndex(stubSpan).StorageBackend == (byte)StorageBackendType.Memory)
+                {
+                    result = RangeIndexResult.MemoryModeNotSupported;
+                    return GarnetStatus.OK;
+                }
+
                 WriteScanToOutput(treePtr, startKey.ReadOnlySpan, count, returnField,
                     isScanWithCount: true, [],
                     ref output, out recordCount);
@@ -499,6 +505,12 @@ namespace Garnet.server
                 if (treePtr == 0)
                 {
                     result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
+                if (RangeIndexManager.ReadIndex(stubSpan).StorageBackend == (byte)StorageBackendType.Memory)
+                {
+                    result = RangeIndexResult.MemoryModeNotSupported;
                     return GarnetStatus.OK;
                 }
 

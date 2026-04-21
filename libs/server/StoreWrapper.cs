@@ -899,8 +899,8 @@ namespace Garnet.server
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             taskManager.Dispose();
-            databaseManager.Dispose();
             rangeIndexManager?.Dispose();
+            databaseManager.Dispose();
 
             ctsCommit?.Dispose();
         }
