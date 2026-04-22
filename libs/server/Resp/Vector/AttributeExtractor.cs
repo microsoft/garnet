@@ -35,11 +35,11 @@ namespace Garnet.server
             if (s.IsEmpty || s[0] != (byte)'{') return 0;
             s = s[1..];
 
-            var found = 0;
-            var needed = selectorRanges.Length;
+                var found = 0;
+                var needed = selectorRanges.Length;
 
-            while (true)
-            {
+                while (true)
+                {
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return found;
                 if (s[0] == (byte)'}') return found;
@@ -50,16 +50,16 @@ namespace Garnet.server
                 if (!SkipString(ref s)) return found;
                 var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
 
-                var matchIndex = -1;
-                for (var i = 0; i < selectorRanges.Length; i++)
-                {
+                    var matchIndex = -1;
+                    for (var i = 0; i < selectorRanges.Length; i++)
+                    {
                     if (results[i].IsNone &&
                         keyContent.SequenceEqual(filterBytes.Slice(selectorRanges[i].Start, selectorRanges[i].Length)))
-                    {
-                        matchIndex = i;
-                        break;
+                            {
+                                matchIndex = i;
+                                break;
+                            }
                     }
-                }
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty || s[0] != (byte)':') return found;
@@ -68,22 +68,22 @@ namespace Garnet.server
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return found;
 
-                if (matchIndex >= 0)
-                {
+                    if (matchIndex >= 0)
+                    {
                     results[matchIndex] = ParseValueToken(json, ref s, ref program);
-                    found++;
-                    if (found == needed) return found;
-                }
-                else
-                {
+                        found++;
+                        if (found == needed) return found;
+                    }
+                    else
+                    {
                     if (!SkipValue(ref s)) return found;
-                }
+                    }
 
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return found;
                 if (s[0] == (byte)',') { s = s[1..]; continue; }
                 if (s[0] == (byte)'}') return found;
-                return found;
+                    return found;
             }
         }
 
@@ -98,8 +98,8 @@ namespace Garnet.server
             if (s.IsEmpty || s[0] != (byte)'{') return default;
             s = s[1..];
 
-            while (true)
-            {
+                while (true)
+                {
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
                 if (s[0] == (byte)'}') return default;
@@ -119,7 +119,7 @@ namespace Garnet.server
                 s = TrimWhiteSpace(s);
                 if (s.IsEmpty) return default;
 
-                if (match)
+                    if (match)
                     return ParseValueToken(json, ref s);
 
                 if (!SkipValue(ref s)) return default;
@@ -375,5 +375,292 @@ namespace Garnet.server
         private static bool IsNumberChar(byte b) =>
             IsDigit(b) || b == (byte)'-' || b == (byte)'+' ||
             b == (byte)'.' || b == (byte)'e' || b == (byte)'E';
+
+        // ======================== Binary attribute format ========================
+        //
+        // Pre-extracted binary format for fast filter evaluation:
+        //   [0xFF marker]
+        //   [num_fields: u8]
+        //   For each field:
+        //     [field_name_len: u8]
+        //     [field_name: N bytes]         ← raw UTF-8
+        //     [value_type: u8]              ← 0=string, 1=number, 2=bool_true, 3=bool_false, 4=null
+        //     [value_len: u16 LE]
+        //     [value_bytes: N bytes]        ← UTF-8 string or 8-byte f64 LE
+
+        internal const byte BinaryMarker = 0xFF;
+
+        private const byte BinTypeString = 0;
+        private const byte BinTypeNumber = 1;
+        private const byte BinTypeBoolTrue = 2;
+        private const byte BinTypeBoolFalse = 3;
+        private const byte BinTypeNull = 4;
+
+        /// <summary>
+        /// Convert a top-level JSON object to pre-extracted binary format.
+        /// Returns total bytes written, or -1 if output is too small.
+        /// </summary>
+        public static int ConvertJsonToBinary(ReadOnlySpan<byte> json, Span<byte> output)
+        {
+            var s = TrimWhiteSpace(json);
+            if (s.IsEmpty || s[0] != (byte)'{') return -1;
+            s = s[1..];
+
+            if (output.Length < 2) return -1;
+            output[0] = BinaryMarker;
+            // output[1] = num_fields — written at the end
+            var pos = 2;
+            byte fieldCount = 0;
+
+            while (true)
+            {
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return -1;
+                if (s[0] == (byte)'}') break;
+
+                if (s[0] != (byte)'"') return -1;
+
+                // Parse key
+                var afterOpenQuote = s[1..];
+                if (!SkipString(ref s)) return -1;
+                var keyContent = afterOpenQuote[..(afterOpenQuote.Length - s.Length - 1)];
+
+                // Check for escape sequences in key (rare)
+                var keyHasEscape = false;
+                for (var ki = 0; ki < keyContent.Length; ki++)
+                {
+                    if (keyContent[ki] == (byte)'\\') { keyHasEscape = true; break; }
+                }
+                if (keyHasEscape) return -1; // keys with escapes not supported
+
+                // Write field_name_len + field_name
+                if (keyContent.Length > 255) return -1;
+                if (pos + 1 + keyContent.Length + 1 + 2 > output.Length) return -1;
+                output[pos++] = (byte)keyContent.Length;
+                keyContent.CopyTo(output[pos..]);
+                pos += keyContent.Length;
+
+                // Skip colon
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty || s[0] != (byte)':') return -1;
+                s = s[1..];
+
+                // Parse value
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return -1;
+
+                var c = s[0];
+                if (c == (byte)'"')
+                {
+                    // String value — need to unescape
+                    s = s[1..]; // skip opening quote
+                    var body = s;
+                    var hasEscape = false;
+                    while (!s.IsEmpty)
+                    {
+                        if (s[0] == (byte)'\\') { hasEscape = true; s = s[2..]; continue; }
+                        if (s[0] == (byte)'"') break;
+                        s = s[1..];
+                    }
+                    if (s.IsEmpty) return -1;
+                    var strContent = body[..(body.Length - s.Length)];
+                    s = s[1..]; // skip closing quote
+
+                    output[pos++] = BinTypeString;
+
+                    if (!hasEscape)
+                    {
+                        // No escapes — direct copy
+                        if (pos + 2 + strContent.Length > output.Length) return -1;
+                        output[pos] = (byte)(strContent.Length & 0xFF);
+                        output[pos + 1] = (byte)((strContent.Length >> 8) & 0xFF);
+                        pos += 2;
+                        strContent.CopyTo(output[pos..]);
+                        pos += strContent.Length;
+                    }
+                    else
+                    {
+                        // Unescape into output
+                        var valueLenPos = pos;
+                        pos += 2; // reserve for value_len
+                        var valueStart = pos;
+                        for (var si = 0; si < strContent.Length; si++)
+                        {
+                            if (pos >= output.Length) return -1;
+                            if (strContent[si] == (byte)'\\' && si + 1 < strContent.Length)
+                            {
+                                si++;
+                                output[pos++] = strContent[si] switch
+                                {
+                                    (byte)'n' => (byte)'\n',
+                                    (byte)'r' => (byte)'\r',
+                                    (byte)'t' => (byte)'\t',
+                                    _ => strContent[si], // \", \\, \/ etc.
+                                };
+                            }
+                            else
+                            {
+                                output[pos++] = strContent[si];
+                            }
+                        }
+                        var valueLen = pos - valueStart;
+                        output[valueLenPos] = (byte)(valueLen & 0xFF);
+                        output[valueLenPos + 1] = (byte)((valueLen >> 8) & 0xFF);
+                    }
+                }
+                else if (IsDigit(c) || c == (byte)'-' || c == (byte)'+')
+                {
+                    // Number value — store as 8-byte f64 LE
+                    var numStart = s;
+                    while (!s.IsEmpty && IsNumberChar(s[0])) s = s[1..];
+                    var numSpan = numStart[..(numStart.Length - s.Length)];
+                    if (!Utf8Parser.TryParse(numSpan, out double numVal, out var consumed) || consumed != numSpan.Length)
+                        return -1;
+
+                    output[pos++] = BinTypeNumber;
+                    if (pos + 2 + 8 > output.Length) return -1;
+                    output[pos] = 8;
+                    output[pos + 1] = 0;
+                    pos += 2;
+                    System.BitConverter.TryWriteBytes(output[pos..], numVal);
+                    pos += 8;
+                }
+                else if (c == (byte)'t')
+                {
+                    if (!s.StartsWith("true"u8)) return -1;
+                    s = s[4..];
+                    output[pos++] = BinTypeBoolTrue;
+                    if (pos + 2 > output.Length) return -1;
+                    output[pos] = 0; output[pos + 1] = 0;
+                    pos += 2;
+                }
+                else if (c == (byte)'f')
+                {
+                    if (!s.StartsWith("false"u8)) return -1;
+                    s = s[5..];
+                    output[pos++] = BinTypeBoolFalse;
+                    if (pos + 2 > output.Length) return -1;
+                    output[pos] = 0; output[pos + 1] = 0;
+                    pos += 2;
+                }
+                else if (c == (byte)'n')
+                {
+                    if (!s.StartsWith("null"u8)) return -1;
+                    s = s[4..];
+                    output[pos++] = BinTypeNull;
+                    if (pos + 2 > output.Length) return -1;
+                    output[pos] = 0; output[pos + 1] = 0;
+                    pos += 2;
+                }
+                else
+                {
+                    // Nested objects/arrays — not supported in binary format
+                    return -1;
+                }
+
+                fieldCount++;
+
+                // Next field or end
+                s = TrimWhiteSpace(s);
+                if (s.IsEmpty) return -1;
+                if (s[0] == (byte)',') { s = s[1..]; continue; }
+                if (s[0] == (byte)'}') break;
+                return -1;
+            }
+
+            output[1] = fieldCount;
+            return pos;
+        }
+
+        /// <summary>
+        /// Extract fields from pre-extracted binary attribute data.
+        /// Same contract as ExtractFields but ~10x faster (no JSON parsing).
+        /// </summary>
+        public static int ExtractFieldsBinary(
+            ReadOnlySpan<byte> binary,
+            ReadOnlySpan<byte> filterBytes,
+            ReadOnlySpan<(int Start, int Length)> selectorRanges,
+            Span<ExprToken> results,
+            ref ExprProgram program)
+        {
+            for (var i = 0; i < selectorRanges.Length; i++)
+                results[i] = default;
+
+            if (binary.Length < 2 || binary[0] != BinaryMarker)
+                return 0;
+
+            var numFields = binary[1];
+            var pos = 2;
+            var found = 0;
+            var needed = selectorRanges.Length;
+
+            for (var f = 0; f < numFields && pos < binary.Length; f++)
+            {
+                // Read field name
+                if (pos >= binary.Length) break;
+                var nameLen = binary[pos++];
+                if (pos + nameLen > binary.Length) break;
+                var fieldName = binary.Slice(pos, nameLen);
+                pos += nameLen;
+
+                // Read value type
+                if (pos >= binary.Length) break;
+                var valueType = binary[pos++];
+
+                // Read value length
+                if (pos + 2 > binary.Length) break;
+                var valueLen = (int)(binary[pos] | (binary[pos + 1] << 8));
+                pos += 2;
+
+                // Read value bytes
+                if (pos + valueLen > binary.Length) break;
+
+                // Match against selectors
+                var matchIndex = -1;
+                for (var i = 0; i < selectorRanges.Length; i++)
+                {
+                    if (results[i].IsNone &&
+                        fieldName.SequenceEqual(filterBytes.Slice(selectorRanges[i].Start, selectorRanges[i].Length)))
+                    {
+                        matchIndex = i;
+                        break;
+                    }
+                }
+
+                if (matchIndex >= 0)
+                {
+                    switch (valueType)
+                    {
+                        case BinTypeString:
+                            // Create a Str token referencing the binary buffer offsets
+                            results[matchIndex] = ExprToken.NewStr(pos, valueLen, hasEscape: false);
+                            break;
+                        case BinTypeNumber:
+                            if (valueLen == 8)
+                            {
+                                var numVal = System.BitConverter.ToDouble(binary[pos..]);
+                                results[matchIndex] = ExprToken.NewNum(numVal);
+                            }
+                            break;
+                        case BinTypeBoolTrue:
+                            results[matchIndex] = ExprToken.NewNum(1);
+                            break;
+                        case BinTypeBoolFalse:
+                            results[matchIndex] = ExprToken.NewNum(0);
+                            break;
+                        case BinTypeNull:
+                            results[matchIndex] = ExprToken.NewNull();
+                            break;
+                    }
+
+                    found++;
+                    if (found == needed) return found;
+                }
+
+                pos += valueLen;
+            }
+
+            return found;
+        }
     }
 }
