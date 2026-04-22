@@ -264,7 +264,14 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var value = parseState.GetArgSliceByRef(1);
 
-            _ = storageApi.SET(key, value);
+            var status = storageApi.SET(key, value);
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();

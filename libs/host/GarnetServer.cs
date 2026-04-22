@@ -193,6 +193,9 @@ namespace Garnet
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
+            if (opts.EnableCluster && opts.EnableRangeIndexPreview)
+                throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
+
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
                 version, IntPtr.Size == 8 ? "64" : "32",
@@ -309,8 +312,13 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var removeOutdated = !serverOptions.EnableCluster;
+            var rangeIndexDataDir = Path.Combine(serverOptions.CheckpointBaseDirectory, GarnetServerOptions.GetCheckpointDirectoryName(dbId));
+            var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview, rangeIndexDataDir,
+                removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
+
             var vectorManager = new VectorManager(
                 dbId,
                 serverOptions,
@@ -318,7 +326,7 @@ namespace Garnet
                 loggerFactory
             );
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -345,7 +353,7 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            LightEpoch epoch, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, RangeIndexManager rangeIndexManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
@@ -370,7 +378,7 @@ namespace Garnet
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager),
-                    new GarnetRecordTriggers())
+                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)

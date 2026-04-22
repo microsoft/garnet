@@ -119,6 +119,11 @@ namespace Garnet.server
         public readonly TimeSpan loggingFrequency;
 
         /// <summary>
+        /// RangeIndex (BfTree) manager shared across sessions
+        /// </summary>
+        internal readonly RangeIndexManager rangeIndexManager;
+
+        /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
         public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
@@ -217,6 +222,7 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.taskManager = new TaskManager(loggerFactory?.CreateLogger("TaskManager"));
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+            this.rangeIndexManager = DefaultDatabase.RangeIndexManager;
 
             logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
 
@@ -927,6 +933,7 @@ namespace Garnet.server
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             taskManager.Dispose();
+            rangeIndexManager?.Dispose();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();

@@ -645,6 +645,9 @@ namespace Garnet
         [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
 
+        [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableRangeIndexPreview { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -930,7 +933,8 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
-                VectorSetReplayTaskCount = VectorSetReplayTaskCount
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                EnableRangeIndexPreview = EnableRangeIndexPreview,
             };
         }
 

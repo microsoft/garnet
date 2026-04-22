@@ -67,6 +67,7 @@ namespace Garnet.server
 
         int activeDbId;
         VectorManager activeVectorManager;
+        RangeIndexManager activeRangeIndexManager;
 
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
@@ -144,6 +145,7 @@ namespace Garnet.server
                 {
                     activeDbId = db.Id;
                     activeVectorManager = db.VectorManager;
+                    activeRangeIndexManager = db.RangeIndexManager;
                 }
             }
         }
@@ -342,7 +344,7 @@ namespace Garnet.server
                     StoreUpsert(preparedParameters, stringContext, ref replayContext.parseState);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(preparedParameters, stringContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession, obtainServerSession);
+                    StoreRMW(preparedParameters, stringContext, ref replayContext.parseState, activeVectorManager, activeRangeIndexManager, replayContext.respServerSession, obtainServerSession);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(preparedParameters, stringContext);
@@ -392,7 +394,14 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Dispose();
         }
 
-        static void StoreRMW<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext, ref SessionParseState parseState, VectorManager vectorManager, RespServerSession activeServerSession, Func<RespServerSession> obtainServerSession)
+        static void StoreRMW<TStringContext>(
+            PreparedParameters preparedParameters,
+            TStringContext stringContext,
+            ref SessionParseState parseState,
+            VectorManager vectorManager,
+            RangeIndexManager rangeIndexManager,
+            RespServerSession activeServerSession,
+            Func<RespServerSession> obtainServerSession)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
@@ -416,6 +425,23 @@ namespace Garnet.server
                     vectorManager.HandleVectorSetRemoveReplication(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
                     return;
                 }
+            }
+
+            // RangeIndex commands need actual execution on replay
+            if (stringInput.header.cmd == RespCommand.RICREATE)
+            {
+                rangeIndexManager?.HandleRangeIndexCreateReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
+                return;
+            }
+            if (stringInput.header.cmd == RespCommand.RISET)
+            {
+                rangeIndexManager.HandleRangeIndexSetReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
+                return;
+            }
+            if (stringInput.header.cmd == RespCommand.RIDEL)
+            {
+                rangeIndexManager.HandleRangeIndexDelReplay(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
+                return;
             }
 
             var output = StringOutput.FromPinnedSpan(stackalloc byte[32]);

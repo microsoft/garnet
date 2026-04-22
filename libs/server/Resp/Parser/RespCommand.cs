@@ -117,6 +117,14 @@ namespace Garnet.server
         ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
         ZUNION,
 
+        // Read-only RangeIndex commands
+        RICONFIG,
+        RIEXISTS,
+        RIGET,
+        RIMETRICS,
+        RIRANGE,
+        RISCAN,
+
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
@@ -178,6 +186,11 @@ namespace Garnet.server
         PFMERGE,
         PSETEX,
         RENAME,
+        RICREATE,
+        RIDEL,
+        RIPROMOTE,
+        RIRESTORE,
+        RISET,
         RESTORE,
         RENAMENX,
         RPOP,
@@ -568,6 +581,36 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
             => cmd <= LastReadCommand;
+
+        /// <summary>
+        /// Returns true if this command can legally operate on a RangeIndex key.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsLegalOnRangeIndex(this RespCommand cmd)
+            => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE
+               or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX
+               or RespCommand.RICREATE or RespCommand.RIPROMOTE or RespCommand.RIRESTORE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL
+               or RespCommand.RISCAN or RespCommand.RIRANGE
+               or RespCommand.RIEXISTS or RespCommand.RICONFIG or RespCommand.RIMETRICS;
+
+        /// <summary>
+        /// Returns true if this command is a RangeIndex-specific command (not a generic command that happens to be legal on RI keys).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsRangeIndexCommand(this RespCommand cmd)
+            => cmd is RespCommand.RICREATE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL
+               or RespCommand.RISCAN or RespCommand.RIRANGE
+               or RespCommand.RIPROMOTE or RespCommand.RIRESTORE
+               or RespCommand.RIEXISTS or RespCommand.RICONFIG or RespCommand.RIMETRICS;
+
+        /// <summary>
+        /// Returns true if this command is a VectorSet-specific command (not a generic command that happens to be legal on Vector keys).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsVectorSetCommand(this RespCommand cmd)
+            => cmd is RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB
+               or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS
+               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -1318,7 +1361,15 @@ namespace Garnet.server
                                         break;
 
                                     case 'R':
-                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPUSHX\r\n"u8))
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RI.GET\r\n"u8))
+                                        {
+                                            return RespCommand.RIGET;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RI.SET\r\n"u8))
+                                        {
+                                            return RespCommand.RISET;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPUSHX\r\n"u8))
                                         {
                                             return RespCommand.RPUSHX;
                                         }
@@ -1488,6 +1539,12 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PFMERGE\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.PFMERGE;
+                                        }
+                                        break;
+                                    case 'R':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RI.SCAN\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.RISCAN;
                                         }
                                         break;
                                     case 'W':
@@ -2683,6 +2740,42 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
             {
                 return RespCommand.DELIFGREATER;
+            }
+            else if (command.SequenceEqual(CmdStrings.RICREATE))
+            {
+                return RespCommand.RICREATE;
+            }
+            else if (command.SequenceEqual(CmdStrings.RISET))
+            {
+                return RespCommand.RISET;
+            }
+            else if (command.SequenceEqual(CmdStrings.RIGET))
+            {
+                return RespCommand.RIGET;
+            }
+            else if (command.SequenceEqual(CmdStrings.RIDEL))
+            {
+                return RespCommand.RIDEL;
+            }
+            else if (command.SequenceEqual(CmdStrings.RISCAN))
+            {
+                return RespCommand.RISCAN;
+            }
+            else if (command.SequenceEqual(CmdStrings.RIRANGE))
+            {
+                return RespCommand.RIRANGE;
+            }
+            else if (command.SequenceEqual(CmdStrings.RIEXISTS))
+            {
+                return RespCommand.RIEXISTS;
+            }
+            else if (command.SequenceEqual(CmdStrings.RICONFIG))
+            {
+                return RespCommand.RICONFIG;
+            }
+            else if (command.SequenceEqual(CmdStrings.RIMETRICS))
+            {
+                return RespCommand.RIMETRICS;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.

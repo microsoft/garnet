@@ -404,3 +404,12 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [UNWATCH](transactions.md#unwatch) | ➕ |  |
 |  | [WATCH](transactions.md#watch) | ➕ |  |
 | <span id="json">**JSON Module**</span> | [JSON Module](json.md) | ➕ | Partially Implemented |
+| <span id="rangeindex">**RANGE INDEX (Preview)**</span> | [RI.CREATE](range-index.md#ricreate) | ➕ | Preview |
+|  | [RI.SET](range-index.md#riset) | ➕ | Preview |
+|  | [RI.GET](range-index.md#riget) | ➕ | Preview |
+|  | [RI.DEL](range-index.md#ridel) | ➕ | Preview |
+|  | [RI.SCAN](range-index.md#riscan) | ➕ | Preview |
+|  | [RI.RANGE](range-index.md#rirange) | ➕ | Preview |
+|  | [RI.EXISTS](range-index.md#riexists) | ➕ | Preview |
+|  | [RI.CONFIG](range-index.md#riconfig) | ➕ | Preview |
+|  | [RI.METRICS](range-index.md#rimetrics) | ➕ | Preview |

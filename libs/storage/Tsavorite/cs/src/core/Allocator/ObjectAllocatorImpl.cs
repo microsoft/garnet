@@ -986,7 +986,7 @@ namespace Tsavorite.core
                 var flushEndAddress = OngoingFlushedUntilAddress;
 
                 // Notify the application per record before flushing, so it can snapshot external
-                // resources and/or set flags on the live in-memory records.
+                // resources (e.g. BfTree data files) and/or set flags on the live in-memory records.
                 // This runs on the ORIGINAL records (not a copy), under epoch protection.
                 if (storeFunctions.CallOnFlush)
                     FlushRecordsInRange(flushStartAddress, flushEndAddress);

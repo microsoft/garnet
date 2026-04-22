@@ -1063,6 +1063,17 @@ namespace Garnet.server
                 RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
                 RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
 
+                // RangeIndex commands
+                RespCommand.RICREATE => NetworkRICREATE(ref storageApi),
+                RespCommand.RISET => NetworkRISET(ref storageApi),
+                RespCommand.RIGET => NetworkRIGET(ref storageApi),
+                RespCommand.RIDEL => NetworkRIDEL(ref storageApi),
+                RespCommand.RISCAN => NetworkRISCAN(ref storageApi),
+                RespCommand.RIRANGE => NetworkRIRANGE(ref storageApi),
+                RespCommand.RIEXISTS => NetworkRIEXISTS(ref storageApi),
+                RespCommand.RICONFIG => NetworkRICONFIG(ref storageApi),
+                RespCommand.RIMETRICS => NetworkRIMETRICS(ref storageApi),
+
                 _ => Process(command, ref storageApi)
             };
 
