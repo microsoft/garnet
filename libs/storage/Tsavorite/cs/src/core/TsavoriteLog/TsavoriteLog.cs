@@ -338,14 +338,19 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Wake any iterators parked in <see cref="WaitUncommittedAsync"/> or as single-iterators.
-        /// When more than one single iterator is registered, pre-refreshes <see cref="SafeTailAddress"/>
-        /// so that all woken iterators see the fresh cache and skip their own redundant scans (O(1)
-        /// scan total instead of O(N_iterators)). With a single iterator, the scan is deferred to the
-        /// iterator's <see cref="TsavoriteLogScanSingleIterator.SlowWaitUncommittedAsync"/> path.
-        /// Cheap in the common case (no waiters): two null-check loads.
+        /// Fast path (no waiters): two null-check loads. When waiters exist, defers to the slow path.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void NotifyParkedWaiters()
+        {
+            // Fast path: both references are null when no iterators/waiters exist (NoCons scenario).
+            // The JIT can inline these two loads and the branch without hitting IL size limits.
+            if (refreshUncommittedTcs != null || activeSingleIterators != null)
+                NotifyParkedWaitersSlow();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void NotifyParkedWaitersSlow()
         {
             var tcs = refreshUncommittedTcs;
             var asi = activeSingleIterators;
