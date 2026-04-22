@@ -359,8 +359,7 @@ namespace Garnet.test
                 db.Execute("RI.SET", "aoftest", "key3", "val3");
 
                 // Checkpoint to establish base state
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
 
                 // Post-checkpoint mutations — these are only in the AOF
                 db.Execute("RI.SET", "aoftest", "key4", "val4");
@@ -1071,8 +1070,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("value-alpha", (string)val);
 
                 // Take checkpoint via BGSAVE
-                db.Execute("BGSAVE");
-                Thread.Sleep(500); // Wait for checkpoint to complete
+                db.Execute("SAVE");
             }
 
             // Dispose and recover
@@ -1152,8 +1150,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("val-ccc", (string)val, "Post-promote insert should survive eviction");
 
                 // Take checkpoint
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover
@@ -1258,8 +1255,7 @@ namespace Garnet.test
                 }
 
                 // Checkpoint
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover
@@ -1326,8 +1322,7 @@ namespace Garnet.test
                 db.Execute("RI.SET", "fpcp", "before-flush", "updated");
 
                 // Checkpoint should capture the mutated state
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover
@@ -1427,8 +1422,7 @@ namespace Garnet.test
                 db.Execute("RI.SET", "dblflush", "round3", "value-r3");
 
                 // Checkpoint
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover
@@ -1489,8 +1483,7 @@ namespace Garnet.test
                 db.Execute("RI.SET", "evictcp", "post-restore", "added");
 
                 // Checkpoint
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover
@@ -1533,16 +1526,14 @@ namespace Garnet.test
                 db.Execute("RI.SET", "twockpt", "key-bravo", "val-bravo");
 
                 // Checkpoint 1
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
 
                 // Phase 2: insert additional data + update existing
                 db.Execute("RI.SET", "twockpt", "key-charlie", "val-charlie");
                 db.Execute("RI.SET", "twockpt", "key-alpha", "val-alpha-v2");
 
                 // Checkpoint 2
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover — should get latest checkpoint (checkpoint 2)
@@ -1595,8 +1586,7 @@ namespace Garnet.test
                 db.Execute("RI.SET", "earlyck", "key-B", "val-B");
 
                 // Checkpoint
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
 
                 // Phase 2: add more data AFTER checkpoint (logged to AOF)
                 db.Execute("RI.SET", "earlyck", "key-A", "val-A-updated");
@@ -1648,8 +1638,7 @@ namespace Garnet.test
                 db.Execute("RI.SET", "delafter", "key1", "val1");
                 ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount);
 
-                db.Execute("BGSAVE");
-                Thread.Sleep(500);
+                db.Execute("SAVE");
             }
 
             // Recover
