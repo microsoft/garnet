@@ -173,7 +173,7 @@ namespace Garnet.server
             recoveredIndexes = new();
 
             quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
-            
+
             // TODO: Move this to a config like with replays
             quantizationTasks = new Task[Environment.ProcessorCount];
             Array.Fill(quantizationTasks, Task.CompletedTask);
@@ -314,7 +314,7 @@ namespace Garnet.server
             // drain quantization task
             _ = quantizationChannel.Writer.TryComplete();
             while (quantizationChannel.Reader.TryRead(out _)) { }
-            Task.WhenAll(quantizationTasks).Wait();
+            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -418,7 +418,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    _ = this.quantizationChannel.Writer.TryWrite(new(key.ToByteArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    _ = this.quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
                 }
 
                 return VectorManagerResult.OK;

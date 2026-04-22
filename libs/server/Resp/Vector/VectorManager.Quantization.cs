@@ -66,10 +66,10 @@ namespace Garnet.server
                                     var keySpan = SpanByte.FromPinnedPointer(keyPtr, state.Key.Length);
 
                                     // Dummy command, we just need something Vector Set-y
-                                    RawStringInput input = default;
+                                    StringInput input = default;
                                     input.header.cmd = RespCommand.VSIM;
 
-                                    using (self.ReadVectorIndex(session.storageSession, ref keySpan, ref input, indexSpan, out var res))
+                                    using (self.ReadVectorIndex(session.storageSession, keySpan, ref input, indexSpan, out var res))
                                     {
                                         if (res != GarnetStatus.OK)
                                         {
@@ -77,7 +77,7 @@ namespace Garnet.server
                                             continue;
                                         }
 
-                                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr, out _);
+                                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
                                         switch (state.Step)
                                         {
