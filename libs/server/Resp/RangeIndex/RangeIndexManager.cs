@@ -519,8 +519,8 @@ namespace Garnet.server
         internal unsafe void HandleRangeIndexCreateReplay(StorageSession session, ReadOnlySpan<byte> key, ref StringInput input)
         {
             var stubSpan = input.parseState.GetArgSliceByRef(0).Span;
-            if (stubSpan.Length < IndexSizeBytes)
-                return;
+            if (stubSpan.Length != IndexSizeBytes)
+                throw new GarnetException($"Corrupt RI.CREATE AOF entry: stub size {stubSpan.Length}, expected {IndexSizeBytes}");
 
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(stubSpan));
 

@@ -591,7 +591,7 @@ namespace Garnet.server
                     return status == GarnetStatus.WRONGTYPE ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
                 }
 
-                if (stubSpan.Length < RangeIndexManager.IndexSizeBytes)
+                if (stubSpan.Length != RangeIndexManager.IndexSizeBytes)
                 {
                     result = RangeIndexResult.Error;
                     return GarnetStatus.OK;
@@ -641,7 +641,7 @@ namespace Garnet.server
                     return status == GarnetStatus.WRONGTYPE ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
                 }
 
-                if (stubSpan.Length < RangeIndexManager.IndexSizeBytes)
+                if (stubSpan.Length != RangeIndexManager.IndexSizeBytes)
                 {
                     result = RangeIndexResult.Error;
                     return GarnetStatus.OK;
@@ -922,7 +922,7 @@ namespace Garnet.server
         /// <returns>The native tree pointer, or 0 if the stub is invalid or too small.</returns>
         private static nint ExtractTreePtr(Span<byte> stubSpan)
         {
-            if (stubSpan.Length < RangeIndexManager.IndexSizeBytes)
+            if (stubSpan.Length != RangeIndexManager.IndexSizeBytes)
                 return 0;
 
             return RangeIndexManager.ReadIndex(stubSpan).TreeHandle;
