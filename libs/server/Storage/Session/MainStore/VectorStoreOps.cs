@@ -151,7 +151,7 @@ namespace Garnet.server
 
                 // After a successful read we add the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                result = vectorManager.TryAdd(indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
+                result = vectorManager.TryAdd(ref key, indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
 
                 if (result == VectorManagerResult.OK)
                 {
