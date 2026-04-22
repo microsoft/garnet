@@ -808,11 +808,11 @@ namespace Tsavorite.core
         {
             Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
 
-            // tableAligned is a pinned Entry* with stride = kCacheLineBytes (64).
-            // Entries occupy indices 1..kTableSize (index 0 is kInvalidIndex, unused).
-            // Compute the byte offset of userWord0 within Entry, then add wordIndex * 8.
+            // Derive the base address from the actual Entry field layout via UserWordRef,
+            // rather than hardcoding byte offsets. Entries occupy indices 1..kTableSize
+            // (index 0 is kInvalidIndex and unused). Stride between entries is kCacheLineBytes.
             long min = long.MaxValue;
-            byte* basePtr = (byte*)(tableAligned + 1) + 16 + wordIndex * 8; // +1 skips entry 0, +16 reaches userWord0
+            byte* basePtr = (byte*)Unsafe.AsPointer(ref UserWordRef(1, wordIndex));
             int stride = kCacheLineBytes;
             int count = kTableSize;
 
