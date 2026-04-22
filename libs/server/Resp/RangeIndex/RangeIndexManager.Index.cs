@@ -147,26 +147,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="valueSpan">The store value span containing the stub.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ClearTreeHandle(ReadOnlySpan<byte> valueSpan)
+        internal static void ClearTreeHandle(Span<byte> valueSpan)
         {
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
                 ref MemoryMarshal.GetReference(valueSpan));
             stub.TreeHandle = nint.Zero;
-        }
-
-        /// <summary>
-        /// Dispose the BfTree instance referenced by a stub, if the pointer is valid
-        /// and registered with this manager. Called during delete and page eviction.
-        /// If the tree handle is zero (already freed or never set), this is a no-op.
-        /// </summary>
-        /// <param name="valueSpan">The store value span containing the stub.</param>
-        internal void DisposeTreeIfOwned(ReadOnlySpan<byte> valueSpan)
-        {
-            ref readonly var stub = ref ReadIndex(valueSpan);
-            if (stub.TreeHandle != nint.Zero)
-            {
-                UnregisterIndex(stub.TreeHandle);
-            }
         }
 
         /// <summary>
@@ -202,7 +187,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="valueSpan">The store value span containing the stub (writable even though declared ReadOnlySpan, via Unsafe.As).</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void SetFlushedFlag(ReadOnlySpan<byte> valueSpan)
+        internal static void SetFlushedFlag(Span<byte> valueSpan)
         {
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(
                 ref MemoryMarshal.GetReference(valueSpan));

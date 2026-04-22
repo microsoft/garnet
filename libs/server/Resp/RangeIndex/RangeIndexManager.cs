@@ -533,8 +533,9 @@ namespace Garnet.server
                     stub.CacheSize, stub.MinRecordSize, stub.MaxRecordSize,
                     stub.MaxKeyLen, stub.LeafPageSize);
             }
-            catch
+            catch (Exception ex)
             {
+                logger?.LogError(ex, "Failed to recreate BfTree during AOF replay");
                 return;
             }
 

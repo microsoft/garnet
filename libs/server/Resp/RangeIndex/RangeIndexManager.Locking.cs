@@ -142,11 +142,10 @@ namespace Garnet.server
                 ? output.SpanByteAndMemory.SpanByte.ReadOnlySpan
                 : output.SpanByteAndMemory.MemorySpan;
 
-            if (outputSpan.Length < IndexSizeBytes)
+            if (outputSpan.Length != IndexSizeBytes)
             {
-                status = GarnetStatus.NOTFOUND;
                 rangeIndexLocks.ReleaseSharedLock(sharedLockToken);
-                return default;
+                throw new GarnetException($"Unexpected stub size {outputSpan.Length} for RangeIndex read, expected {IndexSizeBytes}");
             }
 
             ref readonly var stub = ref ReadIndex(outputSpan);
