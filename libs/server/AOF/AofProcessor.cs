@@ -17,12 +17,26 @@ namespace Garnet.server
         public byte* PayloadPtr;
     }
 
-    interface IPrepareKey
+    interface IPreprocessKey
     {
         public abstract unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters);
     }
 
-    struct ShardedLogPrepareKey : IPrepareKey
+    struct SingleLogPreprocessKey : IPreprocessKey
+    {
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters)
+        {
+            var keyPtr = entryPtr + sizeof(AofHeader);
+            preparedParameters = new()
+            {
+                Key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr)
+            };
+            preparedParameters.KeyHash = GarnetLog.HASH(preparedParameters.Key);
+            preparedParameters.PayloadPtr = keyPtr + preparedParameters.Key.TotalSize();
+        }
+    }
+
+    struct ShardedLogPreprocessKey : IPreprocessKey
     {
         public GarnetAppendOnlyFile appendOnlyFile;
 
@@ -40,20 +54,6 @@ namespace Garnet.server
                 virtualSublogIdx,
                 preparedParameters.KeyHash,
                 shardedHeader.sequenceNumber);
-        }
-    }
-
-    struct SingleLogPrepareKey : IPrepareKey
-    {
-        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, out PreparedParameters preparedParameters)
-        {
-            var keyPtr = entryPtr + sizeof(AofHeader);
-            preparedParameters = new()
-            {
-                Key = SpanByte.FromLengthPrefixedPinnedPointer(keyPtr)
-            };
-            preparedParameters.KeyHash = GarnetLog.HASH(preparedParameters.Key);
-            preparedParameters.PayloadPtr = keyPtr + preparedParameters.Key.TotalSize();
         }
     }
 
@@ -88,7 +88,7 @@ namespace Garnet.server
 
         readonly ILogger logger;
         readonly bool usingShardedLog;
-        readonly IPrepareKey aofPrepareKey;
+        IPreprocessKey preprocessKey;
 
         /// <summary>
         /// Create new AOF processor
@@ -105,7 +105,7 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1 || storeWrapper.serverOptions.AofReplayTaskCount > 1;
-            this.aofPrepareKey = usingShardedLog ? new ShardedLogPrepareKey() { appendOnlyFile = storeWrapper.appendOnlyFile } : new SingleLogPrepareKey();
+            this.preprocessKey = usingShardedLog ? new ShardedLogPreprocessKey() { appendOnlyFile = storeWrapper.appendOnlyFile } : new SingleLogPreprocessKey();
             this.obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
             this.aofReplayCoordinator = new AofReplayCoordinator(storeWrapper.serverOptions, this, logger);
@@ -301,6 +301,7 @@ namespace Garnet.server
                         virtualSublogIdx,
                         header,
                         replayContext,
+                        ref preprocessKey,
                         replayContext.StringBasicContext,
                         replayContext.ObjectBasicContext,
                         replayContext.UnifiedBasicContext,
@@ -311,14 +312,18 @@ namespace Garnet.server
             }
         }
 
-        private bool ReplayOp<TStringContext, TObjectContext, TUnifiedContext>(
+        private bool ReplayOp<TPrepareKey, TStringContext, TObjectContext, TUnifiedContext>(
                 int virtualSublogIdx,
                 AofHeader header,
                 AofReplayContext replayContext,
+                ref TPrepareKey prepareKey,
                 TStringContext stringContext,
                 TObjectContext objectContext,
                 TUnifiedContext unifiedContext,
-                byte* entryPtr, int length, bool asReplica)
+                byte* entryPtr,
+                int length,
+                bool asReplica)
+            where TPrepareKey : IPreprocessKey
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
@@ -337,7 +342,7 @@ namespace Garnet.server
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
-            aofPrepareKey.PrepareKey(virtualSublogIdx, entryPtr, out var preparedParameters);
+            prepareKey.PrepareKey(virtualSublogIdx, entryPtr, out var preparedParameters);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:

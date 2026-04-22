@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.Intrinsics.X86;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -13,6 +13,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
+    [StructLayout(LayoutKind.Sequential, Size = 12)]
     internal unsafe struct ReplayRecord
     {
         public byte* entryPtr;
@@ -33,9 +34,10 @@ namespace Garnet.cluster
         readonly ReplayBatchContext replayBatchContext = replayDriver.replayBatchContext;
         readonly CancellationTokenSource cts = cts;
         readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.physicalSublogIdx);
-        readonly ILogger logger = logger;
+        readonly ActiveWorkerMonitor activeWorkerMonitor = new();
         private readonly Channel<ReplayRecord> replayChannel = Channel.CreateUnbounded<ReplayRecord>(
             new() { SingleWriter = true, SingleReader = true, AllowSynchronousContinuations = false });
+        readonly ILogger logger = logger;
 
         /// <summary>
         /// Asynchronously replays log entries using SemaphoreSlim coordination, processing and applying them for replication
@@ -141,66 +143,13 @@ namespace Garnet.cluster
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
             var reader = replayChannel.Reader;
 
-            while (await reader.WaitToReadAsync(cts.Token))
+            while (await reader.WaitToReadAsync(cts.Token).ConfigureAwait(false))
             {
-                ProcessRecord(virtualSublogIdx, physicalSublogIdx);
-                //ProcessRecordWithPrefetch(virtualSublogIdx, physicalSublogIdx);
-            }
-        }
-
-        internal unsafe void ProcessRecord(int virtualSublogIdx, int physicalSublogIdx)
-        {
-            const int PrefetchSize = 4;
-            var reader = replayChannel.Reader;
-            var prefetchBuffer = stackalloc ReplayRecord[PrefetchSize];
-
-            while (reader.TryRead(out var record))
-            {
-                try
+                while (reader.TryRead(out var record))
                 {
-                    replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart);
-
-                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                    // point when we take a checkpoint at the checkpoint end marker
-                    if (isCheckpointStart)
+                    unsafe
                     {
-                        // logger?.LogError("[{sublogIdx}] CheckpointStart {address}", sublogIdx, clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx));
-                        replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
-                    }
-                }
-                finally
-                {
-                    _ = replayDriver.batchWorkerMonitor.Exit();
-                }
-            }
-        }
-
-        internal unsafe void ProcessRecordWithPrefetch(int virtualSublogIdx, int physicalSublogIdx)
-        {
-            const int PrefetchSize = 4;
-            var reader = replayChannel.Reader;
-            var prefetchBuffer = stackalloc ReplayRecord[PrefetchSize];
-
-            while (true)
-            {
-                // Read a batch of records and prefetch their entry pointers
-                var count = 0;
-                while (count < PrefetchSize && reader.TryRead(out prefetchBuffer[count]))
-                {
-                    if (Sse.IsSupported)
-                        Sse.Prefetch0(prefetchBuffer[count].entryPtr);
-                    count++;
-                }
-
-                if (count == 0)
-                    break;
-
-                // Process all prefetched records
-                for (var i = 0; i < count; i++)
-                {
-                    try
-                    {
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, prefetchBuffer[i].entryPtr, prefetchBuffer[i].payloadLength, true, out var isCheckpointStart);
+                        replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, record.entryPtr, record.payloadLength, true, out var isCheckpointStart);
 
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker
@@ -210,11 +159,10 @@ namespace Garnet.cluster
                             replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
                         }
                     }
-                    finally
-                    {
-                        _ = replayDriver.batchWorkerMonitor.Exit();
-                    }
                 }
+
+                // Signal work completion after processing
+                replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
             }
         }
     }

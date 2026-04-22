@@ -44,9 +44,14 @@ namespace Garnet.common
                     return false;
             }
 
-            resetReady.Release(participantCount);
             return true;
         }
+
+        /// <summary>
+        /// Leader: Release participants that are waiting inside <see cref="SignalCompleted"/>
+        /// so they can proceed to the next cycle.
+        /// </summary>
+        public void Release() => resetReady.Release(participantCount);
 
         /// <summary>
         /// Participant: Waits for work signal from leader.
