@@ -171,7 +171,13 @@ namespace Tsavorite.core
 
                 Interlocked.MemoryBarrier();
             }
-            catch when (disposed) { }
+            catch when (disposed)
+            {
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref pendingDrainCallbacks);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
