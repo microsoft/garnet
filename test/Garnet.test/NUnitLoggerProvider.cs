@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +18,11 @@ namespace Garnet.test
         private readonly bool recvOnly;
         private readonly bool matchLevel;
         private readonly LogLevel logLevel;
+
+        /// <summary>
+        /// Array of enabled test logging flag types
+        /// </summary>
+        public bool[] GarnetTestLoggingEvents = [.. Enum.GetValues<GarnetTestLoggingEventType>().Select(_ => false)];
 
         static readonly string[] lvl =
         [
@@ -38,13 +44,14 @@ namespace Garnet.test
             this.logLevel = logLevel;
         }
 
-        public ILogger CreateLogger(string categoryName) => new NUnitLogger(categoryName, textWriter, scope, skipCmd, recvOnly: recvOnly, matchLevel: matchLevel, logLevel: logLevel);
+        public ILogger CreateLogger(string categoryName) => new NUnitLogger(this, categoryName, textWriter, scope, skipCmd, recvOnly: recvOnly, matchLevel: matchLevel, logLevel: logLevel);
 
         public void Dispose()
         { }
 
         private class NUnitLogger : ILogger
         {
+            private readonly NUnitLoggerProvider provider;
             private readonly string categoryName;
             private readonly TextWriter textWriter;
             private readonly string scope;
@@ -53,8 +60,9 @@ namespace Garnet.test
             private readonly bool matchLevel;
             private readonly LogLevel logLevel;
 
-            public NUnitLogger(string categoryName, TextWriter textWriter, string scope, HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false, LogLevel logLevel = LogLevel.None)
+            public NUnitLogger(NUnitLoggerProvider provider, string categoryName, TextWriter textWriter, string scope, HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false, LogLevel logLevel = LogLevel.None)
             {
+                this.provider = provider;
                 this.categoryName = categoryName;
                 this.textWriter = textWriter;
                 this.scope = scope;
@@ -77,11 +85,26 @@ namespace Garnet.test
                 Exception exception,
                 Func<TState, Exception, string> formatter)
             {
-                if ((matchLevel && logLevel == this.logLevel) || !matchLevel)
+                if (state is GarnetTestLoggingEvent _state)
                 {
-                    var msg = string.Format("[{0:D3}.{1}.({2})] |{3}| <{4}> {5} ^{6}^",
+                    if (provider.GarnetTestLoggingEvents[(int)_state.Type])
+                    {
+                        var msg = string.Format("[{0:d1}.{1}.({2})] |{3}| <{4}> {5} ^{6}^",
+                            eventId.Id,
+                            LogFormatter.FormatTime(DateTime.UtcNow),
+                            GetLevelStr(logLevel),
+                            scope,
+                            categoryName,
+                            exception,
+                            formatter(state, exception));
+                        textWriter.Write(msg);
+                    }
+                }
+                else if ((matchLevel && logLevel == this.logLevel) || !matchLevel)
+                {
+                    var msg = string.Format("[{0:d1}.{1}.({2})] |{3}| <{4}> {5} ^{6}^",
                         eventId.Id,
-                        LogFormatter.FormatDate(DateTime.UtcNow),
+                        LogFormatter.FormatTime(DateTime.UtcNow),
                         GetLevelStr(logLevel),
                         scope,
                         categoryName,

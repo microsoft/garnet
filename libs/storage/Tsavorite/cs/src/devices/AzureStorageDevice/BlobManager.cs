@@ -107,7 +107,7 @@ namespace Tsavorite.devices
         {
             leaseBlob = leaseBlobDirectory.GetBlockBlobClient(LeaseBlobName);
             leaseClient = leaseBlob.WithRetries.GetBlobLeaseClient();
-            await AcquireOwnership();
+            await AcquireOwnership().ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -130,7 +130,7 @@ namespace Tsavorite.devices
         {
             shutDownOrTermination.Cancel(); // has no effect if already cancelled
 
-            await LeaseMaintenanceLoopTask; // wait for loop to terminate cleanly
+            await LeaseMaintenanceLoopTask.ConfigureAwait(false); // wait for loop to terminate cleanly
         }
 
         /// <inheritdoc />
@@ -186,7 +186,7 @@ namespace Tsavorite.devices
                     // the previous owner has not released the lease yet, 
                     // try again until it becomes available, should be relatively soon
                     // as the transport layer is supposed to shut down the previous owner when starting this
-                    await Task.Delay(TimeSpan.FromSeconds(1), StorageErrorHandler.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), StorageErrorHandler.Token).ConfigureAwait(false);
 
                     continue;
                 }
@@ -207,7 +207,7 @@ namespace Tsavorite.devices
                             try
                             {
                                 var client = numAttempts > 2 ? leaseBlob.Default : leaseBlob.Aggressive;
-                                await client.UploadAsync(new MemoryStream());
+                                await client.UploadAsync(new MemoryStream()).ConfigureAwait(false);
                             }
                             catch (Azure.RequestFailedException ex2) when (BlobUtilsV12.LeaseConflictOrExpired(ex2))
                             {
@@ -216,7 +216,7 @@ namespace Tsavorite.devices
                             }
 
                             return 1;
-                        });
+                        }).ConfigureAwait(false);
 
                     continue;
                 }
@@ -241,7 +241,7 @@ namespace Tsavorite.devices
                     {
                         TimeSpan nextRetryIn = GetDelayBetweenRetries(numAttempts);
                         TraceHelper.TsavoritePerfWarning($"Lease acquisition failed transiently, retrying in {nextRetryIn}");
-                        await Task.Delay(nextRetryIn);
+                        await Task.Delay(nextRetryIn).ConfigureAwait(false);
                     }
                     continue;
                 }
@@ -303,7 +303,7 @@ namespace Tsavorite.devices
                     }
 
                     // wait for successful renewal, or exit the loop as this throws
-                    await NextLeaseRenewalTask;
+                    await NextLeaseRenewalTask.ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -332,7 +332,7 @@ namespace Tsavorite.devices
                 && !StorageErrorHandler.IsTerminated
                 && (leaseTimer?.Elapsed < LeaseDuration))
             {
-                await Task.Delay(20); // give storage accesses that are in progress and require the lease a chance to complete
+                await Task.Delay(20).ConfigureAwait(false); // give storage accesses that are in progress and require the lease a chance to complete
             }
 
             TraceHelper.LeaseProgress("Waited for lease users to complete");

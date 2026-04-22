@@ -461,6 +461,9 @@ namespace Tsavorite.core
         /// <returns>whether a next entry is present</returns>
         public unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
         {
+            // Throttle and implicitly check for consumer liveness
+            consumer.Throttle();
+
             if (maxChunkSize == 0) maxChunkSize = allocator.PageSize;
 
             if (disposed)
