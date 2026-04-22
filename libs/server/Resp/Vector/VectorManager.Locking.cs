@@ -154,9 +154,10 @@ namespace Garnet.server
                         input.arg1 = RecreateIndexArg;
 
                         nint newlyAllocatedIndex;
+                        bool requestQuantization;
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, out requestQuantization);
                         }
 
                         input.header.cmd = RespCommand.VADD;
@@ -197,6 +198,12 @@ namespace Garnet.server
 
                         if (writeRes == GarnetStatus.OK)
                         {
+                            // Post recreate the index might already need quantization - if so, queue it up
+                            if (requestQuantization)
+                            {
+                                _ = quantizationChannel.Writer.TryWrite(new(key.ToByteArray(), QuantizationStep.BuildQuantizationTable, 0));
+                            }
+
                             // Try again so we don't hold an exclusive lock while performing a search
                             vectorSetLocks.ReleaseLock(lockToken);
 
@@ -321,6 +328,7 @@ namespace Garnet.server
 
                         ulong indexContext;
                         nint newlyAllocatedIndex;
+                        bool requestQuantization;
                         if (needsRecreate)
                         {
                             ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _);
@@ -329,7 +337,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -361,7 +369,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -409,6 +417,12 @@ namespace Garnet.server
 
                         if (writeRes == GarnetStatus.OK)
                         {
+                            // Post (re)create the index might already need quantization - if so, queue it up
+                            if (requestQuantization)
+                            {
+                                _ = quantizationChannel.Writer.TryWrite(new(key.ToByteArray(), QuantizationStep.BuildQuantizationTable, 0));
+                            }
+
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
                             vectorSetLocks.ReleaseLock(lockToken);
                             continue;

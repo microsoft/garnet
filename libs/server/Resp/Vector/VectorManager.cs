@@ -140,7 +140,7 @@ namespace Garnet.server
 
         private ConcurrentDictionary<ulong, byte> recoveredIndexes;
 
-        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
+        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
 
@@ -164,13 +164,19 @@ namespace Garnet.server
 
             vectorSetLocks = new(vectorSetReplayCount);
 
-            this.getCleanupSession = getCleanupSession;
+            this.getTempSession = getTempSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             requestCleanupTaskChannel = Channel.CreateUnbounded<(ulong Context, TaskCompletionSource Completion)>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
 
             recoveredIndexes = new();
+
+            quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+            
+            // TODO: Move this to a config like with replays
+            quantizationTasks = new Task[Environment.ProcessorCount];
+            Array.Fill(quantizationTasks, Task.CompletedTask);
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -182,7 +188,7 @@ namespace Garnet.server
         {
             if (!IsEnabled) return;
 
-            using var session = (RespServerSession)getCleanupSession();
+            using var session = (RespServerSession)getTempSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
             {
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
@@ -212,6 +218,8 @@ namespace Garnet.server
                     contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
                 }
             }
+
+            StartQuantizationTasks();
         }
 
         /// <summary>
@@ -221,7 +229,7 @@ namespace Garnet.server
         {
             if (!IsEnabled) return;
 
-            using var session = (RespServerSession)getCleanupSession();
+            using var session = (RespServerSession)getTempSession();
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
@@ -302,6 +310,11 @@ namespace Garnet.server
 
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
+
+            // drain quantization task
+            _ = quantizationChannel.Writer.TryComplete();
+            while (quantizationChannel.Reader.TryRead(out _)) { }
+            Task.WhenAll(quantizationTasks).Wait();
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -332,6 +345,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryAdd(
+            scoped ReadOnlySpan<byte> key,
             scoped ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             VectorValueType valueType,
@@ -396,11 +410,17 @@ namespace Garnet.server
                     element,
                     valueType,
                     values,
-                    attributes
+                    attributes,
+                    out var needsQuantization
                 );
 
             if (insert)
             {
+                if (needsQuantization)
+                {
+                    _ = this.quantizationChannel.Writer.TryWrite(new(key.ToByteArray(), QuantizationStep.BuildQuantizationTable, 0));
+                }
+
                 return VectorManagerResult.OK;
             }
 
