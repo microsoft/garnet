@@ -66,6 +66,10 @@ namespace Garnet.common
         /// </summary>
         Replication_Diskless_Sync_Reset_Cts,
         /// <summary>
+        /// Fail TakeOverAsPrimary during failover by throwing before BeginRecovery is called.
+        /// </summary>
+        Failover_Fail_TakeOverAsPrimary,
+        /// <summary>
         /// During deletion of a Vector Set, leaving it partially deleted - at a particular point of execution.
         /// </summary>
         VectorSet_Interrupt_Delete_0,
@@ -78,8 +82,9 @@ namespace Garnet.common
         /// </summary>
         VectorSet_Interrupt_Delete_2,
         /// <summary>
-        /// Fail TakeOverAsPrimary during failover by throwing before BeginRecovery is called.
+        /// Failure after handler registered in activeHandlers but before Start() is called.
+        /// This means no SAEA receive loop is running, so the only cleanup path is public Dispose().
         /// </summary>
-        Failover_Fail_TakeOverAsPrimary,
+        Dispose_After_Handler_Registered_Before_Start,
     }
 }

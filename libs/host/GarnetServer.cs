@@ -324,8 +324,8 @@ namespace Garnet
             var (aofDevice, aof) = CreateAOF(dbId);
 
             var vectorManager = new VectorManager(
-                serverOptions.EnableVectorSetPreview,
                 dbId,
+                serverOptions,
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );
@@ -482,12 +482,13 @@ namespace Garnet
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Close();
 
-            // Phase 2: Dispose the provider (storage engine shutdown — may take time).
-            Provider?.Dispose();
-
-            // Phase 3: Drain active handlers and clean up remaining resources.
+            // Phase 2: Drain active handlers and clean up remaining resources.
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Dispose();
+
+            // Phase 3: Dispose the provider (storage engine shutdown — may take time).
+            Provider?.Dispose();
+
             subscribeBroker?.Dispose();
             storeEpoch?.Dispose();
             aofEpoch?.Dispose();

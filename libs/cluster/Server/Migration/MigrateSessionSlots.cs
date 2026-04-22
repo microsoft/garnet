@@ -100,7 +100,7 @@ namespace Garnet.cluster
             async Task<bool> CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
-                var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+                var migrateOperationRunners = new Task<bool>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 var i = 0;
                 while (i < migrateOperationRunners.Length)
                 {
@@ -111,7 +111,12 @@ namespace Garnet.cluster
 
                 try
                 {
-                    await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    var scanResults = await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    if (!scanResults.All(static x => x))
+                    {
+                        logger?.LogWarning("Aborting migration due to ScanStoreTask failure");
+                        return false;
+                    }
 
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
                     if (storeType == StoreType.Main)
@@ -209,7 +214,11 @@ namespace Garnet.cluster
                     WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateOperation.TransmitSlots(storeType);
+                    if (!migrateOperation.TransmitSlots(storeType))
+                    {
+                        logger?.LogWarning("[{taskId}> TransmitSlots failed for {cursor} to {current} (with {count} keys)", taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
+                        return Task.FromResult(false);
+                    }
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
