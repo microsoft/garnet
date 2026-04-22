@@ -508,6 +508,13 @@ namespace Garnet.server
         public int VectorSetReplayTaskCount = 0;
 
         /// <summary>
+        /// If true, enable Range Index commands (RI.CREATE, RI.SET, RI.GET, etc.).
+        ///
+        /// This is a preview feature, subject to substantial change, and should not be relied upon.
+        /// </summary>
+        public bool EnableRangeIndexPreview = false;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>

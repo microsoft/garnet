@@ -111,6 +111,17 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnDiskRead(ref LogRecord logRecord) => recordTriggers.OnDiskRead(ref logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnRecovery(System.Guid checkpointToken) => recordTriggers.OnRecovery(checkpointToken);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnRecoverySnapshotRead(ref LogRecord logRecord) => recordTriggers.OnRecoverySnapshotRead(ref logRecord);
+
+        /// <inheritdoc/>
+        public readonly void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) => recordTriggers.OnCheckpoint(trigger, checkpointToken);
         #endregion Record Triggers
 
         #region Checkpoint Completion

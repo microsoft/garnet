@@ -73,6 +73,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc cref="IRecordTriggers.OnDiskRead"/>
         void OnDiskRead(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnRecovery"/>
+        void OnRecovery(System.Guid checkpointToken);
+
+        /// <inheritdoc cref="IRecordTriggers.OnRecoverySnapshotRead"/>
+        void OnRecoverySnapshotRead(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnCheckpoint"/>
+        void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken);
         #endregion Record Triggers
 
         #region Checkpoint Completion

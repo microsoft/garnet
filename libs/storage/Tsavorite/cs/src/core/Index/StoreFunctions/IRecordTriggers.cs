@@ -98,6 +98,24 @@ namespace Tsavorite.core
         /// Only called when <see cref="CallOnDiskRead"/> is true. Default implementation is a no-op.
         /// </summary>
         void OnDiskRead(ref LogRecord logRecord) { }
+
+        /// <summary>
+        /// Called once before recovering records from a checkpoint snapshot file.
+        /// Default implementation is a no-op.
+        /// </summary>
+        void OnRecovery(System.Guid checkpointToken) { }
+
+        /// <summary>
+        /// Called per record recovered from a checkpoint snapshot file (above FlushedUntilAddress).
+        /// Only called when <see cref="CallOnDiskRead"/> is true. Default implementation is a no-op.
+        /// </summary>
+        void OnRecoverySnapshotRead(ref LogRecord logRecord) { }
+
+        /// <summary>
+        /// Called at checkpoint lifecycle points identified by <paramref name="trigger"/>.
+        /// Default implementation is a no-op.
+        /// </summary>
+        void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken) { }
     }
 
     /// <summary>
