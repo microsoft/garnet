@@ -1320,7 +1320,7 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(0, invalidOptions.Count);
-            var ex = Assert.Throws<Exception>(() => options.GetServerOptions());
+            var ex = Assert.Throws<GarnetException>(() => options.GetServerOptions());
             ClassicAssert.IsTrue(ex.Message.Contains("AofSizeLimit"));
 
             // Setting --aof-size-limit with --aof enabled should succeed
