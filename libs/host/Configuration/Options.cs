@@ -786,7 +786,7 @@ namespace Garnet
             if (!EnableAOF.GetValueOrDefault())
             {
                 if (!string.IsNullOrEmpty(AofSizeLimit))
-                    throw new Exception("AofSizeLimit cannot be enforced with disabled AOF!");
+                    throw new GarnetException("AofSizeLimit cannot be enforced with disabled AOF!");
             }
 
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
