@@ -79,6 +79,10 @@ namespace Garnet.cluster
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
                 ptr += entryLength;
+
+                // Before updating replication offset, we must wait for any pending Vector Set ops to complete
+                aofProcessor.WaitForVectorOperationsToComplete();
+
                 ReplicationOffset += entryLength;
             }
 
