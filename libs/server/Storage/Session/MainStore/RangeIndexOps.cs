@@ -233,8 +233,10 @@ namespace Garnet.server
 
                 result = RangeIndexResult.OK;
 
-                // Inject synthetic RMW for AOF logging
-                functionsState.rangeIndexManager.ReplicateRangeIndexSet(key, field, value, ref stringBasicContext);
+                functionsState.rangeIndexManager.ReplicateRangeIndexSet(
+                    key, field, value, functionsState.appendOnlyFile,
+                    stringBasicContext.Session.Version, stringBasicContext.Session.ID,
+                    functionsState.StoredProcMode);
 
                 return GarnetStatus.OK;
             }
@@ -413,8 +415,10 @@ namespace Garnet.server
                 BfTreeService.DeleteByPtr(treePtr, field);
                 result = RangeIndexResult.OK;
 
-                // Inject synthetic RMW for AOF logging
-                functionsState.rangeIndexManager.ReplicateRangeIndexDel(key, field, ref stringBasicContext);
+                functionsState.rangeIndexManager.ReplicateRangeIndexDel(
+                    key, field, functionsState.appendOnlyFile,
+                    stringBasicContext.Session.Version, stringBasicContext.Session.ID,
+                    functionsState.StoredProcMode);
 
                 return GarnetStatus.OK;
             }

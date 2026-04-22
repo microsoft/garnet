@@ -43,19 +43,6 @@ namespace Garnet.server
         /// <summary>Size of the RangeIndex stub in bytes.</summary>
         internal const int IndexSizeBytes = RangeIndexStub.Size;
 
-        /// <summary>
-        /// Sentinel value for <see cref="StringInput.arg1"/> on synthetic RI.SET RMW writes.
-        /// IPU detects this sentinel and skips the no-op RMW body — the RMW exists solely
-        /// to create an AOF log entry that can be replayed on recovery.
-        /// </summary>
-        internal const long RISETAppendLogArg = -100;
-
-        /// <summary>
-        /// Sentinel value for <see cref="StringInput.arg1"/> on synthetic RI.DEL RMW writes.
-        /// Same pattern as <see cref="RISETAppendLogArg"/>.
-        /// </summary>
-        internal const long RIDELAppendLogArg = -101;
-
         /// <summary>Whether range index commands are enabled.</summary>
         public bool IsEnabled { get; }
 
@@ -460,41 +447,39 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Inject a synthetic RMW for RI.SET to trigger AOF logging.
-        /// The RMW is a no-op in IPU (detected via <see cref="RISETAppendLogArg"/> sentinel) —
-        /// it exists solely to create an AOF entry that can be replayed on recovery.
+        /// Log RI.SET to AOF via direct enqueue (no synthetic RMW).
+        /// Skipped when <paramref name="storedProcMode"/> is true (stored procedure logs as a unit).
         /// </summary>
-        /// <param name="key">The Garnet key of the RangeIndex.</param>
-        /// <param name="field">The field (BfTree key) being set.</param>
-        /// <param name="value">The value being set.</param>
-        /// <param name="context">The string basic context for the RMW operation.</param>
-        internal void ReplicateRangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value, ref StringBasicContext context)
+        internal void ReplicateRangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
+            TsavoriteLog appendOnlyFile, long version, int sessionId, bool storedProcMode)
         {
+            if (appendOnlyFile == null || storedProcMode) return;
+
             var replicateParseState = new SessionParseState();
             replicateParseState.InitializeWithArguments(field, value);
-            var input = new StringInput(RespCommand.RISET, ref replicateParseState, arg1: RISETAppendLogArg);
-            var output = new StringOutput();
-            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
-            if (status.IsPending)
-                StorageSession.CompletePendingForSession(ref status, ref output, ref context);
+            var input = new StringInput(RespCommand.RISET, ref replicateParseState);
+            input.header.flags |= RespInputFlags.Deterministic;
+            appendOnlyFile.Enqueue(
+                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
+                key.ReadOnlySpan, ref input, out _);
         }
 
         /// <summary>
-        /// Inject a synthetic RMW for RI.DEL to trigger AOF logging.
-        /// Same pattern as <see cref="ReplicateRangeIndexSet"/>: no-op in IPU, logged to AOF.
+        /// Log RI.DEL to AOF via direct enqueue (no synthetic RMW).
+        /// Skipped when <paramref name="storedProcMode"/> is true (stored procedure logs as a unit).
         /// </summary>
-        /// <param name="key">The Garnet key of the RangeIndex.</param>
-        /// <param name="field">The field (BfTree key) being deleted.</param>
-        /// <param name="context">The string basic context for the RMW operation.</param>
-        internal void ReplicateRangeIndexDel(PinnedSpanByte key, PinnedSpanByte field, ref StringBasicContext context)
+        internal void ReplicateRangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
+            TsavoriteLog appendOnlyFile, long version, int sessionId, bool storedProcMode)
         {
+            if (appendOnlyFile == null || storedProcMode) return;
+
             var replicateParseState = new SessionParseState();
             replicateParseState.InitializeWithArgument(field);
-            var input = new StringInput(RespCommand.RIDEL, ref replicateParseState, arg1: RIDELAppendLogArg);
-            var output = new StringOutput();
-            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
-            if (status.IsPending)
-                StorageSession.CompletePendingForSession(ref status, ref output, ref context);
+            var input = new StringInput(RespCommand.RIDEL, ref replicateParseState);
+            input.header.flags |= RespInputFlags.Deterministic;
+            appendOnlyFile.Enqueue(
+                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
+                key.ReadOnlySpan, ref input, out _);
         }
 
         /// <summary>
