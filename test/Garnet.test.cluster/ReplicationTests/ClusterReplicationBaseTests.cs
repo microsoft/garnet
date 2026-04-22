@@ -157,7 +157,7 @@ namespace Garnet.test.cluster
         public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
             if (useTLS)
-                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType]);
+                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
 
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -225,6 +225,9 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
         {
+            if (useTLS)
+                context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
+
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var primaryIndex = 0;

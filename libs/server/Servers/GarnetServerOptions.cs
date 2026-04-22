@@ -818,7 +818,8 @@ namespace Garnet.server
                     FastCommitMode = EnableFastCommit,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
-                    Epoch = epoch
+                    // For multi-log sublogs with i > 0 will create and use their own epoch
+                    Epoch = i == 0 ? epoch : null
                 };
 
                 if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].MemorySize)
