@@ -103,7 +103,7 @@ namespace Garnet.server
             cleanupTask = RunCleanupTaskAsync();
 
             quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
-            
+
             // TODO: Move this to a config like with replays
             quantizationTasks = new Task[Environment.ProcessorCount];
             Array.Fill(quantizationTasks, Task.CompletedTask);
@@ -298,7 +298,7 @@ namespace Garnet.server
             Task.WhenAll(replicationReplayTasks).Wait();
 
             replicationBlockEvent.Dispose();
-            
+
             // Wait for any in progress cleanup to finish
             cleanupTaskChannel.Writer.Complete();
             cleanupTaskChannel.Reader.Completion.Wait();
