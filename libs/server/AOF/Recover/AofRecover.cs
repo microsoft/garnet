@@ -29,7 +29,7 @@ namespace Garnet.server
             {
                 storeWrapper.appendOnlyFile.CreateOrUpdateKeySequenceManager();
                 logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
-                return RecoverReplay(db, untilAddress);
+                return RecoverReplayDriver(db, untilAddress);
             }
             finally
             {
@@ -46,7 +46,7 @@ namespace Garnet.server
                 logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", GiBperSecs);
             }
 
-            AofAddress RecoverReplay(GarnetDatabase db, AofAddress untilAddress)
+            AofAddress RecoverReplayDriver(GarnetDatabase db, AofAddress untilAddress)
             {
                 // Begin replay for specified database
                 logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
@@ -59,27 +59,7 @@ namespace Garnet.server
                     // Set the tail address for replay recovery to the tail address of the AOF if none specified
                     untilAddress.SetValueIf(appendOnlyFile.Log.TailAddress, -1);
 
-                    var recordsReplayed = 0L;
-                    if (storeWrapper.serverOptions.MultiLogEnabled)
-                    {
-                        if (appendOnlyFile.Log.RecoverLatestSequenceNumber(out var recoverUntilSequenceNumber))
-                        {
-                            var beginAddress = appendOnlyFile.Log.BeginAddress;
-                            var recoverDrivers = Enumerable.Range(0, untilAddress.Length)
-                                .Select(physicalSublogIdx => new RecoverLogDriver(this, appendOnlyFile, storeWrapper.serverOptions, db.Id, physicalSublogIdx, beginAddress[physicalSublogIdx], untilAddress[physicalSublogIdx], recoverUntilSequenceNumber, logger))
-                                .ToArray();
-
-                            Task.WaitAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTask())]);
-                            recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);
-                        }
-                    }
-                    else
-                    {
-                        recordsReplayed = Task.WhenAll(Enumerable.Range(0, untilAddress.Length)
-                            .Select(sublogIdx => Task.Run(() => RecoverReplayPhysicalSublog(appendOnlyFile, db.Id, sublogIdx, untilAddress))))
-                            .ContinueWith(completedTasks => completedTasks.Result.Sum())
-                            .Result;
-                    }
+                    var recordsReplayed = storeWrapper.serverOptions.MultiLogEnabled ? MultiLogRecover(appendOnlyFile, db.Id, untilAddress) : SingleLogRecover(appendOnlyFile, db.Id, 0, untilAddress);
 
                     _ = Interlocked.Add(ref total_number_of_replayed_records, recordsReplayed);
                     return untilAddress;
@@ -105,7 +85,7 @@ namespace Garnet.server
         /// <param name="physicalSublogIdx">The index of the physical sublog to process.</param>
         /// <param name="untilAddress">The address up to which records should be replayed in the sublog.</param>
         /// <returns>A task representing the asynchronous operation, containing the number of records replayed.</returns>
-        private Task<long> RecoverReplayPhysicalSublog(GarnetAppendOnlyFile appendOnlyFile, int dbId, int physicalSublogIdx, AofAddress untilAddress)
+        private long SingleLogRecover(GarnetAppendOnlyFile appendOnlyFile, int dbId, int physicalSublogIdx, AofAddress untilAddress)
         {
             var count = 0L;
             var beginAddress = appendOnlyFile.Log.BeginAddress;
@@ -129,7 +109,53 @@ namespace Garnet.server
             }
 
             logger?.LogInformation("Completed full AOF sublog {sublogIdx} replay of {count:N0} records (DB ID: {id})", physicalSublogIdx, count, dbId);
-            return Task.FromResult(count);
+            return count;
+        }
+
+        /// <summary>
+        /// Recovers log records from the specified append-only file up to a given address.
+        /// </summary>
+        /// <param name="appendOnlyFile">The append-only file from which log records are recovered. This file must be valid and accessible for
+        /// recovery to proceed.</param>
+        /// <param name="dbId">The identifier of the database for which the log recovery is being performed. This must correspond to a
+        /// valid database context.</param>
+        /// <param name="untilAddress">An address indicating the point up to which log records should be recovered. This must be within the valid
+        /// range of the log.</param>
+        /// <returns>The total number of log records that were successfully replayed during the recovery process.</returns>
+        private long MultiLogRecover(GarnetAppendOnlyFile appendOnlyFile, int dbId, AofAddress untilAddress)
+        {
+            var recordsReplayed = 0L;
+            if (appendOnlyFile.Log.RecoverLatestSequenceNumber(out var recoverUntilSequenceNumber))
+            {
+                var beginAddress = appendOnlyFile.Log.BeginAddress;
+                var recoverDrivers = new RecoverLogDriver[untilAddress.Length];
+                for (var physicalSublogIdx = 0; physicalSublogIdx < untilAddress.Length; physicalSublogIdx++)
+                {
+                    recoverDrivers[physicalSublogIdx] = new RecoverLogDriver(
+                        this,
+                        appendOnlyFile,
+                        storeWrapper.serverOptions,
+                        dbId,
+                        physicalSublogIdx,
+                        beginAddress[physicalSublogIdx],
+                        untilAddress[physicalSublogIdx],
+                        recoverUntilSequenceNumber,
+                        logger);
+                }
+
+                try
+                {
+                    Task.WaitAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTask())]);
+                    recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);
+                }
+                finally
+                {
+                    for (var physicalSublogIdx = 0; physicalSublogIdx < untilAddress.Length; physicalSublogIdx++)
+                        recoverDrivers[physicalSublogIdx]?.Dispose();
+                }
+            }
+
+            return recordsReplayed;
         }
     }
 }

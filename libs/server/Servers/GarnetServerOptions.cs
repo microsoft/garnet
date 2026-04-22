@@ -801,9 +801,8 @@ namespace Garnet.server
         /// Get AOF settings
         /// </summary>
         /// <param name="dbId">DB ID</param>
-        /// <param name="epoch">AOF Epoch</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        public void GetAofSettings(int dbId, LightEpoch epoch, out TsavoriteLogSettings[] tsavoriteLogSettings)
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings[] tsavoriteLogSettings)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
             for (var i = 0; i < AofPhysicalSublogCount; i++)
@@ -818,8 +817,7 @@ namespace Garnet.server
                     FastCommitMode = EnableFastCommit,
                     AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
-                    // For multi-log sublogs with i > 0 will create and use their own epoch
-                    Epoch = i == 0 ? epoch : null
+                    Epoch = null
                 };
 
                 if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].MemorySize)

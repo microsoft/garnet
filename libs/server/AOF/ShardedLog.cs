@@ -10,36 +10,46 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    /// <summary>
-    /// Provides a sharded log abstraction that manages multiple physical sublogs for scalable and concurrent log
-    /// operations.
-    /// </summary>
-    /// <remarks>ShardedLog enables partitioning of log data across multiple sublogs to improve throughput and
-    /// concurrency. Each sublog operates independently but can be coordinated through the provided locking and address
-    /// management methods. Thread safety is provided for sublog access via explicit locking mechanisms. The class is
-    /// intended for advanced scenarios where high-performance, partitioned logging is required.</remarks>
-    /// <param name="physicalSublogCount">The number of physical sublogs to create and manage. Must be a positive integer.</param>
-    /// <param name="logSettings">An array of settings used to configure each physical sublog. The length must match the value of
-    /// physicalSublogCount.</param>
-    /// <param name="logger">An optional logger instance used to record diagnostic or operational information for each sublog. If null,
-    /// logging is disabled.</param>
-    public class ShardedLog(int physicalSublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+    public class ShardedLog
     {
         /// <summary>
         /// Number of physical sublogs
         /// </summary>
-        public int Length { get; private set; } = physicalSublogCount;
-        readonly TsavoriteLogSettings[] logSettings = logSettings;
+        public int Length { get; private set; }
+        readonly TsavoriteLogSettings[] logSettings;
 
         /// <summary>
         /// Physical sublog instances
         /// </summary>
-        public readonly TsavoriteLog[] sublog = [.. logSettings.Select(settings => new TsavoriteLog(settings, logger))];
+        public readonly TsavoriteLog[] sublog;
 
         /// <summary>
         /// Distinct locks per sublog instance
         /// </summary>
-        public readonly SingleWriterMultiReaderLock[] logLocks = [.. Enumerable.Range(0, physicalSublogCount).Select(_ => new SingleWriterMultiReaderLock())];
+        public readonly SingleWriterMultiReaderLock[] logLocks;
+
+        /// <summary>
+        /// Provides a sharded log abstraction that manages multiple physical sublogs for scalable and concurrent log
+        /// operations.
+        /// </summary>
+        /// <remarks>ShardedLog enables partitioning of log data across multiple sublogs to improve throughput and
+        /// concurrency. Each sublog operates independently but can be coordinated through the provided locking and address
+        /// management methods. Thread safety is provided for sublog access via explicit locking mechanisms. The class is
+        /// intended for advanced scenarios where high-performance, partitioned logging is required.</remarks>
+        /// <param name="physicalSublogCount">The number of physical sublogs to create and manage. Must be a positive integer.</param>
+        /// <param name="logSettings">An array of settings used to configure each physical sublog. The length must match the value of
+        /// physicalSublogCount.</param>
+        /// <param name="logger">An optional logger instance used to record diagnostic or operational information for each sublog. If null,
+        /// logging is disabled.</param>
+        public ShardedLog(int physicalSublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+        {
+            Length = physicalSublogCount;
+            this.logSettings = logSettings;
+            this.sublog = new TsavoriteLog[Length];
+            for (var i = 0; i < logSettings.Length; i++)
+                sublog[i] = new TsavoriteLog(logSettings[i], logger);
+            logLocks = [.. Enumerable.Range(0, physicalSublogCount).Select(_ => new SingleWriterMultiReaderLock())];
+        }
 
         ulong lockMap = 0;
 

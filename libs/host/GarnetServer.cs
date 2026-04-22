@@ -48,7 +48,7 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
-        protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
+        protected readonly LightEpoch storeEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -133,8 +133,6 @@ namespace Garnet
             this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.storeEpoch = new LightEpoch();
-            if (this.opts.EnableAOF)
-                this.aofEpoch = new LightEpoch();
             if (!this.opts.DisablePubSub)
                 this.pubSubEpoch = new LightEpoch();
             this.InitializeServer();
@@ -154,8 +152,6 @@ namespace Garnet
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
             this.storeEpoch = new LightEpoch();
-            if (this.opts.EnableAOF)
-                this.aofEpoch = new LightEpoch();
             if (!this.opts.DisablePubSub)
                 this.pubSubEpoch = new LightEpoch();
             try
@@ -165,7 +161,6 @@ namespace Garnet
             catch
             {
                 storeEpoch?.Dispose();
-                aofEpoch?.Dispose();
                 pubSubEpoch?.Dispose();
                 throw;
             }
@@ -401,7 +396,7 @@ namespace Garnet
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
-            opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
+            opts.GetAofSettings(dbId, out var aofSettings);
             var appendOnlyFile = new GarnetAppendOnlyFile(opts, aofSettings, logger: this.loggerFactory?.CreateLogger("GarnetLog [aof]"));
 
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
@@ -463,7 +458,6 @@ namespace Garnet
 
             subscribeBroker?.Dispose();
             storeEpoch?.Dispose();
-            aofEpoch?.Dispose();
             pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
