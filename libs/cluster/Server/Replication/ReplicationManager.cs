@@ -524,10 +524,12 @@ namespace Garnet.cluster
                     storeWrapper.appendOnlyFile.Initialize(recoveredSafeAofAddress, recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
 
+                var replayAofOffset = storeWrapper.ReplayAOF();
+
                 // Before advertising new replication offset, wait for any queued Vector Set ops to complete
                 storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
 
-                ReplicationOffset = storeWrapper.ReplayAOF();
+                ReplicationOffset = replayAofOffset;
             }
 
             // First recover and then load latest checkpoint info in-memory
