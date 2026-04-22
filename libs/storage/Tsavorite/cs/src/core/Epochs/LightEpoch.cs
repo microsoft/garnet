@@ -161,14 +161,9 @@ namespace Tsavorite.core
         public const int MaxUserWords = 6;
 
         /// <summary>
-        /// Initial value written to each entry's user-word slot on allocation and on entry recycle.
-        /// Indexed by user-word index; only slots whose bit is set in <see cref="userWordMask"/> are valid.
-        /// </summary>
-        readonly long[] userWordInitialValues = new long[MaxUserWords];
-
-        /// <summary>
-        /// Bitmask of claimed user-word slots. Each set bit means that word index is in use by some subsystem
-        /// and must be initialized on entry acquire and reset on entry release.
+        /// Bitmask of claimed user-word slots. Each set bit means that word index is in use by some
+        /// subsystem. Managed exclusively via CAS in <see cref="AllocateUserWord"/> and
+        /// <see cref="ReleaseUserWord"/>. Not read on the epoch Acquire/Release hot path.
         /// </summary>
         int userWordMask;
 
@@ -530,10 +525,6 @@ namespace Tsavorite.core
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
             Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
 
-            // Reset any per-thread user-word slots to their configured initial values so that a fresh
-            // thread (or a recycled slot) never observes stale values left by a previous owner.
-            ResetAllocatedUserWords(entry);
-
             // Protect CurrentEpoch by copying it to the instance-specific epoch table
             // so that ComputeNewSafeToReclaimEpoch() will see it.
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
@@ -555,11 +546,6 @@ namespace Tsavorite.core
 
             Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
-
-            // Reset any per-thread user-word slots before giving up ownership so the next owner of this
-            // entry starts from a known state. Also ensures that consumers scanning the column via
-            // GetMinUserWord do not observe stale in-flight values after a thread has released the epoch.
-            ResetAllocatedUserWords(entry);
 
             // Clear "ThisInstanceProtected()" (non-static epoch table)
             (*(tableAligned + entry)).localCurrentEpoch = 0;
@@ -748,46 +734,33 @@ namespace Tsavorite.core
         public int EntryCount => kTableSize;
 
         /// <summary>
-        /// Lock used to serialize slot allocation / release. Slot churn is a rare cold-path event
-        /// (one per subsystem construction / Dispose), so a simple lock is the cleanest correctness
-        /// primitive here — it avoids races where two callers claim the same bit and race to
-        /// initialize the column.
-        /// </summary>
-        readonly object userWordSlotLock = new();
-
-        /// <summary>
         /// Claim a per-thread user-word slot. Returns the word index to pass to
         /// <see cref="ThisThreadUserWord(int)"/> and <see cref="GetMinUserWord(int)"/>.
-        /// The column across all entries is initialized to <paramref name="initialValue"/>, and the same
-        /// value will be used to reset the slot on entry recycle (thread exit / new thread acquiring an entry).
-        /// Throws if all <see cref="MaxUserWords"/> slots are already claimed.
+        /// The column across all entries is initialized to <paramref name="initialValue"/>.
+        /// After allocation, the application owns the slot contents — LightEpoch does not
+        /// automatically reset slots on epoch Acquire/Release. Throws if all
+        /// <see cref="MaxUserWords"/> slots are already claimed.
         /// </summary>
-        /// <param name="initialValue">Value written to every entry's slot on allocation and on entry recycle.</param>
+        /// <param name="initialValue">Value written to every entry's slot at allocation time.</param>
         /// <returns>Word index in the range <c>[0, <see cref="MaxUserWords"/>)</c>.</returns>
         public int AllocateUserWord(long initialValue)
         {
-            lock (userWordSlotLock)
+            while (true)
             {
-                var mask = userWordMask;
-                int idx = -1;
-                for (int i = 0; i < MaxUserWords; i++)
-                {
-                    if ((mask & (1 << i)) == 0)
-                    {
-                        idx = i;
-                        break;
-                    }
-                }
-                if (idx < 0)
+                var mask = Volatile.Read(ref userWordMask);
+                int idx = BitOperations.TrailingZeroCount(~mask);
+                if (idx >= MaxUserWords)
                     throw new InvalidOperationException($"All {MaxUserWords} LightEpoch user-word slots are claimed.");
 
-                // Initialize the column, then publish the mask bit so concurrent scanners that observe
-                // the bit set are guaranteed to observe an initialized column.
-                userWordInitialValues[idx] = initialValue;
+                // CAS to claim the slot. Only the winner proceeds to initialize.
+                var newMask = mask | (1 << idx);
+                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) != mask)
+                    continue; // another thread modified the mask; retry
+
+                // We exclusively own this slot — initialize the column across all entries.
                 for (int i = 1; i <= kTableSize; i++)
                     Volatile.Write(ref UserWordRef(i, idx), initialValue);
 
-                Volatile.Write(ref userWordMask, mask | (1 << idx));
                 return idx;
             }
         }
@@ -795,17 +768,18 @@ namespace Tsavorite.core
         /// <summary>
         /// Release a previously claimed user-word slot. Caller is responsible for ensuring that no
         /// producer thread still holds or can still issue writes to the slot (e.g., by calling this
-        /// only after subsystem quiescence / Dispose). The slot is not "generation-tagged" — a
-        /// straggler write after release followed by a re-allocation would corrupt the new owner's
-        /// column.
+        /// only after subsystem quiescence / Dispose).
         /// </summary>
         public void ReleaseUserWord(int wordIndex)
         {
             if ((uint)wordIndex >= MaxUserWords)
                 throw new ArgumentOutOfRangeException(nameof(wordIndex));
-            lock (userWordSlotLock)
+            while (true)
             {
-                userWordMask &= ~(1 << wordIndex);
+                var mask = Volatile.Read(ref userWordMask);
+                var newMask = mask & ~(1 << wordIndex);
+                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) == mask)
+                    return;
             }
         }
 
@@ -856,25 +830,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         ref long UserWordRef(int entryIndex, int wordIndex)
             => ref Unsafe.Add(ref (*(tableAligned + entryIndex)).userWord0, wordIndex);
-
-        /// <summary>
-        /// Reset every currently-allocated user word in the given entry to its configured initial value.
-        /// Called on both entry acquisition and release to ensure a fresh thread never observes stale
-        /// values left by a previous owner of the slot.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ResetAllocatedUserWords(int entryIndex)
-        {
-            var mask = userWordMask;
-            if (mask == 0)
-                return;
-            while (mask != 0)
-            {
-                int i = BitOperations.TrailingZeroCount(mask);
-                mask &= mask - 1;
-                Volatile.Write(ref UserWordRef(entryIndex, i), userWordInitialValues[i]);
-            }
-        }
 
         #endregion
 
