@@ -1300,11 +1300,12 @@ namespace Tsavorite.core
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
                 Debug.Assert(logicalAddress == 0);
 
-                // epoch.Suspend releases this thread's LightEpoch entry, which via ResetAllocatedUserWords
-                // clears our in-flight slot back to InflightInactive. That may raise min(inflight), so wake
-                // any parked waiters that were being held back by our Begin publish.
+                // Clear our in-flight slot before suspending — LightEpoch does not auto-reset user
+                // words on Release. Without this, the stale low publish would pin min(inflight) and
+                // prevent SafeTailAddress from advancing. NotifyParkedWaiters wakes any readers that
+                // were held back by our Begin publish.
+                EndInflightEnqueue();
                 epoch.Suspend();
-                NotifyParkedWaiters();
                 if (cannedException != null)
                     throw cannedException;
                 try
@@ -1335,11 +1336,14 @@ namespace Tsavorite.core
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled
                 Debug.Assert(logicalAddress == 0);
 
+                // Clear our in-flight slot before suspending — LightEpoch does not auto-reset user
+                // words on Release. Without this, the stale low publish would pin min(inflight) and
+                // prevent SafeTailAddress from advancing.
+                EndInflightEnqueue();
+
                 // We are holding the TsavoriteLog's epoch; release and then reacquire it. And if the caller's epoch is
-                // also held, suspend and reacquire it as well. Suspend clears our in-flight slot via
-                // ResetAllocatedUserWords; wake parked waiters that our Begin publish may have been holding back.
+                // also held, suspend and reacquire it as well.
                 epoch.Suspend();
-                NotifyParkedWaiters();
                 var suspended = epochAccessor.TrySuspend();
                 try
                 {
