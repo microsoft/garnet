@@ -100,9 +100,9 @@ namespace Garnet.server
             return true;
         }
 
-        public void BuildQuantizationTable(ulong context, nint index)
+        public bool BuildQuantizationTable(ulong context, nint index)
         {
-            NativeDiskANNMethods.build_quant_table(context, index);
+            return NativeDiskANNMethods.build_quant_table(context, index) == 1;
         }
 
         public void BackfillQuantizedVectors(ulong context, nint index, int taskIndex, int taskCount)
@@ -462,7 +462,7 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial void build_quant_table(
+        public static partial byte build_quant_table(
             ulong context,
             nint index
         );
