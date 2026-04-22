@@ -62,6 +62,7 @@ namespace Garnet.server
 #endif
             where TEpochAccessor : IEpochAccessor
         {
+
             if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
                 WriteLogDelete(key.KeyBytes, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
         }
