@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -181,6 +182,8 @@ namespace Garnet.cluster
                     if (!IsConnected)
                         garnetClient.Connect();
 
+                    LogRunAofSyncTask(physicalSublogIdx, startAddress, previousAddress, logger);
+
                     iter = clusterProvider.storeWrapper.appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
 
                     // Send ping to initialize replication stream
@@ -202,6 +205,18 @@ namespace Garnet.cluster
                     if (enteredMonitor)
                         _ = aofSyncDriver.activeWorkerMonitor.Exit();
                     garnetClient?.Dispose();
+                }
+
+                [Conditional("DEBUG")]
+                static void LogRunAofSyncTask(int physicalSublogIdx, long startAddress, long previousAddress, ILogger logger)
+                {
+                    var state = new GarnetTestLoggingEvent()
+                    {
+                        Type = GarnetTestLoggingEventType.LogRunAofSyncTask,
+                        Message = $"physicalSublogIdx:{physicalSublogIdx}, startAddress: {startAddress}, previousAddress: {previousAddress}",
+                    };
+
+                    logger?.LogTesting(state);
                 }
             }
         }

@@ -7,7 +7,8 @@ namespace Garnet.common
 {
     public enum GarnetTestLoggingEventType : int
     {
-        LogPrimaryStreamType
+        LogPrimaryStreamType,
+        LogRunAofSyncTask
     };
 
     public struct GarnetTestLoggingEvent
