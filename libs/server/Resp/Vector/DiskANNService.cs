@@ -18,7 +18,7 @@ namespace Garnet.server
         internal const byte Attributes = 3;
         private const byte Metadata = 4;
         internal const byte InternalIdMap = 5;
-        private const byte ExternalIdMap = 6;
+        internal const byte ExternalIdMap = 6;
 
         public nint CreateIndex(
             ulong context,
@@ -31,14 +31,13 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
+            delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback
         )
         {
-            // TODO: actually pass distance metric
-
             unsafe
             {
-                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
+                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, (int)distanceMetric, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback);
             }
         }
 
@@ -53,9 +52,10 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback,
+            delegate* unmanaged[Cdecl]<ulong, uint, byte> filterCallback
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback, filterCallback);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -308,12 +308,14 @@ namespace Garnet.server
             uint dimensions,
             uint reduceDims,
             VectorQuantType quantType,
+            int metricType,
             uint buildExplorationFactor,
             uint numLinks,
             nint readCallback,
             nint writeCallback,
             nint deleteCallback,
-            nint readModifyWriteCallback
+            nint readModifyWriteCallback,
+            nint filterCallback
         );
 
         [LibraryImport(DISKANN_GARNET)]
