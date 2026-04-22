@@ -105,9 +105,13 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(infoResult.Contains("# Modules"), $"INFO {option} should contain Modules section");
             }
 
-            // All three options are based on DefaultInfo which excludes expensive sections
+            // All three options are based on DefaultInfo which excludes expensive/verbose sections
             ClassicAssert.IsFalse(infoResult.Contains("MainStoreHashTableDistribution"), $"INFO {option} should not contain StoreHashTable section");
+            ClassicAssert.IsFalse(infoResult.Contains("ObjectStoreHashTableDistribution"), $"INFO {option} should not contain ObjectStoreHashTable section");
             ClassicAssert.IsFalse(infoResult.Contains("MainStoreDeletedRecordRevivification"), $"INFO {option} should not contain StoreReviv section");
+            ClassicAssert.IsFalse(infoResult.Contains("ObjectStoreDeletedRecordRevivification"), $"INFO {option} should not contain ObjectStoreReviv section");
+            ClassicAssert.IsFalse(infoResult.Contains("MainStoreHLogScan"), $"INFO {option} should not contain HLogScan section");
+            ClassicAssert.IsFalse(infoResult.Contains("# Commandstats"), $"INFO {option} should not contain Commandstats section");
         }
 
         [Test]
