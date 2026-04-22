@@ -72,11 +72,11 @@ namespace Garnet.cluster
                 {
                     if (!useChannels)
                     {
-                        _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay().ConfigureAwait(false));
+                        _ = Task.Run(async () => await replayTask.FullPageBasedBackgroundReplay().ConfigureAwait(false));
                     }
                     else
                     {
-                        _ = Task.Run(async () => await replayTask.ChannelBackgroundReplay().ConfigureAwait(false));
+                        _ = Task.Run(async () => await replayTask.ChannelBasedBackgroundReplay().ConfigureAwait(false));
                     }
                 }
             }
@@ -110,16 +110,16 @@ namespace Garnet.cluster
             {
                 if (!useChannels)
                 {
-                    ScheduleReplay(record, recordLength, currentAddress, nextAddress, isProtected);
+                    ConsumeSchedulePage(record, recordLength, currentAddress, nextAddress, isProtected);
                 }
                 else
                 {
-                    ConsumeAndScheduleReplay(record, recordLength, currentAddress, nextAddress, isProtected);
+                    ConsumeScheduleChannel(record, recordLength, currentAddress, nextAddress, isProtected);
                 }
             }
         }
 
-        private unsafe void ScheduleReplay(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        private unsafe void ConsumeSchedulePage(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
             replayBatchContext.Record = record;
             replayBatchContext.RecordLength = recordLength;
@@ -136,11 +136,14 @@ namespace Garnet.cluster
             // Release participants for next cycle
             replayBatchContext.LeaderFollowerBarrier.Release();
 
+            // Before updating replication offset, we must wait for any pending Vector Set ops to complete
+            replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
+
             // Advertise new replicaton offset after replay completes
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
         }
 
-        private unsafe void ConsumeAndScheduleReplay(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        private unsafe void ConsumeScheduleChannel(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
             ValidateSublogIndex(physicalSublogIdx);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
@@ -185,6 +188,9 @@ namespace Garnet.cluster
             // Release participants for next cycle
             replayBatchContext.LeaderFollowerBarrier.Release();
 
+            // Before updating replication offset, we must wait for any pending Vector Set ops to complete
+            replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
+
             // Set replication offset after replay completes
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
             // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
@@ -206,45 +212,58 @@ namespace Garnet.cluster
         /// <param name="isProtected">Indicates whether the operation should be performed in protected mode.</param>
         /// <exception cref="GarnetException">Thrown if fast commit is not enabled when a fast commit request is received, or if log integrity validation
         /// fails.</exception>
-        internal unsafe void ConsumeDirect(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        private unsafe void ConsumeDirect(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
             ValidateSublogIndex(physicalSublogIdx);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
-            var ptr = record;
             var replicationOffset = currentAddress;
             // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
-            while (ptr < record + recordLength)
+
+            try
             {
-                cts.Token.ThrowIfCancellationRequested();
-                var entryLength = appendOnlyFile.HeaderSize;
-                var payloadLength = physicalSublog.UnsafeGetLength(ptr);
-                if (payloadLength > 0)
+                var ptr = record;
+                while (ptr < record + recordLength)
                 {
-                    replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
-                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                    // point when we take a checkpoint at the checkpoint end marker
-                    if (isCheckpointStart)
+                    cts.Token.ThrowIfCancellationRequested();
+                    var entryLength = appendOnlyFile.HeaderSize;
+                    var payloadLength = physicalSublog.UnsafeGetLength(ptr);
+                    if (payloadLength > 0)
                     {
-                        // This is safe to be updated in parallel given that each sublog replay taks will update its own slot with corresponding address of the checkpoint marker
-                        replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationOffset;
+                        replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                        // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
+                        // point when we take a checkpoint at the checkpoint end marker
+                        if (isCheckpointStart)
+                        {
+                            // This is safe to be updated in parallel given that each sublog replay taks will update its own slot with corresponding address of the checkpoint marker
+                            replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationOffset;
+                        }
+                        entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
-                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                }
-                else if (payloadLength < 0)
-                {
-                    if (!serverOptions.EnableFastCommit)
+                    else if (payloadLength < 0)
                     {
-                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                        if (!serverOptions.EnableFastCommit)
+                        {
+                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                        }
+                        TsavoriteLogRecoveryInfo info = new();
+                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                        physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
+                        entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                     }
-                    TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
-                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                    ptr += entryLength;
+                    replicationOffset += entryLength;
                 }
-                ptr += entryLength;
-                replicationOffset += entryLength;
+                // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
             }
-            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
+            catch
+            {
+                // If an exception occurrs, be sure to advance ReplicationOffset by the amount of successful work that transpired before the error
+                replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
+                throw;
+            }
+
+            // Before updating replication offset, we must wait for any pending Vector Set ops to complete
+            replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
 
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
 

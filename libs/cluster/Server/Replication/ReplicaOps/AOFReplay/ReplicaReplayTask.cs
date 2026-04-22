@@ -40,11 +40,18 @@ namespace Garnet.cluster
         readonly ILogger logger = logger;
 
         /// <summary>
+        /// Add record for replay
+        /// </summary>
+        /// <param name="replayRecord"></param>
+        public void AddRecord(ReplayRecord replayRecord)
+            => replayChannel.Writer.TryWrite(replayRecord);
+
+        /// <summary>
         /// Asynchronously replays log entries using SemaphoreSlim coordination, processing and applying them for replication
         /// and consistency across sublogs.
         /// </summary>
         /// <returns>A task representing the asynchronous replay operation.</returns>
-        internal async Task ContinuousBackgroundReplay()
+        internal async Task FullPageBasedBackgroundReplay()
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
@@ -57,7 +64,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(ContinuousBackgroundReplay));
+                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(FullPageBasedBackgroundReplay));
                     cts.Cancel();
                     break;
                 }
@@ -119,7 +126,7 @@ namespace Garnet.cluster
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplay));
+                        logger?.LogError(ex, "{method} failed at replaying", nameof(FullPageBasedBackgroundReplay));
                         cts.Cancel();
                         break;
                     }
@@ -132,12 +139,11 @@ namespace Garnet.cluster
             }
         }
 
-        public void AddRecord(ReplayRecord replayRecord)
-        {
-            replayChannel.Writer.TryWrite(replayRecord);
-        }
-
-        internal async Task ChannelBackgroundReplay()
+        /// <summary>
+        /// Asynchronously processes records from the replay channel in the background.
+        /// </summary>
+        /// <returns>A task that represents the asynchronous replay operation.</returns>
+        internal async Task ChannelBasedBackgroundReplay()
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);

@@ -321,6 +321,9 @@ namespace Garnet.cluster
                 logger?.LogInformation("Initializing AOF");
                 storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
 
+                // Before we can use the replication offset, we must wait for queued Vector Set ops to complete
+                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+
                 // Finally, advertise that we are caught up to the replication offset
                 replicationOffset = recoveredReplicationOffset;
                 logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", replicationOffset);

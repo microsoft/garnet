@@ -201,6 +201,9 @@ namespace Garnet.cluster
                 logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primarySyncMetadata.currentPrimaryReplId);
 
+                // Before advertising updated replication offset, wait for Vector Set ops to finish
+                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+
                 this.replicationOffset = _replicationOffset;
 
                 // Mark this txn run as a read-write session if we are replaying as a replica

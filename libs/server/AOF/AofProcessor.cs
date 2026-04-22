@@ -66,7 +66,7 @@ namespace Garnet.server
         readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
-        VectorManager activeVectorManager;
+        internal VectorManager activeVectorManager;
         RangeIndexManager activeRangeIndexManager;
 
         /// <summary>
@@ -149,6 +149,12 @@ namespace Garnet.server
                 }
             }
         }
+
+        /// <summary>
+        /// Wait for any queued Vector Set operations to complete.
+        /// </summary>
+        public void WaitForVectorOperationsToComplete()
+            => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
         /// Process AOF record internal
