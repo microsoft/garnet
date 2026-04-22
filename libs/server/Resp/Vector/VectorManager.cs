@@ -121,6 +121,27 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Ensures the VSIM filter bitmap buffer has at least one bit per result
+        /// (<paramref name="resultCount"/> bits, rounded up to whole bytes).
+        /// Rents from <see cref="MemoryPool{T}"/> if the current buffer is too small.
+        /// </summary>
+        private static void EnsureFilterBitmapSize(ref SpanByteAndMemory buffer, int resultCount)
+        {
+            var sizeBytes = (resultCount + 7) >> 3;
+            if (sizeBytes > buffer.Length)
+            {
+                if (!buffer.IsSpanByte)
+                {
+                    buffer.Memory.Dispose();
+                }
+
+                buffer = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(sizeBytes), sizeBytes);
+            }
+
+            buffer.Length = sizeBytes;
+        }
+
+        /// <summary>
         /// This managers instance of <see cref="DiskANNService"/>.
         /// 
         /// We could probably share these, but its not a big loss to scope to the <see cref="VectorManager"/> instance.
@@ -590,7 +611,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal VectorManagerResult ValueSimilarity(
+        internal unsafe VectorManagerResult ValueSimilarity(
             scoped ReadOnlySpan<byte> indexValue,
             VectorValueType valueType,
             scoped ReadOnlySpan<byte> values,
@@ -612,25 +633,10 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr);
 
-            // When a filter is present, over-retrieve candidates from DiskANN so that
-            // post-filtering has enough results to fill the requested count.
-            //
-            // FILTER-EF controls both the graph exploration breadth and the output
-            // buffer size when a filter is active, allowing it to be tuned independently
-            // from EF (which is used for unfiltered searches).
-            var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
-            var effectiveEF = !filter.IsEmpty
-                ? Math.Max(searchExplorationFactor, maxFilteringEffort)
-                : searchExplorationFactor;
+            var effectiveEF = Math.Max(searchExplorationFactor, count);
 
-            // No point in asking for more data than the effort we'll put in
-            if (retrieveCount > effectiveEF)
-            {
-                retrieveCount = effectiveEF;
-            }
-
-            EnsureDistanceBufferSize(ref outputDistances, retrieveCount);
-            EnsureIdBufferSize(ref outputIds, retrieveCount);
+            EnsureDistanceBufferSize(ref outputDistances, count);
+            EnsureIdBufferSize(ref outputIds, count);
 
             int found;
             nint continuation;
@@ -651,20 +657,105 @@ namespace Garnet.server
                     return VectorManagerResult.BadParams;
                 }
 
-                found =
-                    Service.SearchVector(
-                        context,
-                        indexPtr,
-                        vectorData.ReadOnlySpan,
-                        vectorData.ElementCount,
-                        delta,
-                        effectiveEF,
-                        filter,
-                        maxFilteringEffort,
-                        outputIds,
-                        outputDistances,
-                        out continuation
-                    );
+                if (!filter.IsEmpty)
+                {
+                    // ── Inline filtered search path ─────────
+                    // Compile the filter, set up callback state, and let Rust
+                    // evaluate per-candidate via InlineFilterCandidateCallbackImpl.
+                    // Only passing candidates are written to the output buffer,
+                    // so we size it for the desired count, not the overfetch.
+
+                    // Borrow scratch space for compiled filter program
+                    var bufferSlice = ActiveThreadSession.scratchBufferBuilder.CreateArgSlice(
+                        TotalPoolTokens * ExprToken.Size + MaxSelectors * 2 * sizeof(int));
+                    var span = MemoryMarshal.Cast<byte, ExprToken>(bufferSlice.Span);
+                    var selectorBuf = MemoryMarshal.Cast<byte, (int Start, int Length)>(
+                        bufferSlice.Span.Slice(TotalPoolTokens * ExprToken.Size));
+
+                    try
+                    {
+                        span.Clear();
+
+                        var offset = 0;
+                        var instrBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                        var tuplePoolBuf = span.Slice(offset, MaxTuplePool); offset += MaxTuplePool;
+                        var tokensBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                        var opsStackBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                        var runtimePoolBuf = span.Slice(offset, MaxRuntimePool); offset += MaxRuntimePool;
+                        var extractedFields = span.Slice(offset, MaxSelectors); offset += MaxSelectors;
+                        var stackBuf = span.Slice(offset, StackCapacity);
+
+                        var instrCount = ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+                        if (instrCount < 0)
+                        {
+                            // Compile failed — return zero results
+                            outputDistances.Length = 0;
+                            filterBitmap.Length = 0;
+                            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                            errorMsg = "ERR Compiling filter failed"u8;
+                            return VectorManagerResult.BadParams;
+                        }
+
+                        var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);
+
+                        // Pin filter bytes and scratch buffer pointers, then populate thread-static state
+                        fixed (byte* filterPtr = filter)
+                        fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
+                        fixed ((int, int)* selPtr = selectorBuf)
+                        {
+                            t_inlineFilterStatePtr = new InlineFilterState
+                            {
+                                InstrCount = instrCount,
+                                TupleCount = tupleCount,
+                                SelectorCount = selectorCount,
+                                InstrBuf = instrPtr,
+                                TuplePoolBuf = tuplePtr,
+                                RuntimePoolBuf = runtimePtr,
+                                ExtractedFields = fieldsPtr,
+                                StackBuf = stackPtr,
+                                SelectorRanges = selPtr,
+                                FilterBytes = filterPtr,
+                                FilterBytesLen = filter.Length,
+                            };
+
+                            found = Service.SearchVector(
+                                context,
+                                indexPtr,
+                                vectorData.ReadOnlySpan,
+                                vectorData.ElementCount,
+                                delta,
+                                effectiveEF,
+                                filter,
+                                maxFilteringEffort,
+                                outputIds,
+                                outputDistances,
+                                out continuation
+                            );
+                        }
+                    }
+                    finally
+                    {
+                        ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
+                        t_inlineFilterStatePtr = default;
+                    }
+                }
+                else
+                {
+                    found =
+                        Service.SearchVector(
+                            context,
+                            indexPtr,
+                            vectorData.ReadOnlySpan,
+                            vectorData.ElementCount,
+                            delta,
+                            effectiveEF,
+                            filter,
+                            maxFilteringEffort,
+                            outputIds,
+                            outputDistances,
+                            out continuation
+                        );
+                }
             }
 
             if (found < 0)
@@ -683,18 +774,6 @@ namespace Garnet.server
             // Apply post-filtering if filter is specified
             if (!filter.IsEmpty)
             {
-                // Ensure bitmap is large enough for the over-retrieved result set
-                var requiredBitmapBytes = (found + 7) >> 3;
-                if (requiredBitmapBytes > filterBitmap.Length)
-                {
-                    if (!filterBitmap.IsSpanByte)
-                    {
-                        filterBitmap.Memory.Dispose();
-                    }
-
-                    filterBitmap = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBitmapBytes), requiredBitmapBytes);
-                }
-
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
@@ -716,7 +795,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal VectorManagerResult ElementSimilarity(
+        internal unsafe VectorManagerResult ElementSimilarity(
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             int count,
@@ -736,34 +815,109 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr);
 
-            // When a filter is present, over-retrieve candidates from DiskANN
-            var retrieveCount = !filter.IsEmpty ? maxFilteringEffort : count;
-            var effectiveEF = !filter.IsEmpty
-                ? Math.Max(searchExplorationFactor, maxFilteringEffort)
-                : searchExplorationFactor;
+            var effectiveEF = Math.Max(searchExplorationFactor, count);
 
-            // No point in asking for more data than the effort we'll put in
-            if (retrieveCount > effectiveEF)
+            EnsureDistanceBufferSize(ref outputDistances, count);
+            EnsureIdBufferSize(ref outputIds, count);
+
+            int found;
+            nint continuation;
+
+            if (!filter.IsEmpty)
             {
-                retrieveCount = effectiveEF;
+                // ── Inline-filtered search path ──────────────────────────
+                // Size output buffers for desired result count
+                EnsureDistanceBufferSize(ref outputDistances, count);
+                EnsureIdBufferSize(ref outputIds, count);
+
+                // Borrow scratch space for compiled filter program
+                var bufferSlice = ActiveThreadSession.scratchBufferBuilder.CreateArgSlice(
+                    TotalPoolTokens * ExprToken.Size + MaxSelectors * 2 * sizeof(int));
+                var span = MemoryMarshal.Cast<byte, ExprToken>(bufferSlice.Span);
+                var selectorBuf = MemoryMarshal.Cast<byte, (int Start, int Length)>(
+                    bufferSlice.Span.Slice(TotalPoolTokens * ExprToken.Size));
+
+                try
+                {
+                    span.Clear();
+
+                    var offset = 0;
+                    var instrBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var tuplePoolBuf = span.Slice(offset, MaxTuplePool); offset += MaxTuplePool;
+                    var tokensBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var opsStackBuf = span.Slice(offset, MaxInstructions); offset += MaxInstructions;
+                    var runtimePoolBuf = span.Slice(offset, MaxRuntimePool); offset += MaxRuntimePool;
+                    var extractedFields = span.Slice(offset, MaxSelectors); offset += MaxSelectors;
+                    var stackBuf = span.Slice(offset, StackCapacity);
+
+                    var instrCount = ExprCompiler.TryCompile(filter, instrBuf, tuplePoolBuf, tokensBuf, opsStackBuf, out var tupleCount, out _);
+                    if (instrCount < 0)
+                    {
+                        outputDistances.Length = 0;
+                        filterBitmap.Length = 0;
+                        outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                        return VectorManagerResult.OK;
+                    }
+
+                    var selectorCount = GetSelectorRanges(instrBuf[..instrCount], instrCount, filter, selectorBuf);
+
+                    fixed (byte* filterPtr = filter)
+                    fixed (ExprToken* instrPtr = instrBuf, tuplePtr = tuplePoolBuf, runtimePtr = runtimePoolBuf, fieldsPtr = extractedFields, stackPtr = stackBuf)
+                    fixed ((int, int)* selPtr = selectorBuf)
+                    {
+                        t_inlineFilterStatePtr = new InlineFilterState
+                        {
+                            Context = context,
+                            InstrCount = instrCount,
+                            TupleCount = tupleCount,
+                            SelectorCount = selectorCount,
+                            InstrBuf = instrPtr,
+                            TuplePoolBuf = tuplePtr,
+                            RuntimePoolBuf = runtimePtr,
+                            ExtractedFields = fieldsPtr,
+                            StackBuf = stackPtr,
+                            SelectorRanges = selPtr,
+                            FilterBytes = filterPtr,
+                            FilterBytesLen = filter.Length,
+                        };
+
+                        found = Service.SearchElement(
+                            context,
+                            indexPtr,
+                            element,
+                            delta,
+                            effectiveEF,
+                            filter,
+                            maxFilteringEffort,
+                            outputIds,
+                            outputDistances,
+                            out continuation
+                        );
+
+                    }
+                }
+                finally
+                {
+                    ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
+                }
+            }
+            else
+            {
+                found =
+        Service.SearchElement(
+        context,
+        indexPtr,
+        element,
+        delta,
+        effectiveEF,
+        filter,
+        maxFilteringEffort,
+        outputIds,
+        outputDistances,
+        out continuation
+        );
             }
 
-            EnsureDistanceBufferSize(ref outputDistances, retrieveCount);
-            EnsureIdBufferSize(ref outputIds, retrieveCount);
-
-            var found =
-                Service.SearchElement(
-                    context,
-                    indexPtr,
-                    element,
-                    delta,
-                    effectiveEF,
-                    filter,
-                    maxFilteringEffort,
-                    outputIds,
-                    outputDistances,
-                    out var continuation
-                );
 
             if (found < 0)
             {
