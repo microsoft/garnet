@@ -565,9 +565,17 @@ namespace Garnet.server
 
             using (ReadRangeIndex(session, pinnedKey, ref inputCopy, stubSpan, out var status))
             {
-                if (status != GarnetStatus.OK) return;
+                if (status != GarnetStatus.OK)
+                {
+                    logger?.LogWarning("RI.SET replay: ReadRangeIndex returned {Status} for key, skipping", status);
+                    return;
+                }
                 var treePtr = ReadIndex(stubSpan).TreeHandle;
-                if (treePtr == nint.Zero) return;
+                if (treePtr == nint.Zero)
+                {
+                    logger?.LogWarning("RI.SET replay: TreeHandle is zero after ReadRangeIndex (lazy restore failed?), skipping");
+                    return;
+                }
                 BfTreeService.InsertByPtr(treePtr, field, value);
             }
         }
@@ -590,9 +598,17 @@ namespace Garnet.server
 
             using (ReadRangeIndex(session, pinnedKey, ref inputCopy, stubSpan, out var status))
             {
-                if (status != GarnetStatus.OK) return;
+                if (status != GarnetStatus.OK)
+                {
+                    logger?.LogWarning("RI.DEL replay: ReadRangeIndex returned {Status} for key, skipping", status);
+                    return;
+                }
                 var treePtr = ReadIndex(stubSpan).TreeHandle;
-                if (treePtr == nint.Zero) return;
+                if (treePtr == nint.Zero)
+                {
+                    logger?.LogWarning("RI.DEL replay: TreeHandle is zero after ReadRangeIndex (lazy restore failed?), skipping");
+                    return;
+                }
                 BfTreeService.DeleteByPtr(treePtr, field);
             }
         }

@@ -52,35 +52,55 @@ namespace Garnet.cluster
         public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
             ReplicationOffset = currentAddress;
-            var ptr = record;
-            while (ptr < record + recordLength)
+
+            var offsetUpdate = 0L;
+
+            try
             {
-                replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
-                var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
-                if (payloadLength > 0)
+                var ptr = record;
+                while (ptr < record + recordLength)
                 {
-                    aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
-                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                    // point when we take a checkpoint at the checkpoint end marker
-                    if (isCheckpointStart)
-                        ReplicationCheckpointStartOffset = ReplicationOffset;
-                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                }
-                else if (payloadLength < 0)
-                {
-                    if (!clusterProvider.serverOptions.EnableFastCommit)
+                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                    var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
+                    var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
+                    if (payloadLength > 0)
                     {
-                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                        aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                        // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
+                        // point when we take a checkpoint at the checkpoint end marker
+                        if (isCheckpointStart)
+                            ReplicationCheckpointStartOffset = ReplicationOffset + offsetUpdate;
+                        entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
-                    TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
-                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                    else if (payloadLength < 0)
+                    {
+                        if (!clusterProvider.serverOptions.EnableFastCommit)
+                        {
+                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                        }
+                        TsavoriteLogRecoveryInfo info = new();
+                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                        storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
+                        entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                    }
+                    ptr += entryLength;
+
+                    offsetUpdate += entryLength;
                 }
-                ptr += entryLength;
-                ReplicationOffset += entryLength;
             }
+            catch
+            {
+                // If an exception occurrs, be sure to advance ReplicationOffset by the amount of successful work that transpired before the error
+
+                ReplicationOffset += offsetUpdate;
+                throw;
+            }
+
+            // Before updating replication offset, we must wait for any pending Vector Set ops to complete
+            aofProcessor.WaitForVectorOperationsToComplete();
+
+            // Do the final offset update - we defer until here so Vector Set operations can proceed without waiting after each record is applied
+            ReplicationOffset += offsetUpdate;
 
             if (ReplicationOffset != nextAddress)
             {
