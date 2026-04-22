@@ -210,7 +210,8 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 useTLS: useTLS,
                 cleanClusterConfig: false,
-                sublogCount: sublogCount);
+                sublogCount: sublogCount,
+                threadPoolMinIOCompletionThreads: 512);
             context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
@@ -283,7 +284,8 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 cleanClusterConfig: false,
                 asyncReplay: asyncReplay,
-                sublogCount: sublogCount);
+                sublogCount: sublogCount,
+                threadPoolMinIOCompletionThreads: 512);
             context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 

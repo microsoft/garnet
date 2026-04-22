@@ -254,6 +254,7 @@ namespace Garnet.test.cluster
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
+        /// <param name="threadPoolMinIOCompletionThreads"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -406,6 +407,7 @@ namespace Garnet.test.cluster
         /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
         /// <param name="clusterCreds"></param>
+        /// <param name="threadPoolMinIOCompletionThreads"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -435,7 +437,8 @@ namespace Garnet.test.cluster
             int vectorSetReplayTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
-            ServerCredential clusterCreds = new ServerCredential())
+            ServerCredential clusterCreds = new ServerCredential(),
+            int threadPoolMinIOCompletionThreads = 0)
         {
 
             var opts = TestUtils.GetGarnetServerOptions(
@@ -471,7 +474,8 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
-                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
             return new GarnetServer(opts, loggerFactory);
         }
