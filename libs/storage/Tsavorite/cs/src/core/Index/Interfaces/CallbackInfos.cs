@@ -14,6 +14,11 @@ namespace Tsavorite.core
         Default,
 
         /// <summary>
+        /// Stop the operation immediately with a "wrong type" error
+        /// </summary>
+        WrongType,
+
+        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation

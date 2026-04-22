@@ -88,6 +88,12 @@ namespace Garnet.server
         public readonly VectorManager VectorManager;
 
         /// <summary>
+        /// RangeIndex (BfTree) manager for this database.
+        /// Created early and passed to the store's GarnetRecordDisposer for eviction cleanup.
+        /// </summary>
+        public readonly RangeIndexManager RangeIndexManager;
+
+        /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
         internal StorageSession StoreCollectionDbStorageSession;
@@ -104,7 +110,7 @@ namespace Garnet.server
         bool disposed = false;
 
         public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
-                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager)
+                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager, RangeIndexManager rangeIndexManager)
             : this()
         {
             Id = id;
@@ -117,6 +123,7 @@ namespace Garnet.server
             AppendOnlyFile = appendOnlyFile;
             StoreIndexMaxedOut = storeIndexMaxedOut;
             VectorManager = vectorManager;
+            RangeIndexManager = rangeIndexManager;
         }
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
@@ -131,6 +138,7 @@ namespace Garnet.server
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             StoreIndexMaxedOut = srcDb.StoreIndexMaxedOut;
             VectorManager = srcDb.VectorManager;
+            RangeIndexManager = srcDb.RangeIndexManager;
 
             if (copyLastSaveData)
             {

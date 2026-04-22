@@ -89,7 +89,10 @@ namespace Garnet.server
             }
             else
             {
-                writer.WriteSimpleString(CmdStrings.stringt);
+                if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+                    writer.WriteSimpleString(CmdStrings.rangeindext);
+                else
+                    writer.WriteSimpleString(CmdStrings.stringt);
             }
 
             return true;

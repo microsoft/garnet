@@ -23,6 +23,7 @@ namespace Garnet.server
 
         int activeDbId;
         internal VectorManager activeVectorManager;
+        RangeIndexManager activeRangeIndexManager;
 
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
@@ -302,7 +303,7 @@ namespace Garnet.server
                     StoreUpsert(stringContext, keyPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(stringContext, activeVectorManager, respServerSession, obtainServerSession, keyPtr);
+                    StoreRMW(stringContext, activeVectorManager, activeRangeIndexManager, respServerSession, obtainServerSession, keyPtr);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(stringContext, keyPtr);
@@ -366,6 +367,7 @@ namespace Garnet.server
 
                 activeDbId = db.Id;
                 activeVectorManager = db.VectorManager;
+                activeRangeIndexManager = db.RangeIndexManager;
             }
         }
 
@@ -390,6 +392,7 @@ namespace Garnet.server
         static void StoreRMW<TStringContext>(
             TStringContext stringContext,
             VectorManager vectorManager,
+            RangeIndexManager rangeIndexManager,
             RespServerSession activeServerSession,
             Func<RespServerSession> obtainServerSession,
             byte* keyPtr
@@ -419,6 +422,23 @@ namespace Garnet.server
                     vectorManager.HandleVectorSetRemoveReplication(activeServerSession.storageSession, key, ref stringInput);
                     return;
                 }
+            }
+
+            // RangeIndex commands need actual execution on replay
+            if (stringInput.header.cmd == RespCommand.RICREATE)
+            {
+                rangeIndexManager?.HandleRangeIndexCreateReplay(activeServerSession.storageSession, key, ref stringInput);
+                return;
+            }
+            if (stringInput.header.cmd == RespCommand.RISET)
+            {
+                rangeIndexManager.HandleRangeIndexSetReplay(activeServerSession.storageSession, key, ref stringInput);
+                return;
+            }
+            if (stringInput.header.cmd == RespCommand.RIDEL)
+            {
+                rangeIndexManager.HandleRangeIndexDelReplay(activeServerSession.storageSession, key, ref stringInput);
+                return;
             }
 
             var output = StringOutput.FromPinnedSpan(stackalloc byte[32]);
