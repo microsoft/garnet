@@ -222,12 +222,9 @@ namespace Resp.benchmark
         public RespReplayMessage[] GetRespReplayMessages(int threadIdx) => respReplayMessageBuffers[threadIdx];
         public List<(byte[], byte[])> GetKVPairBuffer(int threadIdx) => kvPairBuffers[threadIdx];
 
-        readonly LightEpoch aofEpoch;
-
         public AofGen(Options options)
         {
             this.options = options;
-            this.aofEpoch = new LightEpoch();
             this.aofServerOptions = new GarnetServerOptions()
             {
                 EnableAOF = true,
@@ -242,7 +239,7 @@ namespace Resp.benchmark
                 ReplicationOffsetMaxLag = 0,
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount
             };
-            aofServerOptions.GetAofSettings(0, aofEpoch, out var logSettings);
+            aofServerOptions.GetAofSettings(0, out var logSettings);
             appendOnlyFile = new GarnetAppendOnlyFile(aofServerOptions, logSettings, Program.loggerFactory.CreateLogger("AofGen - AOF instance"));
             garnetLog = appendOnlyFile.Log;
 
