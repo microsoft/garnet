@@ -160,6 +160,43 @@ namespace Garnet.cluster
 
                                     clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedElementKey(ref stringBasicContext, ref vectorBasicContext, namespaceBytes, keyBytes, valueBytes);
                                 }
+                                else if (kind == MigrationRecordSpanType.RangeIndexSnapshotChunk)
+                                {
+                                    // Intermediate chunk for a BFTree snapshot. No slot check is performed per chunk;
+                                    // the final stub record (which carries the key) is validated against the importing
+                                    // slot below. If migrateState is already an error state, simply discard.
+                                    if (migrateState > 0)
+                                    {
+                                        i++;
+                                        continue;
+                                    }
+
+                                    clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager.HandleMigratedRangeIndexChunk(payloadRaw.ReadOnlySpan);
+                                }
+                                else if (kind == MigrationRecordSpanType.RangeIndexStub)
+                                {
+                                    var payload = payloadRaw.ReadOnlySpan;
+
+                                    // Payload layout: [int keyLen][key bytes][stub bytes]
+                                    var keyLen = BinaryPrimitives.ReadInt32LittleEndian(payload);
+                                    var keyBytes = payload.Slice(sizeof(int), keyLen);
+
+                                    if (migrateState > 0)
+                                    {
+                                        i++;
+                                        continue;
+                                    }
+
+                                    var slot = HashSlotUtils.HashSlot(keyBytes);
+                                    if (!currentConfig.IsImportingSlot(slot))
+                                    {
+                                        migrateState = 1;
+                                        i++;
+                                        continue;
+                                    }
+
+                                    clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager.HandleMigratedRangeIndexStub(ref stringBasicContext, payload);
+                                }
                                 else if (kind == MigrationRecordSpanType.LogRecord)
                                 {
                                     // An error has occurred

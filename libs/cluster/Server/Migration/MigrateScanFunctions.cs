@@ -56,6 +56,13 @@ namespace Garnet.cluster
                             // we just need to remember it to migrate once the associated namespaces are all moved over
                             migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray());
                         }
+                        else if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+                        {
+                            // RangeIndex stubs can't be migrated via the normal LogRecord path because the
+                            // actual BfTree data lives in a separate on-disk file. Capture the key + stub and
+                            // defer to the post-scan RangeIndex migration driver which snapshots/compresses/chunks.
+                            migrateOperation.EncounteredRangeIndex(key.ToArray(), srcLogRecord.ValueSpan.ToArray());
+                        }
                         else if (!migrateOperation.sketch.TryHashAndStore(key))
                         {
                             return false;

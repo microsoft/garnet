@@ -189,6 +189,22 @@ namespace Garnet.cluster
                             }
                         }
                     }
+                    // Handle migration of discovered RangeIndex (BfTree) keys. These are shipped as a
+                    // sequence of GZipped snapshot chunks followed by a stub finalizer record.
+                    var rangeIndexes = migrateOperation.SelectMany(static mo => mo.RangeIndexes).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
+
+                    if (rangeIndexes.Count > 0)
+                    {
+                        var rimo = migrateOperation[0];
+                        foreach (var (key, stub) in rangeIndexes)
+                        {
+                            if (!TransmitRangeIndex(rimo, key, stub))
+                            {
+                                logger?.LogCritical("Failed to migrate RangeIndex key during migration");
+                                return false;
+                            }
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
