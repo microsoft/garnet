@@ -273,7 +273,7 @@ namespace Garnet.cluster
             };
             return entry;
 
-            void GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken, ref server.AofAddress recoveredSafeAofAddress, out string RecoveredReplicationId)
+            void GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken, ref AofAddress recoveredSafeAofAddress, out string RecoveredReplicationId)
             {
                 RecoveredReplicationId = null;
                 if (fileToken == default) return;

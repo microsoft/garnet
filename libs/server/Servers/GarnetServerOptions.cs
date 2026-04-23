@@ -89,7 +89,7 @@ namespace Garnet.server
         /// <summary>
         /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
         /// </summary>
-        public int AofTailWitnessFreq = 100;
+        public int AofTailWitnessFreqMs = 100;
 
         /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.

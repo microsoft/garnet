@@ -48,10 +48,12 @@ namespace Garnet.server
         /// <para>See <see cref="StoreWrapper.IndexAutoGrowTask"/> for implementation.</para>
         /// </summary>
         IndexAutoGrowTask,
+
         /// <summary>
         /// Replays <see cref="RespCommand.VADD"/>s on replicas in parallel.
         /// </summary>
         VectorReplicationReplayTask,
+
         /// <summary>
         /// Task used to process advance time signals at replica
         /// </summary>

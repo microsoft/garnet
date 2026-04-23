@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// Sublog replay buffer (one for each sublog)
     /// </summary>
-    internal class AofReplayContext
+    internal sealed class AofReplayContext
     {
         public readonly List<byte[]> fuzzyRegionOps = [];
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];

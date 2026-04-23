@@ -817,7 +817,7 @@ namespace Garnet.server
                 {
                     opType = opType,
                     storeVersion = txnVersion,
-                    txnID = sessionId,
+                    sessionID = sessionId,
                 };
                 appendOnlyFile.Log.SingleLog.Enqueue(header, out _);
             }
@@ -832,7 +832,7 @@ namespace Garnet.server
                             padding = (byte)AofHeaderType.TransactionHeader,
                             opType = opType,
                             storeVersion = txnVersion,
-                            txnID = sessionId,
+                            sessionID = sessionId,
                         },
                         sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber(),
                     },

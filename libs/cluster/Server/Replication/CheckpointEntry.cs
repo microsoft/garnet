@@ -40,10 +40,18 @@ namespace Garnet.cluster
 
         public CheckpointEntry()
         {
-            metadata = new(0);
+            metadata = null;
             next = null;
             _lock = new();
         }
+
+        public CheckpointEntry(int physicalSublogCount)
+        {
+            metadata = new(physicalSublogCount);
+            next = null;
+            _lock = new();
+        }
+
 
         public AofAddress GetMinAofCoveredAddress()
         {
@@ -122,9 +130,9 @@ namespace Garnet.cluster
             if (serialized.Length == 0) return null;
             using var ms = new MemoryStream(serialized);
             using var reader = new BinaryReader(ms);
-            var cEntry = new CheckpointEntry
+            var cEntry = new CheckpointEntry()
             {
-                metadata = new(0)
+                metadata = new()
                 {
                     storeVersion = reader.ReadInt64(),
                     storeHlogToken = new Guid(reader.ReadBytes(GuidSize)),

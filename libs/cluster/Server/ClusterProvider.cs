@@ -154,7 +154,7 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public void AddNewCheckpointEntry(bool full, AofAddress CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
         {
-            var entry = new CheckpointEntry();
+            var entry = new CheckpointEntry(storeWrapper.serverOptions.AofPhysicalSublogCount);
 
             entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
             entry.metadata.storeHlogToken = storeCheckpointToken;

@@ -78,6 +78,7 @@ namespace Garnet.server
         /// Flush db
         /// </summary>
         FlushDb = 0x61,
+
         /// <summary>
         /// Unified store upsert string
         /// </summary>

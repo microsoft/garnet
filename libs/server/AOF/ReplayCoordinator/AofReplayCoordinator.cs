@@ -294,7 +294,7 @@ namespace Garnet.server
                             sublogIdx,
                             ptr,
                             shardedHeader.basicHeader.sessionID,
-                            () => { });
+                            null);
                     }
 
                     // Commit (NOTE: need to ensure that we do not write to log here)
@@ -431,7 +431,8 @@ namespace Garnet.server
                     if (execute)
                     {
                         // Only one replay task will win and execute the following operation
-                        operation();
+                        if (operation != null)
+                            operation();
                     }
                 }
                 finally

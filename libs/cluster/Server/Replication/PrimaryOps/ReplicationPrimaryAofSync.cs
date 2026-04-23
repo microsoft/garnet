@@ -70,7 +70,7 @@ namespace Garnet.cluster
                 }
             }
 
-            Task.Run(aofSyncDriver.Run);
+            Task.Run(async () => await aofSyncDriver.Run());
             return true;
         }
     }
