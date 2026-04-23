@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -68,7 +67,7 @@ namespace Garnet.cluster
                     var keyCopy = new byte[key.TotalSize];
                     var valueCopy = new byte[value.TotalSize];
                     key.CopyTo(keyCopy);
-                    valueCopy.CopyTo(valueCopy);
+                    value.CopyTo(valueCopy);
 
                     return new(RetryHelperAsync(handleResponseTask, gcs, _sourceNodeId, _replaceOption, keyCopy, valueCopy, logger));
                 }

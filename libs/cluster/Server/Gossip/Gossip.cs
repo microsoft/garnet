@@ -236,37 +236,44 @@ namespace Garnet.cluster
 
             for (var entryIx = 0; entryIx < nodeEntries.Count; entryIx++)
             {
-                var (nodeId, endpoint) = nodeEntries[entryIx];
-
-                var getOrAddTask = clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger);
-
-                GarnetServerNode gsn;
-                if (getOrAddTask.IsCompletedSuccessfully)
+                try
                 {
-                    // Cannot remove .GetResult here, but it's gated by IsCompletedSuccessfully so safe
-                    (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
+                    var (nodeId, endpoint) = nodeEntries[entryIx];
+
+                    var getOrAddTask = clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger);
+
+                    GarnetServerNode gsn;
+                    if (getOrAddTask.IsCompletedSuccessfully)
+                    {
+                        // Cannot avoid blocking, but it's gated by IsCompletedSuccessfully so safe
+                        (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
+                    }
+                    else
+                    {
+                        // Otherwise copy channel & message and go async
+                        return new(GoAsyncHelperAsync(getOrAddTask, default, entryIx, null, cmd, channel.ToArray(), message.ToArray()));
+                    }
+
+                    if (gsn == null)
+                        continue;
+
+                    // Initialize GarnetServerNode
+                    // Thread-Safe initialization executes only once
+                    var initTask = gsn.InitializeAsync();
+                    if (initTask.IsCompletedSuccessfully)
+                    {
+                        // Can stay sync, so proceed
+                        gsn.TryClusterPublish(cmd, channel, message);
+                    }
+                    else
+                    {
+                        // Copy channel & message and go async
+                        return new(GoAsyncHelperAsync(default, initTask, entryIx, gsn, cmd, channel.ToArray(), message.ToArray()));
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    // Otherwise copy channel & message and go async
-                    return new(GoAsyncHelperAsync(getOrAddTask, default, entryIx, null, cmd, channel.ToArray(), message.ToArray()));
-                }
-
-                if (gsn == null)
-                    continue;
-
-                // Initialize GarnetServerNode
-                // Thread-Safe initialization executes only once
-                var initTask = gsn.InitializeAsync();
-                if (initTask.IsCompletedSuccessfully)
-                {
-                    // Can stay sync, so proceed
-                    gsn.TryClusterPublish(cmd, channel, message);
-                }
-                else
-                {
-                    // Copy channel & message and go async
-                    return new(GoAsyncHelperAsync(default, initTask, entryIx, gsn, cmd, channel.ToArray(), message.ToArray()));
+                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublishAsync)}");
                 }
             }
 
@@ -276,41 +283,52 @@ namespace Garnet.cluster
             async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)
             {
                 // Finish the task which caused us to go async
-                if (lastGsn == null)
+                try
                 {
-                    (_, lastGsn) = await getOrAddTask.ConfigureAwait(false);
-
-                    if (lastGsn != null)
+                    if (lastGsn == null)
                     {
-                        await lastGsn.InitializeAsync().ConfigureAwait(false);
-                    }
-                }
-                else
-                {
-                    await initTask.ConfigureAwait(false);
-                }
+                        (_, lastGsn) = await getOrAddTask.ConfigureAwait(false);
 
-                if (lastGsn != null)
+                        if (lastGsn != null)
+                        {
+                            await lastGsn.InitializeAsync().ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        await initTask.ConfigureAwait(false);
+                    }
+
+                    lastGsn?.TryClusterPublish(cmd, channel.Span, message.Span);
+                }
+                catch (Exception ex)
                 {
-                    lastGsn.TryClusterPublish(cmd, channel.Span, message.Span);
+                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublishAsync)} -> {nameof(GoAsyncHelperAsync)} initial completion");
                 }
 
                 // Process remainder of entries, staying async
                 for (var entryIx = lastEntryIx + 1; entryIx < nodeEntries.Count; entryIx++)
                 {
-                    var (nodeId, endpoint) = nodeEntries[entryIx];
+                    try
+                    {
+                        var (nodeId, endpoint) = nodeEntries[entryIx];
 
-                    var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
+                        var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
 
-                    if (gsn == null)
-                        continue;
+                        if (gsn == null)
+                            continue;
 
-                    // Initialize GarnetServerNode
-                    // Thread-Safe initialization executes only once
-                    await gsn.InitializeAsync().ConfigureAwait(false);
+                        // Initialize GarnetServerNode
+                        // Thread-Safe initialization executes only once
+                        await gsn.InitializeAsync().ConfigureAwait(false);
 
-                    // Publish to remote nodes
-                    gsn.TryClusterPublish(cmd, channel.Span, message.Span);
+                        // Publish to remote nodes
+                        gsn.TryClusterPublish(cmd, channel.Span, message.Span);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublishAsync)} -> {nameof(GoAsyncHelperAsync)} loop");
+                    }
                 }
             }
         }
