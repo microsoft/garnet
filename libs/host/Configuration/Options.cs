@@ -798,6 +798,12 @@ namespace Garnet
             if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
                 throw new Exception("Cannot use sharded-log without FastCommit!");
 
+            if (!EnableAOF.GetValueOrDefault())
+            {
+                if (!string.IsNullOrEmpty(AofSizeLimit))
+                    throw new GarnetException("AofSizeLimit cannot be enforced with disabled AOF!");
+            }
+
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
             {
                 if (!string.IsNullOrEmpty(AzureStorageConnectionString))
