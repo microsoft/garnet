@@ -29,7 +29,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Replay barrier used to coordinate connection of replay tasks
         /// </summary>
-        readonly Barrier barrier = new(clusterProvider.serverOptions.AofPhysicalSublogCount);
+        readonly Barrier barrier = clusterProvider.serverOptions.AofPhysicalSublogCount > 1 ? new(clusterProvider.serverOptions.AofPhysicalSublogCount) : null;
 
         /// <summary>
         /// Disposed lock
@@ -59,7 +59,7 @@ namespace Garnet.cluster
                 if (disposed)
                     return;
                 replicaReplayDrivers[physicalSublogIdx] = new ReplicaReplayDriver(physicalSublogIdx, clusterProvider, networkSender, cts, logger);
-                _ = barrier.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
+                _ = barrier?.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
             }
             finally
             {
