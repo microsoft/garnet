@@ -144,10 +144,7 @@ namespace Tsavorite.core
                 return SlowWaitAsync(this, token);
             }
 
-            // Check the cached SafeTailAddress only (O(1)). The more expensive
-            // RefreshSafeTailAddress scan is deferred to SlowWaitUncommittedAsync where
-            // per-iterator backoff logic can throttle scan frequency.
-            if (NextAddress < tsavoriteLog.SafeTailAddress)
+            if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
                 return new ValueTask<bool>(true);
             return SlowWaitUncommittedAsync(token);
         }
@@ -751,9 +748,13 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                // Use the cached SafeTailAddress for the hot path. Refresh only happens when the
-                // iterator catches up to the cache, via WaitAsync / SlowWaitUncommittedAsync.
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                // For scanUncommitted: check cached SafeTailAddress first (O(1)). Only scan the
+                // epoch table via RefreshSafeTailAddress when caught up to the cache, avoiding
+                // the O(kTableSize) scan on every record.
+                var boundary = scanUncommitted
+                    ? (currentAddress < tsavoriteLog.SafeTailAddress ? tsavoriteLog.SafeTailAddress : tsavoriteLog.RefreshSafeTailAddress())
+                    : tsavoriteLog.CommittedUntilAddress;
+                if (currentAddress >= endAddress || currentAddress >= boundary)
                     return false;
 
                 if (currentAddress < _headAddress)
@@ -871,9 +872,12 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                // Use the cached SafeTailAddress for the hot path. Refresh only happens when the
-                // iterator catches up to the cache, via WaitAsync / SlowWaitUncommittedAsync.
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                // For scanUncommitted: check cached SafeTailAddress first (O(1)). Only scan the
+                // epoch table via RefreshSafeTailAddress when caught up to the cache.
+                var boundary2 = scanUncommitted
+                    ? (currentAddress < tsavoriteLog.SafeTailAddress ? tsavoriteLog.SafeTailAddress : tsavoriteLog.RefreshSafeTailAddress())
+                    : tsavoriteLog.CommittedUntilAddress;
+                if (currentAddress >= endAddress || currentAddress >= boundary2)
                     return false;
 
                 if (currentAddress < _headAddress)
