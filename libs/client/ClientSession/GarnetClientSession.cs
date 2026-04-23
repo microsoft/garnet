@@ -184,8 +184,8 @@ namespace Garnet.client
             {
                 if (clientName != null)
                 {
-                    _ = ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false).GetAwaiter().GetResult();
-                    _ = ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false).GetAwaiter().GetResult();
+                    Execute("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession");
+                    Execute("CLIENT", "SETNAME", clientName);
                 }
             }
             catch (Exception e)
@@ -232,6 +232,20 @@ namespace Garnet.client
             catch (Exception e)
             {
                 logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false);
+                    _ = await ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
                 throw;
             }
         }

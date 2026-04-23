@@ -150,7 +150,7 @@ namespace Garnet.cluster
 
                     // 2.Send index file segments
                     await SendFileSegmentsAsync(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size).ConfigureAwait(false);
-                    
+
                     // 3. Send snapshot files
                     if (hlog_size.snapshotFileEndAddress > PageHeader.Size)
                     {
