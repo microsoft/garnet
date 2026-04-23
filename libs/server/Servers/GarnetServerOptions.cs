@@ -227,6 +227,12 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Enable per-command usage statistics tracking (calls, failures, rejections).
+        /// Exposed via INFO COMMANDSTATS.
+        /// </summary>
+        public bool CommandStatsMonitor = false;
+
+        /// <summary>
         /// Threshold (microseconds) for logging command in the slow log. 0 to disable
         /// </summary>
         public int SlowLogThreshold = 0;
