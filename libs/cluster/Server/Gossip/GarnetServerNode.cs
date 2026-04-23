@@ -179,9 +179,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private Task Gossip(byte[] configByteArray)
+        private async Task Gossip(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
+            await gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
             {
                 try
                 {
@@ -204,7 +204,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogCritical(ex, "GOSSIP faulted processing response");
                 }
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            }, TaskContinuationOptions.RunContinuationsAsynchronously | TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
         }
 
         /// <summary>

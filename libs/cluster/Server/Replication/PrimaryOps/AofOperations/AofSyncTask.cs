@@ -180,7 +180,7 @@ namespace Garnet.cluster
                         startAddress);
 
                     if (!IsConnected)
-                        garnetClient.Connect();
+                        await garnetClient.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
 
                     LogRunAofSyncTask(physicalSublogIdx, startAddress, previousAddress, logger);
 

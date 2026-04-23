@@ -197,6 +197,65 @@ namespace Garnet.client
         }
 
         /// <summary>
+        /// Connect to server
+        /// </summary>
+        /// <param name="timeoutMs">Timeout in milliseconds (default 0 for immediate timeout)</param>
+        /// <param name="token"></param>
+        public async Task ConnectAsync(int timeoutMs = 0, CancellationToken token = default)
+        {
+            socket = await ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false);
+            networkHandler = new GarnetClientSessionTcpNetworkHandler(
+                this,
+                socket,
+                networkBufferSettings,
+                networkPool,
+                sslOptions != null,
+                messageConsumer: this,
+                networkSendThrottleMax: networkSendThrottleMax,
+                logger: logger);
+            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
+            networkSender = networkHandler.GetNetworkSender();
+            networkSender.GetResponseObject();
+            unsafe
+            {
+                offset = networkSender.GetResponseObjectHead();
+                end = networkSender.GetResponseObjectTail();
+            }
+            numCommands = 0;
+
+            try
+            {
+                if (authUsername != null)
+                {
+                    await ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false);
+                }
+                else if (authPassword != null)
+                {
+                    await ExecuteAsync("AUTH", authPassword).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+
+            try
+            {
+                if (clientName != null)
+                {
+                    _ = await ExecuteAsync("CLIENT", "SETINFO", "LIB-NAME", "GarnetClientSession").ConfigureAwait(false);
+                    _ = await ExecuteAsync("CLIENT", "SETNAME", clientName).ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Client set info returned error!");
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Connect client send socket
         /// </summary>
         /// <param name="millisecondsTimeout"></param>

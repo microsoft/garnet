@@ -101,7 +101,7 @@ namespace Garnet.cluster
                         authUsername: clusterProvider.ClusterUsername,
                         authPassword: clusterProvider.ClusterPassword,
                         clientName: nameof(TryReplicateDiskbasedSync));
-                    gcs.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token);
+                    await gcs.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token).ConfigureAwait(false);
 
                     // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
                     // If FastCommit is enabled, we commit during AOF stream processing

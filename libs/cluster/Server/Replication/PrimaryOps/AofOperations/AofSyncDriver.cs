@@ -185,7 +185,7 @@ namespace Garnet.cluster
                     throw new GarnetException($"Failed to acquire read lock at {nameof(AdvancePhysicalSublogTime)}");
 
                 // Connect to replica
-                client.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
+                await client.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
 
                 var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
                 var previousTailAddress = AofAddress.Create(appendOnlyFile.Log.Size, 0);
