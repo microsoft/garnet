@@ -1175,7 +1175,7 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                safeTailRefreshEntryEnqueued?.Signal();
+                EndInflightEnqueue();
             }
             finally
             {
