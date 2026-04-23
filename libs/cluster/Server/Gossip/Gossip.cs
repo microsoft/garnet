@@ -270,7 +270,7 @@ namespace Garnet.cluster
                 }
             }
 
-            // Completed synchrously
+            // Completed synchronously
             return default;
 
             async Task GoAsyncHelperAsync(ValueTask<(bool Success, GarnetServerNode Node)> getOrAddTask, ValueTask initTask, int lastEntryIx, GarnetServerNode lastGsn, RespCommand cmd, Memory<byte> channel, Memory<byte> message)

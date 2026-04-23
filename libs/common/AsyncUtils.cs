@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#pragma warning disable VSTHRD002 // The whole point of this class is to segregate propoblematic blocking
+#pragma warning disable VSTHRD002 // The whole point of this class is to segregate problematic blocking
 
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -14,7 +14,7 @@ namespace Garnet.common
     public static class AsyncUtils
     {
         /// <summary>
-        /// Block on a a given <see cref="Task"/>.
+        /// Block on a given <see cref="Task"/>.
         /// 
         /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
         /// </summary>
@@ -23,7 +23,7 @@ namespace Garnet.common
         => t.GetAwaiter().GetResult();
 
         /// <summary>
-        /// Block on a a given <see cref="Task{TResult}"/>.
+        /// Block on a given <see cref="Task{TResult}"/>.
         /// 
         /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
         /// </summary>
@@ -32,7 +32,7 @@ namespace Garnet.common
         => t.GetAwaiter().GetResult();
 
         /// <summary>
-        /// Block on a a given <see cref="ValueTask"/>.
+        /// Block on a given <see cref="ValueTask"/>.
         /// 
         /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
         /// </summary>
@@ -41,7 +41,7 @@ namespace Garnet.common
         => t.GetAwaiter().GetResult();
 
         /// <summary>
-        /// Block on a a given <see cref="ValueTask{TResult}"/>..
+        /// Block on a given <see cref="ValueTask{TResult}"/>.
         /// 
         /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
         /// </summary>

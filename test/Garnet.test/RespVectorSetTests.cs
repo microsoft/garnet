@@ -1044,7 +1044,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public Task InteterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        public Task InterruptedVectorSetDelete_AfterMark_RecoveryAsync()
         => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]

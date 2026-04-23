@@ -344,7 +344,7 @@ namespace Garnet.server
                                         entry.ReduceDims,
                                         entry.ValueType,
                                         Convert.ToBase64String(entry.Values.Span),
-                                        Convert.ToBase64String(entry.Values.Span),
+                                        Convert.ToBase64String(entry.Element.Span),
                                         entry.Quantizer,
                                         entry.BuildExplorationFactor,
                                         Encoding.UTF8.GetString(entry.Attributes.Span),
