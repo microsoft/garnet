@@ -57,7 +57,7 @@ namespace Garnet.test.cluster
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
-            var logLevel = LogLevel.Warning;
+            var logLevel = LogLevel.Error;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
                 logLevel = value;
             (loggerFactory, loggerProvider) = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
