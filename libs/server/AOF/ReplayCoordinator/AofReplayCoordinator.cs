@@ -217,11 +217,10 @@ namespace Garnet.server
                     fixed (byte* entryPtr = entry)
                     {
                         var header = *(AofHeader*)entryPtr;
-                        _ = aofProcessor.ReplayOp(
+                        _ = aofProcessor.ReplayOpDispatch(
                             sublogIdx,
                             header,
                             replayContext,
-                            ref aofProcessor.preprocessKey,
                             replayContext.StringBasicContext,
                             replayContext.ObjectBasicContext,
                             replayContext.UnifiedBasicContext,
@@ -330,11 +329,10 @@ namespace Garnet.server
                         fixed (byte* entryPtr = entry)
                         {
                             var header = *(AofHeader*)entryPtr;
-                            _ = aofProcessor.ReplayOp(
+                            _ = aofProcessor.ReplayOpDispatch(
                                 txnGroup.VirtualSublogIdx,
                                 header,
                                 replayContext,
-                                ref aofProcessor.preprocessKey,
                                 stringContext,
                                 objectContext,
                                 unifiedContext,

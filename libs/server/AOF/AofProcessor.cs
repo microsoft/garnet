@@ -88,7 +88,8 @@ namespace Garnet.server
 
         readonly ILogger logger;
         readonly bool usingShardedLog;
-        IPreprocessKey preprocessKey;
+        SingleLogPreprocessKey singleLogPreprocessKey;
+        ShardedLogPreprocessKey shardedLogPreprocessKey;
 
         /// <summary>
         /// Create new AOF processor
@@ -105,7 +106,10 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1 || storeWrapper.serverOptions.AofReplayTaskCount > 1;
-            this.preprocessKey = usingShardedLog ? new ShardedLogPreprocessKey() { appendOnlyFile = storeWrapper.appendOnlyFile } : new SingleLogPreprocessKey();
+            if (usingShardedLog)
+                this.shardedLogPreprocessKey = new ShardedLogPreprocessKey() { appendOnlyFile = storeWrapper.appendOnlyFile };
+            else
+                this.singleLogPreprocessKey = new SingleLogPreprocessKey();
             this.obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
             this.aofReplayCoordinator = new AofReplayCoordinator(storeWrapper.serverOptions, this, logger);
@@ -303,11 +307,10 @@ namespace Garnet.server
                     aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(virtualSublogIdx, ptr, asReplica);
                     break;
                 default:
-                    _ = ReplayOp(
+                    _ = ReplayOpDispatch(
                         virtualSublogIdx,
                         header,
                         replayContext,
-                        ref preprocessKey,
                         replayContext.StringBasicContext,
                         replayContext.ObjectBasicContext,
                         replayContext.UnifiedBasicContext,
@@ -318,18 +321,38 @@ namespace Garnet.server
             }
         }
 
-        private bool ReplayOp<TPrepareKey, TStringContext, TObjectContext, TUnifiedContext>(
+        internal bool ReplayOpDispatch<TStringContext, TObjectContext, TUnifiedContext>(
                 int virtualSublogIdx,
                 AofHeader header,
                 AofReplayContext replayContext,
-                ref TPrepareKey prepareKey,
                 TStringContext stringContext,
                 TObjectContext objectContext,
                 TUnifiedContext unifiedContext,
                 byte* entryPtr,
                 int length,
                 bool asReplica)
-            where TPrepareKey : IPreprocessKey
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            if (usingShardedLog)
+                return ReplayOp(virtualSublogIdx, header, replayContext, shardedLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica);
+            else
+                return ReplayOp(virtualSublogIdx, header, replayContext, singleLogPreprocessKey, stringContext, objectContext, unifiedContext, entryPtr, length, asReplica);
+        }
+
+        private bool ReplayOp<TPreprocessKey, TStringContext, TObjectContext, TUnifiedContext>(
+                int virtualSublogIdx,
+                AofHeader header,
+                AofReplayContext replayContext,
+                TPreprocessKey preprocessKey,
+                TStringContext stringContext,
+                TObjectContext objectContext,
+                TUnifiedContext unifiedContext,
+                byte* entryPtr,
+                int length,
+                bool asReplica)
+            where TPreprocessKey : IPreprocessKey
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
@@ -348,7 +371,7 @@ namespace Garnet.server
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
-            prepareKey.PrepareKey(virtualSublogIdx, entryPtr, out var preparedParameters);
+            preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, out var preparedParameters);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
