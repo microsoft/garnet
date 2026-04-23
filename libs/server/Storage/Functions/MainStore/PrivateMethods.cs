@@ -777,13 +777,6 @@ namespace Garnet.server
                 return;
             }
 
-            // Skip logging for normal RISET/RIDEL (they use the native BfTree directly, not RMW).
-            // Only log the synthetic replication writes (marked with AppendLogArg).
-            if (input.header.cmd == RespCommand.RISET && input.arg1 != RangeIndexManager.RISETAppendLogArg)
-                return;
-            if (input.header.cmd == RespCommand.RIDEL && input.arg1 != RangeIndexManager.RIDELAppendLogArg)
-                return;
-
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Log.Enqueue(

@@ -1030,12 +1030,40 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header, one <see cref="ReadOnlySpan{_byte_}"/> entry, and one <see cref="IStoreInput"/> atomically to the log.
         /// </summary>
-        /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="input"></param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, out long logicalAddress)
+            where THeader : unmanaged where TInput : IStoreInput
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize() + input.SerializedLength;
+            var allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
+                SetHeader(length, physicalAddress);
+                safeTailRefreshEntryEnqueued?.Signal();
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
+            if (autoCommit)
+                Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header, one <see cref="ReadOnlySpan{_byte_}"/> entry, and one <see cref="IStoreInput"/> atomically to the log.
+        /// </summary>
         public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
             where TEpochAccessor : IEpochAccessor
