@@ -944,6 +944,62 @@ namespace Garnet.server
             }
         }
 
+        public void Enqueue<TInput>(AofEntryType opType, long version, int sessionId, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
+            where TInput : IStoreInput
+        {
+            if (usingSingleLog)
+            {
+                var header = new AofHeader
+                {
+                    opType = opType,
+                    storeVersion = version,
+                    sessionID = sessionId,
+                };
+
+                singleLog.log.Enqueue(
+                    header,
+                    key,
+                    ref input,
+                    out logicalAddress);
+            }
+            else
+            {
+                var shardedHeader = new AofShardedHeader
+                {
+                    basicHeader = new AofHeader
+                    {
+                        opType = opType,
+                        storeVersion = version,
+                        sessionID = sessionId,
+                        padding = (byte)AofHeaderType.ShardedHeader
+                    },
+                    sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber()
+                };
+
+                // Multi-replay only support
+                if (usingSinglePhysicalLog)
+                {
+                    singleLog.log.Enqueue(shardedHeader,
+                        key,
+                        ref input,
+                        out logicalAddress);
+                }
+                // Multi physical sublogs and multi-replay support
+                else
+                {
+                    var physicalSublogIdx = GetPhysicalSublogIdx(key);
+                    shardedLog.sublog[physicalSublogIdx].Enqueue(
+                        shardedHeader,
+                        key,
+                        ref input,
+                        out logicalAddress);
+
+                    if (serverOptions.AofAutoCommit)
+                        Commit();
+                }
+            }
+        }
+
         internal unsafe void EnqueueSafeFlushAOF(AofEntryType opType, bool unsafeTruncateLog, int dbId)
         {
             if (usingSingleLog)
