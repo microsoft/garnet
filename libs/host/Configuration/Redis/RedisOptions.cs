@@ -83,6 +83,9 @@ Specify your subject name via the cert-subject-name command line argument, if ap
         [RedisOption("latency-tracking", nameof(Options.LatencyMonitor))]
         public Option<RedisBoolean> LatencyTracking { get; set; }
 
+        [RedisOption("commandstats-tracking", nameof(Options.CommandStatsMonitor))]
+        public Option<RedisBoolean> CommandStatsTracking { get; set; }
+
         [RedisOption("loglevel", nameof(Options.LogLevel))]
         public Option<RedisLogLevel> LogLevel { get; set; }
 

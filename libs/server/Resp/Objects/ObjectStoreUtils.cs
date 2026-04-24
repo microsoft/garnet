@@ -46,6 +46,7 @@ namespace Garnet.server
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         private bool AbortWithErrorMessage(ReadOnlySpan<byte> errorMessage)
         {
+            commandErrorWritten = true;
             // Print error message to result stream
             while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                 SendAndReset();

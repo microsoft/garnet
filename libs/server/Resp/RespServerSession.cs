@@ -31,10 +31,25 @@ namespace Garnet.server
 
         public StoreWrapper StoreWrapper => this.storeWrapper;
 
+        readonly CommandStats commandStats;
+
+        /// <summary>
+        /// Flag set when a RESP error response is written during command execution.
+        /// Used by CommandStats to detect failed commands. Note: only covers error paths
+        /// that go through WriteError() or AbortWithErrorMessage(); direct TryWriteError
+        /// calls in some command handlers may not set this flag.
+        /// </summary>
+        bool commandErrorWritten;
+
         /// <summary>
         /// Get a copy of sessionMetrics
         /// </summary>
         public GarnetSessionMetrics GetSessionMetrics => sessionMetrics;
+
+        /// <summary>
+        /// Get the command stats tracker for this session
+        /// </summary>
+        public CommandStats GetCommandStats => commandStats;
 
         /// <summary>
         /// Get a copy of latencyMetrics
@@ -242,6 +257,7 @@ namespace Garnet.server
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
             this.sessionMetrics = storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? new GarnetSessionMetrics() : null;
             this.LatencyMetrics = storeWrapper.serverOptions.LatencyMonitor ? new GarnetLatencyMetricsSession(storeWrapper.monitor) : null;
+            this.commandStats = storeWrapper.serverOptions.CommandStatsMonitor ? new CommandStats() : null;
             logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
 
             this.Id = id;
@@ -383,6 +399,9 @@ namespace Garnet.server
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics);
+
+            if (storeWrapper.monitor != null)
+                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
@@ -624,6 +643,9 @@ namespace Garnet.server
                 {
                     var noScriptPassed = true;
 
+                    // Reset error flag unconditionally (only read when commandStats != null)
+                    commandErrorWritten = false;
+
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
@@ -646,6 +668,13 @@ namespace Garnet.server
                             if (clusterSession == null || CanServeSlot(cmd))
                                 _ = ProcessBasicCommands(cmd, ref basicApi);
                         }
+
+                        if (commandStats != null)
+                        {
+                            commandStats.IncrementCalls(cmd);
+                            if (commandErrorWritten)
+                                commandStats.IncrementFailed(cmd);
+                        }
                     }
                     else
                     {
@@ -659,6 +688,9 @@ namespace Garnet.server
                             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
                                 SendAndReset();
                         }
+
+                        // Track rejected command (ACL or script permission failure)
+                        commandStats?.IncrementRejected(cmd);
                     }
                 }
                 else

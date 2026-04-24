@@ -237,6 +237,7 @@ namespace Garnet.test
             bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
+            bool commandStatsMonitor = false,
             int commitFrequencyMs = 0,
             bool commitWait = false,
             bool useAzureStorage = false,
@@ -341,6 +342,7 @@ namespace Garnet.test
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
+                CommandStatsMonitor = commandStatsMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
                         : new LocalStorageNamedDeviceFactoryCreator(logger: logger),

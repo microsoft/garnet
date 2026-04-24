@@ -250,50 +250,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Change remote slot state
-        /// </summary>
-        /// <param name="nodeid"></param>
-        /// <param name="state"></param>
-        /// <returns></returns>
-        public bool TrySetSlotRanges(string nodeid, MigrateState state)
-        {
-            var status = false;
-            var client = migrateOperation[0].Client;
-            try
-            {
-                if (!CheckConnection(client))
-                    return false;
-                var stateBytes = state switch
-                {
-                    MigrateState.IMPORT => IMPORTING,
-                    MigrateState.STABLE => STABLE,
-                    MigrateState.NODE => NODE,
-                    _ => throw new Exception("Invalid SETSLOT Operation"),
-                };
-
-                status = client.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
-                {
-                    // Check if setslotsrange executed correctly
-                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    {
-                        logger?.LogError("TrySetSlot error: {error}", resp);
-                        Status = MigrateState.FAIL;
-                        return false;
-                    }
-                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid == null ? "" : nodeid);
-                    return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error occurred");
-                return false;
-            }
-
-            return status;
-        }
-
-        /// <summary>
         /// Reset local slot state
         /// </summary>
         public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
@@ -321,29 +277,6 @@ namespace Garnet.cluster
         {
             if (!clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
                 return false;
-            return true;
-        }
-
-        /// <summary>
-        /// Try recover to cluster state before migration task.
-        /// Used only for MIGRATE SLOTS option.
-        /// </summary>
-        public bool TryRecoverFromFailure()
-        {
-            // Set slot at target to stable state when migrate slots fails
-            // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
-            if (!TrySetSlotRanges(null, MigrateState.STABLE))
-            {
-                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
-                return false;
-            }
-
-            // Set slots at source node to their original state when migrate fails
-            // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
-            ResetLocalSlot();
-
-            // Log explicit migration failure.
-            Status = MigrateState.FAIL;
             return true;
         }
     }
