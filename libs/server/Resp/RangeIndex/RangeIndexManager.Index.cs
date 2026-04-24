@@ -3,9 +3,12 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Garnet.server.BfTreeInterop;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -162,21 +165,52 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">The raw key bytes (used to compute the key hash for lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
-        internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan)
+        /// <param name="deleteFiles">When <c>true</c> (DEL/UNLINK), delete the BfTree data files
+        /// on disk after disposing the native tree. When <c>false</c> (eviction), files are
+        /// preserved for lazy restore on next access.</param>
+        internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, bool deleteFiles)
         {
             ref readonly var stub = ref ReadIndex(valueSpan);
-            if (stub.TreeHandle == nint.Zero)
+
+            if (stub.TreeHandle == nint.Zero && !deleteFiles)
                 return;
 
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
-                UnregisterIndex(stub.TreeHandle);
+                if (stub.TreeHandle != nint.Zero)
+                    UnregisterIndex(stub.TreeHandle);
+
+                if (deleteFiles && stub.StorageBackend == (byte)StorageBackendType.Disk)
+                    DeleteTreeFiles(key);
             }
             finally
             {
                 rangeIndexLocks.ReleaseExclusiveLock(lockToken);
+            }
+        }
+
+        /// <summary>
+        /// Delete BfTree data files for a key. Removes the entire key directory
+        /// (<c>{dataDir}/rangeindex/{hash}/</c>) containing <c>data.bftree</c>,
+        /// <c>flush.bftree</c>, and any <c>snapshot.*.bftree</c> files.
+        /// Called after a DEL/UNLINK removes the key from the main store.
+        /// </summary>
+        /// <param name="key">The raw key bytes used to derive the deterministic directory path.</param>
+        private void DeleteTreeFiles(ReadOnlySpan<byte> key)
+        {
+            try
+            {
+                var keyDir = Path.Combine(dataDir, "rangeindex", HashKeyToDirectoryName(key));
+                if (Directory.Exists(keyDir))
+                {
+                    Directory.Delete(keyDir, recursive: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to delete BfTree data files for deleted RangeIndex key");
             }
         }
 

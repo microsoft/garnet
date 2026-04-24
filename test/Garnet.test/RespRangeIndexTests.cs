@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -2011,6 +2012,87 @@ namespace Garnet.test
                 val = db.Execute("RI.GET", "aofonly", "key-d");
                 ClassicAssert.AreEqual("val-d", (string)val, "new insert should work after AOF-only recovery");
             }
+        }
+
+        /// <summary>
+        /// Verifies that DEL on a disk-backed RangeIndex cleans up BfTree data files on disk.
+        /// After RI.CREATE with DISK backend, a data.bftree file should exist. After DEL,
+        /// the entire key directory (containing data.bftree) should be removed.
+        /// </summary>
+        [Test]
+        public void RIDiskFileCleanupOnDeleteTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Create a disk-backed range index
+            db.Execute("RI.CREATE", "cleanup", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            db.Execute("RI.SET", "cleanup", "key1", "val1");
+
+            // Verify the rangeindex directory exists with data.bftree
+            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
+            ClassicAssert.IsTrue(Directory.Exists(rangeIndexDir), "rangeindex directory should exist after RI.CREATE");
+            var keyDirs = Directory.GetDirectories(rangeIndexDir);
+            ClassicAssert.AreEqual(1, keyDirs.Length, "should have exactly one key directory");
+            ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should exist");
+
+            // Delete the range index
+            var delResult = db.KeyDelete("cleanup");
+            ClassicAssert.IsTrue(delResult, "DEL should return true");
+
+            // Verify the key directory has been cleaned up
+            keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
+            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL");
+        }
+
+        /// <summary>
+        /// Verifies that DEL cleans up files even for a RangeIndex whose tree was previously
+        /// evicted (TreeHandle == 0). This covers the edge case where the stub is on disk
+        /// with a zeroed handle.
+        /// </summary>
+        [Test]
+        public void RIDiskFileCleanupOnDeleteAfterEvictionTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true);
+            server.Start();
+
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Create a disk-backed range index on an early page
+            db.Execute("RI.CREATE", "evictdel", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            db.Execute("RI.SET", "evictdel", "key1", "val1");
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live after creation");
+
+            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
+            ClassicAssert.IsTrue(Directory.Exists(rangeIndexDir), "rangeindex directory should exist");
+
+            // Fill the log with string keys to push RI stub below HeadAddress and trigger eviction
+            for (var i = 0; i < 200; i++)
+                db.StringSet($"filler{i:D4}", $"data{i:D4}");
+
+            // Verify eviction actually occurred
+            ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "tree should have been freed by eviction");
+
+            // Files should still exist after eviction (preserved for lazy restore)
+            var keyDirs = Directory.GetDirectories(rangeIndexDir);
+            ClassicAssert.AreEqual(1, keyDirs.Length, "key directory should survive eviction");
+            ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should survive eviction");
+
+            // Lazy restore and then delete the range index
+            var val = db.Execute("RI.GET", "evictdel", "key1");
+            ClassicAssert.AreEqual("val1", (string)val, "lazy restore should work after eviction");
+
+            var delResult = db.KeyDelete("evictdel");
+            ClassicAssert.IsTrue(delResult, "DEL should return true");
+
+            // Verify the key directory has been cleaned up
+            keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
+            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL, even post-eviction");
         }
     }
 }
