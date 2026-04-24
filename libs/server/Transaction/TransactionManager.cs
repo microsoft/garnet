@@ -195,6 +195,7 @@ namespace Garnet.server
             {
                 txnKeysParseState.Count = 0;
                 saveKeyRecvBufferPtr = null;
+                firstKeyInCurrentRecvBuffer = 0;
                 txnScratchBufferAllocator.Reset();
             }
         }
@@ -339,12 +340,8 @@ namespace Garnet.server
 
         internal void GetSlotVerificationInput(byte* recvBufferPtr, byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
         {
-            // Copy keys if buffer changed since last queued command
-            if (recvBufferPtr != saveKeyRecvBufferPtr)
-            {
-                CopyExistingKeysToScratchBuffer();
-                saveKeyRecvBufferPtr = recvBufferPtr;
-            }
+            // Materialize only keys captured from the previous receive buffer when it changes.
+            OnRecvBufferChanged(recvBufferPtr);
 
             watchContainer.SaveKeysToKeyList(this);
             clusterSlotVerificationInput = new ClusterSlotVerificationInput
