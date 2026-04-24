@@ -474,8 +474,8 @@ namespace Garnet.server
 
             // Only initialize ETag state for ETag-specific commands; non-ETag commands are ETag-blind
             var isEtagCommand = cmd is RespCommand.DELIFGREATER or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG;
-            var shouldUpdateEtag = isEtagCommand && logRecord.Info.HasETag;
-            if (shouldUpdateEtag)
+            var shouldUpdateEtag = isEtagCommand;
+            if (isEtagCommand && logRecord.Info.HasETag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             var shouldCheckExpiration = true;
 
@@ -1212,8 +1212,8 @@ namespace Garnet.server
 
             // Only initialize ETag state for ETag-specific commands; non-ETag commands are ETag-blind
             var isEtagCommand = cmd is RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG;
-            bool shouldUpdateEtag = isEtagCommand && srcLogRecord.Info.HasETag;
-            if (shouldUpdateEtag)
+            bool shouldUpdateEtag = isEtagCommand;
+            if (isEtagCommand && srcLogRecord.Info.HasETag)
             {
                 // During checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
