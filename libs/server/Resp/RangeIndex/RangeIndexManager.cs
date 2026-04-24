@@ -38,7 +38,7 @@ namespace Garnet.server
         /// Stored in <c>RecordDataHeader.RecordType</c> to distinguish RI stubs
         /// from normal strings (0) and VectorSet stubs.
         /// </summary>
-        internal const byte RangeIndexRecordType = 2;
+        public const byte RangeIndexRecordType = 2;
 
         /// <summary>Size of the RangeIndex stub in bytes.</summary>
         internal const int IndexSizeBytes = RangeIndexStub.Size;

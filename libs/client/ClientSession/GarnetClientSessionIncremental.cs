@@ -42,6 +42,18 @@ namespace Garnet.client
         /// Bespoke encoding for Vector Set indexes.
         /// </summary>
         VectorSetIndex = 3,
+
+        /// <summary>
+        /// A single chunk of a gzipped BfTree snapshot. Streamed before <see cref="RangeIndexStub"/>.
+        /// Payload format: <c>[int keyLen][key bytes][int chunkIndex][int totalChunks][long uncompressedSnapshotSize][int chunkLen][chunk bytes]</c>.
+        /// </summary>
+        RangeIndexSnapshotChunk = 4,
+
+        /// <summary>
+        /// Finalizer for a RangeIndex (BfTree) migration. Sent after all <see cref="RangeIndexSnapshotChunk"/> entries for this key.
+        /// Payload format: <c>[int keyLen][key bytes][stub bytes]</c>.
+        /// </summary>
+        RangeIndexStub = 5,
     }
 
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer

@@ -21,6 +21,7 @@ namespace Garnet.cluster
             public StoreScan storeScan;
 
             private readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+            private readonly ConcurrentDictionary<byte[], byte[]> rangeIndexKeysToMigrate;
 
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
@@ -29,6 +30,8 @@ namespace Garnet.cluster
             public GarnetClientSession Client => gcs;
 
             public IEnumerable<KeyValuePair<byte[], byte[]>> VectorSets => vectorSetsIndexKeysToMigrate;
+
+            public IEnumerable<KeyValuePair<byte[], byte[]>> RangeIndexes => rangeIndexKeysToMigrate;
 
             public void ThrowIfCancelled() => session._cts.Token.ThrowIfCancellationRequested();
 
@@ -45,6 +48,9 @@ namespace Garnet.cluster
             public void EncounteredVectorSet(byte[] key, byte[] value)
             => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
+            public void EncounteredRangeIndex(byte[] key, byte[] stubBytes)
+            => rangeIndexKeysToMigrate.TryAdd(key, stubBytes);
+
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
@@ -54,6 +60,7 @@ namespace Garnet.cluster
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
+                rangeIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
             public bool Initialize()
@@ -283,6 +290,21 @@ namespace Garnet.cluster
                 var delRes = localServerSession.BasicGarnetApi.DELETE(key);
 
                 session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key), delRes);
+            }
+
+            /// <summary>
+            /// Delete a migrated RangeIndex key after transfer if _copyOption is not set.
+            /// The normal DELETE path triggers the RangeIndex eviction callback which tears down
+            /// the native BfTree instance and removes its data files.
+            /// </summary>
+            public void DeleteRangeIndex(PinnedSpanByte key)
+            {
+                if (session._copyOption)
+                    return;
+
+                var delRes = localServerSession.BasicGarnetApi.DELETE(key);
+
+                session.logger?.LogDebug("Deleting RangeIndex {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key), delRes);
             }
         }
     }
