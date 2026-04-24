@@ -1591,6 +1591,9 @@ namespace Garnet.test
                 // Phase 2: add more data AFTER checkpoint (logged to AOF)
                 db.Execute("RI.SET", "earlyck", "key-A", "val-A-updated");
                 db.Execute("RI.SET", "earlyck", "key-C", "val-C");
+
+                // Commit AOF
+                db.Execute("COMMITAOF");
             }
 
             // Recover — checkpoint restored first, then AOF entries replayed
