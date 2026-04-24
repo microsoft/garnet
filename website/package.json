@@ -40,8 +40,10 @@
     "lodash-es": "4.18.1",
     "//minimatch": "CVE-2024-21538, CVE-2023-36326, CVE-2023-34104 (ReDoS)",
     "minimatch": "3.1.5",
-    "//dompurify": "CVE-2025-26791 (XSS)",
-    "dompurify": "3.3.3"
+    "//dompurify": "CVE-2025-26791, CVE-2026-0540, CVE-2026-41238, CVE-2026-41239, CVE-2026-41240 (XSS / prototype pollution)",
+    "dompurify": "3.4.0",
+    "//uuid": "GHSA uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+    "uuid": "14.0.0"
   },
   "browserslist": {
     "production": [
