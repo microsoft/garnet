@@ -309,7 +309,7 @@ namespace Garnet.server
         /// Set log shift tail callbacks
         /// </summary>
         /// <param name="sublogIdx"></param>
-        /// <param name="SafeTailShiftCallback"></param>
+        /// <param name="safeTailPageShiftCallback"></param>
         public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> safeTailPageShiftCallback)
         {
             if (singleLog != null)
