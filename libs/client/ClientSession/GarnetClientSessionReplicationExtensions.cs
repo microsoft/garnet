@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -512,6 +513,93 @@ namespace Garnet.client
 
             //4
             while (!RespWriteUtils.TryWriteBulkString(aofAddress, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Issue CLUSTER APPEND_LOG with initialization parameters
+        /// </summary>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAppendLogInit"/>
+        /// <param name="nodeId"></param>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        /// <exception cref="Exception"></exception>
+        public Task<string> ExecuteClusterAppendLogInit(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress)
+        {
+            Debug.Assert(nodeId != null);
+
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            var curr = offset;
+            var arraySize = 7;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 2
+            while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 3
+            while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 4
+            while (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 5
+            while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 6
+            while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 7
+            while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;

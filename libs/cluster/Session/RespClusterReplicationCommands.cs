@@ -181,7 +181,7 @@ namespace Garnet.cluster
             invalidParameters = false;
 
             // Expecting exactly 6 arguments (6-th argument is AOF page parsed later)
-            if (parseState.Count != 6)
+            if (parseState.Count > 6 || parseState.Count < 5)
             {
                 invalidParameters = true;
                 return true;
@@ -207,6 +207,9 @@ namespace Garnet.cluster
                     replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
                 else
                     throw new GarnetException($"Failed to process {nameof(NetworkClusterAppendLog)}: [physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Error, clientResponse: false);
+
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
                 return true;
             }
 

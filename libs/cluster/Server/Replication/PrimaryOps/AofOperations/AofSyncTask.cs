@@ -176,7 +176,7 @@ namespace Garnet.cluster
                         "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
                         nameof(AofSyncTask.RunAofSyncTask),
                         physicalSublogIdx,
-                        aofSyncDriver.remoteNodeId,
+                        remoteNodeId,
                         startAddress);
 
                     if (!IsConnected)
@@ -187,12 +187,13 @@ namespace Garnet.cluster
                     iter = clusterProvider.storeWrapper.appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
 
                     // Send ping to initialize replication stream
-                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, physicalSublogIdx, -1, -1, -1, -1, 0);
-                    garnetClient.CompletePending(false);
+                    var resp = await garnetClient.ExecuteClusterAppendLogInit(localNodeId, physicalSublogIdx, -1, -1, -1);
+                    if (!resp.Equals("OK"))
+                        throw new GarnetException("Failed to initialize AofSync stream!");
 
                     await iter.BulkConsumeAllAsync(
                         this,
-                        aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                        clusterProvider.serverOptions.ReplicaSyncDelayMs,
                         maxChunkSize: 1 << 20,
                         cts.Token).ConfigureAwait(false);
                 }
