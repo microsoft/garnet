@@ -789,24 +789,27 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
+                SetHeader(length, (byte*)physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
-            SetHeader(length, (byte*)physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -832,28 +835,32 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                foreach (var entry in entries)
+                {
+                    var length = entry.SerializedLength;
+                    entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
+                    SetHeader(length, (byte*)physicalAddress);
+                    physicalAddress += Align(length) + headerSize;
+                }
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            foreach (var entry in entries)
-            {
-                var length = entry.SerializedLength;
-                entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
-                SetHeader(length, (byte*)physicalAddress);
-                physicalAddress += Align(length) + headerSize;
-            }
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -873,26 +880,29 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue)
-                throw new TsavoriteException("Attempting to enqueue into a completed log");
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (commitNum == long.MaxValue)
+                    throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                fixed (byte* bp = entry)
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+                SetHeader(length, (byte*)physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            fixed (byte* bp = entry)
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
-            SetHeader(length, (byte*)physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -916,23 +926,26 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit && !noCommit) Commit();
             return true;
         }
@@ -952,25 +965,28 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                fixed (byte* bp = &entry.GetPinnableReference())
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+                SetHeader(length, (byte*)physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
-            SetHeader(length, (byte*)physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -991,12 +1007,17 @@ namespace Tsavorite.core
             epoch.Resume();
 
             logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
+            try
+            {
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             if (autoCommit) Commit();
         }
 
@@ -1017,14 +1038,19 @@ namespace Tsavorite.core
             epoch.Resume();
 
             logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
+            try
+            {
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             if (autoCommit) Commit();
         }
 
@@ -1081,15 +1107,20 @@ namespace Tsavorite.core
             epoch.Resume();
 
             logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            var offset = headerSize;
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
+            try
+            {
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                var offset = headerSize;
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             if (autoCommit) Commit();
         }
 
@@ -1112,18 +1143,23 @@ namespace Tsavorite.core
             epoch.Resume();
 
             logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item2.TotalSize();
-            item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
+            try
+            {
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item2.TotalSize();
+                item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             if (autoCommit) Commit();
         }
 
@@ -1144,12 +1180,18 @@ namespace Tsavorite.core
             epoch.Resume();
 
             logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            _ = input.CopyTo(physicalAddress + headerSize + sizeof(THeader), input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
+            try
+            {
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                _ = input.CopyTo(physicalAddress + headerSize + sizeof(THeader), input.SerializedLength);
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             if (autoCommit) Commit();
         }
 
@@ -1274,14 +1316,19 @@ namespace Tsavorite.core
             epoch.Resume();
 
             logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *physicalAddress = userHeader;
-            var offset = sizeof(byte);
-            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
+            try
+            {
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *physicalAddress = userHeader;
+                var offset = sizeof(byte);
+                item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
+            {
+                EndInflightEnqueue();
+                epoch.Suspend();
+            }
             if (autoCommit) Commit();
         }
 
@@ -1381,26 +1428,29 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -1424,28 +1474,31 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                var offset = headerSize + sizeof(THeader);
+                item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item1.TotalSize();
+                item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                offset += item2.TotalSize();
+                item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item2.TotalSize();
-            item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -1466,24 +1519,27 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *physicalAddress = userHeader;
+                var offset = sizeof(byte);
+                item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+                SetHeader(length, physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *physicalAddress = userHeader;
-            var offset = sizeof(byte);
-            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
@@ -2536,27 +2592,30 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out var logicalAddress))
+            try
+            {
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out var logicalAddress))
+                {
+                    return false;
+                }
+
+                // Finish filling in all fields
+                info.BeginAddress = BeginAddress;
+                info.UntilAddress = logicalAddress + allocatedLength;
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+
+                var entryBody = info.ToByteArray();
+                fixed (byte* bp = entryBody)
+                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
+                SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                return false;
             }
-
-            // Finish filling in all fields
-            info.BeginAddress = BeginAddress;
-            info.UntilAddress = logicalAddress + allocatedLength;
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-
-            var entryBody = info.ToByteArray();
-            fixed (byte* bp = entryBody)
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
-            SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
-            EndInflightEnqueue();
-            epoch.Suspend();
             // Return the commit tail
             return true;
         }
@@ -3008,30 +3067,34 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
-
             BeginInflightEnqueue();
-            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            try
+            {
+                if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+                if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+                {
+                    if (cannedException != null)
+                        throw cannedException;
+                    return false;
+                }
+
+                var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+                for (var i = 0; i < totalEntries; i++)
+                {
+                    var span = readOnlySpanBatch.Get(i);
+                    var entryLength = span.Length;
+                    fixed (byte* bp = &span.GetPinnableReference())
+                        Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryLength, entryLength);
+                    SetHeader(entryLength, (byte*)physicalAddress);
+                    physicalAddress += Align(entryLength) + headerSize;
+                }
+            }
+            finally
             {
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
-                return false;
             }
-
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            for (var i = 0; i < totalEntries; i++)
-            {
-                var span = readOnlySpanBatch.Get(i);
-                var entryLength = span.Length;
-                fixed (byte* bp = &span.GetPinnableReference())
-                    Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryLength, entryLength);
-                SetHeader(entryLength, (byte*)physicalAddress);
-                physicalAddress += Align(entryLength) + headerSize;
-            }
-            EndInflightEnqueue();
-            epoch.Suspend();
             if (autoCommit) Commit();
             return true;
         }
