@@ -74,6 +74,10 @@ namespace Garnet.common
         /// Scan and return distribution of in-memory portion of hybrid logs
         /// </summary>
         HLOGSCAN,
+        /// <summary>
+        /// Per-command usage statistics (calls, failures, rejections)
+        /// </summary>
+        COMMANDSTATS,
     }
 
     /// <summary>
