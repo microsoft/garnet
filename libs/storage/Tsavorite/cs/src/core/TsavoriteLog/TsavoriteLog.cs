@@ -445,11 +445,17 @@ namespace Tsavorite.core
             // Invoke callback outside epoch protection. Producer drive and direct RefreshSafeTailAddress
             // callers may hold the epoch; suspend it so the callback can re-enter log APIs without
             // tripping nested-epoch asserts or corrupting epoch bookkeeping.
+            // Exceptions are caught and logged — the callback is best-effort (e.g., AOF truncation)
+            // and must not propagate into EndInflightEnqueue / producer cleanup paths.
             var isProtected = epoch.ThisInstanceProtected();
             if (isProtected) epoch.Suspend();
             try
             {
                 cb(oldSafe, newSafe);
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "SafeTailPageShiftCallback failed");
             }
             finally
             {
@@ -1005,10 +1011,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
+            BeginInflightEnqueue();
             try
             {
+                logicalAddress = AllocateBlock(allocatedLength);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
                 SetHeader(length, physicalAddress);
@@ -1036,10 +1042,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
+            BeginInflightEnqueue();
             try
             {
+                logicalAddress = AllocateBlock(allocatedLength);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
                 var offset = headerSize + sizeof(THeader);
@@ -1071,10 +1077,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
-
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
                 var offset = headerSize + sizeof(THeader);
@@ -1082,10 +1088,10 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1105,10 +1111,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
+            BeginInflightEnqueue();
             try
             {
+                logicalAddress = AllocateBlock(allocatedLength);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 var offset = headerSize;
                 item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
@@ -1141,10 +1147,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
+            BeginInflightEnqueue();
             try
             {
+                logicalAddress = AllocateBlock(allocatedLength);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
                 var offset = headerSize + sizeof(THeader);
@@ -1178,10 +1184,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
+            BeginInflightEnqueue();
             try
             {
+                logicalAddress = AllocateBlock(allocatedLength);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *(THeader*)(physicalAddress + headerSize) = userHeader;
                 _ = input.CopyTo(physicalAddress + headerSize + sizeof(THeader), input.SerializedLength);
@@ -1207,6 +1213,7 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength);
@@ -1217,10 +1224,10 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1240,6 +1247,7 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
@@ -1250,10 +1258,10 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1278,6 +1286,7 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            BeginInflightEnqueue();
             try
             {
                 logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
@@ -1290,10 +1299,10 @@ namespace Tsavorite.core
                 offset += item2.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1314,10 +1323,10 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
+            BeginInflightEnqueue();
             try
             {
+                logicalAddress = AllocateBlock(allocatedLength);
                 var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
                 *physicalAddress = userHeader;
                 var offset = sizeof(byte);
@@ -1338,19 +1347,13 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.flushEvent;
-                BeginInflightEnqueue();
                 if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
-                {
                     return logicalAddress;
-                }
 
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
                 Debug.Assert(logicalAddress == 0);
 
-                // Clear our in-flight slot before suspending — LightEpoch does not auto-reset user
-                // words on Release. Without this, the stale low publish would pin min(inflight) and
-                // prevent SafeTailAddress from advancing. NotifyParkedWaiters wakes any readers that
-                // were held back by our Begin publish.
+                // Clear in-flight slot before suspending, re-publish after resuming
                 EndInflightEnqueue();
                 epoch.Suspend();
                 if (cannedException != null)
@@ -1362,6 +1365,7 @@ namespace Tsavorite.core
                 finally
                 {
                     epoch.Resume();
+                    BeginInflightEnqueue();
                 }
             }
         }
@@ -1373,23 +1377,15 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.flushEvent;
-                BeginInflightEnqueue();
                 allocator.TryAllocateRetryNow(recordSize, out var logicalAddress);
                 if (logicalAddress > 0)
-                {
                     return logicalAddress;
-                }
 
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled
                 Debug.Assert(logicalAddress == 0);
 
-                // Clear our in-flight slot before suspending — LightEpoch does not auto-reset user
-                // words on Release. Without this, the stale low publish would pin min(inflight) and
-                // prevent SafeTailAddress from advancing.
+                // Clear in-flight slot before suspending, re-publish after resuming
                 EndInflightEnqueue();
-
-                // We are holding the TsavoriteLog's epoch; release and then reacquire it. And if the caller's epoch is
-                // also held, suspend and reacquire it as well.
                 epoch.Suspend();
                 var suspended = epochAccessor.TrySuspend();
                 try
@@ -1403,6 +1399,7 @@ namespace Tsavorite.core
                     if (suspended)
                         epochAccessor.Resume();
                     epoch.Resume();
+                    BeginInflightEnqueue();
                 }
             }
         }

@@ -234,7 +234,6 @@ namespace Resp.benchmark
                 EnableFastCommit = true,
                 CommitFrequencyMs = -1,
                 FastAofTruncate = true,
-                AofReplicationRefreshFrequencyMs = options.AofReplicationRefreshFrequencyMs,
                 EnableCluster = true,
                 ReplicationOffsetMaxLag = 0,
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount
