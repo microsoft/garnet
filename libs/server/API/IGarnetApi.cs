@@ -140,9 +140,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
-        /// <param name="withEtag">Whether to include the ETag in the operation</param>
         /// <returns></returns>
-        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false);
+        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -150,9 +149,8 @@ namespace Garnet.server
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
         /// <param name="result">The result of the operation.</param>
-        /// <param name="withEtag">Whether to include the ETag in the operation</param>
         /// <returns></returns>
-        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false);
+        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result);
         #endregion
 
         #region EXISTS

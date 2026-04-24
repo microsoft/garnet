@@ -417,7 +417,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SET EX NX [WITHETAG]
+        /// SET EX NX
         /// </summary>
         private bool NetworkSETEXNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -429,7 +429,6 @@ namespace Garnet.server
             ReadOnlySpan<byte> errorMessage = default;
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
-            var etagOption = EtagOption.None;
             var getValue = false;
 
             var tokenIdx = 2;
@@ -493,31 +492,7 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    if (etagOption != EtagOption.None)
-                    {
-                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
-                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
-                        break;
-                    }
-
                     getValue = true;
-                }
-                else if (nextOpt.SequenceEqual(CmdStrings.WITHETAG))
-                {
-                    if (etagOption != EtagOption.None)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        break;
-                    }
-
-                    if (getValue)
-                    {
-                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
-                        errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
-                        break;
-                    }
-
-                    etagOption = EtagOption.WithETag;
                 }
                 else
                 {
@@ -542,8 +517,6 @@ namespace Garnet.server
                 return true;
             }
 
-            bool withEtag = etagOption == EtagOption.WithETag;
-
             bool isHighPrecision = expOption == ExpirationOption.PX;
 
             switch (expOption)
@@ -554,13 +527,13 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue || withEtag
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, withEtag, ref storageApi)
+                            return getValue
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, false, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, false, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -569,11 +542,11 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, false, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, withEtag, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, false, ref storageApi);
                     }
                     break;
             }

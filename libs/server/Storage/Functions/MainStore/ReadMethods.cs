@@ -66,12 +66,6 @@ namespace Garnet.server
             }
             else if (cmd > RespCommandExtensions.LastValidCommand)
             {
-                if (srcLogRecord.Info.HasETag)
-                {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                    return true;
-                }
-
                 var valueLength = value.Length;
 
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
@@ -88,12 +82,11 @@ namespace Garnet.server
                 }
             }
 
-            if (srcLogRecord.Info.HasETag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
+            // Only set ETag state for GETWITHETAG/GETIFNOTMATCH
             if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
             {
+                if (srcLogRecord.Info.HasETag)
+                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                 ETagState.ResetState(ref functionsState.etagState);
                 return true;
@@ -103,9 +96,6 @@ namespace Garnet.server
                 CopyRespTo(value, ref output);
             else
                 CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
-
-            if (srcLogRecord.Info.HasETag)
-                ETagState.ResetState(ref functionsState.etagState);
 
             return true;
         }

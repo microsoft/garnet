@@ -164,12 +164,12 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
-            => storageSession.RENAME(oldKey, newKey, withEtag);
+        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey)
+            => storageSession.RENAME(oldKey, newKey);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
-            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
+        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result)
+            => storageSession.RENAMENX(oldKey, newKey, out result);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
