@@ -63,6 +63,8 @@ namespace Garnet.server
                 value = InfoMetricsType.CINFO;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("HLOGSCAN"u8))
                 value = InfoMetricsType.HLOGSCAN;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("COMMANDSTATS"u8))
+                value = InfoMetricsType.COMMANDSTATS;
             else return false;
 
             return true;
