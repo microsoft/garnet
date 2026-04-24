@@ -445,11 +445,17 @@ namespace Tsavorite.core
             // Invoke callback outside epoch protection. Producer drive and direct RefreshSafeTailAddress
             // callers may hold the epoch; suspend it so the callback can re-enter log APIs without
             // tripping nested-epoch asserts or corrupting epoch bookkeeping.
+            // Exceptions are caught and logged — the callback is best-effort (e.g., AOF truncation)
+            // and must not propagate into EndInflightEnqueue / producer cleanup paths.
             var isProtected = epoch.ThisInstanceProtected();
             if (isProtected) epoch.Suspend();
             try
             {
                 cb(oldSafe, newSafe);
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "SafeTailPageShiftCallback failed");
             }
             finally
             {
@@ -1082,10 +1088,10 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1217,10 +1223,10 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1250,10 +1256,10 @@ namespace Tsavorite.core
                 offset += item1.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1290,10 +1296,10 @@ namespace Tsavorite.core
                 offset += item2.TotalSize();
                 _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
                 SetHeader(length, physicalAddress);
-                EndInflightEnqueue();
             }
             finally
             {
+                EndInflightEnqueue();
                 epoch.Suspend();
             }
             if (autoCommit)
@@ -1339,9 +1345,17 @@ namespace Tsavorite.core
             {
                 var flushEvent = allocator.flushEvent;
                 BeginInflightEnqueue();
-                if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
+
+                long logicalAddress;
+                try
                 {
-                    return logicalAddress;
+                    if (allocator.TryAllocateRetryNow(recordSize, out logicalAddress))
+                        return logicalAddress;
+                }
+                catch
+                {
+                    EndInflightEnqueue();
+                    throw;
                 }
 
                 // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
@@ -1349,8 +1363,7 @@ namespace Tsavorite.core
 
                 // Clear our in-flight slot before suspending — LightEpoch does not auto-reset user
                 // words on Release. Without this, the stale low publish would pin min(inflight) and
-                // prevent SafeTailAddress from advancing. NotifyParkedWaiters wakes any readers that
-                // were held back by our Begin publish.
+                // prevent SafeTailAddress from advancing.
                 EndInflightEnqueue();
                 epoch.Suspend();
                 if (cannedException != null)
@@ -1374,7 +1387,18 @@ namespace Tsavorite.core
             {
                 var flushEvent = allocator.flushEvent;
                 BeginInflightEnqueue();
-                allocator.TryAllocateRetryNow(recordSize, out var logicalAddress);
+
+                long logicalAddress;
+                try
+                {
+                    allocator.TryAllocateRetryNow(recordSize, out logicalAddress);
+                }
+                catch
+                {
+                    EndInflightEnqueue();
+                    throw;
+                }
+
                 if (logicalAddress > 0)
                 {
                     return logicalAddress;
