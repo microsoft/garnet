@@ -25,7 +25,7 @@ namespace Garnet.client
             /// <summary>
             /// Maximum number of concurrent instances of LightEpoch supported.
             /// </summary>
-            internal const int MaxInstances = 16;
+            internal const int MaxInstances = 1024;
 
             /// <summary>
             /// Anchor field for the buffer.
