@@ -74,20 +74,14 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            // Serializing key & ObjectInput to RMW log
-            fixed (byte* keyPtr = key)
-            {
-                var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-
-                functionsState.appendOnlyFile.Log.Enqueue(
-                    AofEntryType.ObjectStoreRMW,
-                    version,
-                    sessionID,
-                    sbKey,
-                    ref input,
-                    epochAccessor,
-                    out _);
-            }
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.ObjectStoreRMW,
+                version,
+                sessionID,
+                key,
+                ref input,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>
