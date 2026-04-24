@@ -127,6 +127,63 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
             => NetworkSetETagConditional(RespCommand.SETIFGREATER, ref storageApi);
 
+        /// <summary>
+        /// SETWITHETAG key value [EX seconds | PX milliseconds]
+        /// Sets a key value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented.
+        /// </summary>
+        private bool NetworkSETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2 || parseState.Count > 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETWITHETAG));
+            }
+
+            int expiry = 0;
+            ReadOnlySpan<byte> errorMessage = default;
+            ExpirationOption expOption = ExpirationOption.None;
+
+            if (parseState.Count > 2)
+            {
+                // Parse EX | PX expiry
+                var tokenIdx = 2;
+                if (parseState.TryGetExpirationOption(tokenIdx, out expOption))
+                {
+                    if (expOption is not ExpirationOption.EX and not ExpirationOption.PX)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                    }
+                    else
+                    {
+                        tokenIdx++;
+                        if (tokenIdx >= parseState.Count || !parseState.TryGetInt(tokenIdx, out expiry))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        }
+                        else if (expiry <= 0)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
+                        }
+                    }
+                }
+                else
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                }
+            }
+
+            if (!errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, expiry, key, getValue: false, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
+            return true;
+        }
+
         private bool NetworkSetETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {

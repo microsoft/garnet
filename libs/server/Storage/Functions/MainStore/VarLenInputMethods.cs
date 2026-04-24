@@ -131,6 +131,7 @@ namespace Garnet.server
 
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                case RespCommand.SETWITHETAG:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasETag = true;
                     fieldInfo.HasExpiration = input.arg1 != 0;
@@ -309,6 +310,7 @@ namespace Garnet.server
 
                     case RespCommand.SETIFGREATER:
                     case RespCommand.SETIFMATCH:
+                    case RespCommand.SETWITHETAG:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasETag = true;
                         fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
