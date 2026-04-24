@@ -491,11 +491,11 @@ namespace Garnet.test.cluster
                 {
                     if (nodes[i] != null)
                     {
-                        logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
                         var node = nodes[i];
                         nodes[i] = null;
                         node.Dispose(true);
-                        logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
                     }
                 }
             }

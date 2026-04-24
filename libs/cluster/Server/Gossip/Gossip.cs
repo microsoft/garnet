@@ -264,7 +264,7 @@ namespace Garnet.cluster
             {
                 while (true)
                 {
-                    if (ctsGossip.Token.IsCancellationRequested) return;
+                    ctsGossip.Token.ThrowIfCancellationRequested();
                     await InitConnections().ConfigureAwait(false);
 
                     // Choose between full broadcast or sample gossip to few nodes
@@ -307,7 +307,7 @@ namespace Garnet.cluster
 
                 foreach (var a in addresses)
                 {
-                    if (ctsGossip.Token.IsCancellationRequested) break;
+                    ctsGossip.Token.ThrowIfCancellationRequested();
                     var nodeId = a.Item1;
                     var address = a.Item2;
                     var port = a.Item3;
@@ -340,7 +340,7 @@ namespace Garnet.cluster
                 {
                     foreach (var w in workerBanList)
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
                         var nodeId = w.Key;
                         var expiry = w.Value;
 
@@ -368,7 +368,7 @@ namespace Garnet.cluster
                 {
                     try
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
 
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())
@@ -418,7 +418,7 @@ namespace Garnet.cluster
 
                     try
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
 
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())
