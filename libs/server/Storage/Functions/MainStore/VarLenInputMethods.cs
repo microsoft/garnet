@@ -185,8 +185,6 @@ namespace Garnet.server
                 case RespCommand.RICREATE:
                 case RespCommand.RIPROMOTE:
                 case RespCommand.RIRESTORE:
-                case RespCommand.RISET:
-                case RespCommand.RIDEL:
                     fieldInfo.ValueSize = RangeIndexManager.IndexSizeBytes;
                     return fieldInfo;
 
@@ -351,8 +349,6 @@ namespace Garnet.server
                     case RespCommand.RICREATE:
                     case RespCommand.RIPROMOTE:
                     case RespCommand.RIRESTORE:
-                    case RespCommand.RISET:
-                    case RespCommand.RIDEL:
                         fieldInfo.ValueSize = RangeIndexManager.IndexSizeBytes;
                         return fieldInfo;
 

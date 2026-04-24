@@ -1311,5 +1311,24 @@ namespace Garnet.test
                 }
             }
         }
+
+        [Test]
+        public void AofSizeLimitWithoutAofEnabled()
+        {
+            // Setting --aof-size-limit without --aof should throw
+            var args = new[] { "--aof-size-limit", "64m" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            var ex = Assert.Throws<GarnetException>(() => options.GetServerOptions());
+            ClassicAssert.IsTrue(ex.Message.Contains("AofSizeLimit"));
+
+            // Setting --aof-size-limit with --aof enabled should succeed
+            args = ["--aof", "--aof-size-limit", "64m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+        }
     }
 }
