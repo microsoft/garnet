@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -91,7 +92,7 @@ namespace Garnet.server
 
             StringInput input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
 
-            GarnetStatus status = storageApi.DEL_Conditional(key, ref input);
+            GarnetStatus status = storageApi.DEL_ETagConditional(key, ref input);
 
             int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
@@ -179,8 +180,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            NetworkSET_Conditional(RespCommand.SETWITHETAG, expiry, key, getValue: false, highPrecision: expOption == ExpirationOption.PX, ref storageApi);
-            return true;
+            return ExecuteETagSetCommand(RespCommand.SETWITHETAG, expiry, expOption == ExpirationOption.PX, key, getValue: false, ref storageApi);
         }
 
         private bool NetworkSetETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
@@ -263,7 +263,31 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            NetworkSET_Conditional(cmd, expiry, key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, ref storageApi);
+            return ExecuteETagSetCommand(cmd, expiry, expOption == ExpirationOption.PX, key, getValue: !noGet, ref storageApi);
+        }
+
+        /// <summary>
+        /// Shared implementation for ETag set commands (SETWITHETAG, SETIFMATCH, SETIFGREATER).
+        /// Builds input, calls SET_Conditional with output, and writes the response.
+        /// </summary>
+        private bool ExecuteETagSetCommand<TGarnetApi>(RespCommand cmd, int expiry, bool highPrecision, PinnedSpanByte key, bool getValue, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            var inputArg = expiry == 0
+                ? 0
+                : DateTimeOffset.UtcNow.Ticks +
+                  (highPrecision
+                      ? TimeSpan.FromMilliseconds(expiry).Ticks
+                      : TimeSpan.FromSeconds(expiry).Ticks);
+
+            var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
+
+            if (getValue)
+                input.header.SetSetGetFlag();
+
+            var output = GetStringOutput();
+            storageApi.SET_ETagConditional(key, ref input, ref output);
+            ProcessOutput(output.SpanByteAndMemory);
             return true;
         }
     }

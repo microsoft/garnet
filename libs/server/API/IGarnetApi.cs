@@ -39,14 +39,19 @@ namespace Garnet.server
         GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
-        /// DEL Conditional
-        /// </summary>
-        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input);
-
-        /// <summary>
         /// SET Conditional
         /// </summary>
         GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
+        /// SETWITHETAG / SETIFMATCH / SETIFGREATER — ETag-aware conditional set
+        /// </summary>
+        GarnetStatus SET_ETagConditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
+        /// DELIFGREATER — ETag-aware conditional delete
+        /// </summary>
+        GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
         /// SET

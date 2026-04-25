@@ -588,10 +588,7 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            // ETag commands always need an output buffer for the ETag response
-            var isEtagCommand = cmd is RespCommand.SETWITHETAG or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER;
-
-            if (!getValue && !isEtagCommand)
+            if (!getValue)
             {
                 var status = storageApi.SET_Conditional(key, ref input);
 
@@ -624,16 +621,12 @@ namespace Garnet.server
             }
             else
             {
-                if (getValue)
-                    input.header.SetSetGetFlag();
+                input.header.SetSetGetFlag();
 
                 var output = GetStringOutput();
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
 
-                // ETag commands always write output; GET commands only on success
-                bool ok = status != GarnetStatus.NOTFOUND || isEtagCommand;
-
-                if (ok)
+                if (status != GarnetStatus.NOTFOUND)
                 {
                     ProcessOutput(output.SpanByteAndMemory);
                 }

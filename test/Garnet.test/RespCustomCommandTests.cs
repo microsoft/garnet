@@ -206,22 +206,19 @@ namespace Garnet.test
                 valueToMessWith.RemoveAt(valueToMessWith.Count - 1);
             }
 
-            StringInput input = new StringInput(RespCommand.SET);
-            input.header.cmd = RespCommand.SET;
-            // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetWithETagFlag();
+            StringInput input = new StringInput(RespCommand.SETWITHETAG);
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
                 PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
-                // since we are setting with retain to etag, this change should be reflected in an etag update
-                garnetApi.SET_Conditional(key, ref input);
+                var etagOutput = new StringOutput();
+                garnetApi.SET_ETagConditional(key, ref input, ref etagOutput);
             }
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
-            // for a non SET command the etag should be invisible and be updated automatically
+            // non-ETag commands are ETag-blind
             garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
