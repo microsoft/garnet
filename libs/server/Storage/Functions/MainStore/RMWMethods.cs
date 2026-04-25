@@ -365,10 +365,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            // reset etag state set at need initial update
-            if (input.header.cmd is RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG)
-                ETagState.ResetState(ref functionsState.etagState);
-
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
@@ -417,8 +413,6 @@ namespace Garnet.server
             }
         }
 
-        // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE,
-        // you must make sure you must reset etagState in FunctionState
         private readonly IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             var cmd = input.header.cmd;
@@ -430,11 +424,10 @@ namespace Garnet.server
                 return IPUResult.Failed;
             }
 
-            // Only initialize ETag state for ETag-specific commands; non-ETag commands are ETag-blind
-            var isEtagCommand = cmd is RespCommand.DELIFGREATER or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG;
-            var shouldUpdateEtag = isEtagCommand;
-            if (isEtagCommand && logRecord.Info.HasETag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+            // Early delegation for ETag commands — all handled in NoInline helper
+            if (cmd is RespCommand.DELIFGREATER or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG)
+                return HandleEtagInPlaceUpdateWorker(cmd, ref logRecord, ref input, ref output, ref rmwInfo);
+
             var shouldCheckExpiration = true;
 
             RecordSizeInfo sizeInfo2 = new();
@@ -451,15 +444,6 @@ namespace Garnet.server
 
                     // Nothing is set because being in this block means NX was already violated
                     return IPUResult.NotUpdated;
-
-                case RespCommand.DELIFGREATER:
-                    return HandleDelIfGreaterInPlaceUpdate(ref input, ref rmwInfo);
-
-                case RespCommand.SETIFGREATER:
-                case RespCommand.SETIFMATCH:
-                    return HandleSetIfMatchInPlaceUpdate(cmd, ref logRecord, ref input, ref output, ref rmwInfo, ref shouldUpdateEtag);
-                case RespCommand.SETWITHETAG:
-                    return HandleSetWithEtagInPlaceUpdate(ref logRecord, ref input, ref output, ref rmwInfo, ref shouldUpdateEtag);
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Check if SetGet flag is set
@@ -914,18 +898,10 @@ namespace Garnet.server
                     return IPUResult.NotUpdated;
             }
 
-            // Increment ETag for ETag commands that fell through to here (e.g., non-ETag commands that modified data)
-            if (shouldUpdateEtag)
-            {
-                _ = logRecord.TrySetETag(functionsState.etagState.ETag + 1);
-                ETagState.ResetState(ref functionsState.etagState);
-            }
-
             sizeInfo2.AssertOptionalsIfSet(logRecord.Info, checkExpiration: shouldCheckExpiration);
             return IPUResult.Succeeded;
         }
 
-        // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState
         /// <inheritdoc />
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -933,14 +909,10 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFGREATER:
-                    return HandleDelIfGreaterNeedCopyUpdate(in srcLogRecord, ref input, ref rmwInfo);
-
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    return HandleSetIfMatchNeedCopyUpdate(in srcLogRecord, ref input, ref output);
                 case RespCommand.SETWITHETAG:
-                    // Always allow copy update for SETWITHETAG
-                    return true;
+                    return HandleEtagNeedCopyUpdate(input.header.cmd, in srcLogRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
@@ -996,7 +968,6 @@ namespace Garnet.server
             }
         }
 
-        // NOTE: Before doing any return from this method, please make sure you are calling reset on etagState in functionsState.
         /// <inheritdoc />
         public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -1006,8 +977,6 @@ namespace Garnet.server
             {
                 _ = dstLogRecord.RemoveETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
-                // reset etag state that may have been initialized earlier
-                ETagState.ResetState(ref functionsState.etagState);
                 return false;
             }
 
@@ -1016,22 +985,12 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            // Only initialize ETag state for ETag-specific commands; non-ETag commands are ETag-blind
-            var isEtagCommand = cmd is RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG;
-            bool shouldUpdateEtag = isEtagCommand;
-            if (isEtagCommand && srcLogRecord.Info.HasETag)
-            {
-                // During checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-            }
+            // Early delegation for ETag commands — all handled in NoInline helper
+            if (cmd is RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG)
+                return HandleEtagCopyUpdateWorker(cmd, in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output);
 
             switch (cmd)
             {
-                case RespCommand.SETIFGREATER:
-                case RespCommand.SETIFMATCH:
-                    return HandleSetIfMatchCopyUpdate(cmd, in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref shouldUpdateEtag);
-                case RespCommand.SETWITHETAG:
-                    return HandleSetWithEtagCopyUpdate(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref shouldUpdateEtag);
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Check if SetGet flag is set
@@ -1437,15 +1396,6 @@ namespace Garnet.server
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
                     }
                     break;
-            }
-
-
-            if (shouldUpdateEtag)
-            {
-                if (cmd is not RespCommand.SETIFGREATER)
-                    functionsState.etagState.ETag++;
-                dstLogRecord.TrySetETag(functionsState.etagState.ETag);
-                ETagState.ResetState(ref functionsState.etagState);
             }
 
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);

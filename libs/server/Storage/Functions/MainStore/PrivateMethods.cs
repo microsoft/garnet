@@ -691,20 +691,20 @@ namespace Garnet.server
             return true;
         }
 
-        void CopyRespWithEtagData(ReadOnlySpan<byte> value, ref StringOutput dst, bool hasETag, MemoryPool<byte> memoryPool)
+        void CopyRespWithEtagData(ReadOnlySpan<byte> value, ref StringOutput dst, bool hasETag, long etag, MemoryPool<byte> memoryPool)
         {
             int valueLength = value.Length;
             // always writing an array of size 2 => *2\r\n
             int desiredLength = 4;
 
-            // get etag to write, default etag 0 for when no etag
-            long etag = hasETag ? functionsState.etagState.ETag : LogRecord.NoETag;
+            // use provided etag, default etag 0 for when no etag
+            long etagToWrite = hasETag ? etag : LogRecord.NoETag;
 
             // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
             // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-            desiredLength += 1 + NumUtils.CountDigits(etag) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
+            desiredLength += 1 + NumUtils.CountDigits(etagToWrite) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
 
-            WriteValAndEtagToDst(desiredLength, value, etag, ref dst, memoryPool);
+            WriteValAndEtagToDst(desiredLength, value, etagToWrite, ref dst, memoryPool);
         }
 
         static void WriteValAndEtagToDst(int desiredLength, ReadOnlySpan<byte> value, long etag, ref StringOutput dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
