@@ -133,22 +133,29 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
+                    RecordSizeInfo sizeInfo;
+                    Unsafe.SkipInit(out sizeInfo); // Not used on in-place fast path; computed fresh on CreateNewRecord path
 
-                    // Track value heap delta across in-place write.
-                    var ipwPreInline = srcLogRecord.Info.ValueIsInline;
-                    var ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                    // Track value heap delta across in-place write only when size tracking is active.
+                    var logSizeTracker = hlogBase.logSizeTracker;
+                    long ipwPreHeap = 0;
+                    var ipwPreInline = true;
+                    if (logSizeTracker is not null)
+                    {
+                        ipwPreInline = srcLogRecord.Info.ValueIsInline;
+                        ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                    }
 
                     // Type arg specification is needed because we don't pass TContext
                     if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions))
                     {
-                        if (!ipwPreInline || !srcLogRecord.Info.ValueIsInline)
+                        if (logSizeTracker is not null && (!ipwPreInline || !srcLogRecord.Info.ValueIsInline))
                         {
                             var ipwPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
                             var ipwDelta = ipwPostHeap - ipwPreHeap;
                             if (ipwDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipwDelta);
+                                logSizeTracker.IncrementSize(ipwDelta);
                         }
 
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);

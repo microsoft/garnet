@@ -93,8 +93,6 @@ namespace Garnet.server
                 ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            RecordSizeInfo sizeInfo = new();
-
             if (logRecord.Info.ValueIsInline && (expiration == 0 || logRecord.Info.HasExpiration))
             {
                 var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
@@ -103,16 +101,19 @@ namespace Garnet.server
             }
             else
             {
-                // Create local sizeInfo
-                sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
+                // Create local sizeInfo only on slow path (value doesn't fit inline or optionals changed)
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
                 functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
 
                 if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
                     return false;
+
+                sizeInfo.AssertOptionalsIfSet(logRecord.Info);
             }
 
-            UpdateExpiration(ref logRecord, expiration);
-            sizeInfo.AssertOptionalsIfSet(logRecord.Info);
+            // Skip UpdateExpiration entirely when no expiration changes and record has no existing expiration.
+            if (expiration != 0 || logRecord.Info.HasExpiration)
+                UpdateExpiration(ref logRecord, expiration);
 
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);

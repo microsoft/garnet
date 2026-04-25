@@ -382,16 +382,19 @@ namespace Garnet.server
                 return false;
             }
 
-            // RangeIndex type safety – reject non-RI commands on RI keys
-            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType && !input.header.cmd.IsLegalOnRangeIndex())
+            // RangeIndex type safety – normal string records have RecordType 0; skip all checks in that common case.
+            var recordType = logRecord.RecordType;
+            if (recordType != 0)
             {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
+                if (recordType == RangeIndexManager.RangeIndexRecordType && !input.header.cmd.IsLegalOnRangeIndex())
+                {
+                    rmwInfo.Action = RMWAction.WrongType;
+                    return false;
+                }
             }
-
-            // Reject RI-specific commands on non-RI keys
-            if (logRecord.RecordType != RangeIndexManager.RangeIndexRecordType && input.header.cmd.IsRangeIndexCommand())
+            else if (input.header.cmd.IsRangeIndexCommand())
             {
+                // Reject RI-specific commands on non-RI keys
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
             }

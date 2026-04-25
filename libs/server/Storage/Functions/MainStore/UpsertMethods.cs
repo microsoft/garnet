@@ -67,8 +67,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref StringInput input, ReadOnlySpan<byte> srcValue, ref StringOutput output, ref UpsertInfo upsertInfo)
         {
-            // Prevent SET from overwriting VectorSet or RangeIndex stubs
-            if (logRecord.RecordType == VectorManager.RecordType || logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+            // Prevent SET from overwriting VectorSet or RangeIndex stubs.
+            // Normal string records have RecordType 0, so this check short-circuits with a single byte compare.
+            var recordType = logRecord.RecordType;
+            if (recordType != 0 && (recordType == VectorManager.RecordType || recordType == RangeIndexManager.RangeIndexRecordType))
             {
                 upsertInfo.Action = UpsertAction.WrongType;
                 return false;
