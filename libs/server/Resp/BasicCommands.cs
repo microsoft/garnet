@@ -289,7 +289,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false,
-                withEtag: false, ref storageApi);
+                ref storageApi);
         }
 
         /// <summary>
@@ -528,12 +528,12 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, false, ref storageApi)
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key, getValue, isHighPrecision, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, isHighPrecision, ref storageApi);
                     }
                     break;
                 case ExpirationOption.KEEPTTL:
@@ -542,11 +542,11 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key, getValue, highPrecision: false, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key, getValue, highPrecision: false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key, getValue, highPrecision: false, ref storageApi);
                     }
                     break;
             }
@@ -576,7 +576,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, PinnedSpanByte key, bool getValue, bool highPrecision, bool withEtag, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, PinnedSpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var inputArg = expiry == 0
@@ -588,11 +588,11 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (!getValue && !withEtag)
-            {
-                // the following debug assertion is to catch any edge case leading to SETIFMATCH, or SETIFGREATER skipping the above block
-                Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right output variable");
+            // ETag commands always need an output buffer for the ETag response
+            var isEtagCommand = cmd is RespCommand.SETWITHETAG or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER;
 
+            if (!getValue && !isEtagCommand)
+            {
                 var status = storageApi.SET_Conditional(key, ref input);
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
@@ -624,18 +624,14 @@ namespace Garnet.server
             }
             else
             {
-                if (withEtag)
-                    input.header.SetWithETagFlag();
-
                 if (getValue)
                     input.header.SetSetGetFlag();
 
-                // anything with getValue or withEtag always writes to the buffer in the happy path
                 var output = GetStringOutput();
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
 
-                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
-                bool ok = status != GarnetStatus.NOTFOUND || withEtag;
+                // ETag commands always write output; GET commands only on success
+                bool ok = status != GarnetStatus.NOTFOUND || isEtagCommand;
 
                 if (ok)
                 {

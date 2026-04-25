@@ -90,7 +90,6 @@ namespace Garnet.server
             // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
 
             StringInput input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
-            input.header.SetWithETagFlag();
 
             GarnetStatus status = storageApi.DEL_Conditional(key, ref input);
 
@@ -180,7 +179,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            NetworkSET_Conditional(RespCommand.SETWITHETAG, expiry, key, getValue: false, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, expiry, key, getValue: false, highPrecision: expOption == ExpirationOption.PX, ref storageApi);
             return true;
         }
 
@@ -264,7 +263,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            NetworkSET_Conditional(cmd, expiry, key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
+            NetworkSET_Conditional(cmd, expiry, key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, ref storageApi);
             return true;
         }
     }
