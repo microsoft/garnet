@@ -424,16 +424,17 @@ namespace Garnet.server
                 return IPUResult.Failed;
             }
 
-            // Early delegation for ETag commands — all handled in NoInline helper
-            if (cmd is RespCommand.DELIFGREATER or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG)
-                return HandleEtagInPlaceUpdateWorker(cmd, ref logRecord, ref input, ref output, ref rmwInfo);
-
             var shouldCheckExpiration = true;
 
             RecordSizeInfo sizeInfo2 = new();
 
             switch (cmd)
             {
+                case RespCommand.DELIFGREATER:
+                case RespCommand.SETIFMATCH:
+                case RespCommand.SETIFGREATER:
+                case RespCommand.SETWITHETAG:
+                    return HandleEtagInPlaceUpdateWorker(cmd, ref logRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETEXNX:
                     // Note: SETEXNX may or may not actually have an expiration.
                     if (input.header.CheckSetGetFlag())
@@ -985,12 +986,12 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            // Early delegation for ETag commands — all handled in NoInline helper
-            if (cmd is RespCommand.SETIFMATCH or RespCommand.SETIFGREATER or RespCommand.SETWITHETAG)
-                return HandleEtagCopyUpdateWorker(cmd, in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output);
-
             switch (cmd)
             {
+                case RespCommand.SETIFMATCH:
+                case RespCommand.SETIFGREATER:
+                case RespCommand.SETWITHETAG:
+                    return HandleEtagCopyUpdateWorker(cmd, in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output);
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // Check if SetGet flag is set

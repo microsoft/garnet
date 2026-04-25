@@ -60,10 +60,6 @@ namespace Garnet.server
 
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
 
-            // Delegate ETag commands early to NoInline helpers
-            if (cmd is RespCommand.GETIFNOTMATCH or RespCommand.GETWITHETAG)
-                return HandleEtagReader(in srcLogRecord, ref input, ref output, ref readInfo, cmd, value);
-
             if (cmd > RespCommandExtensions.LastValidCommand)
             {
                 var valueLength = value.Length;
@@ -82,10 +78,18 @@ namespace Garnet.server
                 }
             }
 
-            if (cmd == RespCommand.NONE)
-                CopyRespTo(value, ref output);
-            else
-                CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
+            switch (cmd)
+            {
+                case RespCommand.GETIFNOTMATCH:
+                case RespCommand.GETWITHETAG:
+                    return HandleEtagReader(in srcLogRecord, ref input, ref output, ref readInfo, cmd, value);
+                case RespCommand.NONE:
+                    CopyRespTo(value, ref output);
+                    break;
+                default:
+                    CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
+                    break;
+            }
 
             return true;
         }
