@@ -84,7 +84,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, ReadOnlySpan<byte> newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, false, input.arg1))
+            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -95,7 +95,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!InPlaceWriterForHeapObjectValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, false, input.arg1))
+            if (!InPlaceWriterForHeapObjectValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -107,7 +107,7 @@ namespace Garnet.server
             in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, false, input.arg1))
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
