@@ -154,8 +154,14 @@ namespace Garnet.server
                 return IPUResult.Failed;
             }
 
-            if (input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
-                return IPUResult.Failed;
+            // Set or clear expiration to match SET semantics
+            if (input.arg1 != 0)
+            {
+                if (!logRecord.TrySetExpiration(input.arg1))
+                    return IPUResult.Failed;
+            }
+            else if (logRecord.Info.HasExpiration)
+                _ = logRecord.RemoveExpiration();
 
             // Return the new ETag as integer
             functionsState.CopyRespNumber(newEtag, ref output.SpanByteAndMemory);
@@ -363,8 +369,12 @@ namespace Garnet.server
             if (!dstLogRecord.TrySetETag(newEtag))
                 return false;
 
-            if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1 != 0 ? input.arg1 : srcLogRecord.Expiration))
-                return false;
+            // Set or clear expiration to match SET semantics
+            if (input.arg1 != 0)
+            {
+                if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1))
+                    return false;
+            }
 
             // Return the new ETag as integer
             functionsState.CopyRespNumber(newEtag, ref output.SpanByteAndMemory);
