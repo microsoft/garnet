@@ -109,13 +109,14 @@ namespace Tsavorite.core
             {
                 _ = recSrc.SetPhysicalAddress();
                 var logRecord = recSrc.CreateLogRecord();
-                if (IsValidTracebackRecord(logRecord.Info) && storeFunctions.KeysEqual(key, logRecord))
+                var recordInfo = logRecord.Info;
+                if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(key, logRecord))
                 {
                     recSrc.SetHasMainLogSrc();
                     return true;
                 }
 
-                if (TraceBackForKeyMatch(key, logRecord.Info.PreviousAddress, minAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
+                if (TraceBackForKeyMatch(key, recordInfo.PreviousAddress, minAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
                 {
                     recSrc.SetHasMainLogSrc();
                     return true;
@@ -137,13 +138,14 @@ namespace Tsavorite.core
             {
                 _ = recSrc.SetPhysicalAddress();
                 var logRecord = recSrc.CreateLogRecord();
-                if (IsValidTracebackRecord(logRecord.Info) && recSrc.LogicalAddress < maxAddress && storeFunctions.KeysEqual(key, logRecord))
+                var recordInfo = logRecord.Info;
+                if (IsValidTracebackRecord(recordInfo) && recSrc.LogicalAddress < maxAddress && storeFunctions.KeysEqual(key, logRecord))
                 {
                     recSrc.SetHasMainLogSrc();
                     return true;
                 }
 
-                if (TraceBackForKeyMatch(key, logRecord.Info.PreviousAddress, minAddress, maxAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
+                if (TraceBackForKeyMatch(key, recordInfo.PreviousAddress, minAddress, maxAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
                 {
                     recSrc.SetHasMainLogSrc();
                     return true;
@@ -166,10 +168,11 @@ namespace Tsavorite.core
                 var logRecord = hlog.CreateLogRecord(foundLogicalAddress);
                 foundPhysicalAddress = logRecord.physicalAddress;
 
-                if (IsValidTracebackRecord(logRecord.Info) && storeFunctions.KeysEqual(key, logRecord))
+                var recordInfo = logRecord.Info;
+                if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(key, logRecord))
                     return true;
 
-                foundLogicalAddress = logRecord.Info.PreviousAddress;
+                foundLogicalAddress = recordInfo.PreviousAddress;
             }
             foundPhysicalAddress = kInvalidAddress;
             return false;
@@ -190,10 +193,11 @@ namespace Tsavorite.core
                 var logRecord = hlog.CreateLogRecord(foundLogicalAddress);
                 foundPhysicalAddress = logRecord.physicalAddress;
 
-                if (IsValidTracebackRecord(logRecord.Info) && foundLogicalAddress < maxAddress && storeFunctions.KeysEqual(key, logRecord))
+                var recordInfo = logRecord.Info;
+                if (IsValidTracebackRecord(recordInfo) && foundLogicalAddress < maxAddress && storeFunctions.KeysEqual(key, logRecord))
                     return true;
 
-                foundLogicalAddress = logRecord.Info.PreviousAddress;
+                foundLogicalAddress = recordInfo.PreviousAddress;
             }
             foundPhysicalAddress = kInvalidAddress;
             return false;

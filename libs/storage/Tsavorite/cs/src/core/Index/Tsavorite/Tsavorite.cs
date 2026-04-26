@@ -727,7 +727,7 @@ namespace Tsavorite.core
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
-            DiskLogRecord emptyLogRecord = default;
+            Unsafe.SkipInit(out DiskLogRecord emptyLogRecord); // Never accessed on span-value upsert path
 
             do
                 internalStatus = InternalUpsert<TKey, SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
@@ -749,7 +749,7 @@ namespace Tsavorite.core
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
-            DiskLogRecord emptyLogRecord = default;
+            Unsafe.SkipInit(out DiskLogRecord emptyLogRecord); // Never accessed on object-value upsert path
 
             do
                 internalStatus = InternalUpsert<TKey, ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
