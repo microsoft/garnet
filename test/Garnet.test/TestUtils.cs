@@ -278,7 +278,8 @@ namespace Garnet.test
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
             bool enableRangeIndexPreview = false,
-            string aofMemorySize = "64m"
+            string aofMemorySize = "64m",
+            bool copyReadsToTail = false
             )
         {
             if (useAzureStorage)
@@ -443,6 +444,11 @@ namespace Garnet.test
             if (useInChainRevivOnly)
             {
                 opts.RevivInChainOnly = true;
+            }
+
+            if (copyReadsToTail)
+            {
+                opts.CopyReadsToTail = true;
             }
 
             return new GarnetServer(opts, loggerFactory);
