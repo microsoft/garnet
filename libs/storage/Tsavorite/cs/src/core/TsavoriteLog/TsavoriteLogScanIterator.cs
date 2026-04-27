@@ -144,7 +144,7 @@ namespace Tsavorite.core
                 return SlowWaitAsync(this, token);
             }
 
-            if (NextAddress < tsavoriteLog.SafeTailAddress)
+            if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
                 return new ValueTask<bool>(true);
             return SlowWaitUncommittedAsync(token);
         }
@@ -185,7 +185,7 @@ namespace Tsavorite.core
                     tcs ??= newTcs; // successful CAS so update the local var
                 }
 
-                if (NextAddress < tsavoriteLog.SafeTailAddress)
+                if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
@@ -749,7 +749,19 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                // For scanUncommitted: check cached SafeTailAddress first (O(1)). If caught up,
+                // spin-wait briefly to let producers advance tail and complete in-flight writes,
+                // then re-check the cache before falling back to the full epoch-table scan.
+                // At 15 Mops, ~150 enqueues complete during the spin, so the next ~150 GetNext
+                // calls use the cache (O(1)) — amortizing the scan cost to ~1ns/record.
+                if (scanUncommitted && currentAddress >= tsavoriteLog.SafeTailAddress)
+                {
+                    Thread.SpinWait(100);
+                    if (currentAddress >= tsavoriteLog.SafeTailAddress
+                        && currentAddress >= tsavoriteLog.RefreshSafeTailAddress())
+                        return false;
+                }
+                else if (currentAddress >= endAddress || currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress))
                     return false;
 
                 if (currentAddress < _headAddress)
@@ -867,7 +879,14 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                if ((currentAddress >= endAddress) || (currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress)))
+                if (scanUncommitted && currentAddress >= tsavoriteLog.SafeTailAddress)
+                {
+                    Thread.SpinWait(100);
+                    if (currentAddress >= tsavoriteLog.SafeTailAddress
+                        && currentAddress >= tsavoriteLog.RefreshSafeTailAddress())
+                        return false;
+                }
+                else if (currentAddress >= endAddress || currentAddress >= (scanUncommitted ? tsavoriteLog.SafeTailAddress : tsavoriteLog.CommittedUntilAddress))
                     return false;
 
                 if (currentAddress < _headAddress)

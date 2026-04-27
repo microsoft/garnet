@@ -72,16 +72,6 @@ namespace Garnet.server
         public string AofPageSize = "4m";
 
         /// <summary>
-        /// AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
-        /// </summary>
-        public int AofReplicationRefreshFrequencyMs = 10;
-
-        /// <summary>
-        /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
-        /// </summary>
-        public int SubscriberRefreshFrequencyMs = 0;
-
-        /// <summary>
         /// Write ahead logging (append-only file) commit issue frequency in milliseconds.
         /// 0 = issue an immediate commit per operation
         /// -1 = manually issue commits using COMMITAOF command (no auto-commit)
@@ -793,7 +783,6 @@ namespace Garnet.server
                 PageSizeBits = AofPageSizeBits(),
                 LogDevice = GetAofDevice(dbId),
                 TryRecoverLatest = false,
-                SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
                 AutoCommit = CommitFrequencyMs == 0,
                 MutableFraction = 0.9,

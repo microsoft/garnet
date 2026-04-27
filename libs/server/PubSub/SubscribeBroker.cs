@@ -36,13 +36,12 @@ namespace Garnet.server
         /// </summary>
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of log used for pub/sub</param>
-        /// <param name="subscriberRefreshFrequencyMs">Subscriber log refresh frequency</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
+        public SubscribeBroker(string logDir, long pageSize, LightEpoch epoch, bool startFresh = true, ILogger logger = null)
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs, Epoch = epoch });
+            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, Epoch = epoch });
             pageSizeBits = aof.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 aof.TruncateUntil(aof.CommittedUntilAddress);
