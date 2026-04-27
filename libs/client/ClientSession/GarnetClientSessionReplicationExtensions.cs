@@ -534,12 +534,9 @@ namespace Garnet.client
         /// <param name="currentAddress"></param>
         /// <param name="nextAddress"></param>
         /// <exception cref="Exception"></exception>
-        public Task<string> ExecuteClusterAppendLogInit(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress)
+        public void ExecuteClusterAppendLogInit(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress)
         {
             Debug.Assert(nodeId != null);
-
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcsQueue.Enqueue(tcs);
             var curr = offset;
             var arraySize = 7;
 
@@ -605,10 +602,6 @@ namespace Garnet.client
                 curr = offset;
             }
             offset = curr;
-
-            Flush();
-            Interlocked.Increment(ref numCommands);
-            return tcs.Task;
         }
     }
 }

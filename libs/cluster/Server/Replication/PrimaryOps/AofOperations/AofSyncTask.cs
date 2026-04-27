@@ -187,9 +187,8 @@ namespace Garnet.cluster
                     iter = clusterProvider.storeWrapper.appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
 
                     // Send ping to initialize replication stream
-                    var resp = await garnetClient.ExecuteClusterAppendLogInit(localNodeId, physicalSublogIdx, -1, -1, -1);
-                    if (!resp.Equals("OK"))
-                        throw new GarnetException("Failed to initialize AofSync stream!");
+                    garnetClient.ExecuteClusterAppendLogInit(localNodeId, physicalSublogIdx, -1, -1, -1);
+                    garnetClient.CompletePending(false);
 
                     await iter.BulkConsumeAllAsync(
                         this,

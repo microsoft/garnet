@@ -207,9 +207,6 @@ namespace Garnet.cluster
                     replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
                 else
                     throw new GarnetException($"Failed to process {nameof(NetworkClusterAppendLog)}: [physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Error, clientResponse: false);
-
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
                 return true;
             }
 
