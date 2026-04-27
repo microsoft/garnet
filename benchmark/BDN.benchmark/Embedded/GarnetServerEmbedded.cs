@@ -72,6 +72,17 @@ namespace Embedded.server
                     {
                         IncrementConnectionsReceived();
                         handler.Start(tlsOptions, remoteEndpointName);
+
+                        // Spin until auth finishes
+                        while (!handler.IsAuthenticated(out var fault))
+                        {
+                            if (fault != null)
+                            {
+                                throw new Exception("Authentication failed", fault);
+                            }
+
+                            Thread.Sleep(1);
+                        }
                     }
                     catch (Exception ex)
                     {

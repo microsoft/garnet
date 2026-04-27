@@ -114,6 +114,18 @@ namespace Garnet.common
             socket = ConnectSendSocket();
             networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBufferSettings, networkPool, sslOptions != null, this);
             networkHandler.Start(sslOptions, endpoint.ToString());
+
+            // Spin until auth finishes or cancellation occurs
+            while (!networkHandler.IsAuthenticated(out var fault))
+            {
+                if (fault != null)
+                {
+                    throw new Exception("Authentication failed", fault);
+                }
+
+                Thread.Sleep(1);
+            }
+
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
         }
