@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Garnet.Extensions.RoaringBitmap;
 using Garnet.server;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -17,8 +18,9 @@ namespace Garnet.test
     /// real RESP protocol via StackExchange.Redis. These complement the pure
     /// data-structure tests in <c>RoaringBitmapDataTests</c>.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
-    public class RespRoaringBitmapTests
+    public class RespRoaringBitmapTests : AllureTestBase
     {
         private GarnetServer server;
 
