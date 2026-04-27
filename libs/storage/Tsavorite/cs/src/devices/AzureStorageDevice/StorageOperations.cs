@@ -90,7 +90,7 @@ namespace Tsavorite.devices
                         {
                             TimeSpan nextRetryIn = GetDelayBetweenRetries(numAttempts);
                             HandleStorageError(name, $"storage operation {name} ({intent}) failed transiently on attempt {numAttempts}, retry in {nextRetryIn}s", target, e, false, true);
-                            await Task.Delay(nextRetryIn);
+                            await Task.Delay(nextRetryIn).ConfigureAwait(false);
                         }
                         continue;
                     }

@@ -15,6 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -103,6 +104,7 @@ namespace Garnet.test.cluster
         PRIMARY_FAILOVER_STATE,
         RECOVER_STATUS,
         LAST_FAILOVER_STATE,
+        SYNC_DRIVER_COUNT
     }
 
     public enum StoreInfoItem
@@ -114,13 +116,31 @@ namespace Garnet.test.cluster
 
     public struct PersistencInfo
     {
-        public long CommittedBeginAddress;
-        public long CommittedUntilAddress;
-        public long FlushedUntilAddress;
-        public long BeginAddress;
-        public long TailAddress;
-        public long SafeAofAddress;
+        public AofAddress CommittedBeginAddress;
+        public AofAddress CommittedUntilAddress;
+        public AofAddress FlushedUntilAddress;
+        public AofAddress BeginAddress;
+        public AofAddress TailAddress;
+        public AofAddress SafeAofAddress;
     };
+
+    enum RoleCommandPrimaryFormat : byte
+    {
+        RoleType = 0,
+        RoleReplicationOffset = 1,
+        RoleReplicaInfo = 2,
+        RoleReplicationOffsetString = 3,
+    }
+
+    enum RoleCommandReplicaFormat : byte
+    {
+        RoleType = 0,
+        RoleAddress = 1,
+        RolePort = 2,
+        RoleState = 3,
+        RoleReplicationOffset = 4,
+        RoleReplicationOffsetString = 5
+    }
 
     public static class EndpointExtensions
     {
@@ -383,12 +403,12 @@ namespace Garnet.test.cluster
             var slots = new List<ushort>();
 
             // Assign slots to primaries
-            for (int i = 0; i < slotRanges.Length; i++)
+            for (var i = 0; i < slotRanges.Length; i++)
             {
                 foreach (var slotRange in slotRanges[i])
                 {
                     var endpoint = endpoints[i];
-                    AddSlotsRange(endpoint, new List<(int, int)> { slotRange }, logger);
+                    _ = AddSlotsRange(endpoint, new List<(int, int)> { slotRange }, logger);
                     slots.AddRange(Enumerable.Range(slotRange.Item1, slotRange.Item2 - slotRange.Item1 + 1).Select(x => (ushort)x));
                     ShardInfo shardInfo = new()
                     {
@@ -412,12 +432,12 @@ namespace Garnet.test.cluster
             }
 
             //Set-config-epoch
-            for (int i = 0; i < endpoints.Length; i++)
+            for (var i = 0; i < endpoints.Length; i++)
                 SetConfigEpoch(endpoints[i], i + 1, logger);
 
             //Initiate meet
             var _firstEndpoint = endpoints[0];
-            for (int i = 1; i < endpoints.Length; i++)
+            for (var i = 1; i < endpoints.Length; i++)
                 Meet(_firstEndpoint, endpoints[i], logger);
 
             //WaitForClusterJoin(clusterConfig);
@@ -686,7 +706,7 @@ namespace Garnet.test.cluster
         public void Reconnect(List<int> nodes = null, TextWriter textWriter = null, ILogger logger = null)
         {
             CloseConnections();
-            EndPointCollection endPoints = endpoints;
+            var endPoints = endpoints;
             if (nodes != null)
             {
                 endPoints = new EndPointCollection();
@@ -1510,6 +1530,10 @@ namespace Garnet.test.cluster
             {
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
+                    // Skip migration/import markers like [slot->-nodeId] and [slot-<-nodeId]
+                    if (nodeInfo[i].StartsWith('['))
+                        continue;
+
                     var range = nodeInfo[i].Split('-');
                     if (!ushort.TryParse(range[0], out var slotStart))
                         Assert.Fail($"GetOwnedSlotsFromNode: {range[0]}");
@@ -1887,6 +1911,34 @@ namespace Garnet.test.cluster
         {
             foreach (var endPoint in endpoints)
                 WaitForMigrationCleanup((IPEndPoint)endPoint, cancellationToken, logger);
+        }
+
+        public void WaitForSlotOwnership(int nodeIndex, string expectedOwnerId, List<int> ranges, ILogger logger = null)
+            => WaitForSlotOwnership(endpoints[nodeIndex].ToIPEndPoint(), expectedOwnerId, ranges, logger);
+
+        public void WaitForSlotOwnership(IPEndPoint endPoint, string expectedOwnerId, List<int> ranges, ILogger logger = null)
+        {
+            ClassicAssert.IsTrue((ranges.Count & 1) == 0, "Ranges should come in pairs!");
+            var server = redis.GetServer(endPoint);
+
+            while (true)
+            {
+            retry:
+                BackOff(cancellationToken: context.cts.Token, msg: "");
+                var config = server.ClusterNodes();
+                for (var i = 0; i < ranges.Count; i += 2)
+                {
+                    var from = ranges[i];
+                    var to = ranges[i + 1];
+                    for (var j = from; j <= to; j++)
+                    {
+                        var node = config.GetBySlot(j);
+                        if (node == null || node.NodeId == null || !node.NodeId.Equals(expectedOwnerId))
+                            goto retry;
+                    }
+                }
+                break;
+            }
         }
 
         public static void Asking(ref LightClientRequest sourceNode)
@@ -2625,40 +2677,58 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
             => GetStoreCurrentAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var storeCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(storeCurrentSafeAofAddress);
+                return AofAddress.FromString(storeCurrentSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetStoreCurrentAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 
-        public long GetStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
             => GetStoreRecoveredAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var storeRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(storeRecoveredSafeAofAddress);
+                return AofAddress.FromString(storeRecoveredSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occured; GetStoreRecoveredAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
+        }
+
+        /// <summary>
+        /// Blocks execution until the specified number of replicas are connected to the given node.
+        /// </summary>
+        /// <param name="nodeIndex">The zero-based index of the node to check for connected replicas.</param>
+        /// <param name="replicaCount">The number of replicas that must be connected before the method returns. Must be non-negative.</param>
+        /// <param name="logger">An optional logger used to record diagnostic information during the wait operation. May be null.</param>
+        public void WaitForReplicasConnected(int nodeIndex, int replicaCount, ILogger logger = null)
+        {
+            // Ensure that replicas have connected before completing the test
+            var count = context.clusterTestUtils.GetConnectedReplicas(nodeIndex, logger: logger);
+            while (count != replicaCount)
+            {
+                BackOff();
+                count = context.clusterTestUtils.GetConnectedReplicas(nodeIndex, logger: logger);
+            }
+            ClassicAssert.AreEqual(replicaCount, count);
         }
 
         public long GetConnectedReplicas(int nodeIndex, ILogger logger = null)
@@ -2714,21 +2784,21 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetReplicationOffset(int nodeIndex, ILogger logger = null)
+        public AofAddress GetReplicationOffset(int nodeIndex, ILogger logger = null)
             => GetReplicationOffset((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetReplicationOffset(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetReplicationOffset(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var offset = GetReplicationInfo(endPoint, [ReplicationInfoItem.REPLICATION_OFFSET], logger)[0].Item2;
-                return long.Parse(offset);
+                return AofAddress.FromString(offset);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetReplicationOffset");
                 Assert.Fail(ex.Message);
-                return 0;
+                return AofAddress.Create(1, -1);
             }
         }
 
@@ -2813,27 +2883,27 @@ namespace Garnet.test.cluster
                 {
                     if (item.StartsWith("CommittedBeginAddress:"))
                     {
-                        pinfo.CommittedBeginAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.CommittedBeginAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("CommittedUntilAddress:"))
                     {
-                        pinfo.CommittedUntilAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.CommittedUntilAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("FlushedUntilAddress:"))
                     {
-                        pinfo.FlushedUntilAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.FlushedUntilAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("BeginAddress:"))
                     {
-                        pinfo.BeginAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.BeginAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("TailAddress:"))
                     {
-                        pinfo.TailAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.TailAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                     else if (item.StartsWith("SafeAofAddress:"))
                     {
-                        pinfo.SafeAofAddress = long.Parse(item.Split(":")[1].Trim());
+                        pinfo.SafeAofAddress = AofAddress.FromString(item.Split(":")[1].Trim());
                     }
                 }
                 return pinfo;
@@ -2857,6 +2927,10 @@ namespace Garnet.test.cluster
                             continue;
                         case ReplicationInfoItem.CONNECTED_REPLICAS:
                             startsWith = "connected_slaves:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            continue;
+                        case ReplicationInfoItem.SYNC_DRIVER_COUNT:
+                            startsWith = "sync_driver_count:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             continue;
                         case ReplicationInfoItem.PRIMARY_REPLID:
@@ -2965,17 +3039,35 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void WaitForAofSyncDriverDipose(int primaryNodeIndex)
+        {
+            var items = context.clusterTestUtils.GetReplicationInfo(
+                primaryNodeIndex,
+                [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                context.logger);
+            while (!items[0].Item2.Equals("0") || !items[1].Item2.Equals("0"))
+            {
+                items = context.clusterTestUtils.GetReplicationInfo(
+                    primaryNodeIndex,
+                    [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                    context.logger);
+                if (context.cts.Token.IsCancellationRequested)
+                    Assert.Fail($"Failed waiting for primary aof sync cleanup ({items[0]};{items[1]})!");
+                BackOff(cancellationToken: context.cts.Token);
+            }
+        }
+
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
-            long primaryReplicationOffset;
-            long secondaryReplicationOffset1;
+            AofAddress primaryReplicationOffset;
+            AofAddress secondaryReplicationOffset1;
             while (true)
             {
                 cancellation.ThrowIfCancellationRequested();
 
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
-                if (primaryReplicationOffset == secondaryReplicationOffset1)
+                if (primaryReplicationOffset.Equals(secondaryReplicationOffset1))
                     break;
 
                 var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: logger);

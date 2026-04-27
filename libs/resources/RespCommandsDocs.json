@@ -1638,6 +1638,13 @@
         "Summary": "Processes a forwarded published message from a node in the same shard",
         "Group": "Cluster",
         "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Summary": "Returns sequence number for provided key.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
       }
     ]
   },

@@ -20,6 +20,9 @@ namespace Garnet.server
         {
             public int Count { get; }
 
+            public readonly ReadOnlySpan<PinnedSpanByte> Parameters
+                => default;
+
             private readonly ulong context;
             private readonly PinnedSpanByte lengthPrefixedKeys;
 

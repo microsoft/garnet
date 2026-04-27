@@ -7,7 +7,8 @@ namespace Garnet.common
 {
     public enum GarnetTestLoggingEventType : int
     {
-        LogPrimaryStreamType
+        LogPrimaryStreamType,
+        LogRunAofSyncTask
     };
 
     public struct GarnetTestLoggingEvent
@@ -15,7 +16,7 @@ namespace Garnet.common
         public GarnetTestLoggingEventType Type;
         public string Message;
 
-        public override string ToString() => $"<{Type}>: {Message}";
+        public override string ToString() => $"++<{Type}>++: {Message}";
     }
 
     public static class LoggingExtensions

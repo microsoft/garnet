@@ -162,7 +162,10 @@ namespace Garnet.cluster
             if (conf != lastConfig)
             {
                 lastConfig = conf;
-                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                if (clusterProvider.replicationManager != null)
+                    // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
+                    // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
+                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset[0]);
                 byteArray = lastConfig.ToByteArray();
             }
             else
@@ -177,9 +180,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private Task Gossip(byte[] configByteArray)
+        private async Task Gossip(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
+            await gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
             {
                 try
                 {
@@ -202,7 +205,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogCritical(ex, "GOSSIP faulted processing response");
                 }
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            }, TaskContinuationOptions.RunContinuationsAsynchronously | TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
         }
 
         /// <summary>

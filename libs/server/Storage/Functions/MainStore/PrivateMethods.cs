@@ -750,9 +750,15 @@ namespace Garnet.server
             if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
-                key, value, ref input, epochAccessor, out _);
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreUpsert,
+                version,
+                sessionId,
+                key,
+                value,
+                ref input,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>
@@ -773,9 +779,14 @@ namespace Garnet.server
 
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                key, ref input, epochAccessor, out _);
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreRMW,
+                version,
+                sessionId,
+                key,
+                ref input,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>
@@ -786,11 +797,16 @@ namespace Garnet.server
         void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
-            if (functionsState.StoredProcMode)
-                return;
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID },
-                key, item2: default, epochAccessor, out _);
+            if (functionsState.StoredProcMode) return;
+
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreDelete,
+                version,
+                sessionID,
+                key,
+                value: default,
+                epochAccessor,
+                out _);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref StringInput input)
