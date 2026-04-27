@@ -662,6 +662,10 @@ namespace Garnet
         [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableRangeIndexPreview { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count)")]
+        public int VectorSetQuantizationTaskCount { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -960,6 +964,7 @@ namespace Garnet
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
                 VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                VectorSetQuantizationTaskCount = VectorSetQuantizationTaskCount,
                 EnableRangeIndexPreview = EnableRangeIndexPreview,
             };
         }
