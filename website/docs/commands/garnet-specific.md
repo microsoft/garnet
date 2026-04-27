@@ -293,7 +293,7 @@ Deletes a key only if the provided Etag is strictly greater than the existing Et
 ETags are currently not supported for servers running in Cluster mode. This will be supported soon.
 
 :::warning Important: Key Partitioning Required
-All non-ETag commands (SET, GET, APPEND, INCR, MSET, BITOP, RENAME, etc.) are completely **ETag-blind**. They do not read, check, update, or remove ETags.
+All non-ETag commands (SET, GET, APPEND, INCR, MSET, BITOP, RENAME, etc.) are completely **ETag-blind**. They do not read, check, update, or preserve ETags.
 
 **Users MUST partition their keys**: use ONLY ETag commands (`SETWITHETAG`, `GETWITHETAG`, `SETIFMATCH`, `SETIFGREATER`, `GETIFNOTMATCH`, `DELIFGREATER`) on ETag-managed keys.
 

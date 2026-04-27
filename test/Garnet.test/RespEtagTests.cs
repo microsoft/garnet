@@ -63,6 +63,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetWithEtagClearsTTLWhenNoExpiryProvided()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            // Set key with ETag and expiration
+            var etag = long.Parse(db.Execute("SETWITHETAG", "mykey", "val1", "EX", "100").ToString());
+            ClassicAssert.AreEqual(1, etag);
+
+            // Confirm TTL exists
+            var ttl = db.KeyTimeToLive("mykey");
+            ClassicAssert.IsTrue(ttl.HasValue);
+
+            // SETWITHETAG without EX/PX should clear the expiration
+            etag = long.Parse(db.Execute("SETWITHETAG", "mykey", "val2").ToString());
+            ClassicAssert.AreEqual(2, etag);
+
+            // TTL should be cleared
+            ttl = db.KeyTimeToLive("mykey");
+            ClassicAssert.IsFalse(ttl.HasValue);
+        }
+
+        [Test]
         public void SetIfMatchReturnsNewValueAndEtagWhenEtagMatches()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

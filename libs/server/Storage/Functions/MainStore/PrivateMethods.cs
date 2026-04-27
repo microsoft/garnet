@@ -700,8 +700,8 @@ namespace Garnet.server
             // use provided etag, default etag 0 for when no etag
             long etagToWrite = hasETag ? etag : LogRecord.NoETag;
 
-            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+            // Account for the two RESP array elements written separately below:
+            // *2\r\n :(etag digits)\r\n $(value length digits)\r\n (value bytes)\r\n
             desiredLength += 1 + NumUtils.CountDigits(etagToWrite) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
 
             WriteValAndEtagToDst(desiredLength, value, etagToWrite, ref dst, memoryPool);

@@ -370,11 +370,8 @@ namespace Garnet.server
                 return false;
 
             // Set or clear expiration to match SET semantics
-            if (input.arg1 != 0)
-            {
-                if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1))
-                    return false;
-            }
+            if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1))
+                return false;
 
             // Return the new ETag as integer
             functionsState.CopyRespNumber(newEtag, ref output.SpanByteAndMemory);
