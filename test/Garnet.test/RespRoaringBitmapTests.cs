@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.Extensions.RoaringBitmap;
 using Garnet.server;
-using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;

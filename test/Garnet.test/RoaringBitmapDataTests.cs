@@ -5,8 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Garnet.Extensions.RoaringBitmap.Containers;
 using Allure.NUnit;
+using Garnet.Extensions.RoaringBitmap.Containers;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
