@@ -1064,6 +1064,32 @@
     ]
   },
   {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert, Update"
+      }
+    ]
+  },
+  {
     "Command": "SPUBLISH",
     "Name": "SPUBLISH",
     "Arity": 3,
