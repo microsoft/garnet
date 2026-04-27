@@ -27,6 +27,10 @@ namespace Garnet.Extensions.RoaringBitmap
             : base(type, expiration: 0, size: ObjectOverhead)
         {
             bitmap = new RoaringBitmap();
+            // Keep size accounting consistent with the deserialized constructor and
+            // with later mutation deltas based on bitmap.ByteSize so the empty-bitmap
+            // baseline is counted exactly once.
+            this.Size = ObjectOverhead + bitmap.ByteSize;
         }
 
         public RoaringBitmapObject(byte type, BinaryReader reader)

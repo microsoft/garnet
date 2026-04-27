@@ -47,7 +47,28 @@ namespace Garnet.Extensions.RoaringBitmap
         private static ReadOnlySpan<byte> ErrOffset => "ERR bit offset is not an unsigned 32-bit integer"u8;
         private static ReadOnlySpan<byte> ErrValue => "ERR bit value must be 0 or 1"u8;
 
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref RespMemoryWriter writer)
+        {
+            // Validate args BEFORE the framework allocates the empty object so that
+            // a malformed R.SETBIT does not leave a tombstone-style empty key behind.
+            // Walk a copy of the input so Updater can re-parse from offset 0.
+            var validation = input;
+            int offset = 0;
+            var offsetArg = GetNextArg(ref validation, ref offset);
+            var bitArg = GetNextArg(ref validation, ref offset);
+
+            if (!RoaringBitmapArgs.TryParseUInt32(offsetArg, out _))
+            {
+                writer.WriteError(ErrOffset);
+                return false;
+            }
+            if (!RoaringBitmapArgs.TryParseBit(bitArg, out _))
+            {
+                writer.WriteError(ErrValue);
+                return false;
+            }
+            return true;
+        }
 
         public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {

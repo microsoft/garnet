@@ -178,15 +178,20 @@ namespace Garnet.Extensions.RoaringBitmap
             }
         }
 
-        /// <summary>Estimated heap byte cost. Excludes the .NET object header overhead and the SortedDictionary node overhead.</summary>
+        /// <summary>
+        /// Estimated heap byte cost, including an approximate base-object cost and
+        /// approximate per-entry <see cref="SortedDictionary{TKey, TValue}"/> node
+        /// overhead. Excludes the .NET object header overhead.
+        /// </summary>
         public long ByteSize
         {
             get
             {
-                long sum = 24; // base object overhead estimate
+                long sum = 24; // approximate RoaringBitmap instance/base-object cost
                 foreach (var kv in chunks)
                 {
-                    // Per-entry: key (2B), reference (8B), red-black tree node overhead (~40B), and container.
+                    // Per-entry estimate: key (2B), reference (8B), red-black tree
+                    // node overhead (~40B), and the container's own footprint.
                     sum += 50 + kv.Value.ByteSize;
                 }
                 return sum;

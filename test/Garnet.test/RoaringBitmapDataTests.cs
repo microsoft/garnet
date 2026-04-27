@@ -172,7 +172,7 @@ namespace Garnet.test.RoaringBitmap
                 // uint32 universe — past the set range any value qualifies, so
                 // accept any value >= from that's not in the bits array.
                 ClassicAssert.GreaterOrEqual(actual0, from);
-                ClassicAssert.IsTrue(actual0 == 0 || (actual0 < bits.LongLength ? !bits[actual0] : true));
+                ClassicAssert.IsTrue(actual0 == 0 || (actual0 >= 0 && actual0 < bits.LongLength ? !bits[(int)actual0] : true));
             }
         }
 
