@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
@@ -72,7 +73,7 @@ namespace Garnet.server
         /// <param name="cmd"></param>
         /// <param name="channel"></param>
         /// <param name="message"></param>
-        void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message);
+        ValueTask ClusterPublishAsync(RespCommand cmd, Span<byte> channel, Span<byte> message);
 
         /// <summary>
         /// Is Primary

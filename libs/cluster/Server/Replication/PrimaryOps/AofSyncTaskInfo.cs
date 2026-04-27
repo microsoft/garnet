@@ -98,7 +98,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Main replica aof sync task.
         /// </summary>
-        public async Task ReplicaSyncTask()
+        public async Task ReplicaSyncTaskAsync()
         {
             logger?.LogInformation("Starting ReplicationManager.ReplicaSyncTask for remote node {remoteNodeId} starting from address {address}", remoteNodeId, startAddress);
 

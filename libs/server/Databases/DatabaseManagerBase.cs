@@ -38,10 +38,10 @@ namespace Garnet.server
         public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
-        public abstract bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
+        public abstract Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default);
 
         /// <inheritdoc/>
-        public abstract bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
+        public abstract Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
@@ -69,7 +69,7 @@ namespace Garnet.server
         public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
-        public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
+        public abstract ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract void ExecuteObjectCollection();
@@ -328,15 +328,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to grow store indexes for</param>
         /// <returns>True if both store indexes are maxed out</returns>
-        protected bool GrowIndexesIfNeeded(GarnetDatabase db)
+        protected async ValueTask<bool> GrowIndexesIfNeededAsync(GarnetDatabase db)
         {
             var indexesMaxedOut = true;
 
             if (!DefaultDatabase.StoreIndexMaxedOut)
             {
                 var store = DefaultDatabase.Store;
-                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                        () => store.IndexSize, async () => await store.GrowIndexAsync()))
+                if (await GrowIndexIfNeededAsync(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
+                        () => store.IndexSize, () => store.GrowIndexAsync()).ConfigureAwait(false))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -413,7 +413,7 @@ namespace Garnet.server
         /// <param name="indexSizeRetriever"></param>
         /// <param name="growAction"></param>
         /// <returns>True if index has reached its max size</returns>
-        protected bool GrowIndexIfNeeded(long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        protected async ValueTask<bool> GrowIndexIfNeededAsync(long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Func<Task> growAction)
         {
             Logger?.LogDebug(
                 $"IndexAutoGrowTask: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
@@ -425,7 +425,7 @@ namespace Garnet.server
                 Logger?.LogInformation(
                     $"IndexAutoGrowTask: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
                     overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
-                growAction();
+                await growAction().ConfigureAwait(false);
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;
@@ -495,11 +495,11 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
                 {
                     if (!StoreWrapper.serverOptions.EnableFastCommit)
-                        db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                        db.AppendOnlyFile?.Commit();
                 }
                 else
                 {
-                    db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                    db.AppendOnlyFile?.Commit();
                 }
             }
         }
