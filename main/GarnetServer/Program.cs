@@ -71,9 +71,9 @@ namespace Garnet
             var roaringFactory = new Garnet.Extensions.RoaringBitmap.RoaringBitmapFactory();
             server.Register.NewType(roaringFactory);
             server.Register.NewCommand("R.SETBIT", CommandType.ReadModifyWrite, roaringFactory, new Garnet.Extensions.RoaringBitmap.RSetBit(), new RespCommandsInfo { Arity = 4 });
-            server.Register.NewCommand("R.GETBIT", CommandType.Read, roaringFactory, new Garnet.Extensions.RoaringBitmap.RGetBit(), new RespCommandsInfo { Arity = 3 });
-            server.Register.NewCommand("R.BITCOUNT", CommandType.Read, roaringFactory, new Garnet.Extensions.RoaringBitmap.RBitCount(), new RespCommandsInfo { Arity = 2 });
-            server.Register.NewCommand("R.BITPOS", CommandType.Read, roaringFactory, new Garnet.Extensions.RoaringBitmap.RBitPos(), new RespCommandsInfo { Arity = -3 });
+            server.Register.NewCommand("R.GETBIT", CommandType.ReadModifyWrite, roaringFactory, new Garnet.Extensions.RoaringBitmap.RGetBit(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewCommand("R.BITCOUNT", CommandType.ReadModifyWrite, roaringFactory, new Garnet.Extensions.RoaringBitmap.RBitCount(), new RespCommandsInfo { Arity = 2 });
+            server.Register.NewCommand("R.BITPOS", CommandType.ReadModifyWrite, roaringFactory, new Garnet.Extensions.RoaringBitmap.RBitPos(), new RespCommandsInfo { Arity = -3 });
 
             // Register stored procedure to run a transactional command
             // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
