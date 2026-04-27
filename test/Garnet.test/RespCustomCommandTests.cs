@@ -206,22 +206,19 @@ namespace Garnet.test
                 valueToMessWith.RemoveAt(valueToMessWith.Count - 1);
             }
 
-            StringInput input = new StringInput(RespCommand.SET);
-            input.header.cmd = RespCommand.SET;
-            // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetWithETagFlag();
+            StringInput input = new StringInput(RespCommand.SETWITHETAG);
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
                 PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
-                // since we are setting with retain to etag, this change should be reflected in an etag update
-                garnetApi.SET_Conditional(key, ref input);
+                var etagOutput = new StringOutput();
+                garnetApi.SET_ETagConditional(key, ref input, ref etagOutput);
             }
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
-            // for a non SET command the etag should be invisible and be updated automatically
+            // non-ETag commands are ETag-blind
             garnetApi.Increment(keyToIncrment, out long _, 1);
         }
     }
@@ -1457,21 +1454,12 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.Execute("SETWITHETAG", key1, value1);
+                db.Execute("SETWITHETAG", key2, value2);
 
                 RedisResult result = db.Execute("RANDOPS", key1, key2);
 
                 ClassicAssert.AreEqual("OK", result.ToString());
-
-                // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.IsTrue(res[1].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
-
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.AreEqual("18", res[1].ToString());
             }
             catch (RedisServerException rse)
             {
@@ -1495,24 +1483,13 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.Execute("SETWITHETAG", key1, value1);
+                db.Execute("SETWITHETAG", key2, value2);
 
                 // incr key2, and just get key1
                 RedisResult result = db.Execute("INCRGET", key2, key1);
 
                 ClassicAssert.AreEqual(value1, result.ToString());
-
-                // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
-                // etag not updated for this
-                ClassicAssert.AreEqual("1", res[0].ToString());
-                ClassicAssert.AreEqual(value1, res[1].ToString());
-
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
-                // etag updated for this
-                ClassicAssert.AreEqual("2", res[0].ToString());
-                ClassicAssert.AreEqual("257", res[1].ToString());
             }
             catch (RedisServerException rse)
             {

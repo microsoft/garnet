@@ -1090,6 +1090,7 @@ namespace Garnet.server
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
                 RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
+                RespCommand.SETWITHETAG => NetworkSETWITHETAG(ref storageApi),
                 RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
 
                 // RangeIndex commands

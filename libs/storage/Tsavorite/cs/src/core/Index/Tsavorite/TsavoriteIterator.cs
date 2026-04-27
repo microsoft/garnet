@@ -167,7 +167,7 @@ namespace Tsavorite.core
                             if (IsTailmostMainKvRecord(mainKvIter, mainKvIter.Info, ref stackCtx))
                             {
                                 // Push Iter records are in temp storage so do not need locks.
-                                stop = !scanFunctions.Reader(in mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress, mainKvIter.ETag), numRecords, out _);
+                                stop = !scanFunctions.Reader(in mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress), numRecords, out _);
                                 return !stop;
                             }
 
@@ -198,7 +198,7 @@ namespace Tsavorite.core
                     {
                         if (!tempKvIter.Info.Tombstone)
                         {
-                            stop = !scanFunctions.Reader(in tempKvIter, new RecordMetadata(tempKvIter.CurrentAddress, tempKvIter.ETag), numRecords, out _);
+                            stop = !scanFunctions.Reader(in tempKvIter, new RecordMetadata(tempKvIter.CurrentAddress), numRecords, out _);
                             return !stop;
                         }
                         continue;

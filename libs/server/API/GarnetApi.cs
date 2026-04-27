@@ -98,12 +98,16 @@ namespace Garnet.server
             => storageSession.SET_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input)
-            => storageSession.DEL_Conditional(key, ref input, ref stringContext);
-
-        /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.SET_Conditional(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SET_ETagConditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.SET_Conditional(key, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
+        public GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input)
+            => storageSession.DEL_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, Memory<byte> value)
@@ -164,12 +168,12 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
-            => storageSession.RENAME(oldKey, newKey, withEtag);
+        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey)
+            => storageSession.RENAME(oldKey, newKey);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
-            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
+        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result)
+            => storageSession.RENAMENX(oldKey, newKey, out result);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)

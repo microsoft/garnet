@@ -13,12 +13,6 @@ namespace Garnet.server
         KEEPTTL
     }
 
-    internal enum EtagOption : byte
-    {
-        None,
-        WithETag,
-    }
-
     public enum ExistOptions : byte
     {
         None,

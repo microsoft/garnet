@@ -283,6 +283,7 @@ namespace CommandInfoUpdater
             new("SETEX", RespCommand.SETEX, StoreType.Main),
             new("SETIFMATCH", RespCommand.SETIFMATCH, StoreType.Main),
             new("SETIFGREATER", RespCommand.SETIFGREATER, StoreType.Main),
+            new("SETWITHETAG", RespCommand.SETWITHETAG, StoreType.Main),
             new("SETNX", RespCommand.SETNX, StoreType.Main),
             new("SETRANGE", RespCommand.SETRANGE, StoreType.Main),
             new("SISMEMBER", RespCommand.SISMEMBER, StoreType.Object),

@@ -5897,6 +5897,24 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task SetWithEtagACLsAsync()
+        {
+            int count = 0;
+
+            await CheckCommandsAsync(
+               "SETWITHETAG",
+               [DoSetWithEtagAsync]
+           ).ConfigureAwait(false);
+
+            async Task DoSetWithEtagAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("SETWITHETAG", [$"key-{count}", "value"]).ConfigureAwait(false);
+                count++;
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
         public async Task DelIfGreaterACLsAsync()
         {
             await CheckCommandsAsync(
