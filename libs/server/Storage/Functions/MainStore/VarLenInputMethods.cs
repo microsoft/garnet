@@ -109,7 +109,7 @@ namespace Garnet.server
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = 0,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false
             };
 
             switch (cmd)
@@ -131,6 +131,7 @@ namespace Garnet.server
 
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                case RespCommand.SETWITHETAG:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasETag = true;
                     fieldInfo.HasExpiration = input.arg1 != 0;
@@ -201,7 +202,6 @@ namespace Garnet.server
                     }
                     else
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                    fieldInfo.HasETag = input.header.CheckWithETagFlag();
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
             }
@@ -215,7 +215,7 @@ namespace Garnet.server
             {
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = 0,
-                HasETag = input.header.CheckWithETagFlag() || srcLogRecord.Info.HasETag,
+                HasETag = false,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -314,6 +314,12 @@ namespace Garnet.server
                         fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
                         return fieldInfo;
 
+                    case RespCommand.SETWITHETAG:
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.HasETag = true;
+                        fieldInfo.HasExpiration = input.arg1 != 0;
+                        return fieldInfo;
+
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
                         var newValue = input.parseState.GetArgSliceByRef(1);
@@ -384,7 +390,7 @@ namespace Garnet.server
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false
             };
 
             switch (input.header.cmd)

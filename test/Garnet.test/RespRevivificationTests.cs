@@ -210,7 +210,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task RevivifiedRecordsShouldStillEnqueueToAofViaRmwAndClearEtagState()
+        public async Task RevivifiedRecordsShouldStillEnqueueToAofViaRmw()
         {
             server.Dispose(false);
             SetupServerWithReviv(inChainOnly: true);
