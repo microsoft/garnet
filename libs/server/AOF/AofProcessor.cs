@@ -28,7 +28,7 @@ namespace Garnet.server
         readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
-        VectorManager activeVectorManager;
+        internal VectorManager activeVectorManager;
 
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
@@ -180,6 +180,12 @@ namespace Garnet.server
                 return -1;
             }
         }
+
+        /// <summary>
+        /// Wait for any queued Vector Set operations to complete.
+        /// </summary>
+        public void WaitForVectorOperationsToComplete()
+        => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
         /// Process AOF record internal
