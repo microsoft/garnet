@@ -5,20 +5,21 @@ using System;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
-        private Task<long> CheckReplicaSync(GarnetClient gclient)
+        private Task<string> CheckReplicaSync(GarnetClient gclient)
         {
             try
             {
                 if (!gclient.IsConnected)
                     gclient.Connect();
 
-                return gclient.failreplicationoffset(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token);
+                return gclient.ExecuteClusterFailReplicationOffset(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token);
             }
             catch (Exception ex)
             {
@@ -31,14 +32,14 @@ namespace Garnet.cluster
         {
             if (clients.Length > 1)
             {
-                var tasks = new Task<long>[clients.Length + 1];
+                var tasks = new Task<string>[clients.Length + 1];
 
                 var tcount = 0;
                 foreach (var _gclient in clients)
                     tasks[tcount++] = CheckReplicaSync(_gclient);
 
-                tasks[clients.Length] = Task.Delay(failoverTimeout).ContinueWith(_ => default(long));
-                var completedTask = await Task.WhenAny(tasks);
+                tasks[clients.Length] = Task.Delay(failoverTimeout).ContinueWith(_ => default(string));
+                var completedTask = await Task.WhenAny(tasks).ConfigureAwait(false);
 
                 // No replica was able to catch up with primary so timeout
                 if (completedTask == tasks[clients.Length])
@@ -50,7 +51,8 @@ namespace Garnet.cluster
                 // Return client for replica that has caught up with replication primary
                 for (var i = 0; i < tasks.Length; i++)
                 {
-                    if (completedTask == tasks[i] && tasks[i].Result == clusterProvider.replicationManager.ReplicationOffset)
+                    var replicationOffset = AofAddress.FromString(tasks[i].Result);
+                    if (completedTask == tasks[i] && replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
                         return clients[i];
                 }
                 return null;
@@ -59,7 +61,7 @@ namespace Garnet.cluster
             {
                 var syncTask = CheckReplicaSync(clients[0]);
                 var timeoutTask = Task.Delay(failoverTimeout, cts.Token);
-                var completedTask = await Task.WhenAny(syncTask, timeoutTask);
+                var completedTask = await Task.WhenAny(syncTask, timeoutTask).ConfigureAwait(false);
 
                 // Replica trying to failover did not caught up on time so timeout
                 if (completedTask == timeoutTask)
@@ -68,7 +70,8 @@ namespace Garnet.cluster
                     return null;
                 }
 
-                if (syncTask.Result != clusterProvider.replicationManager.ReplicationOffset)
+                var replicationOffset = AofAddress.FromString(syncTask.Result);
+                if (!replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
                     return null;
                 else
                     return clients[0];
@@ -82,7 +85,7 @@ namespace Garnet.cluster
                 if (!gclient.IsConnected)
                     gclient.Connect();
 
-                return await gclient.Failover(FailoverOption.TAKEOVER).WaitAsync(clusterTimeout, cts.Token);
+                return await gclient.Failover(FailoverOption.TAKEOVER).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -104,11 +107,11 @@ namespace Garnet.cluster
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
 
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                var newPrimary = await WaitForFirstReplicaSync();
+                var newPrimary = await WaitForFirstReplicaSync().ConfigureAwait(false);
                 if (newPrimary == null) return false;
 
                 status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
-                var success = await InitiateReplicaTakeOver(newPrimary);
+                var success = await InitiateReplicaTakeOver(newPrimary).ConfigureAwait(false);
                 if (!success) return false;
             }
             catch (Exception ex)

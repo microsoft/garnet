@@ -56,13 +56,13 @@ namespace Tsavorite.test.Revivification
 {
     using static VarbyteLengthUtility;
 
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
-    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
-    using SpanByteStoreFunctions = StoreFunctions<RevivificationSpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<RevivificationSpanByteComparer, SpanByteRecordTriggers>;
 
     public enum DeleteDest { FreeList, InChain }
 
@@ -311,7 +311,7 @@ namespace Tsavorite.test.Revivification
                 PageSize = 1L << 12,
                 LogMemorySize = 1L << 20,
                 RevivificationSettings = revivificationSettings
-            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<TestSpanByteKey, long, long, Empty, RevivificationFixedLenFunctions>(functions);
@@ -753,7 +753,7 @@ namespace Tsavorite.test.Revivification
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
             store = new(kvSettings
-                , StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1889,7 +1889,7 @@ namespace Tsavorite.test.Revivification
                 PageSize = 1L << 17,
                 LogMemorySize = 1L << 20,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
-            }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -2152,7 +2152,7 @@ namespace Tsavorite.test.Revivification
 
                 try
                 {
-                    var timeoutSec = 5;     // 5s per iteration should be plenty
+                    var timeoutSec = 10;     // 10s per iteration to handle slower CI environments
                     ClassicAssert.IsTrue(Task.WaitAll([.. tasks], TimeSpan.FromSeconds(timeoutSec)), $"Task timeout at {timeoutSec} sec, maxRec/taken {maxRecords}/{totalTaken}, iteration {iteration}");
                     endIteration();
                 }

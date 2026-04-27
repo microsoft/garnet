@@ -55,7 +55,6 @@ namespace Tsavorite.core
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
-            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -113,7 +112,6 @@ namespace Tsavorite.core
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
 
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                    pendingContext.eTag = srcLogRecord.ETag;
 
                     // If we already have a deleted record, there's nothing to do.
                     if (srcLogRecord.Info.Tombstone)
@@ -124,14 +122,18 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
+                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
+                        OnDispose(ref srcLogRecord, DisposeReason.Deleted);
+
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
-                        else
-                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
@@ -239,7 +241,7 @@ namespace Tsavorite.core
                 // but we may want it for a later Delete, or for insert with a smaller Key.
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                    DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                    OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
 
                 if (deleteInfo.Action == DeleteAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -252,6 +254,10 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track value heap.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
@@ -260,17 +266,20 @@ namespace Tsavorite.core
 
                 // Success should always Seal the old record. This may be readcache or readonly, which is OK.
                 if (stackCtx.recSrc.HasMainLogSrc)
+                {
+                    // Immediately dispose all resources on the source record before sealing.
+                    OnDispose(ref srcLogRecord, DisposeReason.Deleted);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
+                }
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
-                pendingContext.eTag = newLogRecord.ETag;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
+            OnDispose(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

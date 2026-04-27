@@ -33,7 +33,7 @@ namespace Tsavorite.core
     /// <summary>Tracks and controls size of log</summary>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
-    public sealed class LogSizeTracker<TStoreFunctions, TAllocator> : LogSizeTracker, IObserver<ITsavoriteScanIterator>
+    public sealed class LogSizeTracker<TStoreFunctions, TAllocator> : LogSizeTracker
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -190,22 +190,6 @@ namespace Tsavorite.core
                 resizeTaskEvent.Set();
         }
 
-        /// <summary>Callback on allocator completion</summary>
-        public void OnCompleted() { }
-
-        /// <summary>Callback on allocator error</summary>
-        public void OnError(Exception error) { }
-
-        /// <summary>Callback on allocator evicting a page to disk</summary>
-        public void OnNext(ITsavoriteScanIterator recordIter)
-        {
-            long size = 0;
-            while (recordIter.GetNext())
-                size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
-            if (size != 0)
-                heapSize.Increment(-size); // Reduce size as records are being evicted
-        }
-
         /// <summary>Adds size to the tracked total count</summary>
         public void IncrementSize(long size)
         {
@@ -257,7 +241,7 @@ namespace Tsavorite.core
                     // these calls to WaitAsync will be lost. ResizeIfNeeded retries as long as we are over budget, 
                     // but there is still a chance we'll miss a growth+signal between that check and the next WaitAsync.
                     // The timeout mitigates this but it would be better to find an awaitable ManualResetEvent.
-                    await resizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken);
+                    await resizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken).ConfigureAwait(false);
                     if (runState == (int)RunState.Running)
                         ResizeIfNeeded(cancellationToken);
                     if (runState != (int)RunState.Running)

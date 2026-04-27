@@ -2666,10 +2666,10 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "d", 4);
             db.SortedSetAdd("key1", "e", 5);
 
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "3", "a", "e", "c");
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "3", "a", "e", "c");
+            db.Execute("ZPEXPIRE", "key1", "2000", "MEMBERS", "1", "b");
 
-            Thread.Sleep(300);
+            Thread.Sleep(1000);
 
             var lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+"); // SortedSetLengthByValue will check - and + to [- and [+
             ClassicAssert.AreEqual(2, lexCount); // Only "b" and "d" should remain
@@ -2677,7 +2677,7 @@ namespace Garnet.test
             var lexCountRange = db.SortedSetLengthByValue("key1", "b", "d", Exclude.Stop);
             ClassicAssert.AreEqual(1, lexCountRange); // Only "b" should remain within the range
 
-            Thread.Sleep(300);
+            Thread.Sleep(1500);
 
             lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+");
             ClassicAssert.AreEqual(1, lexCount); // Only "d" should remain

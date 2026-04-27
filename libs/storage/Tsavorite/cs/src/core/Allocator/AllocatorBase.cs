@@ -205,6 +205,12 @@ namespace Tsavorite.core
         /// <summary>Observer for records getting evicted from memory (page closed). May be the same object as <see cref="logSizeTracker"/>.</summary>
         internal IObserver<ITsavoriteScanIterator> onEvictionObserver;
 
+        /// <summary>
+        /// Whether this allocator is the read cache (as opposed to the main hybrid log).
+        /// Set once at construction from <see cref="AllocatorSettings.IsReadCache"/>.
+        /// </summary>
+        internal readonly bool IsReadCache;
+
         /// <summary>Log size tracker; called when an operation at the Tsavorite-internal level adds or removes heap memory size 
         /// (e.g. copying to log tail or read cache, which do not call <see cref="ISessionFunctions{TInputOutput, TContext}"/>).
         /// May be the same object as <see cref="onEvictionObserver"/>.</summary>
@@ -466,6 +472,11 @@ namespace Tsavorite.core
                                 // Clean up temporary bits when applying the delta log
                                 ref var destInfo = ref LogRecord.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
+                                if (storeFunctions.CallOnDiskRead)
+                                {
+                                    var destLogRecord = new LogRecord(destination);
+                                    storeFunctions.OnDiskRead(ref destLogRecord);
+                                }
                             }
                             physicalAddress += size;
                         }
@@ -548,9 +559,15 @@ namespace Tsavorite.core
 
         /// <summary>Instantiate base allocator implementation</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected AllocatorBase(LogSettings logSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback,
-                LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
+        private protected AllocatorBase(AllocatorSettings allocatorSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator,
+                ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
         {
+            var logSettings = allocatorSettings.LogSettings;
+            var evictCallback = allocatorSettings.evictCallback;
+            var epoch = allocatorSettings.epoch;
+            var flushCallback = allocatorSettings.flushCallback;
+            IsReadCache = allocatorSettings.IsReadCache;
+
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
@@ -1398,15 +1415,22 @@ namespace Tsavorite.core
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal void EvictPageForRecovery(long page)
         {
-            if (logSizeTracker is not null)
+            var start = GetLogicalAddressOfStartOfPage(page);
+            var end = GetLogicalAddressOfStartOfPage(page + 1);
+
+            var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+
+            // Per-record eviction walk handles internal heap accounting (key + value via
+            // logSizeTracker) and optionally notifies the application via OnEvict.
+            if (logSizeTracker is not null || storeFunctions.CallOnEvict)
             {
-                var start = GetLogicalAddressOfStartOfPage(page);
-                var end = GetLogicalAddressOfStartOfPage(page + 1);
-                MemoryPageScan(start, end, logSizeTracker);
+                _wrapper.EvictRecordsInRange(start, end, source);
+            }
+            if (onEvictionObserver is not null)
+            {
+                MemoryPageScan(start, end, onEvictionObserver);
             }
 
-            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
-            // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
 
@@ -1478,14 +1502,17 @@ namespace Tsavorite.core
                     var start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     var end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
-                    // will have seen a record below the eviction range as "in mutable region".
+                    // Legacy observer path — skip if the observer IS the logSizeTracker, since
+                    // EvictRecordsInRange below already handles heap accounting via logSizeTracker.
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
 
-                    // Dispose records being evicted — allows cleanup of external resources via DisposeRecord.
-                    if (storeFunctions.DisposeOnPageEviction)
-                        _wrapper.DisposeRecordsInRangeForEviction(start, end);
+                    // Per-record eviction walk: handles internal heap-size accounting (key overflow
+                    // and value heap via logSizeTracker) and optionally notifies the application
+                    // via OnEvict for app-level cleanup.
+                    var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict)
+                        _wrapper.EvictRecordsInRange(start, end, evictSource);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -1877,8 +1904,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
+        /// <param name="flushBuffers"></param>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
+        /// <param name="startLogicalAddress"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
@@ -2112,6 +2141,9 @@ namespace Tsavorite.core
                     if (currentLength >= recordLength)
                     {
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                        if (storeFunctions.CallOnDiskRead)
+                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
                 }
@@ -2147,6 +2179,7 @@ namespace Tsavorite.core
                     ctx.logicalAddress = prevAddressToRead;
                     if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
+                        _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
@@ -2162,6 +2195,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);

@@ -16,8 +16,8 @@ namespace Tsavorite.test.Objects
 {
     using static TestUtils;
 
-    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -35,8 +35,8 @@ namespace Tsavorite.test.Objects
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.obj.log"), deleteOnClose: true);
             var storeFunctions = TestContext.CurrentContext.Test.MethodName.StartsWith("LargeObject")
-                ? StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordDisposer.Instance)
-                : StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance);
+                ? StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance)
+                : StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance);
 
             store = new(new()
             {
@@ -273,7 +273,6 @@ namespace Tsavorite.test.Objects
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
-        [Explicit("Temporary while I figure out why FlushedUntilAddress is not as expected")]
         public void LargeObjectMultiFlushedPages([Values(SerializeKeyValueSize.Thirty, SerializeKeyValueSize.OneK)] SerializeKeyValueSize serializeValueSize)
         {
             // Ensure our size calculations are correct by validating the test parameters are what we expect
@@ -304,12 +303,20 @@ namespace Tsavorite.test.Objects
                 _ = bContext.Upsert(key, ref input, value, ref output);
             }
 
+            // The upsert loop implicitly advanced ReadOnlyAddress as pages were turned, which kicks off asynchronous page flushes.
+            // ROA is already at its final value, but the flush completions that drive FlushedUntilAddress arrive on background
+            // I/O threads and may not all have landed by the time we reach here. Synchronize by re-invoking ShiftReadOnlyAddress
+            // with wait:true; the shift itself is a no-op (MonotonicUpdate fails for the same address) but the wait loop blocks
+            // until FlushedUntilAddress catches up to the current ReadOnlyAddress.
+            store.Log.ShiftReadOnlyAddress(store.hlogBase.ReadOnlyAddress, wait: true);
+
             // Test that the expected number of pages were flushed and that we get the right results back. We've flushed in a multiple of full pages,
-            // so ReadOnlyAddress will be aligned to page size. We have 0.1 mutable fraction, so we should have closed 2 pages and have 3 mutable,
-            // leaving 27 immutable, totaling FUA 29 * PageSize. (That's why we verified 32 above.. easier to verify numbers here).
+            // so ReadOnlyAddress will be aligned to page size. With 0.1 mutable fraction, tail at 34 * PageSize, and head shifted to page 2 during
+            // the last two page-turns (each of which moves head by one page once MaxAllocatedPageCount is reached), CalculateReadOnlyAddress snaps
+            // ROA to page 29. That is: 2 closed pages (0, 1), 27 immutable (2..28) and 5 mutable (29..33), with FUA == ROA == 29 * PageSize.
             // Note: This test does NOT use SizeTracker; therefore it does not evict except when page count is exceeded.
             Assert.That(IsAligned(store.hlogBase.ReadOnlyAddress, store.hlogBase.PageSize), $"ReadOnlyAddress ({store.hlogBase.ReadOnlyAddress}) should be page-aligned");
-            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.PageSize * 29), $"FUA ({store.hlogBase.FlushedUntilAddress}) != PageSize * 29");  // <============== Fix this AF
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.PageSize * 29), $"FUA ({store.hlogBase.FlushedUntilAddress}) != PageSize * 29");
             Assert.That(store.hlogBase.FlushedUntilAddress, Is.EqualTo(store.hlogBase.ReadOnlyAddress), $"FUA ({store.hlogBase.FlushedUntilAddress}) == ROA");
             DoRead(0, 2 * ObjectsPerPage - 1, onDisk: true);
             DoRead(2 * ObjectsPerPage, lastKey, onDisk: false);
@@ -463,9 +470,16 @@ namespace Tsavorite.test.Objects
                 try
                 {
                     // Do this in two pieces so we signal the gate in between to give the second call above a chance to launch.
+                    // The first shift must succeed because no concurrent shift has happened yet.
                     Assert.That(store.hlogBase.ShiftReadOnlyAddress(newReadOnlyAddress - store.hlogBase.PageSize * 10), Is.True);
                     gate?.Set();
-                    Assert.That(store.hlogBase.ShiftReadOnlyAddress(newReadOnlyAddress), Is.True);
+
+                    // The second shift races with the main thread's ShiftReadOnlyToTail. Either ordering is valid and exercises
+                    // the linearization path: if this shift lands first, ShiftReadOnlyToTail extends ROA from newReadOnlyAddress
+                    // to the tail; if ShiftReadOnlyToTail lands first, ROA is already past newReadOnlyAddress and MonotonicUpdate
+                    // (correctly) refuses to move ROA backwards, so this call returns false. Both outcomes converge to the same
+                    // post-condition (ROA == FUA == TailAddress), which is what the caller asserts after awaiting both tasks.
+                    _ = store.hlogBase.ShiftReadOnlyAddress(newReadOnlyAddress);
                 }
                 finally
                 {

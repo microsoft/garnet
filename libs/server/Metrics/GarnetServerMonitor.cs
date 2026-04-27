@@ -20,7 +20,7 @@ namespace Garnet.server
     internal sealed class GarnetServerMonitor
     {
         public readonly Dictionary<InfoMetricsType, bool>
-            resetEventFlags = GarnetInfoMetrics.DefaultInfo.ToDictionary(x => x, y => false);
+            resetEventFlags = Enum.GetValues<InfoMetricsType>().ToDictionary(x => x, y => false);
 
         public readonly Dictionary<LatencyMetricsType, bool>
             resetLatencyMetrics = GarnetLatencyMetrics.defaultLatencyTypes.ToDictionary(x => x, y => false);
@@ -33,16 +33,19 @@ namespace Garnet.server
 
         GarnetServerMetrics globalMetrics;
         readonly GarnetSessionMetrics accSessionMetrics;
+        readonly CommandStats accCommandStats;
         private ulong instant_input_net_bytes;
         private ulong instant_output_net_bytes;
         private ulong instant_commands_processed;
 
         readonly CancellationTokenSource cts = new();
-        readonly ManualResetEvent done = new(false);
+        readonly ManualResetEvent done = new(true);
 
         readonly ILogger logger;
 
         public GarnetServerMetrics GlobalMetrics => globalMetrics;
+
+        internal IGarnetServer[] Servers => servers;
 
         SingleWriterMultiReaderLock rwLock = new();
 
@@ -58,9 +61,10 @@ namespace Garnet.server
             instant_input_net_bytes = 0;
             instant_output_net_bytes = 0;
             instant_commands_processed = 0;
-            globalMetrics = new(true, opts.LatencyMonitor, this);
+            globalMetrics = new(true, opts.LatencyMonitor, opts.CommandStatsMonitor, this);
 
             accSessionMetrics = new GarnetSessionMetrics();
+            accCommandStats = opts.CommandStatsMonitor ? new CommandStats() : null;
         }
 
         public void Dispose()
@@ -74,16 +78,23 @@ namespace Garnet.server
 
         public void Start()
         {
-            Task.Run(() => MainMonitorTask(cts.Token));
+            // Only run the periodic sampling task if a sampling frequency is configured.
+            // The monitor may be created solely for command stats history (without periodic sampling).
+            if (monitorSamplingFrequency > TimeSpan.Zero)
+            {
+                done.Reset();
+                Task.Run(() => MainMonitorTask(cts.Token));
+            }
         }
 
-        public void AddMetricsHistorySessionDispose(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics)
+        public void AddMetricsHistorySessionDispose(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics, CommandStats currCommandStats = null)
         {
             rwLock.WriteLock();
             try
             {
                 if (currSessionMetrics != null) globalMetrics.historySessionMetrics.Add(currSessionMetrics);
                 if (currLatencyMetrics != null) globalMetrics.globalLatencyMetrics.Merge(currLatencyMetrics);
+                if (currCommandStats != null) globalMetrics.historyCommandStats?.Add(currCommandStats);
                 currLatencyMetrics?.Return();
             }
             finally { rwLock.WriteUnlock(); }
@@ -133,6 +144,12 @@ namespace Garnet.server
                 // Accumulate session metrics
                 accSessionMetrics.Add(session.GetSessionMetrics);
 
+                // Accumulate command stats if enabled
+                if (accCommandStats != null)
+                {
+                    accCommandStats.Add(session.GetCommandStats);
+                }
+
                 // Accumulate latency metrics if latency monitor is enabled
                 if (opts.LatencyMonitor)
                 {
@@ -154,6 +171,12 @@ namespace Garnet.server
             // Add accumulated session metrics for this iteration
             globalMetrics.globalSessionMetrics.Add(accSessionMetrics);
 
+            // Reset global command stats and add accumulated for this iteration
+            if (accCommandStats != null)
+            {
+                globalMetrics.globalCommandStats.Reset();
+                globalMetrics.globalCommandStats.Add(accCommandStats);
+            }
         }
 
         private void CleanupGlobalStats()
@@ -188,6 +211,24 @@ namespace Garnet.server
                 storeWrapper.ResetRevivificationStats();
 
                 resetEventFlags[InfoMetricsType.STATS] = false;
+            }
+
+            if (resetEventFlags.TryGetValue(InfoMetricsType.COMMANDSTATS, out bool resetCommandStats) && resetCommandStats)
+            {
+                logger?.LogInformation("Resetting command stats");
+                globalMetrics.globalCommandStats?.Reset();
+                globalMetrics.historyCommandStats?.Reset();
+
+                foreach (var garnetServer in servers.Cast<GarnetServerBase>())
+                {
+                    var sessions = garnetServer.ActiveConsumers();
+                    foreach (var s in sessions)
+                    {
+                        ((RespServerSession)s).GetCommandStats?.Reset();
+                    }
+                }
+
+                resetEventFlags[InfoMetricsType.COMMANDSTATS] = false;
             }
         }
 
@@ -230,7 +271,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(monitorSamplingFrequency, token);
+                    await Task.Delay(monitorSamplingFrequency, token).ConfigureAwait(false);
 
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.
@@ -283,6 +324,13 @@ namespace Garnet.server
                 accSessionMetrics.Reset();
                 // Add session metrics history in accumulator
                 accSessionMetrics.Add(globalMetrics.historySessionMetrics);
+
+                // Reset command stats accumulator and add history
+                if (accCommandStats != null)
+                {
+                    accCommandStats.Reset();
+                    accCommandStats.Add(globalMetrics.historyCommandStats);
+                }
             }
 
             void ResetLatencySessionMetrics()

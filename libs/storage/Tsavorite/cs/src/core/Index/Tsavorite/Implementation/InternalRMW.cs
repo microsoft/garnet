@@ -62,7 +62,6 @@ namespace Tsavorite.core
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
-            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -143,42 +142,68 @@ namespace Tsavorite.core
 
                     var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
 
+                    // Track value heap delta across in-place update. Only measure when value is
+                    // heap-allocated (overflow or object); inline values have zero heap cost.
+                    var ipuPreInline = srcLogRecord.Info.ValueIsInline;
+                    var ipuPreHeap = ipuPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+
                     if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
                     {
+                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
+                        {
+                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                            var ipuDelta = ipuPostHeap - ipuPreHeap;
+                            if (ipuDelta != 0)
+                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
+                        }
+
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // status has been set by InPlaceUpdater
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
                         goto LatchRelease;
                     }
 
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
+                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed)
+                        // before IPU returned false. Track the delta before OnDispose subtracts the
+                        // remaining empty-collection overhead.
+                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
+                        {
+                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                            var ipuDelta = ipuPostHeap - ipuPreHeap;
+                            if (ipuDelta != 0)
+                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
+                        }
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
-                        // Tombstone has been set by SessionFunctionsWrapper.InPlaceUpdater
-                        srcLogRecord.InfoRef.SetDirtyAndModified();
 
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
 
-                        // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                        // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
+                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
+                        OnDispose(ref srcLogRecord, DisposeReason.Deleted);
+
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
-                        else
-                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
                         goto LatchRelease;
+                    }
+                    else if (rmwInfo.Action == RMWAction.ExpireAndResume)
+                    {
+                        // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called
+                        // OnDispose(Deleted). If it failed and we fall through to CreateNewRecord,
+                        // the record is already disposed.
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {
                         // status has been set by InPlaceUpdater, and no modification should have been made to the record.
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
                         goto LatchRelease;
                     }
@@ -286,10 +311,14 @@ namespace Tsavorite.core
                     {
                         sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
+                        // Track revived record's value heap — was subtracted at OnDispose(Deleted).
+                        var valueHeap = logRecord.GetValueHeapMemorySize();
+                        if (valueHeap != 0)
+                            hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = logRecord.ETag;
 
                         // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically).
                         // OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
@@ -399,11 +428,18 @@ namespace Tsavorite.core
                         return OperationStatus.CANCELED;
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
+                        // The old value is logically deleted (expired). Dispose resources immediately.
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                            OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                         doingCU = false;
                         forExpiration = true;
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
+                        // Immediately dispose all resources on the expired source record.
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                            OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
+
                         if (allocOptions.elideSourceRecord)
                         {
                             srcLogRecord.InfoRef.SetTombstone();
@@ -415,7 +451,7 @@ namespace Tsavorite.core
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
-                        // otherwise we shall continue down the tombstoning path
+                        // Non-elidable: create tombstone record
                         addTombstone = true;
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
@@ -484,8 +520,8 @@ namespace Tsavorite.core
                         newLogRecord.InfoRef.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
 
-                    if (rmwInfo.ClearSourceValueObject)
-                        srcLogRecord.ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
+                    // Note: ClearSourceValueObject disposal is deferred to after CAS success (in the post-CAS block)
+                    // to avoid disposing the source if CAS fails and the operation retries.
                     goto DoCAS;
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -501,6 +537,9 @@ namespace Tsavorite.core
                 {
                     Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
                         "This block should only handle expiration/tombstoning via RCU.");
+                    // Dispose the source record's resources immediately.
+                    if (stackCtx.recSrc.HasMainLogSrc)
+                        OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                     addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
                     newLogRecord.InfoRef.SetDirtyAndModified();
@@ -509,6 +548,9 @@ namespace Tsavorite.core
                 }
                 else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                 {
+                    // Dispose the source record's resources immediately.
+                    if (stackCtx.recSrc.HasMainLogSrc)
+                        OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                     doingCU = false;
                     forExpiration = true;
 
@@ -521,7 +563,7 @@ namespace Tsavorite.core
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
                         stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                         if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                            DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                            OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
                         goto RetryNow;
                     }
                     addTombstone = newLogRecord.Info.Tombstone;
@@ -550,6 +592,10 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track in-place value deltas.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // If IU, status will be NOTFOUND; return that.
@@ -558,7 +604,14 @@ namespace Tsavorite.core
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
                     if (!addTombstone)
+                    {
                         sessionFunctions.PostInitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+
+                        // Track new record's value heap — after Post* so the value is fully populated.
+                        var valueHeap = newLogRecord.GetValueHeapMemorySize();
+                        if (valueHeap != 0)
+                            hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                    }
                 }
                 else
                 {
@@ -570,13 +623,42 @@ namespace Tsavorite.core
                         // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
-                        if (srcLogRecord.Info.ValueIsObject && isMemoryLogRecord)
-                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref srcLogRecord.AsMemoryLogRecordRef(), ref newLogRecord, ref rmwInfo);
+                        if (srcLogRecord.Info.ValueIsObject)
+                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord);
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
                         {
-                            if (!newLogRecord.Info.IsInNewVersion && isMemoryLogRecord)
-                                srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
+                            // Track new record's value heap — after PCU so the value is fully populated.
+                            {
+                                var newValueHeap = newLogRecord.GetValueHeapMemorySize();
+                                if (newValueHeap != 0)
+                                    hlogBase.logSizeTracker?.IncrementSize(newValueHeap);
+                            }
+
+                            if (rmwInfo.ClearSourceValueObject && isMemoryLogRecord)
+                            {
+                                ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+
+                                // Decrement the value-object's heap contribution from the tracker and dispose
+                                // the object BEFORE clearing the slot. This is an internal accounting and
+                                // disposal step — the trigger is NOT involved because CopyUpdated is a
+                                // partial clear (value only, key stays) and expecting trigger implementers
+                                // to know that nuance is error-prone. The remaining key overflow (if any)
+                                // is decremented later by OnEvict when the sealed page is evicted.
+                                if (srcMemLogRecord.Info.ValueIsObject)
+                                {
+                                    var valueObject = srcMemLogRecord.ValueObject;
+                                    if (valueObject is not null)
+                                    {
+                                        var valueHeap = valueObject.HeapMemorySize;
+                                        if (valueHeap != 0)
+                                            hlogBase.logSizeTracker?.IncrementSize(-valueHeap);
+                                        valueObject.Dispose();
+                                    }
+                                }
+
+                                srcMemLogRecord.ClearValueIfHeap();
+                            }
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -602,7 +684,7 @@ namespace Tsavorite.core
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                             _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref inMemoryLogRecord);
                         else
-                            DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
+                            OnDispose(ref inMemoryLogRecord, DisposeReason.Elided);
                     }
                     else
                     {
@@ -615,13 +697,12 @@ namespace Tsavorite.core
             Done:
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
-                pendingContext.eTag = newLogRecord.ETag;
                 return status;
             }
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
+            OnDispose(ref newLogRecord, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
@@ -634,6 +715,23 @@ namespace Tsavorite.core
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
             advancedStatusCode |= StatusCode.Expired;
+
+            // Dispose the expired record's resources before reinitializing.
+            // For IPU, skip the heap-tracker decrement because the outer pre/post delta
+            // tracking in InternalRMW captures the net heap change across the entire IPU.
+            // We still need the disposal side-effects (trigger + ClearHeapFields).
+            // For CU, this is the newly allocated record (source was already disposed at the decision site).
+            if (isIpu)
+            {
+                storeFunctions.OnDispose(ref logRecord, DisposeReason.Deleted);
+                logRecord.ClearHeapFields(clearKey: false);
+                logRecord.ClearOptionals();
+            }
+            else
+            {
+                OnDispose(ref logRecord, DisposeReason.Deleted);
+            }
+
             if (!sessionFunctions.NeedInitialUpdate(logRecord, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -655,7 +753,9 @@ namespace Tsavorite.core
             {
                 if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
-                    // If IPU path, we need to complete PostInitialUpdater as well
+                    // If IPU path, we need to complete PostInitialUpdater as well.
+                    // No explicit heap tracking here — the outer pre/post delta in InternalRMW
+                    // captures the net change (old value → new value).
                     if (isIpu)
                         sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
@@ -680,8 +780,10 @@ namespace Tsavorite.core
             }
 
             // Reinitialization in place was not possible. InternalRMW will do the following based on who called this:
-            //  IPU: move to the NIU->allocate->IU path
+            //  IPU: move to the NIU->allocate->IU path. Set tombstone so CreateNewRecordRMW uses InitialUpdater (doingCU=false).
             //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
+            if (isIpu)
+                logRecord.InfoRef.SetTombstone();
             status = OperationStatus.SUCCESS;
             return false;
         }

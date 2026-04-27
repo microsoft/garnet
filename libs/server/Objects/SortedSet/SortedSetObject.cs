@@ -314,10 +314,8 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     byte respProtocolVersion)
         {
-            memorySizeChange = 0;
-
             var header = input.header;
             if (header.type != GarnetObjectType.SortedSet)
             {
@@ -327,7 +325,6 @@ namespace Garnet.server
                 return true;
             }
 
-            var prevMemorySize = HeapMemorySize;
             var op = header.SortedSetOp;
             switch (op)
             {
@@ -412,8 +409,6 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
             }
-
-            memorySizeChange = HeapMemorySize - prevMemorySize;
 
             if (sortedSetDict.Count == 0)
                 output.OutputFlags |= ObjectOutputFlags.RemoveKey;

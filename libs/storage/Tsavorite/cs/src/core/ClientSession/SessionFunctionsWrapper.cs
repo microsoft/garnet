@@ -193,12 +193,14 @@ namespace Tsavorite.core
             }
             else if (rmwInfo.Action == RMWAction.ExpireAndStop)
             {
-                logRecord.InfoRef.SetTombstone();
+                // Tombstone is set by the caller (InternalRMW) AFTER OnDispose,
+                // so that internal heap accounting reads the pre-tombstone value size.
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
             }
             else if (rmwInfo.Action == RMWAction.WrongType)
             {
-                logRecord.InfoRef.SetTombstone();
+                // WrongType means the operation was rejected — the record must NOT be modified.
+                // Do not set Tombstone; the key should remain intact for correct-type operations.
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
             }
             else
@@ -238,8 +240,8 @@ namespace Tsavorite.core
         {
             if (!_clientSession.functions.InPlaceDeleter(ref logRecord, ref deleteInfo))
                 return false;
-            logRecord.InfoRef.SetTombstone();
-            logRecord.InfoRef.SetDirtyAndModified();
+            // Tombstone and Dirty/Modified are set by the caller (InternalDelete) AFTER
+            // OnDispose, so that internal heap accounting reads the pre-tombstone value size.
             return true;
         }
 

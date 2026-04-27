@@ -57,9 +57,6 @@ namespace Garnet.server
                 input.header.SetExpiredFlag();
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
-
-            if (logRecord.Info.ValueIsObject)
-                functionsState.cacheSizeTracker?.AddHeapSize(logRecord.ValueObject.HeapMemorySize);
         }
 
         /// <inheritdoc />
@@ -84,13 +81,6 @@ namespace Garnet.server
 
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
-                if (!srcLogRecord.Info.ValueIsObject)
-                {
-                    _ = dstLogRecord.RemoveETag();
-                    // reset etag state that may have been initialized earlier
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
-
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
@@ -104,15 +94,8 @@ namespace Garnet.server
                 return true;
             }
 
-            var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
-            var shouldUpdateEtag = recordHadEtagPreMutation;
-            if (shouldUpdateEtag)
-            {
-                // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-            }
-
             var cmd = input.header.cmd;
+            bool shouldUpdateEtag = false;
 
             var result = cmd switch
             {
@@ -123,17 +106,6 @@ namespace Garnet.server
 
             if (!result)
                 return false;
-
-            if (shouldUpdateEtag)
-            {
-                dstLogRecord.TrySetETag(functionsState.etagState.ETag + 1);
-                ETagState.ResetState(ref functionsState.etagState);
-            }
-            else if (recordHadEtagPreMutation)
-            {
-                // reset etag state that may have been initialized earlier
-                ETagState.ResetState(ref functionsState.etagState);
-            }
 
             sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
             return true;
@@ -146,13 +118,11 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            var shouldUpdateEtag = false;
             if (srcLogRecord.Info.ValueIsObject)
             {
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
-                var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
 
                 // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
@@ -169,15 +139,12 @@ namespace Garnet.server
                         break;
 
                     case RespCommand.PERSIST:
-                        HandlePersistInPlaceUpdate(ref dstLogRecord, hasExpiration, ref shouldUpdateEtag, ref output);
+                        HandlePersistInPlaceUpdate(ref dstLogRecord, hasExpiration, ref output);
                         break;
                 }
 
                 sizeInfo.AssertOptionalsIfSet(dstLogRecord.Info);
 
-                // If oldValue has been set to null, subtract its size from the tracked heap size
-                var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeAdjustment);
             }
 
             if (functionsState.appendOnlyFile != null)
@@ -189,7 +156,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo, out var sizeChange);
+            var ipuResult = InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo);
             switch (ipuResult)
             {
                 case IPUResult.Failed:
@@ -199,8 +166,6 @@ namespace Garnet.server
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
-                    if (logRecord.Info.ValueIsObject)
-                        functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
                     return true;
                 case IPUResult.NotUpdated:
                 default:
@@ -208,33 +173,18 @@ namespace Garnet.server
             }
         }
 
-        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            sizeChange = 0;
             var cmd = input.header.cmd;
 
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                if (logRecord.Info.ValueIsObject)
-                {
-                    functionsState.cacheSizeTracker?.AddHeapSize(-logRecord.ValueObject.HeapMemorySize);
-
-                    // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                    functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(_ => { });
-                }
-                else
-                    _ = logRecord.RemoveETag();
-
+                // Heap disposal and cache size tracking are handled by
+                // OnDispose(Deleted) in InternalRMW for both ExpireAndStop and ExpireAndResume.
                 rmwInfo.Action = cmd == RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return IPUResult.Failed;
             }
-
-            var hadETagPreMutation = logRecord.Info.HasETag;
-            var shouldUpdateEtag = hadETagPreMutation;
-            if (shouldUpdateEtag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
             var hasExpiration = logRecord.Info.HasExpiration;
 
@@ -247,32 +197,13 @@ namespace Garnet.server
                         return IPUResult.Failed;
                     break;
                 case RespCommand.PERSIST:
-                    HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateEtag, ref output);
+                    HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref output);
                     break;
                 case RespCommand.DELIFEXPIM:
-                    if (!logRecord.Info.ValueIsObject)
-                    {
-                        // this is the case where it isn't expired
-                        shouldUpdateEtag = false;
-                    }
+                    // Not expired — no-op
                     break;
                 default:
                     throw new NotImplementedException();
-            }
-
-            if (!logRecord.Info.ValueIsObject)
-            {
-                // increment the Etag transparently if in place update happened
-                if (shouldUpdateEtag)
-                {
-                    logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
-                else if (hadETagPreMutation)
-                {
-                    // reset etag state that may have been initialized earlier
-                    ETagState.ResetState(ref functionsState.etagState);
-                }
             }
 
             return ipuResult;
@@ -295,13 +226,6 @@ namespace Garnet.server
         private IPUResult HandleExpireInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref UnifiedInput input, ref UnifiedOutput output)
         {
             var expirationWithOption = new ExpirationWithOption(input.arg1);
-
-            if (!logRecord.Info.ValueIsObject)   // TODO ETag for unified store
-            {
-                // reset etag state that may have been initialized earlier, but don't update etag because only the expiration was updated
-                ETagState.ResetState(ref functionsState.etagState);
-            }
-
             return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, hasExpiration, ref output);
         }
 
@@ -323,7 +247,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void HandlePersistInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref bool shouldUpdateEtag, ref UnifiedOutput output)
+        private void HandlePersistInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref UnifiedOutput output)
         {
             if (hasExpiration)
             {
@@ -332,13 +256,6 @@ namespace Garnet.server
             }
             else
                 functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-
-            if (!logRecord.Info.ValueIsObject)
-            {
-                // reset etag state that may have been initialized earlier, but don't update etag because only the metadata was updated
-                ETagState.ResetState(ref functionsState.etagState);
-                shouldUpdateEtag = false;
-            }
         }
 
 

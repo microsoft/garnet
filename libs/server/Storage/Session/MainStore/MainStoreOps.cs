@@ -210,16 +210,16 @@ namespace Garnet.server
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
-            return GarnetStatus.OK;
+            var status = context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
+            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var output = new StringOutput();
-            context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref output);
-            return GarnetStatus.OK;
+            var status = context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref output);
+            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)

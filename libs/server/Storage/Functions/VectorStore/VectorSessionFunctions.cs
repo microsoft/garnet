@@ -20,13 +20,17 @@ namespace Garnet.server
         private const int ValueAlignmentBytes = 4;
 
         private readonly FunctionsState functionsState;
+        private readonly ReadSessionState readSessionState;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        internal VectorSessionFunctions(FunctionsState functionsState)
+        /// <param name="functionsState"></param>
+        /// <param name="readSessionState"></param>
+        internal VectorSessionFunctions(FunctionsState functionsState, ReadSessionState readSessionState = null)
         {
             this.functionsState = functionsState;
+            this.readSessionState = readSessionState;
         }
 
         #region Reads
@@ -764,5 +768,21 @@ namespace Garnet.server
 
             span[sizeof(int)] = (byte)newNs;
         }
+
+        /// <inheritdoc />
+        public void BeforeConsistentReadCallback(long hash)
+            => readSessionState?.BeforeConsistentReadKeyCallback(hash);
+
+        /// <inheritdoc />
+        public void AfterConsistentReadKeyCallback()
+            => readSessionState?.AfterConsistentReadKeyCallback();
+
+        /// <inheritdoc />
+        public void BeforeConsistentReadKeyBatchCallback(ReadOnlySpan<PinnedSpanByte> parameters)
+            => readSessionState?.BeforeConsistentReadKeyBatch(parameters);
+
+        /// <inheritdoc />
+        public bool AfterConsistentReadKeyBatchCallback(int keyCount)
+            => readSessionState != null && readSessionState.AfterConsistentReadKeyBatch(keyCount);
     }
 }

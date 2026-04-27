@@ -62,7 +62,6 @@ namespace Tsavorite.core
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
-            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -136,13 +135,24 @@ namespace Tsavorite.core
 
                     var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
 
+                    // Track value heap delta across in-place write.
+                    var ipwPreInline = srcLogRecord.Info.ValueIsInline;
+                    var ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+
                     // Type arg specification is needed because we don't pass TContext
                     if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions))
                     {
+                        if (!ipwPreInline || !srcLogRecord.Info.ValueIsInline)
+                        {
+                            var ipwPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
+                            var ipwDelta = ipwPostHeap - ipwPreHeap;
+                            if (ipwDelta != 0)
+                                hlogBase.logSizeTracker?.IncrementSize(ipwDelta);
+                        }
+
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
@@ -150,6 +160,11 @@ namespace Tsavorite.core
                     if (upsertInfo.Action == UpsertAction.CancelOperation)
                     {
                         status = OperationStatus.CANCELED;
+                        goto LatchRelease;
+                    }
+                    if (upsertInfo.Action == UpsertAction.WrongType)
+                    {
+                        status = OperationStatus.WRONG_TYPE;
                         goto LatchRelease;
                     }
 
@@ -228,10 +243,15 @@ namespace Tsavorite.core
                     TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                             ref logRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
 
+                    // Track revived record's heap — key was already tracked when the tombstone was created,
+                    // but value heap was subtracted at OnDispose(Deleted). Re-add it now.
+                    var valueHeap = logRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+
                     // Success
                     MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                    pendingContext.eTag = logRecord.ETag;
 
                     // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
@@ -332,7 +352,7 @@ namespace Tsavorite.core
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                    DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                    OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
 
                 if (upsertInfo.Action == UpsertAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -344,11 +364,22 @@ namespace Tsavorite.core
             success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track in-place value deltas.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Type arg specification is needed because we don't pass TContext
                 TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref newLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+
+                // Track new record's value heap — after PostInitialWriter so the value is fully populated.
+                {
+                    var valueHeap = newLogRecord.GetValueHeapMemorySize();
+                    if (valueHeap != 0)
+                        hlogBase.logSizeTracker?.IncrementSize(valueHeap);
+                }
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
@@ -360,7 +391,7 @@ namespace Tsavorite.core
                     if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref srcLogRecord);
                     else
-                        DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
+                        OnDispose(ref srcLogRecord, DisposeReason.Elided);
                 }
                 else
                 {
@@ -371,14 +402,13 @@ namespace Tsavorite.core
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
-                pendingContext.eTag = newLogRecord.ETag;
 
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
+            OnDispose(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

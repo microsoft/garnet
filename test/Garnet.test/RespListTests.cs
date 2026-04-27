@@ -1076,14 +1076,13 @@ namespace Garnet.test
 
         [Test]
         [Repeat(10)]
-        public async Task ListPushPopStressTest()
+        public void ListPushPopStressTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             int keyCount = 10;
             int ppCount = 100;
-            //string[] keys = new string[keyCount];
             HashSet<string> keys = [];
             for (int i = 0; i < keyCount; i++)
                 while (!keys.Add(r.Next().ToString())) { }
@@ -1091,33 +1090,55 @@ namespace Garnet.test
             ClassicAssert.AreEqual(keyCount, keys.Count, "Unique key initialization failed!");
 
             var keyArray = keys.ToArray();
-            Task[] tasks = new Task[keyArray.Length << 1];
-            for (int i = 0; i < tasks.Length; i += 2)
-            {
-                int idx = i;
-                tasks[i] = Task.Run(async () =>
-                {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
-                        await db.ListLeftPushAsync(key, j).ConfigureAwait(false);
-                });
+            var stop = new ManualResetEventSlim(false);
 
-                tasks[i + 1] = Task.Run(async () =>
+            // Use dedicated threads to avoid threadpool starvation on small CI runners.
+            var threads = new Thread[keyCount * 2];
+            for (int i = 0; i < keyCount; i++)
+            {
+                var key = keyArray[i];
+
+                threads[i * 2] = new Thread(() =>
                 {
-                    var key = keyArray[idx >> 1];
-                    for (int j = 0; j < ppCount; j++)
+                    for (int j = 0; j < ppCount && !stop.IsSet; j++)
+                        db.ListLeftPush(key, j);
+                })
+                { IsBackground = true };
+
+                threads[i * 2 + 1] = new Thread(() =>
+                {
+                    for (int j = 0; j < ppCount && !stop.IsSet; j++)
                     {
-                        var value = await db.ListRightPopAsync(key).ConfigureAwait(false);
-                        while (value.IsNull)
+                        var value = db.ListRightPop(key);
+                        while (value.IsNull && !stop.IsSet)
                         {
-                            await Task.Delay(1).ConfigureAwait(false);
-                            value = await db.ListRightPopAsync(key).ConfigureAwait(false);
+                            Thread.Sleep(1);
+                            value = db.ListRightPop(key);
                         }
-                        ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
+                        if (!stop.IsSet)
+                            ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
                     }
-                });
+                })
+                { IsBackground = true };
             }
-            await Task.WhenAll(tasks);
+
+            foreach (var t in threads) t.Start();
+            try
+            {
+                var deadline = DateTime.UtcNow.AddMinutes(5);
+                foreach (var t in threads)
+                {
+                    var remaining = deadline - DateTime.UtcNow;
+                    if (remaining <= TimeSpan.Zero || !t.Join(remaining))
+                        ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes");
+                }
+            }
+            finally
+            {
+                stop.Set();
+                foreach (var t in threads)
+                    t.Join(TimeSpan.FromSeconds(30));
+            }
 
             foreach (var key in keyArray)
             {

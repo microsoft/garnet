@@ -90,13 +90,12 @@ namespace Garnet.server
         }
 
         internal static bool InPlaceWriterForSpanValue<TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> newValue,
-                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             RecordSizeInfo sizeInfo = new();
-            var oldSize = logRecord.GetValueHeapMemorySize();
 
-            if (logRecord.Info.ValueIsInline && (!inputHasETag || logRecord.Info.HasETag) && (expiration == 0 || logRecord.Info.HasExpiration))
+            if (logRecord.Info.ValueIsInline && (expiration == 0 || logRecord.Info.HasExpiration))
             {
                 var (valueAddress, valueLength) = logRecord.PinnedValueAddressAndLength;
                 if (!logRecord.TrySetPinnedValueSpan(newValue, valueAddress, ref valueLength))
@@ -112,11 +111,7 @@ namespace Garnet.server
                     return false;
             }
 
-            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
-            if (sizeChange != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
-
-            UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
+            UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -125,10 +120,9 @@ namespace Garnet.server
         }
 
         internal static bool InPlaceWriterForHeapObjectValue<TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, IHeapObject newValue,
-                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            var oldSize = logRecord.GetValueHeapMemorySize();
 
             // Create local sizeInfo
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, newValue, ref input) };
@@ -137,11 +131,7 @@ namespace Garnet.server
             if (!logRecord.TrySetValueObjectAndPrepareOptionals(newValue, in sizeInfo))
                 return false;
 
-            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
-            if (sizeChange != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
-
-            UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
+            UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -151,22 +141,17 @@ namespace Garnet.server
 
         /// <inheritdoc />
         internal static bool InPlaceWriterForLogRecordValue<TSourceLogRecord, TInput, TVariableLengthInput>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord,
-                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, bool inputHasETag, long expiration)
+                ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, TVariableLengthInput varlenInput, FunctionsState functionsState, long expiration)
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
-            var oldSize = logRecord.GetValueHeapMemorySize();
 
             // Create local sizeInfo
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(logRecord, inputLogRecord, ref input) };
             functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
-            var sizeChange = logRecord.GetValueHeapMemorySize() - oldSize;
-            if (sizeChange != 0)
-                functionsState.cacheSizeTracker?.AddHeapSize(sizeChange);
-
-            UpdateExpirationAndETag(logRecord, ref output, functionsState, inputHasETag, expiration);
+            UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -174,7 +159,7 @@ namespace Garnet.server
             return true;
         }
 
-        private static void UpdateExpirationAndETag(LogRecord logRecord, ref SpanByteAndMemory output, FunctionsState functionsState, bool inputHasETag, long expiration)
+        private static void UpdateExpiration(ref LogRecord logRecord, long expiration)
         {
             if (expiration != 0)
             {
@@ -183,16 +168,6 @@ namespace Garnet.server
             }
             else if (logRecord.Info.HasExpiration)
                 _ = logRecord.RemoveExpiration();
-
-            if (inputHasETag)
-            {
-                var newETag = functionsState.etagState.ETag + 1;
-                if (!logRecord.TrySetETag(newETag))
-                    Debug.Fail("Should have succeeded in setting ETag as we should have ensured there was space there already");
-                functionsState.CopyRespNumber(newETag, ref output);
-            }
-            else
-                _ = logRecord.RemoveETag();
         }
     }
 }

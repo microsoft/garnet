@@ -170,7 +170,7 @@ namespace Garnet.server
                     var activeDbIdsMapSnapshot = activeDbIds.Map;
                     Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
 
-                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token);
+                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -241,7 +241,7 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var result = await TakeCheckpointAsync(db, logger: Logger);
+                var result = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
 
                 var storeTailAddress = result;
                 UpdateLastSaveData(dbId, storeTailAddress);
@@ -283,7 +283,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    var dbAofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
+                    var dbAofSize = db.AppendOnlyFile.Log.TailAddress.AggregateDiff(db.AppendOnlyFile.Log.BeginAddress);
                     if (dbAofSize > aofSizeLimit)
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {dbAofSize} > AofSizeLimit: {aofSizeLimit} (Database ID: {dbId})",
@@ -295,7 +295,7 @@ namespace Garnet.server
 
                 if (dbIdsIdx == 0) return;
 
-                await TakeDatabasesCheckpointAsync(dbIdsIdx, logger: logger, token: token);
+                await TakeDatabasesCheckpointAsync(dbIdsIdx, logger: logger, token: token).ConfigureAwait(false);
             }
             finally
             {
@@ -319,7 +319,7 @@ namespace Garnet.server
                 var activeDbIdsMapSize = activeDbIds.ActualSize;
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
 
-                var aofTasks = new Task<(long, long)>[activeDbIdsMapSize];
+                var aofTasks = new Task<(AofAddress, AofAddress)>[activeDbIdsMapSize];
 
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
@@ -327,13 +327,13 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    aofTasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
+                    aofTasks[i] = db.AppendOnlyFile.Log.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.Log.TailAddress, db.AppendOnlyFile.Log.CommittedUntilAddress), token);
                 }
 
                 var exThrown = false;
                 try
                 {
-                    await Task.WhenAll(aofTasks);
+                    await Task.WhenAll(aofTasks).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {
@@ -367,7 +367,7 @@ namespace Garnet.server
             var databasesMapSnapshot = databases.Map;
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
 
-            await databasesMapSnapshot[dbId].AppendOnlyFile.CommitAsync(token: token);
+            await databasesMapSnapshot[dbId].AppendOnlyFile.Log.CommitAsync(token: token).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>
@@ -391,10 +391,10 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    aofTasks[i] = db.AppendOnlyFile.WaitForCommitAsync(token: token).AsTask();
+                    aofTasks[i] = db.AppendOnlyFile.Log.WaitForCommitAsync(token: token).AsTask();
                 }
 
-                await Task.WhenAll(aofTasks);
+                await Task.WhenAll(aofTasks).ConfigureAwait(false);
             }
             finally
             {
@@ -434,16 +434,16 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override long ReplayAOF(long untilAddress = -1)
+        public override AofAddress ReplayAOF(AofAddress untilAddress)
         {
             if (!StoreWrapper.serverOptions.EnableAOF)
-                return -1;
+                return default;
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
             var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
 
-            long replicationOffset = 0;
+            var replicationOffset = AofAddress.Create(StoreWrapper.serverOptions.AofPhysicalSublogCount, 0);
             try
             {
                 var databasesMapSnapshot = databases.Map;
@@ -454,7 +454,7 @@ namespace Garnet.server
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
-                    var offset = ReplayDatabaseAOF(aofProcessor, databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : -1);
+                    var offset = ReplayDatabaseAOF(aofProcessor, databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : AppendOnlyFile.InvalidAofAddress);
                     if (dbId == 0) replicationOffset = offset;
                 }
             }
@@ -1016,7 +1016,7 @@ namespace Garnet.server
                         }, TaskContinuationOptions.ExecuteSynchronously);
                 }
 
-                await Task.WhenAll(checkpointTasks);
+                await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

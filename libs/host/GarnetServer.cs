@@ -48,7 +48,7 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
-        protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
+        protected readonly LightEpoch storeEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -133,8 +133,6 @@ namespace Garnet
             this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.storeEpoch = new LightEpoch();
-            if (this.opts.EnableAOF)
-                this.aofEpoch = new LightEpoch();
             if (!this.opts.DisablePubSub)
                 this.pubSubEpoch = new LightEpoch();
             this.InitializeServer();
@@ -154,8 +152,6 @@ namespace Garnet
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
             this.storeEpoch = new LightEpoch();
-            if (this.opts.EnableAOF)
-                this.aofEpoch = new LightEpoch();
             if (!this.opts.DisablePubSub)
                 this.pubSubEpoch = new LightEpoch();
             try
@@ -165,7 +161,6 @@ namespace Garnet
             catch
             {
                 storeEpoch?.Dispose();
-                aofEpoch?.Dispose();
                 pubSubEpoch?.Dispose();
                 throw;
             }
@@ -192,6 +187,9 @@ namespace Garnet
             }
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
+
+            if (opts.EnableCluster && opts.EnableRangeIndexPreview)
+                throw new GarnetException("Range Index (preview) is not supported in cluster mode.");
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: [{endpoint}]",
@@ -277,10 +275,9 @@ namespace Garnet
                 var configMemoryLimit = (storeWrapper.store.IndexSize * 64) +
                                         storeWrapper.store.Log.MaxMemorySizeBytes +
                                         (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (storeWrapper.appendOnlyFile?.MaxMemorySizeBytes ?? 0) +
+                                        (storeWrapper.appendOnlyFile?.Log.MaxMemorySizeBytes.AggregateDiff(0) ?? 0) +
                                         (storeWrapper.sizeTracker?.TargetSize ?? 0) +
                                         (storeWrapper.sizeTracker?.ReadCacheTargetSize ?? 0);
-
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
@@ -310,17 +307,21 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
-            var (aofDevice, aof) = CreateAOF(dbId);
+            var removeOutdated = !serverOptions.EnableCluster;
+            var rangeIndexDataDir = Path.Combine(serverOptions.CheckpointBaseDirectory, GarnetServerOptions.GetCheckpointDirectoryName(dbId));
+            var rangeIndexManager = new RangeIndexManager(serverOptions.EnableRangeIndexPreview, rangeIndexDataDir,
+                removeOutdatedCheckpoints: removeOutdated, loggerFactory?.CreateLogger("RangeIndexManager"));
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var aof = CreateAOF(dbId);
 
             var vectorManager = new VectorManager(
-                serverOptions.EnableVectorSetPreview,
                 dbId,
+                serverOptions,
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -347,7 +348,7 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            LightEpoch epoch, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, RangeIndexManager rangeIndexManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
@@ -362,39 +363,45 @@ namespace Garnet
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
-                clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
-                new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                clusterFactory.CreateCheckpointManager(opts.AofPhysicalSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
+                new GarnetCheckpointManager(opts.AofPhysicalSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+
+            // Create cache size tracker before the store. It will be initialized with the store
+            // after creation via Initialize() (late-bind to break circular dependency).
+            var cacheSizeTracker = new CacheSizeTracker();
 
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager),
-                    new GarnetRecordDisposer())
+                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
-                sizeTracker = new CacheSizeTracker(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
+            {
+                cacheSizeTracker.Initialize(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
+                sizeTracker = cacheSizeTracker;
+            }
             return store;
         }
 
-        private (IDevice, TsavoriteLog) CreateAOF(int dbId)
+        private GarnetAppendOnlyFile CreateAOF(int dbId)
         {
             if (!opts.EnableAOF)
             {
                 if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
                     throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
-                return (null, null);
+                return null;
             }
 
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
-            opts.GetAofSettings(dbId, aofEpoch, out var aofSettings);
-            var aofDevice = aofSettings.LogDevice;
-            var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
+            opts.GetAofSettings(dbId, out var aofSettings);
+            var appendOnlyFile = new GarnetAppendOnlyFile(opts, aofSettings, logger: this.loggerFactory?.CreateLogger("GarnetLog [aof]"));
 
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");
-            return (aofDevice, appendOnlyFile);
+            return appendOnlyFile;
         }
 
         /// <summary>
@@ -442,15 +449,15 @@ namespace Garnet
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Close();
 
-            // Phase 2: Dispose the provider (storage engine shutdown — may take time).
-            Provider?.Dispose();
-
-            // Phase 3: Drain active handlers and clean up remaining resources.
+            // Phase 2: Drain active handlers and clean up remaining resources.
             for (var i = 0; i < servers.Length; i++)
                 servers[i]?.Dispose();
+
+            // Phase 3: Dispose the provider (storage engine shutdown — may take time).
+            Provider?.Dispose();
+
             subscribeBroker?.Dispose();
             storeEpoch?.Dispose();
-            aofEpoch?.Dispose();
             pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)

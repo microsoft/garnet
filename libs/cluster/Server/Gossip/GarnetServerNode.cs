@@ -79,7 +79,8 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                endpoint, tlsOptions,
+                endpoint,
+                tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
@@ -161,7 +162,10 @@ namespace Garnet.cluster
             if (conf != lastConfig)
             {
                 lastConfig = conf;
-                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                if (clusterProvider.replicationManager != null)
+                    // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
+                    // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
+                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset[0]);
                 byteArray = lastConfig.ToByteArray();
             }
             else
@@ -176,9 +180,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private Task Gossip(byte[] configByteArray)
+        private async Task Gossip(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray).ContinueWith(t =>
+            await gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
             {
                 try
                 {
@@ -201,7 +205,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogCritical(ex, "GOSSIP faulted processing response");
                 }
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            }, TaskContinuationOptions.RunContinuationsAsynchronously | TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -212,7 +216,7 @@ namespace Garnet.cluster
         public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var resp = await gc.GossipWithMeet(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).ConfigureAwait(false);
             return resp;
         }
 
@@ -297,7 +301,7 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+                gc.ExecuteClusterPublishNoResponse(cmd, ref channel, ref message);
             }
             finally
             {

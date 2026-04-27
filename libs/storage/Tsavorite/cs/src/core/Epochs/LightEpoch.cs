@@ -25,7 +25,7 @@ namespace Tsavorite.core
             /// <summary>
             /// Maximum number of concurrent instances of LightEpoch supported.
             /// </summary>
-            internal const int MaxInstances = 16;
+            internal const int MaxInstances = 1024;
 
             /// <summary>
             /// Anchor field for the buffer.
@@ -193,7 +193,7 @@ namespace Tsavorite.core
                 if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
                     return i;
             }
-            throw new InvalidOperationException("Exceeded maximum number of active LightEpoch instances");
+            throw new InvalidOperationException($"Exceeded maximum number of active LightEpoch instances {ActiveInstanceCount()} {InstanceIndexBuffer.MaxInstances}");
         }
 
         /// <summary>

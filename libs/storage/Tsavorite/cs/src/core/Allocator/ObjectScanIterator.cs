@@ -94,7 +94,7 @@ namespace Tsavorite.core
         {
             if (diskLogRecord.IsSet)
             {
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
             }
             diskLogRecord = default;
@@ -237,7 +237,7 @@ namespace Tsavorite.core
                             var remapPtr = recordBuffer.GetValidPointer();
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
                             var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
-                            diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
+                            diskLogRecord = new DiskLogRecord(in memoryLogRecord);
                         }
                         finally
                         {
@@ -248,12 +248,10 @@ namespace Tsavorite.core
                     else
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
+                        // DiskLogRecord.Dispose() invokes IHeapObject.Dispose on any deserialized value object for all callers
+                        // (pending-op ctx, scan iteration, cluster streaming), unless the object is transferred out (e.g. via CopyToTail).
                         var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap);
-                        diskLogRecord = new(logRecord,
-                                            store is not null
-                                            ? obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk)
-                                            : obj => { });  // TODOobjDispose this needs to dispose the object even if store is null; review whether we should have separate arg for behavior instead of a null store
+                        diskLogRecord = new(logRecord);
                     }
                 }
                 finally
@@ -375,7 +373,7 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueIfHeap(Action<IHeapObject> disposer) { }  // Not relevant for "iterator as logrecord"
+        public void ClearValueIfHeap() { }  // Not relevant for "iterator as logrecord"
 
         /// <inheritdoc/>
         public bool IsMemoryLogRecord => false;
@@ -411,7 +409,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             if (diskLogRecord.IsSet)
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                hlogBase._wrapper.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             //TODOobjDispose("Dispose objects in frame");

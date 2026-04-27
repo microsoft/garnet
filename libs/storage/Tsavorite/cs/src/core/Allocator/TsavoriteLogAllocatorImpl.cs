@@ -8,7 +8,7 @@ using System.Threading;
 namespace Tsavorite.core
 {
     // This is unused; just allows things to build. TsavoriteLog does not do key comparisons or value operations; it is just a memory allocator.
-    using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordTriggers>;
 
     /// <summary>Simple log allocator used by TsavoriteLog</summary>
     public sealed unsafe class TsavoriteLogAllocatorImpl : AllocatorBase<TsavoriteLogStoreFunctions, TsavoriteLogAllocator>
@@ -18,7 +18,7 @@ namespace Tsavorite.core
         /// <summary>Constructor</summary>
 #pragma warning disable IDE0290 // Use primary constructor
         public TsavoriteLogAllocatorImpl(AllocatorSettings settings)
-            : base(settings.LogSettings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), evictCallback: null, settings.epoch, settings.flushCallback, settings.logger)
+            : base(settings, new TsavoriteLogStoreFunctions(), @this => new TsavoriteLogAllocator(@this), settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
         }

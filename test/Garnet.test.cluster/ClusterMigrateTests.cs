@@ -167,71 +167,6 @@ namespace Garnet.test.cluster
             return slot;
         }
 
-        private void CreateMultiSlotData(
-            int slotCount,
-            int keyLen,
-            int valueLen,
-            int keyTagEnd,
-            int keyCount,
-            out Dictionary<int, Dictionary<byte[], byte[]>> data,
-            HashSet<int> restrictedToSlots = null)
-        {
-            var db = context.clusterTestUtils.GetMultiplexer().GetDatabase(0);
-            Dictionary<ushort, byte[]> slotsTokey = [];
-            data = [];
-            var key = new byte[keyLen];
-            var value = new byte[valueLen];
-
-            ClassicAssert.IsTrue(slotCount < keyCount);
-            for (var i = 0; i < slotCount; i++)
-            {
-                ushort slot;
-                byte[] newKey;
-                do
-                {
-                restrictedSlot:
-                    newKey = RandomBytes(key);
-                    newKey[0] = (byte)'{';
-                    newKey[keyTagEnd] = (byte)'}';
-                    slot = ClusterTestUtils.HashSlot(newKey);
-
-                    if (restrictedToSlots != null && !restrictedToSlots.Contains(slot))
-                        goto restrictedSlot;
-
-                } while (slotsTokey.ContainsKey(slot));
-                slotsTokey.Add(slot, newKey);
-                data[slot] = new(new ByteArrayComparer());
-            }
-
-            int j = 0;
-            List<ushort> slots = [.. slotsTokey.Keys];
-            for (int i = 0; i < keyCount; i++)
-            {
-                key = slotsTokey[slots[j]];
-                var newKey = new byte[key.Length];
-                var newValue = new byte[value.Length];
-
-                Array.Copy(key, 0, newKey, 0, key.Length);
-                Array.Copy(value, 0, newValue, 0, value.Length);
-                RandomBytes(ref newKey, keyTagEnd + 1);
-                RandomBytes(ref newValue);
-
-                var slot = ClusterTestUtils.HashSlot(newKey);
-                ClassicAssert.AreEqual(slot, slots[j]);
-                ClassicAssert.IsTrue(slotsTokey.ContainsKey((ushort)slot));
-
-                if (!data[slot].ContainsKey(newKey))
-                    data[slot].Add(newKey, newValue);
-                else
-                    data[slot][newKey] = newValue;
-
-                ClassicAssert.IsTrue(db.StringSet(newKey, newValue));
-                var _v = (byte[])db.StringGet(newKey);
-                ClassicAssert.AreEqual(newValue, _v);
-                j = j + 1 < slots.Count ? j + 1 : 0;
-            }
-        }
-
         [Test, Order(1)]
         [Category("CLUSTER")]
         public void ClusterSimpleInitialize()
@@ -2329,6 +2264,71 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(targetEndPoint.Port, migratedEndPoint.Port);
                 ClassicAssert.IsNull(value, "Deleted key should not be transmitted during migration");
             }
+        }
+
+        [Test, Order(27)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateSetSlotRangeResilience()
+        {
+            context.logger?.LogDebug("0. ClusterMigrateSetSlotRangeResilience started");
+            var shards = 2;
+            context.CreateInstances(shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+
+            // Setup: node 0 owns all slots, node 1 owns none
+            _ = context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
+            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, logger: context.logger);
+
+            // Create data in a single slot using the standard helper
+            var keyCount = 50;
+            var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
+            var sourceNodeIndex = 0;
+            var targetNodeIndex = 1;
+
+            context.logger?.LogDebug("1. Verifying data insertion into slot {slot}", slot);
+            var actualKeyCount = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, slot, logger: context.logger);
+            ClassicAssert.AreEqual(keyCount, actualKeyCount, "Keys should be present in source slot before migration");
+
+            context.logger?.LogDebug("2. Initiating migration of slot {slot}", slot);
+            context.clusterTestUtils.MigrateSlotsIndex(sourceNodeIndex, targetNodeIndex, [slot], logger: context.logger);
+
+            context.logger?.LogDebug("3. Waiting for migration completion");
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
+
+            context.logger?.LogDebug("4. Verifying migrated data on target");
+            var migratedKeyCount = context.clusterTestUtils.CountKeysInSlot(targetNodeIndex, slot, logger: context.logger);
+            ClassicAssert.AreEqual(keyCount, migratedKeyCount, "All keys should be present on target after migration");
+
+            // Verify each key's value on the target
+            var targetEndPoint = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
+            foreach (var entry in data)
+            {
+                string value = null;
+                ResponseState responseState = default;
+                IPEndPoint endPoint = null;
+
+                var success = SpinWait.SpinUntil(() =>
+                {
+                    value = context.clusterTestUtils.GetKey(targetEndPoint, entry.Key, out _, out endPoint, out responseState);
+                    return responseState == ResponseState.OK && value != null;
+                }, TimeSpan.FromSeconds(30));
+
+                ClassicAssert.IsTrue(success, $"Timed out waiting for key {Encoding.ASCII.GetString(entry.Key)} to become available on target");
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(entry.Value), value);
+            }
+
+            context.logger?.LogDebug("5. Verifying slot ownership transfer");
+            var targetSlotMap = context.clusterTestUtils.GetSlotPortMapFromNode(targetNodeIndex, context.logger);
+            var sourceSlotMap = context.clusterTestUtils.GetSlotPortMapFromNode(sourceNodeIndex, context.logger);
+
+            ClassicAssert.IsTrue(targetSlotMap.ContainsKey((ushort)slot), "Target should own the migrated slot");
+            ClassicAssert.IsFalse(sourceSlotMap.ContainsKey((ushort)slot), "Source should no longer own the migrated slot");
+
+            context.logger?.LogDebug("6. ClusterMigrateSetSlotRangeResilience completed");
         }
     }
 }

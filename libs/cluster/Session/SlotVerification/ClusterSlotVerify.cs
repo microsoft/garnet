@@ -16,7 +16,7 @@ namespace Garnet.cluster
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, int slot = -1)
         {
             Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
@@ -57,7 +57,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
-                        SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
+                        SlotState.IMPORTING => SessionAsking ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
                     };
                 }
@@ -107,7 +107,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
-                        SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
+                        SlotState.IMPORTING => SessionAsking ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
                     };
                 }
@@ -161,7 +161,7 @@ namespace Garnet.cluster
 
             ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
             var firstSlot = HashSlotUtils.HashSlot(firstKey);
-            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking, waitForStableSlot, firstSlot);
+            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, firstSlot);
 
             // Verify remaining keys from the first spec (starting from second key)
             var verifyResult = VerifyKeysInRange(ref config, ref parseState, ref csvi, searchArgs.firstIdx + searchArgs.step,
@@ -192,7 +192,7 @@ namespace Garnet.cluster
             {
                 ref var key = ref parseState.GetArgSliceByRef(i);
                 var slot = HashSlotUtils.HashSlot(key);
-                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, waitForStableSlot, slot);
+                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, slot);
 
                 if (slot != firstSlot)
                     return new(SlotVerifiedState.CROSSSLOT, firstSlot);

@@ -262,7 +262,7 @@ namespace Tsavorite.core
             var _waitForTransitionOut = waitForTransitionOut;
             if (SystemState.Equal(currentState, systemState))
             {
-                await _waitForTransitionOut.WaitAsync();
+                await _waitForTransitionOut.WaitAsync().ConfigureAwait(false);
             }
         }
 
@@ -273,12 +273,12 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async Task WaitForCompletion(SystemState currentState)
         {
-            await WaitForStateChange(currentState);
+            await WaitForStateChange(currentState).ConfigureAwait(false);
             currentState = systemState;
             var _waitForTransitionIn = waitForTransitionIn;
             if (SystemState.Equal(currentState, systemState))
             {
-                await _waitForTransitionIn.WaitAsync();
+                await _waitForTransitionIn.WaitAsync().ConfigureAwait(false);
             }
         }
 
@@ -304,7 +304,7 @@ namespace Tsavorite.core
 
         async Task ProcessWaitingListAsync(CancellationToken token = default)
         {
-            await waitForTransitionIn.WaitAsync(token);
+            await waitForTransitionIn.WaitAsync(token).ConfigureAwait(false);
             if (waitForTransitionInException != null)
             {
                 throw waitForTransitionInException;
@@ -332,7 +332,7 @@ namespace Tsavorite.core
                 do
                 {
                     GlobalStateMachineStep(systemState);
-                    await ProcessWaitingListAsync(token);
+                    await ProcessWaitingListAsync(token).ConfigureAwait(false);
                 } while (systemState.Phase != Phase.REST);
             }
             catch (Exception e)

@@ -34,7 +34,7 @@ namespace Garnet.server
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion);
                     if (output.HasWrongType)
                         return true;
 

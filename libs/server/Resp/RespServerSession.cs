@@ -29,10 +29,27 @@ namespace Garnet.server
 
         public GarnetLatencyMetricsSession LatencyMetrics { get; }
 
+        public StoreWrapper StoreWrapper => this.storeWrapper;
+
+        readonly CommandStats commandStats;
+
+        /// <summary>
+        /// Flag set when a RESP error response is written during command execution.
+        /// Used by CommandStats to detect failed commands. Note: only covers error paths
+        /// that go through WriteError() or AbortWithErrorMessage(); direct TryWriteError
+        /// calls in some command handlers may not set this flag.
+        /// </summary>
+        bool commandErrorWritten;
+
         /// <summary>
         /// Get a copy of sessionMetrics
         /// </summary>
         public GarnetSessionMetrics GetSessionMetrics => sessionMetrics;
+
+        /// <summary>
+        /// Get the command stats tracker for this session
+        /// </summary>
+        public CommandStats GetCommandStats => commandStats;
 
         /// <summary>
         /// Get a copy of latencyMetrics
@@ -87,6 +104,9 @@ namespace Garnet.server
         internal BasicGarnetApi basicGarnetApi;
         internal TransactionalGarnetApi transactionalGarnetApi;
         internal TransactionManager txnManager;
+        internal ConsistentReadGarnetApi consistentReadGarnetApi;
+        internal TransactionalConsistentReadGarnetApi txnConsistentReadApi;
+        internal ReadSessionState readSessionState;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -96,8 +116,14 @@ namespace Garnet.server
         // True if multiple logical databases are enabled on this session
         readonly bool allowMultiDb;
 
+        // Track whether consistent read session is active
+        internal bool IsConsistentReadSessionActive = false;
+
         // Map of all active database sessions (default of size 1, containing DB 0 session)
         private ExpandableMap<GarnetDatabaseSession> databaseSessions;
+
+        // Consistent database read session
+        private GarnetDatabaseSession consistentReadDBSession;
 
         /// <summary>
         /// The user currently authenticated in this session
@@ -231,6 +257,7 @@ namespace Garnet.server
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
             this.sessionMetrics = storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? new GarnetSessionMetrics() : null;
             this.LatencyMetrics = storeWrapper.serverOptions.LatencyMonitor ? new GarnetLatencyMetricsSession(storeWrapper.monitor) : null;
+            this.commandStats = storeWrapper.serverOptions.CommandStatsMonitor ? new CommandStats() : null;
             logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
 
             this.Id = id;
@@ -256,11 +283,15 @@ namespace Garnet.server
             // Create the default DB session (for DB 0) & add it to the session map
             activeDbId = 0;
             var dbSession = CreateDatabaseSession(0);
-            var maxDbs = storeWrapper.serverOptions.MaxDatabases;
+            var maxDbs = storeWrapper.serverOptions.EnableCluster ? 2 : storeWrapper.serverOptions.MaxDatabases;
 
             databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
             if (!databaseSessions.TrySetValue(0, dbSession))
-                throw new GarnetException("Failed to set initial database session in database sessions map");
+                throw new GarnetException("Failed to set initialize database session in database sessions map!");
+
+            // Create consistent read APIs and storageSession
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.MultiLogEnabled && storeWrapper.appendOnlyFile != null)
+                consistentReadDBSession = CreateConsistentReadApi();
 
             // Set the current active session to the default session
             SwitchActiveDatabaseSession(dbSession);
@@ -348,19 +379,26 @@ namespace Garnet.server
 
         public override void Dispose()
         {
-            logger?.LogDebug("Disposing RespServerSession Id={0}", this.Id);
+            logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
 
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
             }
 
+            // Dispose read session state
+            readSessionState?.Dispose();
+            // Dispose special consistent read database session
+            consistentReadDBSession?.Dispose();
+
             // Dispose all database sessions
             foreach (var dbSession in databaseSessions.Map)
                 dbSession?.Dispose();
 
-            if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
-                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics);
+            clusterSession?.Dispose();
+
+            if (storeWrapper.monitor != null)
+                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
@@ -426,10 +464,12 @@ namespace Garnet.server
                     networkSender.IsLocalConnection());
         }
 
+        bool txnSkip = false;
+
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
             bytesRead = bytesReceived;
-            if (!txnManager.IsSkippingOperations())
+            if (!txnSkip)
                 readHead = 0;
             try
             {
@@ -441,7 +481,32 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                ProcessMessages();
+
+                if (storeWrapper.EnforceConsistentRead())
+                {
+                    try
+                    {
+                        // We actively switch session because we aim to avoid performing any additional checks or switches on the normal processing path
+                        // This requires us to cache txnSkip result since the txnManager instance will change when the following finally executes
+                        // Switching is required because we cannot guarantee the role of the node outside the epoch protection
+                        txnSkip = false;
+                        Debug.Assert(consistentReadDBSession != null);
+                        SwitchActiveDatabaseSession(consistentReadDBSession);
+                        ProcessMessages(ref consistentReadGarnetApi, ref txnConsistentReadApi);
+                        txnSkip = txnManager.IsSkippingOperations();
+                    }
+                    finally
+                    {
+                        // Switch back to normal session in the event a failover results in this node to become a primary
+                        SwitchActiveDatabaseSession(databaseSessions.Map[0]);
+                    }
+                }
+                else
+                {
+                    txnSkip = false;
+                    ProcessMessages(ref basicGarnetApi, ref transactionalGarnetApi);
+                    txnSkip = txnManager.IsSkippingOperations();
+                }
                 recvBufferPtr = null;
             }
             catch (RespParsingException ex)
@@ -503,7 +568,7 @@ namespace Garnet.server
                 scratchBufferAllocator.Reset();
             }
 
-            if (txnManager.IsSkippingOperations())
+            if (txnSkip)
                 return 0; // so that network does not try to shift the byte array
 
             // If server processed input data successfully, update tracked metrics
@@ -545,7 +610,9 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
-        private void ProcessMessages()
+        private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
+            where TBasicApi : IGarnetApi
+            where TTxnApi : IGarnetApi
         {
             // #if DEBUG
             // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
@@ -559,7 +626,7 @@ namespace Garnet.server
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(writeErrorOnFailure: true, out bool commandReceived);
+                var cmd = ParseCommand(writeErrorOnFailure: true, out var commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)
@@ -573,13 +640,16 @@ namespace Garnet.server
                 {
                     var noScriptPassed = true;
 
+                    // Reset error flag unconditionally (only read when commandStats != null)
+                    commandErrorWritten = false;
+
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands(cmd, ref transactionalGarnetApi);
+                                _ = ProcessBasicCommands(cmd, ref transactionalApi);
                             }
                             else _ = cmd switch
                             {
@@ -593,7 +663,14 @@ namespace Garnet.server
                         else
                         {
                             if (clusterSession == null || CanServeSlot(cmd))
-                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                                _ = ProcessBasicCommands(cmd, ref basicApi);
+                        }
+
+                        if (commandStats != null)
+                        {
+                            commandStats.IncrementCalls(cmd);
+                            if (commandErrorWritten)
+                                commandStats.IncrementFailed(cmd);
                         }
                     }
                     else
@@ -608,6 +685,9 @@ namespace Garnet.server
                             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
                                 SendAndReset();
                         }
+
+                        // Track rejected command (ACL or script permission failure)
+                        commandStats?.IncrementRejected(cmd);
                     }
                 }
                 else
@@ -1010,7 +1090,19 @@ namespace Garnet.server
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
                 RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
+                RespCommand.SETWITHETAG => NetworkSETWITHETAG(ref storageApi),
                 RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
+
+                // RangeIndex commands
+                RespCommand.RICREATE => NetworkRICREATE(ref storageApi),
+                RespCommand.RISET => NetworkRISET(ref storageApi),
+                RespCommand.RIGET => NetworkRIGET(ref storageApi),
+                RespCommand.RIDEL => NetworkRIDEL(ref storageApi),
+                RespCommand.RISCAN => NetworkRISCAN(ref storageApi),
+                RespCommand.RIRANGE => NetworkRIRANGE(ref storageApi),
+                RespCommand.RIEXISTS => NetworkRIEXISTS(ref storageApi),
+                RespCommand.RICONFIG => NetworkRICONFIG(ref storageApi),
+                RespCommand.RIMETRICS => NetworkRIMETRICS(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };
@@ -1495,8 +1587,17 @@ namespace Garnet.server
             var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
             Debug.Assert(dbRes, "Should always find database if we're switching to it");
 
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, scratchBufferAllocator, sessionMetrics, LatencyMetrics, dbId, database.VectorManager, logger, respProtocolVersion);
-
+            var dbStorageSession = new StorageSession(
+                storeWrapper,
+                scratchBufferBuilder,
+                scratchBufferAllocator,
+                sessionMetrics,
+                LatencyMetrics,
+                dbId,
+                readSessionState: null,
+                database.VectorManager,
+                logger,
+                respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
@@ -1504,10 +1605,73 @@ namespace Garnet.server
                 dbStorageSession.unifiedTransactionalContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
+                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger: logger, dbId: dbId);
             dbStorageSession.txnManager = transactionManager;
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
+        }
+
+        /// <summary>
+        /// Create consistent read API
+        /// </summary>
+        private GarnetDatabaseSession CreateConsistentReadApi()
+        {
+            // NOTE:
+            // Consistent read session should point to dbId = 0 (because dbId is used to identify working database),
+            // though its session id = 1 to differentiate between normal session.
+            // Session id is set at the caller.
+            var dbId = 0;
+            var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
+            Debug.Assert(dbRes, "Should always find database if we're switching to it");
+
+            readSessionState = new ReadSessionState(storeWrapper.appendOnlyFile, storeWrapper.serverOptions);
+
+            // NOTE: We need to create storage session to tie it to the consistent read API
+            var dbStorageSession = new StorageSession(
+                storeWrapper,
+                scratchBufferBuilder,
+                scratchBufferAllocator,
+                sessionMetrics,
+                LatencyMetrics,
+                dbId: dbId, // NOTE: only for cluster need to retrieve default database
+                readSessionState: readSessionState,
+                database.VectorManager,
+                logger,
+                respProtocolVersion);
+
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
+                dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
+            var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
+                dbStorageSession.stringTransactionalContext, dbStorageSession.objectTransactionalContext,
+                dbStorageSession.unifiedTransactionalContext);
+
+            var consistentReadGarnetApi = new ConsistentReadGarnetApi(dbStorageSession, dbStorageSession.consistentReadContext,
+                dbStorageSession.objectStoreConsistentReadContext, dbStorageSession.unifiedStoreConsistentReadContext);
+            var txnConsistentReadApi = new TransactionalConsistentReadGarnetApi(dbStorageSession,
+                dbStorageSession.transactionalConsistentReadContext, dbStorageSession.objectStoreTransactionalConsistentReadContext,
+                dbStorageSession.unifiedStoreTransactionalConsistentReadContext);
+
+            var consistentReadTransactionManager = new TransactionManager(
+                storeWrapper,
+                this,
+                dbGarnetApi,
+                dbLockableGarnetApi,
+                dbStorageSession,
+                scratchBufferAllocator,
+                storeWrapper.serverOptions.EnableCluster,
+                enableConsistentRead: true,
+                garnetConsistentApi: consistentReadGarnetApi,
+                transactionalConsistentGarnetApi: txnConsistentReadApi,
+                logger: logger,
+                dbId: dbId);
+
+            return new GarnetDatabaseSession(id: dbId, // NOTE: sessionID 1 to differentiate from default session
+                dbStorageSession,
+                dbGarnetApi,
+                dbLockableGarnetApi,
+                consistentReadTransactionManager,
+                consistentReadGarnetApi,
+                txnConsistentReadApi);
         }
 
         /// <summary>
@@ -1521,7 +1685,8 @@ namespace Garnet.server
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.transactionalGarnetApi = dbSession.TransactionalGarnetApi;
-
+            this.consistentReadGarnetApi = dbSession.ConsistentGarnetApi;
+            this.txnConsistentReadApi = dbSession.TransactionalConsistentGarnetApi;
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
 

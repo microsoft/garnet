@@ -86,7 +86,7 @@ namespace Garnet.cluster
 
             // Send store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, storePageSize);
+            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, storePageSize).ConfigureAwait(false);
             if (!success) return false;
 
             return true;
@@ -94,7 +94,8 @@ namespace Garnet.cluster
             async Task<bool> CreateAndRunMigrateTasks(long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), beginAddress, tailAddress);
-                var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+                var migrateOperationRunners = new Task<bool>[clusterProvider.serverOptions.ParallelMigrateTaskCount];
+
                 var i = 0;
                 while (i < migrateOperationRunners.Length)
                 {
@@ -105,7 +106,12 @@ namespace Garnet.cluster
 
                 try
                 {
-                    await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    var scanResults = await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                    if (!scanResults.All(static x => x))
+                    {
+                        logger?.LogWarning("Aborting migration due to ScanStoreTask failure");
+                        return false;
+                    }
 
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
                     var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
@@ -225,7 +231,11 @@ namespace Garnet.cluster
                     WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateOperation.TransmitSlots();
+                    if (!migrateOperation.TransmitSlots())
+                    {
+                        logger?.LogWarning("[{taskId}> TransmitSlots failed for {cursor} to {current} (with {count} keys)", taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
+                        return Task.FromResult(false);
+                    }
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);

@@ -188,6 +188,7 @@ namespace Tsavorite.core
                 };
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
+                allocatorSettings.IsReadCache = true;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
                 readcacheBase = readcache.GetBase<TAllocator>();
                 readcacheBase.Initialize();
@@ -494,7 +495,7 @@ namespace Tsavorite.core
             token.ThrowIfCancellationRequested();
             try
             {
-                await stateMachineDriver.CompleteAsync(token);
+                await stateMachineDriver.CompleteAsync(token).ConfigureAwait(false);
             }
             catch
             {
@@ -668,7 +669,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -711,7 +712,7 @@ namespace Tsavorite.core
                 internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -733,7 +734,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -755,7 +756,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -777,7 +778,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -797,7 +798,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -830,7 +831,7 @@ namespace Tsavorite.core
 
             var indexResizeTask = new IndexResizeSMTask<TStoreFunctions, TAllocator>(this);
             var indexResizeSM = new IndexResizeSM(indexResizeTask);
-            return await stateMachineDriver.RunAsync(indexResizeSM);
+            return await stateMachineDriver.RunAsync(indexResizeSM).ConfigureAwait(false);
         }
 
         /// <summary>
