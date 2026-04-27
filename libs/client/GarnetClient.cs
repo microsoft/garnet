@@ -213,6 +213,19 @@ namespace Garnet.client
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
+            // Spin until auth finishes or cancellation occurs
+            while (!networkHandler.IsAuthenticated(out var fault))
+            {
+                if (fault != null)
+                {
+                    throw new Exception("Authentication failed", fault);
+                }
+
+                token.ThrowIfCancellationRequested();
+
+                Thread.Sleep(1);
+            }
+
             if (timeoutMilliseconds > 0)
             {
                 Task.Run(TimeoutChecker);

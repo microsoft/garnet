@@ -157,6 +157,20 @@ namespace Garnet.client
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
+
+            // Spin until auth finishes or cancellation occurs
+            while (!networkHandler.IsAuthenticated(out var fault))
+            {
+                if (fault != null)
+                {
+                    throw new Exception("Authentication failed", fault);
+                }
+
+                token.ThrowIfCancellationRequested();
+
+                Thread.Sleep(1);
+            }
+
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
             offset = networkSender.GetResponseObjectHead();
