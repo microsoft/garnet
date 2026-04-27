@@ -98,13 +98,13 @@ namespace Garnet.cluster
         /// Initialize connection and cancellation tokens.
         /// Initialization is performed only once
         /// </summary>
-        public Task InitializeAsync()
+        public ValueTask InitializeAsync()
         {
             // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
         }
 
         public void Dispose()
@@ -175,32 +175,28 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private Task Gossip(byte[] configByteArray)
+        private async Task GossipAsync(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray).ContinueWith(t =>
+            try
             {
-                try
+                using var resp = await gc.GossipAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                if (resp.Length > 0)
                 {
-                    var resp = t.Result;
-                    if (resp.Length > 0)
-                    {
-                        clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                        var returnedConfigArray = resp.Span.ToArray();
-                        var other = ClusterConfig.FromByteArray(returnedConfigArray);
-                        var current = clusterProvider.clusterManager.CurrentConfig;
-                        // Check if gossip is from a node that is known and trusted before merging
-                        if (current.IsKnown(other.LocalNodeId))
-                            clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
-                        else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
-                    }
-                    resp.Dispose();
+                    clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
+                    var returnedConfigArray = resp.Span.ToArray();
+                    var other = ClusterConfig.FromByteArray(returnedConfigArray);
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    // Check if gossip is from a node that is known and trusted before merging
+                    if (current.IsKnown(other.LocalNodeId))
+                        clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                    else
+                        logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }
-                catch (Exception ex)
-                {
-                    logger?.LogCritical(ex, "GOSSIP faulted processing response");
-                }
-            }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "GOSSIP faulted processing response");
+            }
         }
 
         /// <summary>
@@ -211,7 +207,7 @@ namespace Garnet.cluster
         public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var resp = await gc.GossipWithMeetAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
             return resp;
         }
 
@@ -227,7 +223,7 @@ namespace Garnet.cluster
             {
                 // Issue first time gossip
                 var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
-                gossipTask = Gossip(configArray);
+                gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;
                 // Track bytes send
@@ -240,7 +236,7 @@ namespace Garnet.cluster
                 UpdateGossipRecv();
 
                 // Issue new gossip that can be either zero packet size or an updated configuration
-                gossipTask = Gossip(configByteArray);
+                gossipTask = GossipAsync(configByteArray);
                 UpdateGossipSend();
 
                 // Track number of full vs empty (ping) sends
@@ -283,7 +279,7 @@ namespace Garnet.cluster
         /// <param name="cmd"></param>
         /// <param name="channel"></param>
         /// <param name="message"></param>
-        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        public void TryClusterPublish(RespCommand cmd, Span<byte> channel, Span<byte> message)
         {
             var locked = false;
             try
@@ -296,7 +292,7 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+                gc.ClusterPublishNoResponse(cmd, channel, message);
             }
             finally
             {

@@ -308,7 +308,8 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+            // Must block as we're on the network thread
+            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout));
 
             if (result.IsForceUnblocked)
             {
@@ -413,8 +414,11 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
-                cmdArgs).Result;
+            // On the networking thread, no choice but to block
+            var result =
+                AsyncUtils.BlockingWait(
+                    storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout, cmdArgs)
+                );
 
             if (result.IsForceUnblocked)
             {
@@ -990,7 +994,8 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
+            // Must block, we're on the networking thread
+            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs));
 
             if (result.IsForceUnblocked)
             {

@@ -120,7 +120,7 @@ namespace Garnet.server
             if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED &&
                 Interlocked.CompareExchange(ref mainLoopTaskStatus, MAIN_LOOP_STARTED, MAIN_LOOP_NOT_STARTED) == MAIN_LOOP_NOT_STARTED)
             {
-                mainLoopTask = Task.Run(Start);
+                mainLoopTask = Task.Run(StartAsync);
             }
         }
 
@@ -143,7 +143,7 @@ namespace Garnet.server
             try
             {
                 // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token);
+                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -683,7 +683,7 @@ namespace Garnet.server
         /// Broker's main loop logic
         /// </summary>
         /// <returns>Task</returns>
-        private async Task Start()
+        private async Task StartAsync()
         {
             try
             {

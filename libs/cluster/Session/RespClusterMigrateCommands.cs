@@ -72,7 +72,7 @@ namespace Garnet.cluster
             var buffer = new Span<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)).ToArray();
 
             if (clusterProvider.serverOptions.FastMigrate)
-                Task.Run(() => Process(basicGarnetApi, buffer, storeTypeStr, replaceOption));
+                _ = Task.Run(() => Process(basicGarnetApi, buffer, storeTypeStr, replaceOption));
             else
                 Process(basicGarnetApi, buffer, storeTypeStr, replaceOption);
 
