@@ -1,0 +1,29 @@
+{
+  "id": "commands/json",
+  "title": "JSON Module",
+  "description": "Below is the full list of JSON Module commands and their implementation status in Garnet.",
+  "source": "@site/docs/commands/json.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/json",
+  "permalink": "/garnet/docs/commands/json",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/json.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "json",
+    "sidebar_label": "JSON Module",
+    "title": "JSON Module",
+    "slug": "json"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Garnet-specific Commands",
+    "permalink": "/garnet/docs/commands/garnet-specific-commands"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/extensions/overview"
+  }
+}

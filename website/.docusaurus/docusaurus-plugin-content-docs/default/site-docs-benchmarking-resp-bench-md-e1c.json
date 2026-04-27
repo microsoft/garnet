@@ -1,0 +1,28 @@
+{
+  "id": "benchmarking/resp-bench",
+  "title": "The Resp.benchmark Tool",
+  "description": "Garnet project contains a Benchmark tool for running RESP benchmarking using different clients, different workloads and different strategies for measuring throughput, performance and latency.",
+  "source": "@site/docs/benchmarking/resp-bench.md",
+  "sourceDirName": "benchmarking",
+  "slug": "/benchmarking/resp-bench",
+  "permalink": "/garnet/docs/benchmarking/resp-bench",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/benchmarking/resp-bench.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "resp-bench",
+    "sidebar_label": "Resp.benchmark",
+    "title": "The Resp.benchmark Tool"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Results (Resp.bench)",
+    "permalink": "/garnet/docs/benchmarking/results-resp-bench"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/commands/overview"
+  }
+}
