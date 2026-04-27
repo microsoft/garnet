@@ -47,12 +47,12 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void OnDispose(ref LogRecord logRecord, DisposeReason reason)
         {
-            // Free BfTree on delete under exclusive lock.
+            // Free BfTree and delete data files on key deletion.
             if (!logRecord.Info.ValueIsObject
                 && reason == DisposeReason.Deleted
                 && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
-                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan);
+                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: true);
             }
         }
 
@@ -74,7 +74,7 @@ namespace Garnet.server
             if (!logRecord.Info.ValueIsObject
                 && logRecord.RecordDataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
             {
-                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan);
+                rangeIndexManager?.DisposeTreeUnderLock(logRecord.Key, logRecord.ValueSpan, deleteFiles: false);
             }
         }
 

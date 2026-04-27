@@ -40,14 +40,14 @@ by `GarnetRecordTriggers`:
 | Trigger | When | What it does for RangeIndex |
 |---------|------|---------------------------|
 | `OnFlush` | Page moves to read-only | Snapshot BfTree to `flush.bftree` under exclusive lock; set `FlagFlushed` |
-| `OnEvict` | Page evicted past HeadAddress | Free BfTree under exclusive lock via `DisposeTreeUnderLock` |
+| `OnEvict` | Page evicted past HeadAddress | Free BfTree under exclusive lock via `DisposeTreeUnderLock`; data files preserved for lazy restore |
 | `OnDiskRead` | Record loaded from disk | Zero `TreeHandle` (native pointer is stale) |
 | `OnCheckpoint(VersionShift)` | PREPARE→IN_PROGRESS | Set checkpoint barrier; mark all live trees `SnapshotPending=1` |
 | `OnCheckpoint(FlushBegin)` | WAIT_FLUSH | Snapshot trees with `SnapshotPending=1` under exclusive lock; clear barrier |
 | `OnCheckpoint(CheckpointCompleted)` | REST | Purge old checkpoint snapshot files (if `removeOutdated`) |
 | `OnRecovery(Guid)` | Before snapshot file recovery | Store recovered checkpoint token |
 | `OnRecoverySnapshotRead` | Per record from snapshot file | Set `FlagRecovered` on RI stubs |
-| `OnDispose(Deleted)` | DEL/UNLINK | Free BfTree under exclusive lock |
+| `OnDispose(Deleted)` | DEL/UNLINK | Free BfTree under exclusive lock; delete data files (`data.bftree`, `flush.bftree`, snapshots, key directory) |
 
 ### Lazy Promote (Flush → Tail)
 
