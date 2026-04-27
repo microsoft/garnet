@@ -104,8 +104,10 @@ namespace Garnet.server
 
             quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
 
-            // TODO: Move this to a config like with replays
-            quantizationTasks = new Task[Environment.ProcessorCount];
+            if(serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
+                throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
+            var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
             logger?.LogInformation("Created VectorManager");

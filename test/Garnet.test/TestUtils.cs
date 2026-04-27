@@ -678,6 +678,7 @@ namespace Garnet.test
             string clusterAnnounceHostname = null,
             bool enableVectorSetPreview = true,
             int vectorSetReplayTaskCount = 0,
+            int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
@@ -804,6 +805,7 @@ namespace Garnet.test
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
+                VectorSetQuantizationTaskCount = vectorSetQuantizationTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
