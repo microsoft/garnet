@@ -65,12 +65,12 @@ namespace Garnet.networking
 
             public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
             {
-                return ReadAsyncInternal(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
+                return ReadAsyncInternalAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
             }
 
             public override ValueTask<int> ReadAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
             {
-                return ReadAsyncInternal(destination, cancellationToken);
+                return ReadAsyncInternalAsync(destination, cancellationToken);
             }
 
             public override int Read(byte[] buffer, int offset, int count)
@@ -118,7 +118,7 @@ namespace Garnet.networking
                 throw new NotImplementedException();
             }
 
-            private async ValueTask<int> ReadAsyncInternal(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            private async ValueTask<int> ReadAsyncInternalAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
             {
                 int copiedBytes;
                 while (true)

@@ -62,7 +62,7 @@ namespace Garnet.server
                     RunContinuationsAsynchronously = true
                 };
                 var _storageApi = storageApi;
-                _ = Task.Run(async () => await AsyncGetProcessor(_storageApi));
+                _ = Task.Run(async () => await AsyncGetProcessorAsync(_storageApi));
             }
             else
             {
@@ -76,7 +76,7 @@ namespace Garnet.server
         /// It handles all the IO completions and takes over the network sender to send async responses when ready.
         /// Note that async responses are not guaranteed to be in the same order that they are issued.
         /// </summary>
-        async Task AsyncGetProcessor<TGarnetApi>(TGarnetApi storageApi)
+        async Task AsyncGetProcessorAsync<TGarnetApi>(TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             while (!asyncWaiterCancel.Token.IsCancellationRequested)

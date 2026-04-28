@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -130,7 +131,7 @@ namespace Garnet.cluster
                 if (!needToFlush) break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-                replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
                 needToFlush = false;
             }
@@ -175,7 +176,7 @@ namespace Garnet.cluster
                 if (!needToFlush) break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-                replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
             }
 
@@ -192,7 +193,7 @@ namespace Garnet.cluster
             }
 
             // Wait for flush and response to complete
-            replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
 
             logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
                 nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
