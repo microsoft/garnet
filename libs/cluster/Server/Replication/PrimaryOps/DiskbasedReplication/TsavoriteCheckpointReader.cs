@@ -1,26 +1,54 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
+    /// <summary>
+    /// Describes a checkpoint data source entry before device creation.
+    /// </summary>
+    internal readonly struct CheckpointDataSourceEntry
+    {
+        public readonly CheckpointFileType Type;
+        public readonly Guid Token;
+        public readonly long StartOffset;
+        public readonly long EndOffset;
+
+        public CheckpointDataSourceEntry(CheckpointFileType type, Guid token, long startOffset, long endOffset)
+        {
+            Type = type;
+            Token = token;
+            StartOffset = startOffset;
+            EndOffset = endOffset;
+        }
+    }
+
     internal sealed class TsavoriteCheckpointReader : ICheckpointReader
     {
-        const int BatchSize = 1 << 17;
         readonly ClusterProvider clusterProvider;
-        readonly List<CheckpointDataSource> dataSources = [];
+        readonly TimeSpan timeout;
+        readonly ILogger logger;
+        readonly List<CheckpointDataSourceEntry> entries = [];
 
-        public static int GetBatchSize(CheckpointFileType type, GarnetServerOptions serverOptions)
+        /// <summary>
+        /// Computes the maximum batch size for a given checkpoint file type.
+        /// For segmented types (HLOG, SNAPSHOT), returns the segment size.
+        /// For other types, returns the default batch size.
+        /// The actual read batch is capped at min(DefaultBatchSize, GetMaxBatchSize).
+        /// </summary>
+        public static int GetMaxBatchSize(CheckpointFileType type, GarnetServerOptions serverOptions)
         {
             return type switch
             {
                 CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => 1 << serverOptions.SegmentSizeBits(isObj: false),
                 CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => 1 << serverOptions.SegmentSizeBits(isObj: true),
-                _ => BatchSize
+                _ => CheckpointDataSource.DefaultBatchSize
             };
         }
 
@@ -28,121 +56,118 @@ namespace Garnet.cluster
             ClusterProvider clusterProvider,
             CheckpointEntry checkpointEntry,
             LogFileInfo logFileInfo,
-            long indexSize)
+            long indexSize,
+            TimeSpan timeout,
+            ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
+            this.timeout = timeout;
+            this.logger = logger;
 
             // 1. send hlog file segments
             if (clusterProvider.serverOptions.EnableStorageTier && logFileInfo.hybridLogFileEndAddress > PageHeader.Size)
             {
-                dataSources.Add(new CheckpointDataSource
-                {
-                    type = CheckpointFileType.STORE_HLOG,
-                    token = checkpointEntry.metadata.storeHlogToken,
-                    startOffset = logFileInfo.hybridLogFileStartAddress,
-                    currOffset = logFileInfo.hybridLogFileStartAddress,
-                    endOffset = logFileInfo.hybridLogFileEndAddress
-                });
+                entries.Add(new CheckpointDataSourceEntry(
+                    CheckpointFileType.STORE_HLOG,
+                    checkpointEntry.metadata.storeHlogToken,
+                    logFileInfo.hybridLogFileStartAddress,
+                    logFileInfo.hybridLogFileEndAddress));
 
                 if (logFileInfo.hasSnapshotObjects)
-                    dataSources.Add(new CheckpointDataSource
-                    {
-                        type = CheckpointFileType.STORE_HLOG_OBJ,
-                        token = checkpointEntry.metadata.storeHlogToken,
-                        startOffset = logFileInfo.hybridLogObjectFileStartAddress,
-                        currOffset = logFileInfo.hybridLogObjectFileStartAddress,
-                        endOffset = logFileInfo.hybridLogObjectFileEndAddress
-                    });
+                    entries.Add(new CheckpointDataSourceEntry(
+                        CheckpointFileType.STORE_HLOG_OBJ,
+                        checkpointEntry.metadata.storeHlogToken,
+                        logFileInfo.hybridLogObjectFileStartAddress,
+                        logFileInfo.hybridLogObjectFileEndAddress));
             }
 
-            // 2.Send index file segments
-            dataSources.Add(new CheckpointDataSource
-            {
-                type = CheckpointFileType.STORE_INDEX,
-                token = checkpointEntry.metadata.storeIndexToken,
-                startOffset = 0,
-                currOffset = 0,
-                endOffset = indexSize
-            });
+            // 2. Send index file segments
+            entries.Add(new CheckpointDataSourceEntry(
+                CheckpointFileType.STORE_INDEX,
+                checkpointEntry.metadata.storeIndexToken,
+                0,
+                indexSize));
 
             // 3. Send snapshot files
             if (logFileInfo.snapshotFileEndAddress > PageHeader.Size)
             {
-                dataSources.Add(new CheckpointDataSource
-                {
-                    type = CheckpointFileType.STORE_SNAPSHOT,
-                    token = checkpointEntry.metadata.storeHlogToken,
-                    startOffset = 0,
-                    currOffset = 0,
-                    endOffset = logFileInfo.snapshotFileEndAddress
-                });
+                entries.Add(new CheckpointDataSourceEntry(
+                    CheckpointFileType.STORE_SNAPSHOT,
+                    checkpointEntry.metadata.storeHlogToken,
+                    0,
+                    logFileInfo.snapshotFileEndAddress));
+
                 if (logFileInfo.hasSnapshotObjects)
-                    dataSources.Add(new CheckpointDataSource
-                    {
-                        type = CheckpointFileType.STORE_SNAPSHOT_OBJ,
-                        token = checkpointEntry.metadata.storeHlogToken,
-                        startOffset = 0,
-                        currOffset = 0,
-                        endOffset = logFileInfo.snapshotObjectFileEndAddress
-                    });
+                    entries.Add(new CheckpointDataSourceEntry(
+                        CheckpointFileType.STORE_SNAPSHOT_OBJ,
+                        checkpointEntry.metadata.storeHlogToken,
+                        0,
+                        logFileInfo.snapshotObjectFileEndAddress));
             }
 
             // 4. Send delta log segments
-            dataSources.Add(new CheckpointDataSource
-            {
-                type = CheckpointFileType.STORE_DLOG,
-                token = checkpointEntry.metadata.storeHlogToken,
-                startOffset = 0,
-                currOffset = 0,
-                endOffset = logFileInfo.deltaLogTailAddress
-            });
+            entries.Add(new CheckpointDataSourceEntry(
+                CheckpointFileType.STORE_DLOG,
+                checkpointEntry.metadata.storeHlogToken,
+                0,
+                logFileInfo.deltaLogTailAddress));
         }
 
-        public IEnumerable<CheckpointDataSource> GetNextDataSource()
+        /// <inheritdoc/>
+        public IEnumerable<ICheckpointDataSource> GetDataSources()
         {
-            foreach (var dataSource in dataSources)
+            foreach (var entry in entries)
             {
-                var ds = dataSource;
-                CreateCheckpointDevice(ref ds);
-                yield return ds;
+                var device = CreateCheckpointDevice(entry.Type, entry.Token);
+                var maxBatchSize = Math.Min(CheckpointDataSource.DefaultBatchSize, GetMaxBatchSize(entry.Type, clusterProvider.serverOptions));
+
+                yield return new CheckpointDataSource(
+                    entry.Type,
+                    entry.Token,
+                    device,
+                    entry.StartOffset,
+                    entry.EndOffset,
+                    maxBatchSize,
+                    timeout,
+                    logger);
             }
         }
 
-        private void CreateCheckpointDevice(ref CheckpointDataSource cds)
+        private IDevice CreateCheckpointDevice(CheckpointFileType type, Guid token)
         {
-            cds.device = cds.type switch
+            var device = type switch
             {
                 CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(isObj: false),
                 CheckpointFileType.STORE_HLOG_OBJ => GetStoreHLogDevice(isObj: true),
-                _ => clusterProvider.ReplicationLogCheckpointManager.GetDevice(cds.type, cds.token),
+                _ => clusterProvider.ReplicationLogCheckpointManager.GetDevice(type, token),
             };
 
-            var segmentSize = GetBatchSize(cds.type, clusterProvider.serverOptions);
-            switch (cds.type)
+            var segmentSize = GetMaxBatchSize(type, clusterProvider.serverOptions);
+            switch (type)
             {
                 case CheckpointFileType.STORE_HLOG:
                 case CheckpointFileType.STORE_SNAPSHOT:
                 case CheckpointFileType.STORE_HLOG_OBJ:
                 case CheckpointFileType.STORE_SNAPSHOT_OBJ:
-                    cds.device.Initialize(segmentSize: segmentSize);
-                    break;
-                default:
+                    device.Initialize(segmentSize: segmentSize);
                     break;
             }
 
-            IDevice GetStoreHLogDevice(bool isObj)
+            return device;
+        }
+
+        private IDevice GetStoreHLogDevice(bool isObj)
+        {
+            var opts = clusterProvider.serverOptions;
+            if (opts.EnableStorageTier)
             {
-                var opts = clusterProvider.serverOptions;
-                if (opts.EnableStorageTier)
-                {
-                    var LogDir = !string.IsNullOrEmpty(opts.LogDir) ? opts.LogDir : Directory.GetCurrentDirectory();
-                    var logFactory = opts.GetInitializedDeviceFactory(LogDir);
+                var LogDir = !string.IsNullOrEmpty(opts.LogDir) ? opts.LogDir : Directory.GetCurrentDirectory();
+                var logFactory = opts.GetInitializedDeviceFactory(LogDir);
 
-                    // These must match GarnetServerOptions.GetSettings, EnableStorageTier
-                    return logFactory.Get(new FileDescriptor("Store", isObj ? "hlog_objs" : "hlog"));
-                }
-                return null;
+                // These must match GarnetServerOptions.GetSettings, EnableStorageTier
+                return logFactory.Get(new FileDescriptor("Store", isObj ? "hlog_objs" : "hlog"));
             }
+            return null;
         }
     }
 }
