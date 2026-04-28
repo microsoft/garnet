@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -61,7 +62,7 @@ namespace Garnet.server.Auth.Aad
             var configUrl = string.Format(OpenIdConfigurationAddressFormat, authority);
 
             var configManager = new ConfigurationManager<OpenIdConnectConfiguration>(configUrl, new OpenIdConnectConfigurationRetriever(), new HttpDocumentRetriever());
-            var doc = configManager.GetConfigurationAsync().GetAwaiter().GetResult();
+            var doc = AsyncUtils.BlockingWait(configManager.GetConfigurationAsync());
 
             return [.. doc.SigningKeys];
         }

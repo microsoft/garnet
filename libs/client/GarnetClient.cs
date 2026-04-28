@@ -197,9 +197,22 @@ namespace Garnet.client
         /// </summary>
         public void Connect(CancellationToken token = default)
         {
-            socket = ConnectSendSocketAsync(timeoutMilliseconds).ConfigureAwait(false).GetAwaiter().GetResult();
+            socket = ConnectSendSocket();
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, logger);
-            networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.Start(sslOptions, EndPoint.ToString(), token);
+
+            // Spin until auth finishes or cancellation occurs
+            while (!networkHandler.IsAuthenticated(out var fault))
+            {
+                if (fault != null)
+                {
+                    throw new Exception("Authentication failed", fault);
+                }
+
+                token.ThrowIfCancellationRequested();
+
+                Thread.Sleep(1);
+            }
 
             if (timeoutMilliseconds > 0)
             {
@@ -208,13 +221,19 @@ namespace Garnet.client
 
             try
             {
-                if (authUsername != null)
+                Task authTask =
+                    (authUsername, authPassword) switch
+                    {
+                        (string u, string p) => ExecuteForStringResultAsync(AUTH, u, p),
+                        (string u, null) => ExecuteForStringResultAsync(AUTH, u, ""),
+                        (null, string p) => ExecuteForStringResultAsync(AUTH, p),
+                        _ => null,
+                    };
+
+                if (authTask != null)
                 {
-                    ExecuteForStringResultAsync(AUTH, authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
-                }
-                else if (authPassword != null)
-                {
-                    ExecuteForStringResultAsync(AUTH, authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
+                    // Cannot avoid blocking here
+                    AsyncUtils.BlockingWait(authTask);
                 }
             }
             catch (Exception e)
@@ -259,9 +278,41 @@ namespace Garnet.client
         /// <summary>
         /// Connect client send socket
         /// </summary>
-        /// <param name="millisecondsTimeout"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
+        private Socket ConnectSendSocket()
+        {
+            if (EndPoint is DnsEndPoint dnsEndpoint)
+            {
+                var hostEntries = Dns.GetHostEntry(dnsEndpoint.Host);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    if (TryConnectSocket(socket, endpoint))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (EndPoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (TryConnectSocket(socket, EndPoint))
+                    return socket;
+            }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", EndPoint);
+            throw new Exception($"Failed to connect at {EndPoint}");
+        }
+
+        /// <inheritdoc cref="ConnectSendSocket"/>
         private async Task<Socket> ConnectSendSocketAsync(int millisecondsTimeout = 0, CancellationToken cancellationToken = default)
         {
             if (EndPoint is DnsEndPoint dnsEndpoint)
@@ -299,9 +350,30 @@ namespace Garnet.client
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="endpoint"></param>
-        /// <param name="millisecondsTimeout"></param>
-        /// <param name="cancellationToken">The cancellation token</param>
         /// <returns></returns>
+        private bool TryConnectSocket(Socket socket, EndPoint endpoint)
+        {
+            try
+            {
+                socket.Connect(endpoint);
+
+                if (!socket.Connected)
+                {
+                    socket.Close();
+                    throw new Exception($"Failed to connect server {endpoint}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
+                socket.Dispose();
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc cref="TryConnectSocketAsync"/>
         private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, int millisecondsTimeout, CancellationToken cancellationToken = default)
         {
             try
@@ -378,21 +450,6 @@ namespace Garnet.client
                 }
             }
             catch { }
-        }
-
-        /// <summary>
-        /// Reconnect to server
-        /// </summary>
-        public void Reconnect(CancellationToken token = default)
-        {
-            if (Disposed) throw disposeException;
-            try
-            {
-                socket?.Dispose();
-                networkWriter?.Dispose();
-            }
-            catch { }
-            Connect(token);
         }
 
         /// <summary>
@@ -762,7 +819,7 @@ namespace Garnet.client
             return;
         }
 
-        void InternalExecuteNoResponse(ref Memory<byte> op, ref ReadOnlySpan<byte> subop, ref Span<byte> param1, ref Span<byte> param2, CancellationToken token = default)
+        void InternalExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
             var totalLen = 0;
             var arraySize = 4;
