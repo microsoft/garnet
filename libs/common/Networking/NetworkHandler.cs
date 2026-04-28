@@ -191,7 +191,7 @@ namespace Garnet.networking
 
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
-                _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
+                _ = SslReaderAsync(result.AsTask(), false, cancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
@@ -251,7 +251,7 @@ namespace Garnet.networking
 
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
-                _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
+                _ = SslReaderAsync(result.AsTask(), false, cancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
@@ -380,8 +380,10 @@ namespace Garnet.networking
                 }
                 else
                 {
-                    // Rare case: Our read has gone async, we need to invoke the async read processing code
-                    _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
+                    // Rare case: Our read has gone async, we need to invoke the async read processing code.
+                    // Forward the current `retry` state so that any in-progress buffer doubling triggered in
+                    // this iteration is honored once the pending read completes.
+                    _ = SslReaderAsync(result.AsTask(), initialRetry: retry, token: cancellationTokenSource.Token);
                     return;
                 }
             }
@@ -389,11 +391,11 @@ namespace Garnet.networking
             // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
         }
 
-        async Task SslReaderAsync(Task<int> readTask, CancellationToken token = default)
+        async Task SslReaderAsync(Task<int> readTask, bool initialRetry = false, CancellationToken token = default)
         {
             try
             {
-                bool retry = false;
+                bool retry = initialRetry;
                 int count = await readTask.ConfigureAwait(false);
 
                 Debug.Assert(readerStatus == TlsReaderStatus.Active);
@@ -414,9 +416,16 @@ namespace Garnet.networking
                     DoubleTransportReceiveBuffer();
                     retry = true;
                 }
-                // If more work, passthrough to the general SslReaderAsync, else this task is done
+                // If more work, passthrough to the general SslReaderAsync, else this task is done.
+                // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
+                // attempt another read into the freshly-enlarged buffer"). If we chained without it, the new
+                // SslReaderAsync(token) would start with retry=false and, when networkBytesRead==networkReadHead,
+                // exit its loop immediately without ever issuing the follow-up read, leaving the half-parsed
+                // payload stuck in the transport buffer until more network bytes happen to arrive.
                 if (networkBytesRead > networkReadHead || retry)
-                    _ = SslReaderAsync(token);
+                {
+                    _ = SslReaderAsync(token, initialRetry: retry);
+                }
                 else
                 {
                     readerStatus = TlsReaderStatus.Rest;
@@ -432,13 +441,13 @@ namespace Garnet.networking
             }
         }
 
-        async Task SslReaderAsync(CancellationToken token = default)
+        async Task SslReaderAsync(CancellationToken token = default, bool initialRetry = false)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
 
             try
             {
-                bool retry = false;
+                bool retry = initialRetry;
                 while (networkBytesRead > networkReadHead || retry)
                 {
                     retry = false;
