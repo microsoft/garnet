@@ -29,12 +29,12 @@ Each callback has **1 method** (no value parameter):
 Value flows through: `IAllocator.GetUpsertRecordSize(value)` → `IVariableLengthInput.GetUpsertFieldInfo(value)`. Both have 3 overloads for 3 value types. **These collapse to a single overload taking only Input.**
 
 ### Internal Callers of LogRecord-based Upsert
-- **Compaction/CompactScan** (`TsavoriteCompaction.cs:88-100`): `tempbContext.Upsert(in iterLogRecord)` and `Delete`
-- **Iterator** (`TsavoriteIterator.cs:230`): `tempbContext.Upsert(in iterLogRecord)` and `Delete`
+- **Compaction/CompactScan** (`TsavoriteCompaction.cs:88-100`): uses `NoOpSessionFunctions`, calls `Upsert(in iterLogRecord)` and `Delete`
+- **Iterator** (`TsavoriteIterator.cs:230`): uses **caller-provided TFunctions** (not NoOpSessionFunctions), calls `Upsert(in iterLogRecord)` and `Delete`
 - **Compaction/CompactLookup** (`TsavoriteCompaction.cs:38`): uses `CompactionCopyToTail` (not Upsert) — unaffected
 - **AllocatorScan** (`AllocatorScan.cs:221`): uses `ConditionalScanPush` (not Upsert) — unaffected
 
-These LogRecord-copy callsites currently use `NoOpSessionFunctions`. They will switch to a new dedicated `LogRecordCopySessionFunctions` with a `LogRecordInput` wrapper type.
+CompactScan uses `NoOpSessionFunctions` and the Iterator uses caller-provided functions for its temp KV. Both will switch to the new `LogRecordCopySessionFunctions<ITsavoriteScanIterator>`, which performs raw record copies. This is a semantic change for the iterator — caller-provided functions will no longer affect temp-KV maintenance. This is correct because the temp KV is an internal implementation detail for deduplication, and raw copy is the intended behavior.
 
 ## Design Decisions
 
@@ -138,10 +138,11 @@ Remove all span/object/logrecord delegation methods. Add single Input-only versi
 **File:** `libs/storage/Tsavorite/cs/src/core/Index/Interfaces/SessionFunctionsBase.cs`
 
 - Remove all span/object/logrecord Upsert defaults
-- Add single `InitialWriter(ref LogRecord, in RecordSizeInfo, ref TInput, ref TOutput, ref UpsertInfo)` — abstract/throws (requires knowledge of TInput)
-- Add single `InPlaceWriter(ref LogRecord, ref TInput, ref TOutput, ref UpsertInfo)` — abstract/throws
-- Single `PostInitialWriter`, `PostUpsertOperation` — no-op defaults
-- Single `GetUpsertFieldInfo(key, ref input)` — throws (requires knowledge of TInput)
+- Add single `InitialWriter(ref LogRecord, in RecordSizeInfo, ref TInput, ref TOutput, ref UpsertInfo)` — **throws NotImplementedException** by default, forcing derived classes to opt in (the base class cannot know how to extract a value from generic TInput)
+- Add single `InPlaceWriter(ref LogRecord, ref TInput, ref TOutput, ref UpsertInfo)` — **throws NotImplementedException**
+- Single `PostInitialWriter`, `PostUpsertOperation` — no-op defaults (safe to not override)
+- Single `GetUpsertFieldInfo(key, ref input)` — **throws NotImplementedException** (requires knowledge of TInput)
+- **Rationale:** Default implementations must not silently return `true` without writing a value — this would cause silent data corruption. Throwing forces implementers to provide correct value-writing logic.
 
 ### TODO 6: Update NoOpSessionFunctions
 **File:** `libs/storage/Tsavorite/cs/src/core/ClientSession/NoOpSessionFunctions.cs`
@@ -178,9 +179,14 @@ internal struct LogRecordCopySessionFunctions<TSourceLogRecord>
 
 - `InitialWriter`: `dstLogRecord.TryCopyFrom(in input.SourceRecord, in sizeInfo)` — zero boxing via generic `in TSourceLogRecord`
 - `InPlaceWriter`: compute sizeInfo from source, then `TryCopyFrom`
-- `GetUpsertFieldInfo`: derive size from `input.SourceRecord` fields (KeyBytes.Length, ValueSpan.Length or ObjectIdSize)
+- `GetUpsertFieldInfo`: derive size from `input.SourceRecord` — must handle:
+  - Span value vs object value (`Info.ValueIsObject`)
+  - Inline vs overflow value sizing
+  - `ObjectIdMap.ObjectIdSize` for object values
+  - ETag and expiration preservation (via `TryCopyFrom`)
 - Delete methods: return true (simple pass-through)
 - All other methods: no-op or throw
+- **Lifetime constraint:** `LogRecordInput<T>` is valid only for the synchronous duration of the Upsert call. Callbacks must not store it.
 
 ### TODO 9: Delete UpsertValueSelector infrastructure
 **Delete file:** `libs/storage/Tsavorite/cs/src/core/Index/Tsavorite/Implementation/UpsertValueSelector.cs`
@@ -220,23 +226,27 @@ Major simplification:
 - Remove span/object `GetUpsertFieldInfo` overloads
 - Add `GetUpsertFieldInfo(key, ref PinnedSpanByte input)` — derives value size from input
 
-### TODO 14: Update BasicContext public API
-**File:** `libs/storage/Tsavorite/cs/src/core/ClientSession/BasicContext.cs`
+### TODO 14: Update ITsavoriteContext interface
+**File:** `libs/storage/Tsavorite/cs/src/core/ClientSession/ITsavoriteContext.cs`
 
-- Remove ALL `Upsert(key, ReadOnlySpan<byte> desiredValue, ...)` overloads
-- Remove ALL `Upsert(key, IHeapObject desiredValue, ...)` overloads
-- Remove ALL `Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord, ...)` overloads
-- Add Input-only overloads mirroring RMW pattern:
+- Remove ALL span/object/logrecord Upsert method signatures
+- Add Input-only Upsert signatures mirroring RMW pattern:
   - `Upsert(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)`
   - `Upsert(TKey key, ref TInput input, ref TOutput output, ref UpsertOptions, TContext userContext = default)`
   - `Upsert(TKey key, ref TInput input, ref TOutput output, ref UpsertOptions, out RecordMetadata, TContext userContext = default)`
-  - `Upsert(TKey key, ref TInput input, TContext userContext = default)` (convenience, like RMW)
+  - `Upsert(TKey key, ref TInput input, TContext userContext = default)` (convenience)
+  - `Upsert(TKey key, ref TInput input, ref UpsertOptions, TContext userContext = default)` (convenience with options)
 
-### TODO 15: Update ConsistentReadContext
-**File:** `libs/storage/Tsavorite/cs/src/core/ClientSession/ConsistentReadContext.cs`
+### TODO 15: Update all context implementations
+**Files (6 context types, all must mirror ITsavoriteContext):**
+- `BasicContext.cs` — primary implementation, delegates to `store.ContextUpsert`
+- `UnsafeContext.cs` — delegates to BasicContext pattern without epoch resume/suspend
+- `ConsistentReadContext.cs` — delegates to `BasicContext.Upsert`
+- `TransactionalContext.cs` — delegates with transactional locking
+- `TransactionalUnsafeContext.cs` — transactional + unsafe pattern
+- `TransactionalConsistentReadContext.cs` — transactional + consistent read
 
-- Remove all span/object/logrecord Upsert delegates
-- Add Input-only Upsert delegates mirroring BasicContext
+For each: remove all span/object/logrecord Upsert overloads, add Input-only overloads matching ITsavoriteContext.
 
 ### TODO 16: Update Compaction (CompactScan)
 **File:** `libs/storage/Tsavorite/cs/src/core/Compaction/TsavoriteCompaction.cs`
@@ -254,9 +264,16 @@ Major simplification:
 - Simplify class type parameters: remove `TInput, TOutput, TContext, TFunctions` (no longer needed)
 - Change `tempbContext.Upsert(in iterLogRecord)` to `tempbContext.Upsert(key, ref logRecordInput)`
 - Update `Iterate` public API on `TsavoriteKV` to match simplified iterator
+- **Note:** This is a semantic change — caller-provided functions no longer affect temp-KV. Verify with tests.
 
 ### TODO 18: Update Tsavorite test session functions
 **Files:** Multiple test files in `libs/storage/Tsavorite/cs/test/`
+
+**Migration strategy** (do this BEFORE updating call sites):
+1. Inventory each test `ISessionFunctions` implementation
+2. Define the new Input shape (add value field to TInput struct if needed)
+3. Update `InitialWriter`, `InPlaceWriter`, `PostInitialWriter`, `PostUpsertOperation`, and `GetUpsertFieldInfo` together
+4. Ensure each implementation correctly writes the value from Input to the log record
 
 Key test session function implementations to update:
 - `UpsertInputFunctions` (InputOutputParameterTests.cs)
@@ -264,7 +281,7 @@ Key test session function implementations to update:
 - `SimpleLongSimpleFunctions` and related (TestUtils.cs)
 - `TestInlineObjectFunctions` (ObjectInlineTests.cs)
 
-For each: replace 3 overloads of `InitialWriter`/`InPlaceWriter` with single Input-only version. The test Input types must carry the value data.
+**Important:** `PostUpsertOperation` implementations that currently access the value (span or object) must be migrated to read the same data from TInput instead.
 
 ### TODO 19: Update Tsavorite test Upsert call sites
 **Files:** ~39 test files with 177+ Upsert invocations
@@ -294,15 +311,52 @@ dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f net10.0 -c D
 
 6. **Performance**: Removing ValueSelector dispatch and collapsing overloads reduces generic specialization count and call indirection. Should be perf-neutral or slightly positive.
 
+7. **PostUpsertOperation migration**: Existing implementations that access the value parameter (span or object) for ownership, cleanup, accounting, or conditional side effects must be migrated to read from TInput instead.
+
+8. **Iterator semantic change**: Switching the iterator's temp KV from caller-provided TFunctions to LogRecordCopySessionFunctions means caller functions no longer affect temp-KV record copies. This is intentional (temp KV is an internal dedup mechanism), but should be verified with tests for object values, expiration/ETag, tombstones, and variable-length values.
+
+9. **Retry safety**: Upsert retries (CAS failure, CPR shift, revivification) re-invoke callbacks with the same Input. Callbacks should not mutate TInput. This matches existing behavior where the value parameter was also re-used on retries.
+
+10. **Scope**: Only Tsavorite project/tests must compile in this PR. Garnet integration (session functions, Upsert callers in `libs/server/`) will be fixed in a follow-up PR.
+
+## Post-Implementation Validation
+
+After all changes, run these searches to verify no old patterns remain:
+
+```bash
+# No remaining ValueSelector infrastructure
+rg "IUpsertValueSelector|SpanUpsertValueSelector|ObjectUpsertValueSelector|LogRecordUpsertValueSelector"
+
+# No remaining value-taking Upsert callbacks
+rg "InitialWriter.*ReadOnlySpan<byte>" --glob "*.cs"
+rg "InitialWriter.*IHeapObject" --glob "*.cs"
+rg "InPlaceWriter.*ReadOnlySpan<byte>" --glob "*.cs"
+rg "InPlaceWriter.*IHeapObject" --glob "*.cs"
+
+# No remaining value-taking GetUpsertFieldInfo
+rg "GetUpsertFieldInfo.*ReadOnlySpan<byte>" --glob "*.cs"
+rg "GetUpsertFieldInfo.*IHeapObject" --glob "*.cs"
+
+# No remaining value-taking ContextUpsert
+rg "ContextUpsert.*srcStringValue|ContextUpsert.*srcObjectValue" --glob "*.cs"
+
+# No remaining old-style Upsert(in logRecord) calls
+rg "\.Upsert\(in " --glob "*.cs"
+
+# All Tsavorite tests pass
+dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
+dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f net10.0 -c Debug
+```
+
 ## Implementation Order
 
 The changes are tightly coupled. Recommended order:
 
-1. TODOs 1-3 (interfaces) — define the new contract
-2. TODOs 4-6, 13 (existing session function implementations) — implement the contract
-3. TODOs 7-8 (new LogRecordInput + LogRecordCopySessionFunctions)
-4. TODOs 9-12 (core infrastructure) — simplify InternalUpsert, ContextUpsert, allocators, delete ValueSelector
-5. TODOs 14-15 (public API) — BasicContext, ConsistentReadContext
+1. TODOs 1-3 (interfaces) — define the new contract: ISessionFunctions, IVariableLengthInput, ISessionFunctionsWrapper
+2. TODOs 4-6, 13 (existing session function implementations) — SessionFunctionsWrapper, SessionFunctionsBase, NoOpSessionFunctions, SpanByteFunctions
+3. TODOs 7-8 (new types) — LogRecordInput, LogRecordCopySessionFunctions
+4. TODOs 9-12 (core infrastructure) — delete UpsertValueSelector, simplify InternalUpsert, ContextUpsert, allocators
+5. TODOs 14-15 (public API) — ITsavoriteContext + all 6 context implementations
 6. TODOs 16-17 (internal callers) — compaction, iterator
-7. TODOs 18-19 (tests) — migrate all test code
-8. TODO 20 (validation) — build and test
+7. TODOs 18-19 (tests) — migrate test session functions first, then call sites
+8. TODO 20 (validation) — build, test, and run validation greps
