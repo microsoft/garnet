@@ -140,6 +140,13 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
+                    //var checkpointReadContext = new CheckpointReadContext(gcs, clusterProvider.serverOptions.ReplicaSyncTimeout, logger);
+                    //ICheckpointReader[] checkpointReaders =
+                    //    [new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size)];
+
+                    //using var checkpointTranmissionDriver = new CheckpointTranmissionDriver(checkpointReaders, checkpointReadContext, logger);
+                    //await checkpointTranmissionDriver.SendCheckpoint().ConfigureAwait(false);
+
                     // 1. send hlog file segments
                     if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > PageHeader.Size)
                     {
