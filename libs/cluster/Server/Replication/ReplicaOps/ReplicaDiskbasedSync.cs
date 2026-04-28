@@ -245,7 +245,7 @@ namespace Garnet.cluster
         /// <param name="token"></param>
         /// <param name="type"></param>
         /// <returns></returns>
-        public IDevice GetInitializedSegmentFileDevice(Guid token, CheckpointFileType type)
+        public IDevice CreateCheckpointDevice(Guid token, CheckpointFileType type)
         {
             var device = type switch
             {

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 #if DEBUG
 using Garnet.common;
@@ -13,7 +12,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe class ReceiveCheckpointHandler
+    internal sealed class ReceiveCheckpointHandler
     {
         readonly ClusterProvider clusterProvider;
         readonly CancellationTokenSource cts;
@@ -60,7 +59,7 @@ namespace Garnet.cluster
             if (writeIntoCkptDevice == null)
             {
                 Debug.Assert(writeIntoCkptDevice == null);
-                writeIntoCkptDevice = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
+                writeIntoCkptDevice = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
             }
 
             if (data.Length == 0)
@@ -116,7 +115,7 @@ namespace Garnet.cluster
             }
         }
 
-        private unsafe void IOCallback(uint errorCode, uint numBytes, object context)
+        private void IOCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
             {
@@ -133,8 +132,5 @@ namespace Garnet.cluster
                 logger?.LogError(ex, $"{nameof(ReceiveCheckpointHandler)}.IOCallback");
             }
         }
-
-        [DllImport("libc")]
-        private static extern IntPtr strerror(int errnum);
     }
 }

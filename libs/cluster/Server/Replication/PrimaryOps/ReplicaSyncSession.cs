@@ -57,7 +57,7 @@ namespace Garnet.cluster
             bufferPool?.Free();
         }
 
-        public bool ValidateMetadata(
+        private bool ValidateMetadata(
             CheckpointEntry localEntry,
             out long index_size,
             out LogFileInfo hlog_size,
@@ -117,7 +117,6 @@ namespace Garnet.cluster
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion}",
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion);
 
-
                 logger?.LogInformation("Attempting to acquire checkpoint");
                 (localEntry, aofSyncDriver) = await AcquireCheckpointEntry().ConfigureAwait(false);
                 logger?.LogInformation("Checkpoint search completed");
@@ -156,7 +155,7 @@ namespace Garnet.cluster
                     // 3. Send snapshot files
                     if (hlog_size.snapshotFileEndAddress > PageHeader.Size)
                     {
-                        //send snapshot file segments and object file segments
+                        // send snapshot file segments and object file segments
                         await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress).ConfigureAwait(false);
                         if (hlog_size.hasSnapshotObjects)
                             await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, 0, hlog_size.snapshotObjectFileEndAddress).ConfigureAwait(false);
@@ -333,7 +332,11 @@ namespace Garnet.cluster
             return (cEntry, aofSyncDriver);
         }
 
-        private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
+        private async Task SendCheckpointMetadata(
+            GarnetClientSession gcs,
+            GarnetClusterCheckpointManager ckptManager,
+            CheckpointFileType fileType,
+            Guid fileToken)
         {
             var retryCount = validateMetadataMaxRetryCount;
             while (true)
@@ -375,15 +378,19 @@ namespace Garnet.cluster
             }
         }
 
-        private async Task SendFileSegments(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
+        private async Task SendFileSegments(
+            GarnetClientSession gcs,
+            Guid token,
+            CheckpointFileType type,
+            long startAddress,
+            long endAddress,
+            int batchSize = 1 << 17)
         {
             var fileTokenBytes = token.ToByteArray();
-            var device = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
+            var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
 
             Debug.Assert(device != null);
-            var (shouldInitialize, segmentSizeBits) = ReplicationManager.ShouldInitialize(type, clusterProvider.serverOptions);
-            if (shouldInitialize)
-                batchSize = (int)Math.Min(batchSize, 1L << segmentSizeBits);
+            batchSize = Math.Min(batchSize, TsavoriteCheckpointReader.GetBatchSize(type, clusterProvider.serverOptions));
             string resp;
 
             logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress} {batchSize}", token, type, startAddress, endAddress, batchSize);
@@ -399,7 +406,7 @@ namespace Garnet.cluster
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
-                        throw new Exception($"Primary error at SendFileSegments {type} {resp}");
+                        throw new GarnetException($"Primary error at SendFileSegments {type} {resp}");
                     }
                     pbuffer.Return();
                     startAddress += readBytes;
@@ -411,7 +418,7 @@ namespace Garnet.cluster
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
-                    throw new Exception($"Primary error at SendFileSegments {type} {resp}");
+                    throw new GarnetException($"Primary error at SendFileSegments {type} {resp}");
                 }
             }
             finally
