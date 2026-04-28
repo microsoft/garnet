@@ -417,7 +417,7 @@ namespace Garnet.networking
                 // If more work, passthrough to the general SslReaderAsync, else this task is done.
                 // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
                 // attempt another read into the freshly-enlarged buffer"). If we chained without it, the new
-                // SslReaderAsync(token) would start with retry=false and, when networkBytesRead==networkReadHead,
+                // SslReaderLoopAsync would start with retry=false and, when networkBytesRead==networkReadHead,
                 // exit its loop immediately without ever issuing the follow-up read, leaving the half-parsed
                 // payload stuck in the transport buffer until more network bytes happen to arrive.
                 if (networkBytesRead > networkReadHead || retry)
