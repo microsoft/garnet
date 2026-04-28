@@ -392,7 +392,7 @@ namespace Garnet.server
                     rmwInfo.Action = RMWAction.WrongType;
                     return false;
                 }
-            } 
+            }
             else if (input.header.cmd.IsRangeIndexCommand())
             {
                 // Reject RI-specific commands on non-RI keys
