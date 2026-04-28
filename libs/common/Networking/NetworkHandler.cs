@@ -383,7 +383,7 @@ namespace Garnet.networking
                     // Rare case: Our read has gone async, we need to invoke the async read processing code.
                     // Forward the current `retry` state so that any in-progress buffer doubling triggered in
                     // this iteration is honored once the pending read completes.
-                    _ = SslReaderAsync(result.AsTask(), initialRetry: retry, token: cancellationTokenSource.Token);
+                    _ = SslReaderAsync(result.AsTask(), retry, token: cancellationTokenSource.Token);
                     return;
                 }
             }
@@ -391,7 +391,7 @@ namespace Garnet.networking
             // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
         }
 
-        async Task SslReaderAsync(Task<int> readTask, bool initialRetry = false, CancellationToken token = default)
+        async Task SslReaderAsync(Task<int> readTask, bool initialRetry, CancellationToken token = default)
         {
             try
             {
@@ -424,7 +424,7 @@ namespace Garnet.networking
                 // payload stuck in the transport buffer until more network bytes happen to arrive.
                 if (networkBytesRead > networkReadHead || retry)
                 {
-                    _ = SslReaderAsync(token, initialRetry: retry);
+                    _ = SslReaderAsync(initialRetry: retry, token: token);
                 }
                 else
                 {
@@ -441,7 +441,7 @@ namespace Garnet.networking
             }
         }
 
-        async Task SslReaderAsync(CancellationToken token = default, bool initialRetry = false)
+        async Task SslReaderAsync(bool initialRetry, CancellationToken token = default)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
 
