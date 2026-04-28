@@ -499,17 +499,18 @@ namespace Garnet.networking
                         retry = true;
                     }
                 }
+
+                // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
+                readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "An exception has occurred during SslReaderAsync");
-                Dispose();
-                return;
-            }
-            finally
-            {
+                logger?.LogWarning(ex, "An exception has occurred during SslReaderLoopAsync");
+                // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
+                Dispose();
             }
         }
 
