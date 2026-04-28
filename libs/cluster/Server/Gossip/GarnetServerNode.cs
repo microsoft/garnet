@@ -162,7 +162,10 @@ namespace Garnet.cluster
             if (conf != lastConfig)
             {
                 lastConfig = conf;
-                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                if (clusterProvider.replicationManager != null)
+                    // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
+                    // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
+                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset[0]);
                 byteArray = lastConfig.ToByteArray();
             }
             else
@@ -181,7 +184,7 @@ namespace Garnet.cluster
         {
             try
             {
-                using var resp = await gc.GossipAsync(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
@@ -206,12 +209,10 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
+        public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-
-            var resp = await gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).ConfigureAwait(false);
-            return resp;
+            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>

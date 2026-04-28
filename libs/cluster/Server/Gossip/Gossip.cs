@@ -180,10 +180,10 @@ namespace Garnet.cluster
 
                 // Initialize GarnetServerNode
                 // Thread-Safe initialization executes only once
-                await gsn.InitializeAsync();
+                await gsn.InitializeAsync().ConfigureAwait(false);
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeetAsync(conf.ToByteArray());
+                resp = await gsn.TryMeetAsync(conf.ToByteArray()).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
@@ -199,7 +199,7 @@ namespace Garnet.cluster
                     // If failed to add newly created connection dispose of it to reclaim resources
                     // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
                     // After connection is added we are no longer the owner. Background gossip task will be owner
-                    if (created && !await clusterConnectionStore.AddConnectionAsync(gsn))
+                    if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
                         gsn.Dispose();
                 }
             }
@@ -325,7 +325,7 @@ namespace Garnet.cluster
             {
                 while (true)
                 {
-                    if (ctsGossip.Token.IsCancellationRequested) return;
+                    ctsGossip.Token.ThrowIfCancellationRequested();
                     await InitConnectionsAsync().ConfigureAwait(false);
 
                     // Choose between full broadcast or sample gossip to few nodes
@@ -368,7 +368,7 @@ namespace Garnet.cluster
 
                 foreach (var a in addresses)
                 {
-                    if (ctsGossip.Token.IsCancellationRequested) break;
+                    ctsGossip.Token.ThrowIfCancellationRequested();
                     var nodeId = a.Item1;
                     var address = a.Item2;
                     var port = a.Item3;
@@ -383,7 +383,9 @@ namespace Garnet.cluster
                             if (gsn == null)
                             {
                                 logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+
                                 _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
+
                                 continue;
                             }
 
@@ -401,7 +403,7 @@ namespace Garnet.cluster
                 {
                     foreach (var w in workerBanList)
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
                         var nodeId = w.Key;
                         var expiry = w.Value;
 
@@ -428,7 +430,7 @@ namespace Garnet.cluster
                 {
                     try
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
 
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())
@@ -478,7 +480,7 @@ namespace Garnet.cluster
 
                     try
                     {
-                        if (ctsGossip.Token.IsCancellationRequested) return;
+                        ctsGossip.Token.ThrowIfCancellationRequested();
 
                         // Issue gossip message to node and truck success metrics
                         if (currNode.TryGossip())

@@ -451,7 +451,7 @@ namespace Garnet.server
         /// Skipped when <paramref name="storedProcMode"/> is true (stored procedure logs as a unit).
         /// </summary>
         internal void ReplicateRangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
-            TsavoriteLog appendOnlyFile, long version, int sessionId, bool storedProcMode)
+            GarnetAppendOnlyFile appendOnlyFile, long version, int sessionId, bool storedProcMode)
         {
             if (appendOnlyFile == null || storedProcMode) return;
 
@@ -459,9 +459,14 @@ namespace Garnet.server
             replicateParseState.InitializeWithArguments(field, value);
             var input = new StringInput(RespCommand.RISET, ref replicateParseState);
             input.header.flags |= RespInputFlags.Deterministic;
-            appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                key.ReadOnlySpan, ref input, out _);
+
+            appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreRMW,
+                version,
+                sessionId,
+                key.ReadOnlySpan,
+                ref input,
+                out _);
         }
 
         /// <summary>
@@ -469,7 +474,7 @@ namespace Garnet.server
         /// Skipped when <paramref name="storedProcMode"/> is true (stored procedure logs as a unit).
         /// </summary>
         internal void ReplicateRangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
-            TsavoriteLog appendOnlyFile, long version, int sessionId, bool storedProcMode)
+            GarnetAppendOnlyFile appendOnlyFile, long version, int sessionId, bool storedProcMode)
         {
             if (appendOnlyFile == null || storedProcMode) return;
 
@@ -477,9 +482,14 @@ namespace Garnet.server
             replicateParseState.InitializeWithArgument(field);
             var input = new StringInput(RespCommand.RIDEL, ref replicateParseState);
             input.header.flags |= RespInputFlags.Deterministic;
-            appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                key.ReadOnlySpan, ref input, out _);
+
+            appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreRMW,
+                version,
+                sessionId,
+                key.ReadOnlySpan,
+                ref input,
+                out _);
         }
 
         /// <summary>

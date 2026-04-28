@@ -43,9 +43,8 @@ namespace Garnet.cluster
 
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
-                    clusterProvider.replicationManager.ResetReplayIterator();
 
-                    // Cannot avoid blocking here we're on the network thread
+                    clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
                     AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
 
                     AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync());
@@ -53,7 +52,8 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                    if (acquiredLock)
+                        clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
                 }
             }
             else

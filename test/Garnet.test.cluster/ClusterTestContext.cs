@@ -126,7 +126,6 @@ namespace Garnet.test.cluster
             nodes[nodeIndex].Start();
         }
 
-
         public void TearDown()
         {
             // Capture test outcome before any teardown work to distinguish
@@ -241,6 +240,7 @@ namespace Garnet.test.cluster
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
         /// <param name="deviceType"></param>
+        /// <param name="sublogCount"></param>
         /// <param name="clusterReplicationReestablishmentTimeout"></param>
         /// <param name="aofSizeLimit"></param>
         /// <param name="compactionFrequencySecs"></param>
@@ -254,6 +254,7 @@ namespace Garnet.test.cluster
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
+        /// <param name="threadPoolMinIOCompletionThreads"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -300,6 +301,8 @@ namespace Garnet.test.cluster
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
@@ -359,6 +362,8 @@ namespace Garnet.test.cluster
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                 replicaSyncTimeout: replicaSyncTimeout,
+                sublogCount: sublogCount,
+                replayTaskCount: replayTaskCount,
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
@@ -397,10 +402,12 @@ namespace Garnet.test.cluster
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
         /// <param name="asyncReplay"></param>
+        /// <param name="sublogCount"></param>
         /// <param name="vectorSetReplayTaskCount"></param>
         /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
         /// <param name="clusterCreds"></param>
+        /// <param name="threadPoolMinIOCompletionThreads"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -426,16 +433,19 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            int sublogCount = 1,
             int vectorSetReplayTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
-            ServerCredential clusterCreds = new ServerCredential())
+            ServerCredential clusterCreds = new ServerCredential(),
+            int threadPoolMinIOCompletionThreads = 0)
         {
 
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
                 TestFolder,
                 endpoint,
+                logger: loggerFactory?.CreateLogger("GarnetServer"),
                 enableCluster: enableCluster,
                 disablePubSub: true,
                 disableObjects: disableObjects,
@@ -458,12 +468,14 @@ namespace Garnet.test.cluster
                 fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
+                sublogCount: sublogCount,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
                 certificates: certificates,
                 clusterAnnounceEndpoint: clusterAnnounceEndpoint,
-                vectorSetReplayTaskCount: vectorSetReplayTaskCount);
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
             return new GarnetServer(opts, loggerFactory);
         }
@@ -475,17 +487,17 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                _ = Parallel.For(0, nodes.Length, i =>
+                for (var i = 0; i < nodes.Length; i++)
                 {
                     if (nodes[i] != null)
                     {
-                        logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
                         var node = nodes[i];
                         nodes[i] = null;
                         node.Dispose(true);
-                        logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
                     }
-                });
+                }
             }
         }
 
@@ -585,14 +597,14 @@ namespace Garnet.test.cluster
             //Populate Primary
             if (disableObjects)
             {
-                PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+                if (!performRMW)
+                    PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+                else
+                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
             }
             else
             {
-                if (!performRMW)
-                    PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
-                else
-                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
+                PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
             }
         }
 

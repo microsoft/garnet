@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -69,7 +70,7 @@ namespace Garnet.cluster
         private async Task<bool> PauseWritesAndWaitForSyncAsync()
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
-            var client = await GetConnectionAsync(primaryId);
+            var client = await GetConnectionAsync(primaryId).ConfigureAwait(false);
             try
             {
                 if (client == null)
@@ -84,11 +85,13 @@ namespace Garnet.cluster
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
-                var primaryReplicationOffset = await client.FailStopWritesAsync(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+
+                var resp = await client.ExecuteClusterFailStopWritesAsync(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var primaryReplicationOffset = AofAddress.FromString(resp);
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                while (primaryReplicationOffset > clusterProvider.replicationManager.ReplicationOffset)
+                while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
@@ -142,21 +145,39 @@ namespace Garnet.cluster
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
-                // Reset replay iterators
-                clusterProvider.replicationManager.ResetReplayIterator();
+                // Cancel active replication tasks
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+
+                // Update sequence number generator for sharded log if needed
+                if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
+                {
+                    clusterProvider.storeWrapper.appendOnlyFile.ResetSequenceNumberGenerator();
+                    await clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.AdvanceTimeReplicaTask).ConfigureAwait(false);
+                }
 
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
                     logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimaryAsync));
+
                 _ = clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+
+                // Stop advance time task when reconfiguring node to be replica
+                if (clusterProvider.storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
+                    await clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.AdvanceTimeReplicaTask).ConfigureAwait(false);
 
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
                 clusterProvider.storeWrapper.StartPrimaryTasks();
             }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimaryAsync));
+                throw;
+            }
             finally
             {
                 // Disable recovering as now this node has become a primary or failed in its attempt earlier
-                if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                if (acquiredLock)
+                    clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
 
             return true;
@@ -316,7 +337,7 @@ namespace Garnet.cluster
                 failoverSucceeded = true;
 
                 // Attach to old replicas, and old primary if DEFAULT option
-                await IssueAttachReplicasAsync();
+                await IssueAttachReplicasAsync().ConfigureAwait(false);
 
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync();
                 clusterProvider.storeWrapper.StartPrimaryTasks();
@@ -342,7 +363,7 @@ namespace Garnet.cluster
                         logger?.LogWarning("Attempting to reset primary after failed failover");
                         if (primaryClient != null)
                         {
-                            _ = await primaryClient.FailStopWritesAsync(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                            _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)

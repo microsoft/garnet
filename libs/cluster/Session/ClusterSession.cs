@@ -151,7 +151,8 @@ namespace Garnet.cluster
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile.WaitForCommit();
+                    var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
+                    if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
                 }
                 int sendBytes = (int)(dcurr - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
@@ -178,6 +179,27 @@ namespace Garnet.cluster
             ReleaseCurrentEpoch();
             _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
             AcquireCurrentEpoch();
+        }
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        public void UnsafeSetConfig(string replicaOf = null)
+        {
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            config = config.MakeReplicaOf(replicaOf);
+            clusterProvider.clusterManager.UnsafeSetConfig(config);
+
+            if (replicaOf != null)
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+        }
+
+        public void Dispose()
+        {
+            // Call dispose on ref of this session if this session is a replication task
+            if (IsReplicating)
+                replicaReplayDriverStore?.Dispose();
         }
     }
 }
