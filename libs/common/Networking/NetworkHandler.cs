@@ -192,7 +192,7 @@ namespace Garnet.networking
 
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
-                _ = SslReaderAsync(result.AsTask(), false, cancellationTokenSource.Token);
+                _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
@@ -257,7 +257,7 @@ namespace Garnet.networking
 
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
-                _ = SslReaderAsync(result.AsTask(), false, cancellationTokenSource.Token);
+                _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
@@ -410,9 +410,7 @@ namespace Garnet.networking
                 else
                 {
                     // Rare case: Our read has gone async, we need to invoke the async read processing code.
-                    // Forward the current `retry` state so that any in-progress buffer doubling triggered in
-                    // this iteration is honored once the pending read completes.
-                    _ = SslReaderAsync(result.AsTask(), retry, token: cancellationTokenSource.Token);
+                    _ = SslReaderAsync(result.AsTask(), token: cancellationTokenSource.Token);
                     return;
                 }
             }
@@ -420,11 +418,11 @@ namespace Garnet.networking
             // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
         }
 
-        async Task SslReaderAsync(Task<int> readTask, bool initialRetry, CancellationToken token = default)
+        async Task SslReaderAsync(Task<int> readTask, CancellationToken token = default)
         {
             try
             {
-                bool retry = initialRetry;
+                bool retry = false;
                 int count = await readTask.ConfigureAwait(false);
 
                 Debug.Assert(readerStatus == TlsReaderStatus.Active);
