@@ -57,6 +57,11 @@ namespace Garnet.server
             [FieldOffset(32)]
             private HashSlots slots;
 
+            /// <summary>
+            /// Returns the number of contexts currently marked as in use.
+            /// </summary>
+            public readonly int InUseCount => BitOperations.PopCount(inUse);
+
             public readonly bool IsInUse(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
@@ -329,6 +334,12 @@ namespace Garnet.server
         }
 
         private ContextMetadata contextMetadata;
+
+        /// <summary>
+        /// Gets the number of DiskANN contexts currently marked as in use.
+        /// A context stays in use until <see cref="TryDeleteVectorSet"/> completes cleanup.
+        /// </summary>
+        internal int InUseContextCount { get { lock (this) { return contextMetadata.InUseCount; } } }
 
         /// <summary>
         /// Get a new unique context for a vector set.

@@ -2342,5 +2342,85 @@ namespace Garnet.test
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "opts")]
         private static extern ref GarnetServerOptions GetOpts(GarnetServer server);
+
+        /// <summary>
+        /// Documents a known limitation: DEL on an evicted VectorSet key does NOT
+        /// free the native DiskANN index or schedule element data cleanup.
+        ///
+        /// <para>The only gate that redirects DEL to <c>TryDeleteVectorSet</c> is
+        /// <c>InPlaceDeleter</c>, which only fires when the record is in memory.
+        /// For evicted records, Tsavorite writes a blind tombstone — the VectorManager
+        /// never learns about the deletion, so the DiskANN context stays marked as
+        /// in-use and the native index is never freed.</para>
+        /// </summary>
+        [Test]
+        public void VectorSetDeleteAfterEvictionLeaksContextTest()
+        {
+            // Restart with VectorSets enabled (default memory — VectorSets need
+            // adequate page sizes for DiskANN element data).
+            // We force eviction via ShiftHeadAddress instead of lowMemory.
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                enableVectorSetPreview: true);
+            server.Start();
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var store = server.Provider.StoreWrapper.store;
+
+            // Record baseline context count before creating any VectorSets
+            var baselineContexts = vectorManager.InUseContextCount;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Step 1: Create a VectorSet and add vectors (using XB8 format)
+            var vec1 = new byte[75];
+            var vec2 = new byte[75];
+            vec1[0] = 1;
+            vec2[0] = 75;
+            for (var i = 1; i < 75; i++)
+            {
+                vec1[i] = (byte)(vec1[i - 1] + 1);
+                vec2[i] = (byte)(vec2[i - 1] + 1);
+            }
+
+            var addRes = (int)db.Execute("VADD", ["myvectors", "XB8", vec1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, addRes, "First vector should be inserted");
+
+            addRes = (int)db.Execute("VADD", ["myvectors", "XB8", vec2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, addRes, "Second vector should be inserted");
+
+            // Step 2: Verify context was allocated
+            ClassicAssert.AreEqual(baselineContexts + 1, vectorManager.InUseContextCount,
+                "One DiskANN context should be allocated after VADD");
+
+            // Step 3: Force eviction by shifting HeadAddress past all current records.
+            // First flush to read-only (required before moving HeadAddress),
+            // then shift HeadAddress to evict all pages to disk.
+            // Do NOT read the VectorSet key between eviction and DEL (reads can
+            // lazily recreate the native index, which would invalidate the test).
+            var headBefore = store.Log.HeadAddress;
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+
+            // Write a filler key so TailAddress advances past the evicted region
+            db.StringSet("filler", "data");
+
+            ClassicAssert.IsTrue(store.Log.HeadAddress > headBefore,
+                "HeadAddress should have advanced (pages were evicted)");
+
+            // Step 4: Delete the evicted key — blind tombstone, no VectorSet cleanup
+            var delResult = db.KeyDelete("myvectors");
+            // Known limitation: DEL on evicted keys returns false
+            ClassicAssert.IsFalse(delResult,
+                "DEL returns false for evicted keys (known limitation)");
+
+            // Step 5: The context is STILL in use — proves DropIndex was never called
+            // and the DiskANN native index was never freed.
+            ClassicAssert.AreEqual(baselineContexts + 1, vectorManager.InUseContextCount,
+                "DiskANN context should still be in use after DEL of evicted key (known limitation: " +
+                "InPlaceDeleter never fires for evicted records, so TryDeleteVectorSet is never called)");
+        }
     }
 }
