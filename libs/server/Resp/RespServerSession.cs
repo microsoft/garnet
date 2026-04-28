@@ -640,11 +640,12 @@ namespace Garnet.server
                 {
                     var noScriptPassed = true;
 
-                    // Reset error flag unconditionally (only read when commandStats != null)
-                    commandErrorWritten = false;
-
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
+                        // Reset error flag only when stats tracking is active (read after command execution below)
+                        if (commandStats != null)
+                            commandErrorWritten = false;
+
                         if (txnManager.state != TxnState.None)
                         {
                             if (txnManager.state == TxnState.Running)
