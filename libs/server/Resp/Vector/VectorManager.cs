@@ -134,6 +134,8 @@ namespace Garnet.server
         /// </summary>
         public bool IsEnabled { get; }
 
+        private bool initialized;
+
         private readonly ILogger logger;
 
         private readonly int dbId;
@@ -188,7 +190,9 @@ namespace Garnet.server
         /// </summary>
         public void Initialize()
         {
-            if (!IsEnabled) return;
+            if (!IsEnabled || initialized) return;
+
+            initialized = true;
 
             using var session = (RespServerSession)getTempSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
