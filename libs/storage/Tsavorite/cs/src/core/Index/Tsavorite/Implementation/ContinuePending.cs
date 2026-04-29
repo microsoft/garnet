@@ -241,8 +241,14 @@ namespace Tsavorite.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    sessionFunctions.PostRMWOperation(pendingContext.requestKey, ref pendingContext.input.Get(), ref rmwInfo, epoch);
-                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+                    try
+                    {
+                        sessionFunctions.PostRMWOperation(pendingContext.requestKey, ref pendingContext.input.Get(), ref rmwInfo, epoch);
+                    }
+                    finally
+                    {
+                        EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+                    }
                 }
 
                 // Must do this *after* Unlocking.
