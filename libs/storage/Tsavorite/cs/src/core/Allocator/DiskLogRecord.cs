@@ -192,6 +192,33 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public readonly SpanByteAndMemory ValueSpanByteAndMemory
+        {
+            get
+            {
+                // For an inline value, the underlying SpanByte points into this DiskLogRecord's
+                // recordBuffer (a SectorAlignedMemory rented from a pool). That buffer is returned
+                // to the pool when this DiskLogRecord is disposed -- typically as part of pending-
+                // completion cleanup, immediately after the read callback returns, or when a scan
+                // iterator advances. To keep the contract uniform with in-memory LogRecord (where
+                // SpanByte is stable for the unsafe context), copy the bytes into a pooled
+                // IMemoryOwner so the returned SpanByteAndMemory remains valid past disposal.
+                if (logRecord.IsPinnedValue)
+                {
+                    var span = logRecord.ValueSpan;
+                    var owner = MemoryPool<byte>.Shared.Rent(span.Length);
+                    span.CopyTo(owner.Memory.Span);
+                    return new SpanByteAndMemory(owner, span.Length);
+                }
+
+                // Overflow values come back as a no-copy BorrowedMemoryOwner around the underlying
+                // GC-managed byte[]. The byte[] stays rooted via the Memory<byte> reference inside
+                // the owner, so it survives DiskLogRecord disposal without an extra copy.
+                return logRecord.ValueSpanByteAndMemory;
+            }
+        }
+
+        /// <inheritdoc/>
         public readonly byte RecordType => logRecord.IsSet ? logRecord.RecordType : default;
 
         /// <inheritdoc/>
