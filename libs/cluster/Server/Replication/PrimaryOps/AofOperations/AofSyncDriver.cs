@@ -126,7 +126,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Main replica aof sync task.
         /// </summary>
-        public async Task Run()
+        public async Task RunAsync()
         {
             logger?.LogInformation("Starting ReplicationManager.ReplicaSyncTask for remote node {remoteNodeId} starting from address {address}", remoteNodeId, StartAddress);
 
@@ -134,14 +134,14 @@ namespace Garnet.cluster
             {
                 if (clusterProvider.serverOptions.AofPhysicalSublogCount == 1)
                 {
-                    await aofSyncTasks[0].RunAofSyncTask(this).ConfigureAwait(false);
+                    await aofSyncTasks[0].RunAofSyncTaskAsync(this).ConfigureAwait(false);
                 }
                 else
                 {
                     var tasks = new Task[aofSyncTasks.Length + 1];
-                    tasks[0] = AdvancePhysicalSublogTime();
+                    tasks[0] = AdvancePhysicalSublogTimeAsync();
                     for (var i = 0; i < aofSyncTasks.Length; i++)
-                        tasks[i + 1] = aofSyncTasks[i].RunAofSyncTask(this);
+                        tasks[i + 1] = aofSyncTasks[i].RunAofSyncTaskAsync(this);
 
                     _ = await Task.WhenAny(tasks).ConfigureAwait(false);
                 }
@@ -166,7 +166,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
         /// <seealso cref="T:Garnet.cluster.ReplicationManager.AdvanceTime"/>
-        async Task AdvancePhysicalSublogTime()
+        async Task AdvancePhysicalSublogTimeAsync()
         {
             var enteredMonitor = false;
             var client = new GarnetClientSession(
@@ -182,7 +182,7 @@ namespace Garnet.cluster
             {
                 enteredMonitor = activeWorkerMonitor.TryEnter();
                 if (!enteredMonitor)
-                    throw new GarnetException($"Failed to acquire read lock at {nameof(AdvancePhysicalSublogTime)}");
+                    throw new GarnetException($"Failed to acquire read lock at {nameof(AdvancePhysicalSublogTimeAsync)}");
 
                 // Connect to replica
                 await client.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
@@ -215,14 +215,14 @@ namespace Garnet.cluster
         }
 
         #region DisklesSyncInterface
-        public void ConnectClients()
+        public async Task ConnectClientsAsync()
         {
             if (!IsConnected)
                 foreach (var aofSyncTask in aofSyncTasks)
-                    aofSyncTask.garnetClient.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
+                    await aofSyncTask.garnetClient.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
         }
 
-        public Task<string> IssuesFlushAll()
+        public Task<string> IssuesFlushAllAsync()
             => aofSyncTasks[0].garnetClient.ExecuteAsync(["CLUSTER", "FLUSHALL"]);
 
         public void InitializeIterationBuffer()
@@ -234,13 +234,13 @@ namespace Garnet.cluster
                 aofSyncTasks[0].garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId);
         }
 
-        public Task<string> ExecuteAttachSync(SyncMetadata syncMetadata)
+        public Task<string> ExecuteAttachSyncAsync(SyncMetadata syncMetadata)
             => aofSyncTasks[0].garnetClient.ExecuteClusterAttachSync(syncMetadata.ToByteArray());
 
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, MigrationRecordSpanType type, out Task<string> task)
             => aofSyncTasks[0].garnetClient.TryWriteRecordSpan(recordSpan, type, out task);
 
-        public Task<string> SendAndResetIterationBuffer()
+        public Task<string> SendAndResetIterationBufferAsync()
             => aofSyncTasks[0].garnetClient.SendAndResetIterationBuffer();
         #endregion
     }

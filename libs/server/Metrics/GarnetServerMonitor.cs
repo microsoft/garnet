@@ -83,7 +83,7 @@ namespace Garnet.server
             if (monitorSamplingFrequency > TimeSpan.Zero)
             {
                 done.Reset();
-                Task.Run(() => MainMonitorTask(cts.Token));
+                _ = Task.Run(() => MainMonitorTaskAsync(cts.Token));
             }
         }
 
@@ -265,7 +265,7 @@ namespace Garnet.server
             }
         }
 
-        private async void MainMonitorTask(CancellationToken token)
+        private async Task MainMonitorTaskAsync(CancellationToken token)
         {
             try
             {

@@ -63,6 +63,11 @@ dotnet_diagnostic.IDE0304.severity = warning
 # Use collection expression for fluent
 dotnet_diagnostic.IDE0305.severity = suggestion
 
+# Async suffix rules
+dotnet_diagnostic.VSTHRD200.severity = error
+dotnet_diagnostic.VSTHRD003.severity = none
+dotnet_diagnostic.VSTHRD114.severity = none
+
 # Miscellaneous style rules
 dotnet_separate_import_directive_groups = false
 file_header_template = Copyright (c) Microsoft Corporation.\nLicensed under the MIT license.

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <SignAssembly>true</SignAssembly>
@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <None Include="C:\Git\Garnet\metrics\HdrHistogram\.editorconfig" />
+		<PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" IncludeAssets="analyzers"/>
   </ItemGroup>
 
 </Project>
