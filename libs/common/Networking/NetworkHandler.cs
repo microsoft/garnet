@@ -142,7 +142,7 @@ namespace Garnet.networking
         /// <summary>
         /// Begin (background) network handler.
         /// 
-        /// 
+        /// Blocks until auth completes.
         /// </summary>
         public virtual void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -158,8 +158,6 @@ namespace Garnet.networking
 
         /// <summary>
         /// Begin async network handler.
-        /// 
-        /// Blocks until auth completes.
         /// </summary>
         public virtual async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
