@@ -51,7 +51,7 @@ namespace Garnet.cluster
         /// and consistency across sublogs.
         /// </summary>
         /// <returns>A task representing the asynchronous replay operation.</returns>
-        internal async Task FullPageBasedBackgroundReplay()
+        internal async Task FullPageBasedBackgroundReplayAsync()
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
@@ -64,23 +64,24 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(FullPageBasedBackgroundReplay));
-                    cts.Cancel();
+                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(FullPageBasedBackgroundReplayAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
                     break;
                 }
 
-                unsafe
+                try
                 {
-                    var record = replayBatchContext.Record;
-                    var recordLength = replayBatchContext.RecordLength;
-                    var currentAddress = replayBatchContext.CurrentAddress;
-                    var nextAddress = replayBatchContext.NextAddress;
-                    var isProtected = replayBatchContext.IsProtected;
-                    var ptr = record;
-
-                    var maxSequenceNumber = 0L;
-                    try
+                    unsafe
                     {
+                        var record = replayBatchContext.Record;
+                        var recordLength = replayBatchContext.RecordLength;
+                        var currentAddress = replayBatchContext.CurrentAddress;
+                        var nextAddress = replayBatchContext.NextAddress;
+                        var isProtected = replayBatchContext.IsProtected;
+                        var ptr = record;
+
+                        var maxSequenceNumber = 0L;
+
                         // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
                         while (ptr < record + recordLength)
                         {
@@ -124,17 +125,17 @@ namespace Garnet.cluster
                         // Update max sequence number for this virtual sublog which is mapped
                         appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
                     }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(ex, "{method} failed at replaying", nameof(FullPageBasedBackgroundReplay));
-                        cts.Cancel();
-                        break;
-                    }
-                    finally
-                    {
-                        // Signal work completion after processing
-                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
-                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at replaying", nameof(FullPageBasedBackgroundReplayAsync));
+                    await cts.CancelAsync().ConfigureAwait(false);
+                    break;
+                }
+                finally
+                {
+                    // Signal work completion after processing
+                    replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
                 }
             }
         }
@@ -143,7 +144,7 @@ namespace Garnet.cluster
         /// Asynchronously processes records from the replay channel in the background.
         /// </summary>
         /// <returns>A task that represents the asynchronous replay operation.</returns>
-        internal async Task ChannelBasedBackgroundReplay()
+        internal async Task ChannelBasedBackgroundReplayAsync()
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);

@@ -98,9 +98,14 @@ namespace Garnet.cluster
                     AllowReplicaResetOnFailure: true,
                     UpgradeLock: false
                 );
-                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, syncOpts, out var errorMessage) :
-                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, syncOpts, out errorMessage);
+
+                // Cannot avoid blocking here we're on the network thread
+                var (success, errorMessage) =
+                    AsyncUtils.BlockingWait(
+                        clusterProvider.serverOptions.ReplicaDisklessSync ?
+                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
+                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
+                    );
 
                 if (success)
                 {
@@ -109,7 +114,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -274,15 +279,14 @@ namespace Garnet.cluster
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            if (!clusterProvider.replicationManager.TryBeginDiskbasedSync(
-                replicaNodeId,
-                replicaAssignedPrimaryId,
-                replicaCheckpointEntry,
-                replicaAofBeginAddress,
-                replicaAofTailAddress,
-                out var errorMessage))
+            var beginPrimarySyncTask = clusterProvider.replicationManager.TryBeginDiskbasedSyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
+
+            // No choice but to block here, we're on the network thread
+            var (success, errorMessage) = AsyncUtils.BlockingWait(beginPrimarySyncTask);
+
+            if (!success)
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -449,7 +453,13 @@ namespace Garnet.cluster
             ReadOnlySpan<byte> errorMessage;
             var replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
-                _ = clusterProvider.replicationManager.TryBeginDisklessSync(syncMetadata, out errorMessage);
+            {
+                var attachTask = clusterProvider.replicationManager.TryBeginDisklessSyncAsync(syncMetadata);
+
+                // Must block here because we're on the network thread
+                var (_, err) = AsyncUtils.BlockingWait(attachTask);
+                errorMessage = err.Span;
+            }
             else
                 replicationOffset = clusterProvider.replicationManager.TryReplicaDisklessRecovery(syncMetadata, out errorMessage);
 

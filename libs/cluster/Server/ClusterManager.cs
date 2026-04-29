@@ -117,9 +117,9 @@ namespace Garnet.cluster
 
             // Run Background task
             if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
-                Task.Run(() => FlushTask());
+                _ = Task.Run(() => FlushTaskAsync());
 
-            async Task FlushTask()
+            async Task FlushTaskAsync()
             {
                 var flushConfigFrequency = TimeSpan.FromMilliseconds(serverOptions.ClusterConfigFlushFrequencyMs);
                 try
