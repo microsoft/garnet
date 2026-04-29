@@ -1955,6 +1955,107 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Regression test: after checkpoint recovery, <c>FlagRecovered</c> must be cleared
+        /// when the tree is first restored. Otherwise, a second eviction cycle causes
+        /// RestoreTreeFromFlush to pick the stale checkpoint
+        /// snapshot instead of the fresh <c>flush.bftree</c>, losing post-recovery writes.
+        ///
+        /// Scenario: checkpoint → recover → restore from checkpoint → write new data →
+        /// flush (writes flush.bftree) → promote → write more → flush again → evict →
+        /// restore should use flush.bftree (not checkpoint) → new data must be present.
+        /// </summary>
+        [Test]
+        public void RIRecoverThenSecondEvictionUsesFlushSnapshotTest()
+        {
+            // Phase 1: create tree, insert initial data, checkpoint
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.Execute("RI.CREATE", "stalecp", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "stalecp", "pre-checkpoint", "original");
+
+                var val = db.Execute("RI.GET", "stalecp", "pre-checkpoint");
+                ClassicAssert.AreEqual("original", (string)val);
+
+                // Checkpoint captures tree state with only "pre-checkpoint" key
+                db.Execute("SAVE");
+            }
+
+            // Phase 2: recover from checkpoint → FlagRecovered is set
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, lowMemory: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var store = server.Provider.StoreWrapper.store;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // First access after recovery: restores from checkpoint snapshot (correct)
+                var val = db.Execute("RI.GET", "stalecp", "pre-checkpoint");
+                ClassicAssert.AreEqual("original", (string)val, "Checkpoint data should be restored");
+                ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "Tree should be live after restore");
+
+                // Write NEW data that is NOT in the checkpoint snapshot
+                db.Execute("RI.SET", "stalecp", "post-recovery-1", "new-value-1");
+                db.Execute("RI.SET", "stalecp", "post-recovery-2", "new-value-2");
+
+                // Flush to read-only → OnFlush writes flush.bftree with current state
+                // (includes post-recovery data)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // Access triggers promote to tail (clears FlagFlushed)
+                val = db.Execute("RI.GET", "stalecp", "post-recovery-1");
+                ClassicAssert.AreEqual("new-value-1", (string)val, "Post-recovery data should be accessible after flush+promote");
+
+                // Write more data after promote
+                db.Execute("RI.SET", "stalecp", "post-promote", "promoted-value");
+
+                // Second flush → updated flush.bftree now has all post-recovery data
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+                // Promote again
+                val = db.Execute("RI.GET", "stalecp", "post-promote");
+                ClassicAssert.AreEqual("promoted-value", (string)val);
+
+                // Fill log to evict the stub past HeadAddress
+                // This triggers OnFlush (third flush.bftree write) then OnEvict (frees BfTree)
+                for (int i = 0; i < 200; i++)
+                    db.StringSet($"fill{i:D4}", $"data{i:D4}");
+
+                ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount,
+                    "Tree should be evicted after filling the log");
+
+                // Second restore: must use flush.bftree (not stale checkpoint snapshot)
+                // BUG (before fix): FlagRecovered was still set, so RestoreTreeFromFlush
+                // picked the stale checkpoint snapshot — losing post-recovery writes.
+                val = db.Execute("RI.GET", "stalecp", "pre-checkpoint");
+                ClassicAssert.AreEqual("original", (string)val,
+                    "Pre-checkpoint data should survive second eviction cycle");
+
+                val = db.Execute("RI.GET", "stalecp", "post-recovery-1");
+                ClassicAssert.AreEqual("new-value-1", (string)val,
+                    "Post-recovery data should survive second eviction (must use flush.bftree, not checkpoint)");
+
+                val = db.Execute("RI.GET", "stalecp", "post-recovery-2");
+                ClassicAssert.AreEqual("new-value-2", (string)val,
+                    "Post-recovery data should survive second eviction");
+
+                val = db.Execute("RI.GET", "stalecp", "post-promote");
+                ClassicAssert.AreEqual("promoted-value", (string)val,
+                    "Post-promote data should survive second eviction");
+            }
+        }
+
+        /// <summary>
         /// Verifies pure AOF-only recovery (no checkpoint). RI.CREATE is replayed to
         /// recreate the BfTree, then RI.SET/RI.DEL operations rebuild the data.
         /// </summary>
