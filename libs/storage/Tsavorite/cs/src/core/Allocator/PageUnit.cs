@@ -25,11 +25,8 @@ namespace Tsavorite.core
     {
         [FieldOffset(0)]
         public long LastFlushedUntilAddress;
-        [FieldOffset(8)]
-        public long Dirty;
-
         /// <inheritdoc/>
-        public override readonly string ToString() => $"LastFUA {LastFlushedUntilAddress}, Dirty {Dirty}";
+        public override readonly string ToString() => $"LastFUA {LastFlushedUntilAddress}";
     }
 
     [StructLayout(LayoutKind.Explicit)]

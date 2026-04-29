@@ -383,7 +383,6 @@ namespace Garnet.fuzz.Targets
                 AofMemorySize = "64m",
                 OnDemandCheckpoint = true,
                 CommitFrequencyMs = -1,
-                EnableIncrementalSnapshots = true,
                 AuthSettings = null,
                 ClusterUsername = "cluster-user",
                 ClusterPassword = "cluster-pass",

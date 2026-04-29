@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -244,120 +243,6 @@ namespace Tsavorite.core
         /// <summary>Write page to device (async)</summary>
         protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
-        /// <summary>Flush checkpoint Delta to the Device</summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        internal virtual void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
-            out Task completedTask, int throttleCheckpointFlushDelayMs)
-        {
-            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
-
-            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
-            if (throttleCheckpointFlushDelayMs >= 0)
-            {
-                completedTask = Task.Run(FlushRunner);
-            }
-            else
-            {
-                try
-                {
-                    FlushRunner();
-                    completedTask = Task.CompletedTask;
-                }
-                catch (Exception ex)
-                {
-                    completedTask = Task.FromException(ex);
-                }
-            }
-
-            void FlushRunner()
-            {
-                long startPage = GetPage(startAddress);
-                long endPage = GetPage(endAddress);
-                if (endAddress > GetLogicalAddressOfStartOfPage(endPage))
-                    endPage++;
-
-                long prevEndPage = GetPage(prevEndAddress);
-                deltaLog.Allocate(out int entryLength, out long destPhysicalAddress);
-                int destOffset = 0;
-
-                // We perform delta capture under epoch protection with page-wise refresh for latency reasons
-                bool epochTaken = epoch.ResumeIfNotProtected();
-
-                try
-                {
-                    for (long p = startPage; p < endPage; p++)
-                    {
-                        // Check if we have the entire page safely available to process in memory
-                        if (HeadAddress >= GetLogicalAddressOfStartOfPage(p) + PageSize)
-                            continue;
-
-                        // All RCU pages need to be added to delta
-                        // For IPU-only pages, prune based on dirty bit
-                        if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
-                            continue;
-
-                        var logicalAddress = GetLogicalAddressOfStartOfPage(p);
-                        var endLogicalAddress = logicalAddress + PageSize;
-                        logicalAddress += PageHeader.Size;
-                        var physicalAddress = GetPhysicalAddress(logicalAddress);
-
-                        if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
-                        Debug.Assert(endLogicalAddress > logicalAddress);
-                        var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
-
-                        if (p == startPage)
-                        {
-                            var offset = (int)GetOffsetOnPage(startAddress);
-                            physicalAddress += offset;
-                            logicalAddress += offset;
-                        }
-
-                        while (physicalAddress < endPhysicalAddress)
-                        {
-                            var logRecord = _wrapper.CreateLogRecord(logicalAddress);
-                            ref var info = ref logRecord.InfoRef;
-                            var alignedRecordSize = logRecord.AllocatedSize;
-                            if (info.Dirty)
-                            {
-                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
-                                int size = sizeof(long) + sizeof(int) + alignedRecordSize;
-                                if (destOffset + size > entryLength)
-                                {
-                                    deltaLog.Seal(destOffset);
-                                    deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                                    destOffset = 0;
-                                    if (destOffset + size > entryLength)
-                                    {
-                                        deltaLog.Seal(0);
-                                        deltaLog.Allocate(out entryLength, out destPhysicalAddress);
-                                    }
-                                    if (destOffset + size > entryLength)
-                                        throw new TsavoriteException("Insufficient page size to write delta");
-                                }
-                                *(long*)(destPhysicalAddress + destOffset) = logicalAddress;
-                                destOffset += sizeof(long);
-                                *(int*)(destPhysicalAddress + destOffset) = alignedRecordSize;
-                                destOffset += sizeof(int);
-                                Buffer.MemoryCopy((void*)physicalAddress, (void*)(destPhysicalAddress + destOffset), alignedRecordSize, alignedRecordSize);
-                                destOffset += alignedRecordSize;
-                            }
-                            physicalAddress += alignedRecordSize;
-                            logicalAddress += alignedRecordSize;
-                        }
-                        epoch.ProtectAndDrain();
-                    }
-                }
-                finally
-                {
-                    if (epochTaken)
-                        epoch.Suspend();
-                }
-
-                if (destOffset > 0)
-                    deltaLog.Seal(destOffset);
-            }
-        }
-
         /// <summary>Reset the hybrid log. WARNING: assumes that threads have drained out at this point.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public virtual void Reset()
@@ -431,96 +316,6 @@ namespace Tsavorite.core
         {
             if (sectorSize % device.SectorSize != 0)
                 throw new TsavoriteException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
-        {
-            if (log == null)
-                return;
-
-            long pageStartLogicalAddress = GetLogicalAddressOfStartOfPage(startPage);
-            long pageEndLogicalAddress = GetLogicalAddressOfStartOfPage(endPage);
-
-            log.Reset();
-            while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
-            {
-                switch (type)
-                {
-                    case DeltaLogEntryType.DELTA:
-                        // Delta records
-                        long endAddress = physicalAddress + entryLength;
-                        while (physicalAddress < endAddress)
-                        {
-                            var address = *(long*)physicalAddress;
-                            physicalAddress += sizeof(long);
-                            var size = *(int*)physicalAddress;
-                            physicalAddress += sizeof(int);
-                            if (address >= pageStartLogicalAddress && address < pageEndLogicalAddress)
-                            {
-                                var logRecord = _wrapper.CreateLogRecord(address);
-                                var destination = logRecord.physicalAddress;
-
-                                // Clear extra space (if any) in old record
-                                var oldSize = logRecord.AllocatedSize;
-                                if (oldSize > size)
-                                    new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
-
-                                // Update with new record
-                                Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
-
-                                // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref LogRecord.GetInfoRef(destination);
-                                destInfo.ClearBitsForDiskImages();
-                                if (storeFunctions.CallOnDiskRead)
-                                {
-                                    var destLogRecord = new LogRecord(destination);
-                                    storeFunctions.OnDiskRead(ref destLogRecord);
-                                }
-                            }
-                            physicalAddress += size;
-                        }
-                        break;
-                    case DeltaLogEntryType.CHECKPOINT_METADATA:
-                        if (recoverTo != -1)
-                        {
-                            // Only read metadata if we need to stop at a specific version
-                            var metadata = new byte[entryLength];
-                            unsafe
-                            {
-                                fixed (byte* m = metadata)
-                                    Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
-                            }
-
-                            HybridLogRecoveryInfo recoveryInfo = new();
-                            using StreamReader s = new(new MemoryStream(metadata));
-                            recoveryInfo.Initialize(s);
-                            // Finish recovery if only specific versions are requested
-                            if (recoveryInfo.version == recoverTo)
-                                return;
-                        }
-
-                        break;
-                    default:
-                        throw new TsavoriteException("Unexpected entry type");
-
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage(long logicalAddress, long version)
-        {
-            var pageIndex = GetPageIndexForAddress(logicalAddress);
-            if (PageStatusIndicator[pageIndex].Dirty < version)
-                PageStatusIndicator[pageIndex].Dirty = version;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPageAtomic(long logicalAddress, long version)
-        {
-            var pageIndex = GetPageIndexForAddress(logicalAddress);
-            MonotonicUpdate(ref PageStatusIndicator[pageIndex].Dirty, version, out _);
         }
 
         /// <summary>
@@ -2282,7 +2077,6 @@ namespace Tsavorite.core
                 var result = (PageAsyncFlushResult<Empty>)context;
                 var epochTaken = epoch.ResumeIfNotProtected();
 
-                // Unset dirty bit for flushed pages
                 try
                 {
                     var startAddress = GetLogicalAddressOfStartOfPage(result.page);
@@ -2312,10 +2106,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             var logRecord = _wrapper.CreateLogRecord(startAddress);
-                            ref var info = ref logRecord.InfoRef;
                             var alignedRecordSize = logRecord.AllocatedSize;
-                            if (info.Dirty)
-                                info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
                             startAddress += alignedRecordSize;
                         }

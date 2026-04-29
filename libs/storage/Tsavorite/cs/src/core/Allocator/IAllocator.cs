@@ -88,12 +88,6 @@ namespace Tsavorite.core
 #endif
             ;
 
-        /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty</summary>
-        void MarkPage(long logicalAddress, long version);
-
-        /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty atomically</summary>
-        void MarkPageAtomic(long logicalAddress, long version);
-
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="logicalAddress"/></summary>
         LogRecord CreateLogRecord(long logicalAddress);
 

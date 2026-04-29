@@ -15,26 +15,23 @@ namespace Garnet.cluster
         /// <summary>
         /// Store Hybrid LOG - Main
         /// </summary>
-        STORE_HLOG,
+        STORE_HLOG = 1,
         /// <summary>
         /// Store Hybrid LOG - Object
         /// </summary>
-        STORE_HLOG_OBJ,
-        /// <summary>
-        /// Store Delta Log
-        /// </summary>
-        STORE_DLOG,
+        STORE_HLOG_OBJ = 2,
+        // Value 3 reserved (was STORE_DLOG, removed with incremental snapshots)
         /// <summary>
         /// Store Index
         /// </summary>
-        STORE_INDEX,
+        STORE_INDEX = 4,
         /// <summary>
         /// Store Snapshot - Main
         /// </summary>
-        STORE_SNAPSHOT,
+        STORE_SNAPSHOT = 5,
         /// <summary>
         /// Store Snapshot - Object
         /// </summary>
-        STORE_SNAPSHOT_OBJ,
+        STORE_SNAPSHOT_OBJ = 6,
     }
 }
