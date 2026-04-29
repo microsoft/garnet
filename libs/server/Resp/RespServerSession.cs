@@ -642,10 +642,6 @@ namespace Garnet.server
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
-                        // Reset error flag only when stats tracking is active (read after command execution below)
-                        if (commandStats != null)
-                            commandErrorWritten = false;
-
                         if (txnManager.state != TxnState.None)
                         {
                             if (txnManager.state == TxnState.Running)
@@ -671,7 +667,10 @@ namespace Garnet.server
                         {
                             commandStats.IncrementCalls(cmd);
                             if (commandErrorWritten)
+                            {
                                 commandStats.IncrementFailed(cmd);
+                                commandErrorWritten = false;
+                            }
                         }
                     }
                     else
