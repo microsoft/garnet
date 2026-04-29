@@ -140,22 +140,15 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
-
-                    // Track value heap delta across in-place update. Only measure when value is
-                    // heap-allocated (overflow or object); inline values have zero heap cost.
-                    var ipuPreInline = srcLogRecord.Info.ValueIsInline;
-                    var ipuPreHeap = ipuPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-
-                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
+                    // Track value heap delta across in-place update. HeapMemorySize is zero for inline values but IPU may change the value from inline to object or vice-versa.
+                    var sizeTracker = hlogBase.logSizeTracker;
+                    var ipuPreHeap = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() : 0L;
+                    var ipuResult = sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref input, ref output, ref rmwInfo, out status);
+                    var ipuDelta = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() - ipuPreHeap : 0L;
+                    if (ipuResult)
                     {
-                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
-                        {
-                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-                            var ipuDelta = ipuPostHeap - ipuPreHeap;
-                            if (ipuDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
-                        }
+                        if (ipuDelta != 0)
+                            sizeTracker.IncrementSize(ipuDelta);
 
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
@@ -166,22 +159,15 @@ namespace Tsavorite.core
 
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed)
-                        // before IPU returned false. Track the delta before OnDispose subtracts the
-                        // remaining empty-collection overhead.
-                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
-                        {
-                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-                            var ipuDelta = ipuPostHeap - ipuPreHeap;
-                            if (ipuDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
-                        }
+                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed) before IPU returned false.
+                        // Track the delta before OnDispose subtracts the remaining empty-collection overhead.
+                        if (ipuDelta != 0)
+                            sizeTracker.IncrementSize(ipuDelta);
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
-                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
-                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone so GetValueHeapMemorySize returns the correct pre-tombstone value.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                         srcLogRecord.InfoRef.SetTombstone();
@@ -196,9 +182,8 @@ namespace Tsavorite.core
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
-                        // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called
-                        // OnDispose(Deleted). If it failed and we fall through to CreateNewRecord,
-                        // the record is already disposed.
+                        // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called OnDispose(Deleted).
+                        // If it failed and we fall through to CreateNewRecord, the record is already disposed.
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {

@@ -32,7 +32,7 @@ namespace Tsavorite.core
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>;
 
-            static abstract bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+            static abstract bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>;
@@ -72,11 +72,11 @@ namespace Tsavorite.core
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 => sessionFunctions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
 
-            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
+                => sessionFunctions.InPlaceWriter(ref logRecord, ref input, valueSpan, ref output, ref upsertInfo);
 
             public static void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)
@@ -114,11 +114,11 @@ namespace Tsavorite.core
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 => sessionFunctions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
 
-            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
+                => sessionFunctions.InPlaceWriter(ref logRecord, ref input, valueObject, ref output, ref upsertInfo);
 
             public static void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)
@@ -156,11 +156,11 @@ namespace Tsavorite.core
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 => sessionFunctions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
 
-            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
+                => sessionFunctions.InPlaceWriter(ref logRecord, ref input, in inputLogRecord, ref output, ref upsertInfo);
 
             public static void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)

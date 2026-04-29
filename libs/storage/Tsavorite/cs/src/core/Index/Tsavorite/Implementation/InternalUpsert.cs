@@ -133,23 +133,16 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
-
                     // Track value heap delta across in-place write.
-                    var ipwPreInline = srcLogRecord.Info.ValueIsInline;
-                    var ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-
-                    // Type arg specification is needed because we don't pass TContext
-                    if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                        ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions))
+                    var sizeTracker = hlogBase.logSizeTracker;
+                    var ipwPreHeap = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() : 0L;
+                    var ipwResult = TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                        ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+                    var ipwDelta = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() - ipwPreHeap : 0L;
+                    if (ipwResult)
                     {
-                        if (!ipwPreInline || !srcLogRecord.Info.ValueIsInline)
-                        {
-                            var ipwPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-                            var ipwDelta = ipwPostHeap - ipwPreHeap;
-                            if (ipwDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipwDelta);
-                        }
+                        if (ipwDelta != 0)
+                            sizeTracker.IncrementSize(ipwDelta);
 
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
