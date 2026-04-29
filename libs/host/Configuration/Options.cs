@@ -771,7 +771,7 @@ namespace Garnet
             if (ClusterAnnounceIp != null)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
                 if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
                     endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
                     listenEp.Port == announceEp.Port &&

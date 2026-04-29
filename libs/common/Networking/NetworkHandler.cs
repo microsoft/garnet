@@ -91,6 +91,7 @@ namespace Garnet.networking
         readonly SslStream sslStream;
         readonly SemaphoreSlim receivedData, expectingData;
         protected readonly CancellationTokenSource cancellationTokenSource;
+        Exception authFault;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
         volatile TlsReaderStatus readerStatus;
@@ -195,6 +196,8 @@ namespace Garnet.networking
             }
             catch (Exception ex)
             {
+                authFault = ex;
+
                 logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
@@ -204,8 +207,9 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Begin (background) network handler (including auth). Make sure you do not send data
-        /// until authentication completes.
+        /// Begin (background) network handler (including auth).
+        /// 
+        /// Make sure you do not send data until authentication completes - use <see cref="IsAuthenticated"/> to check this.
         /// </summary>
         public virtual void Start(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -219,7 +223,9 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Begin async network handler (including auth)
+        /// Begin async network handler (including auth).
+        /// 
+        /// When tasks completes, authentication has also completed.
         /// </summary>
         public virtual async Task StartAsync(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -255,12 +261,34 @@ namespace Garnet.networking
             }
             catch (Exception ex)
             {
+                authFault = ex;
+
                 logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
                 throw;
             }
+        }
+
+
+        /// <summary>
+        /// Returns true if handler has completed authentication or doesn't require authentication in the first place.
+        /// 
+        /// If a fault occurred during authentication it will be set when false is returned.
+        /// 
+        /// Use in conjunction with <see cref="Start(SslClientAuthenticationOptions, string, CancellationToken)"/> or <see cref="Start(SslServerAuthenticationOptions, string, CancellationToken)"/>.
+        /// </summary>
+        public bool IsAuthenticated(out Exception fault)
+        {
+            if (sslStream == null)
+            {
+                fault = null;
+                return true;
+            }
+
+            fault = authFault;
+            return sslStream?.IsAuthenticated ?? true;
         }
 
         public unsafe void OnNetworkReceiveWithoutTLS(int bytesTransferred)
@@ -362,7 +390,8 @@ namespace Garnet.networking
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 if (result.IsCompletedSuccessfully)
                 {
-                    transportBytesRead += result.Result;
+                    // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
+                    transportBytesRead += AsyncUtils.BlockingWait(result);
 
                     // Read task has control, process the decrypted transport bytes
                     Process();
@@ -380,7 +409,7 @@ namespace Garnet.networking
                 }
                 else
                 {
-                    // Rare case: Our read has gone async, we need to invoke the async read processing code
+                    // Rare case: Our read has gone async, we need to invoke the async read processing code.
                     _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
                     return;
                 }
@@ -414,9 +443,16 @@ namespace Garnet.networking
                     DoubleTransportReceiveBuffer();
                     retry = true;
                 }
-                // If more work, passthrough to the general SslReaderAsync, else this task is done
+                // If more work, passthrough to the general SslReaderAsync, else this task is done.
+                // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
+                // attempt another read into the freshly-enlarged buffer"). If we chained without it, the new
+                // SslReaderLoopAsync would start with retry=false and, when networkBytesRead==networkReadHead,
+                // exit its loop immediately without ever issuing the follow-up read, leaving the half-parsed
+                // payload stuck in the transport buffer until more network bytes happen to arrive.
                 if (networkBytesRead > networkReadHead || retry)
-                    _ = SslReaderAsync(token);
+                {
+                    _ = SslReaderLoopAsync(retry, token);
+                }
                 else
                 {
                     readerStatus = TlsReaderStatus.Rest;
@@ -432,13 +468,13 @@ namespace Garnet.networking
             }
         }
 
-        async Task SslReaderAsync(CancellationToken token = default)
+        async Task SslReaderLoopAsync(bool initialRetry, CancellationToken token = default)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
 
             try
             {
-                bool retry = false;
+                bool retry = initialRetry;
                 while (networkBytesRead > networkReadHead || retry)
                 {
                     retry = false;
@@ -463,17 +499,18 @@ namespace Garnet.networking
                         retry = true;
                     }
                 }
+
+                // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
+                readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "An exception has occurred during SslReaderAsync");
-                Dispose();
-                return;
-            }
-            finally
-            {
+                logger?.LogWarning(ex, "An exception has occurred during SslReaderLoopAsync");
+                // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
+                Dispose();
             }
         }
 

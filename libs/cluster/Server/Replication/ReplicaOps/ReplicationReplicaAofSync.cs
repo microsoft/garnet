@@ -126,7 +126,7 @@ namespace Garnet.cluster
                             recover: false,
                             logger: logger);
 
-                        System.Threading.Tasks.Task.Run(ReplicaReplayTask);
+                        _ = System.Threading.Tasks.Task.Run(ReplicaReplayTaskAsync);
                     }
                 }
             }

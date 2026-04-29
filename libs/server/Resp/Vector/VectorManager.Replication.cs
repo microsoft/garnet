@@ -67,11 +67,11 @@ namespace Garnet.server
 
                 try
                 {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token).ConfigureAwait(false);
                 }
                 catch { }
 
-                var abandoned = ResetReplayTasks();
+                var abandoned = await ResetReplayTasksAsync().ConfigureAwait(false);
                 logger?.LogInformation("VectorManager replication cancellation abandoned {abandoned} VADDs", abandoned);
             }
             finally
@@ -333,71 +333,73 @@ namespace Garnet.server
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
-                    self.replicationReplayTasks[i] = Task.Factory.StartNew(
-                        async () =>
+                    self.replicationReplayTasks[i] = StartReplicaTaskAsync(self, obtainServerSession);
+                }
+
+                static async Task StartReplicaTaskAsync(VectorManager self, Func<RespServerSession> obtainServerSession)
+                {
+                    // Force async
+                    await Task.Yield();
+
+                    try
+                    {
+                        var reader = self.replicationReplayChannel.Reader;
+
+                        SessionParseState reusableParseState = default;
+                        reusableParseState.Initialize(11);
+
+                        while (await reader.WaitToReadAsync(self.replicationReplayCancellation))
                         {
-                            try
+                            // Allocate session for current batch, now so we stay on same managed thread
+                            using var allocatedSession = obtainServerSession();
+                            if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
                             {
-                                var reader = self.replicationReplayChannel.Reader;
+                                throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
+                            }
 
-                                SessionParseState reusableParseState = default;
-                                reusableParseState.Initialize(11);
-
-                                while (await reader.WaitToReadAsync(self.replicationReplayCancellation))
+                            while (reader.TryRead(out var entry))
+                            {
+                                try
                                 {
-                                    // Allocate session for current batch, now so we stay on same managed thread
-                                    using var allocatedSession = obtainServerSession();
-                                    if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
+                                    try
                                     {
-                                        throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
+                                        ApplyVectorSetAdd(self, allocatedSession.storageSession, entry, ref reusableParseState);
                                     }
-
-                                    while (reader.TryRead(out var entry))
+                                    finally
                                     {
-                                        try
-                                        {
-                                            try
-                                            {
-                                                ApplyVectorSetAdd(self, allocatedSession.storageSession, entry, ref reusableParseState);
-                                            }
-                                            finally
-                                            {
-                                                self.replicationBlockEvent.Decrement();
-                                            }
-                                        }
-                                        catch
-                                        {
-                                            self.logger?.LogCritical(
-                                                "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
-                                                Encoding.UTF8.GetString(entry.Key.Span),
-                                                entry.Dims,
-                                                entry.ReduceDims,
-                                                entry.ValueType,
-                                                Convert.ToBase64String(entry.Values.Span),
-                                                Convert.ToBase64String(entry.Values.Span),
-                                                entry.Quantizer,
-                                                entry.BuildExplorationFactor,
-                                                Encoding.UTF8.GetString(entry.Attributes.Span),
-                                                entry.NumLinks
-                                            );
-
-                                            throw;
-                                        }
+                                        self.replicationBlockEvent.Decrement();
                                     }
                                 }
-                            }
-                            catch (OperationCanceledException cancelEx)
-                            {
-                                self.logger?.LogInformation(cancelEx, "ReplicationReplayTask cancelled");
-                            }
-                            catch (Exception e)
-                            {
-                                self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
-                                throw;
+                                catch
+                                {
+                                    self.logger?.LogCritical(
+                                        "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
+                                        Encoding.UTF8.GetString(entry.Key.Span),
+                                        entry.Dims,
+                                        entry.ReduceDims,
+                                        entry.ValueType,
+                                        Convert.ToBase64String(entry.Values.Span),
+                                        Convert.ToBase64String(entry.Element.Span),
+                                        entry.Quantizer,
+                                        entry.BuildExplorationFactor,
+                                        Encoding.UTF8.GetString(entry.Attributes.Span),
+                                        entry.NumLinks
+                                    );
+
+                                    throw;
+                                }
                             }
                         }
-                    )
-                    .Unwrap();
+                    }
+                    catch (OperationCanceledException cancelEx)
+                    {
+                        self.logger?.LogInformation(cancelEx, "ReplicationReplayTask cancelled");
+                    }
+                    catch (Exception e)
+                    {
+                        self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
+                        throw;
+                    }
                 }
             }
 
@@ -483,9 +485,10 @@ namespace Garnet.server
         /// 
         /// Returns the number of abanded VADDs.
         /// </summary>
-        private int ResetReplayTasks()
+        private async Task<int> ResetReplayTasksAsync()
         {
-            Task.WaitAll(replicationReplayTasks);
+            // Disposal path, has to be synchronous
+            await Task.WhenAll(replicationReplayTasks).ConfigureAwait(false);
             Array.Fill(replicationReplayTasks, Task.CompletedTask);
 
             _ = Interlocked.Exchange(ref replicationReplayStarted, 0);
@@ -508,7 +511,9 @@ namespace Garnet.server
         public void ShutdownReplayTasks()
         {
             _ = replicationReplayChannel.Writer.TryComplete();
-            Task.WaitAll(replicationReplayTasks);
+
+            // Disposal path, has to be synchronous
+            AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
 
             _ = Interlocked.Exchange(ref replicationReplayStarted, -1);
         }

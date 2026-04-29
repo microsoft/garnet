@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
@@ -1065,24 +1066,24 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterMark_Recovery()
-        => InterruptedVectorSetDeleteRecovery(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
+        public Task InterruptedVectorSetDelete_AfterMark_RecoveryAsync()
+        => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterZeroingOut_Recovery()
-        => InterruptedVectorSetDeleteRecovery(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
+        public Task InterruptedVectorSetDelete_AfterZeroingOut_RecoveryAsync()
+        => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
         [Test]
-        public void InteterruptedVectorSetDelete_AfterDelete_Recovery()
-        => InterruptedVectorSetDeleteRecovery(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
+        public Task InterruptedVectorSetDelete_AfterDelete_RecoveryAsync()
+        => InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
 
-        private void InterruptedVectorSetDeleteRecovery(ExceptionInjectionType faultLocation)
+        private async Task InterruptedVectorSetDeleteRecoveryAsync(ExceptionInjectionType faultLocation)
         {
 #if !DEBUG
             ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
 #endif
 
-            var key = $"{nameof(InterruptedVectorSetDeleteRecovery)}_{faultLocation}";
+            var key = $"{nameof(InterruptedVectorSetDeleteRecoveryAsync)}_{faultLocation}";
 
             // Create a partially deleted Vector Set, then take a checkpoint and shutdown
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -1111,7 +1112,7 @@ namespace Garnet.test
                 s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                var commit = server.Store.WaitForCommit();
+                var commit = await server.Store.WaitForCommitAsync();
                 ClassicAssert.IsTrue(commit);
             }
 
@@ -1660,7 +1661,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void RecreateIndexesOnRestore()
+        public async Task RecreateIndexesOnRestoreAsync()
         {
             var addData1 = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
             var addData2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
@@ -1683,7 +1684,7 @@ namespace Garnet.test
                     s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                    var commit = server.Store.WaitForCommit();
+                    var commit = await server.Store.WaitForCommitAsync();
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
@@ -1719,7 +1720,7 @@ namespace Garnet.test
                     s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                    var commit = server.Store.WaitForCommit();
+                    var commit = await server.Store.WaitForCommitAsync();
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
@@ -1762,7 +1763,7 @@ namespace Garnet.test
                     s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                    var commit = server.Store.WaitForCommit();
+                    var commit = await server.Store.WaitForCommitAsync();
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
@@ -1799,7 +1800,7 @@ namespace Garnet.test
                     s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                    var commit = server.Store.WaitForCommit();
+                    var commit = await server.Store.WaitForCommitAsync();
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
@@ -1832,7 +1833,7 @@ namespace Garnet.test
                     s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                    var commit = server.Store.WaitForCommit();
+                    var commit = await server.Store.WaitForCommitAsync();
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
@@ -1873,7 +1874,7 @@ namespace Garnet.test
                     s.Save(SaveType.ForegroundSave);
 #pragma warning restore CS0618
 
-                    var commit = server.Store.WaitForCommit();
+                    var commit = await server.Store.WaitForCommitAsync();
                     ClassicAssert.IsTrue(commit);
                     server.Dispose(deleteDir: false);
 
