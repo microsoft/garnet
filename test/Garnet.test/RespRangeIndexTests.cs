@@ -1955,6 +1955,61 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// After checkpoint recovery, if an RI key is never accessed before a second
+        /// checkpoint, <c>PurgeOldCheckpointSnapshots</c> deletes the only snapshot file.
+        /// The tree was never restored (not in <c>liveIndexes</c>), so no new snapshot
+        /// was created. Accessing the key after the purge should still return data.
+        /// </summary>
+        [Test]
+        public void RIUnaccessedKeyAfterRecoveryAndSecondCheckpointTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Create two RI keys with data
+                db.Execute("RI.CREATE", "idx1", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "idx1", "key-a", "val-a");
+
+                db.Execute("RI.CREATE", "idx2", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "idx2", "key-b", "val-b");
+
+                db.Execute("SAVE");
+            }
+
+            // Recover — both stubs get FlagRecovered=true, TreeHandle=0
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Access idx1 only — this restores it and registers in liveIndexes
+                var val = db.Execute("RI.GET", "idx1", "key-a");
+                ClassicAssert.AreEqual("val-a", (string)val);
+
+                // Do NOT access idx2 — it stays unrestored (TreeHandle=0, FlagRecovered=true)
+
+                // Second checkpoint: idx1 gets a new snapshot, idx2 does not.
+                // PurgeOldCheckpointSnapshots deletes the old checkpoint snapshot files.
+                db.Execute("SAVE");
+
+                // Now access idx2 — its old checkpoint snapshot was purged,
+                // and no flush.bftree was ever written.
+                val = db.Execute("RI.GET", "idx2", "key-b");
+                ClassicAssert.AreEqual("val-b", (string)val,
+                    "Unaccessed RI key should still be readable after second checkpoint purges old snapshots");
+            }
+        }
+
+        /// <summary>
         /// Verifies pure AOF-only recovery (no checkpoint). RI.CREATE is replayed to
         /// recreate the BfTree, then RI.SET/RI.DEL operations rebuild the data.
         /// </summary>
