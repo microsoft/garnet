@@ -43,6 +43,7 @@
   </Folder>
   <Folder Name="/modules/">
     <Project Path="modules/GarnetJSON/GarnetJSON.csproj" />
+    <Project Path="modules/RoaringBitmap/GarnetRoaringBitmap.csproj" />
   </Folder>
   <Folder Name="/playground/">
     <Project Path="modules/NoOpModule/NoOpModule.csproj" />
