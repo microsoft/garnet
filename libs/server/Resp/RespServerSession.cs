@@ -640,9 +640,6 @@ namespace Garnet.server
                 {
                     var noScriptPassed = true;
 
-                    // Reset error flag unconditionally (only read when commandStats != null)
-                    commandErrorWritten = false;
-
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
@@ -670,7 +667,10 @@ namespace Garnet.server
                         {
                             commandStats.IncrementCalls(cmd);
                             if (commandErrorWritten)
+                            {
                                 commandStats.IncrementFailed(cmd);
+                                commandErrorWritten = false;
+                            }
                         }
                     }
                     else
