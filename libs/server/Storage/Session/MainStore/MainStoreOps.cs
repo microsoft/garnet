@@ -47,7 +47,7 @@ namespace Garnet.server
             }
         }
 
-        public unsafe GarnetStatus ReadWithUnsafeContext<TContext>(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output, long localHeadAddress, out bool epochChanged, ref TContext context)
+        public unsafe GarnetStatus ReadWithUnsafeContext<TContext>(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output, long localHeadAddress, long localReadCacheHeadAddress, out bool epochChanged, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>, IUnsafeContext
         {
             var _key = key.SpanByte;
@@ -63,8 +63,12 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
                 context.BeginUnsafe();
-                // Start read of pointers from beginning if epoch changed
-                if (HeadAddress == localHeadAddress)
+                // If either the main-log head or the read-cache head advanced while we waited on
+                // pending I/O, any log/read-cache pointers captured by previous reads in this loop
+                // may now reference evicted pages. Tell the caller to re-read all sources from
+                // scratch. (Synchronously-returned reads can have pointers into either log.)
+                if (context.Session.HeadAddress != localHeadAddress
+                    || context.Session.ReadCacheHeadAddress != localReadCacheHeadAddress)
                 {
                     context.EndUnsafe();
                     epochChanged = true;
