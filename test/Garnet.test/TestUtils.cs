@@ -279,7 +279,8 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
-            string aofMemorySize = "64m"
+            string aofMemorySize = "64m",
+            string aofPageSize = null
         )
         {
             if (useAzureStorage)
@@ -395,6 +396,9 @@ namespace Garnet.test
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
             if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
+
+            if (!string.IsNullOrEmpty(aofPageSize))
+                opts.AofPageSize = aofPageSize;
 
             if (lowMemory)
             {
