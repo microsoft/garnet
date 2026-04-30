@@ -810,11 +810,9 @@ namespace Garnet.server
 
                     // Only check against commands with the correct count and length.
 
-                    // (1) Same fixed-arg hot commands as SIMD path.
-                    // On SIMD hardware, SIMD already rejected these — skip to sections (2)/(3).
-                    // The !Vector128.IsHardwareAccelerated check is a JIT constant that eliminates
-                    // this block entirely on SIMD hardware.
-                    if (!Vector128.IsHardwareAccelerated)
+                    // (1) Same fixed-arg hot commands as SIMD path. Needed for buffers < 16 bytes
+                    // where the SIMD path was skipped (e.g., PING/EXEC at 14 bytes, MULTI at 15).
+                    // For longer buffers, SIMD already returned, so this code is unreached for those commands.
                     {
                         var simdResult = ((count << 4) | length) switch
                         {
