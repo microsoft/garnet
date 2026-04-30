@@ -2046,9 +2046,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Verifies that DEL cleans up files even for a RangeIndex whose tree was previously
-        /// evicted (TreeHandle == 0). This covers the edge case where the stub is on disk
-        /// with a zeroed handle.
+        /// Verifies that DEL cleans up disk files for a RangeIndex that was evicted and then
+        /// lazily restored. The eviction cycle ensures the BfTree was flushed to disk; the
+        /// subsequent DEL must remove those files even though they were created by eviction
+        /// rather than by the initial RI.CREATE.
         /// </summary>
         [Test]
         public void RIDiskFileCleanupOnDeleteAfterEvictionTest()
@@ -2083,16 +2084,20 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, keyDirs.Length, "key directory should survive eviction");
             ClassicAssert.IsTrue(File.Exists(Path.Combine(keyDirs[0], "data.bftree")), "data.bftree should survive eviction");
 
-            // Lazy restore and then delete the range index
+            // Lazy restore brings the record back in-memory (DEL requires the record
+            // to be in-memory; the unified Delete path does not trigger lazy restore).
             var val = db.Execute("RI.GET", "evictdel", "key1");
-            ClassicAssert.AreEqual("val1", (string)val, "lazy restore should work after eviction");
+            ClassicAssert.AreEqual("val1", (string)val, "lazy restore should recover data after eviction");
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "tree should be live again after lazy restore");
 
+            // Now delete — the tree was evicted and flushed to disk, then restored;
+            // DEL must clean up the flush files created during eviction.
             var delResult = db.KeyDelete("evictdel");
             ClassicAssert.IsTrue(delResult, "DEL should return true");
 
             // Verify the key directory has been cleaned up
             keyDirs = Directory.Exists(rangeIndexDir) ? Directory.GetDirectories(rangeIndexDir) : [];
-            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL, even post-eviction");
+            ClassicAssert.AreEqual(0, keyDirs.Length, "key directory should be deleted after DEL on previously-evicted key");
         }
     }
 }
