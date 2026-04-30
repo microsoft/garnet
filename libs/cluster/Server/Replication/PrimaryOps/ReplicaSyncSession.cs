@@ -86,7 +86,6 @@ namespace Garnet.cluster
         public async Task<bool> SendCheckpoint()
         {
             errorMsg = default;
-            var storeCkptManager = clusterProvider.ReplicationLogCheckpointManager;
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetWorkerAddressFromNodeId(replicaNodeId);
 
@@ -137,18 +136,11 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
-                    ICheckpointReader[] checkpointReaders =
+                    ISnapshotReader[] checkpointReaders =
                         [new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger)];
 
-                    var checkpointReadContext = new CheckpointReadContext(gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    using var checkpointTransmissionDriver = new CheckpointTransmissionDriver(checkpointReaders, checkpointReadContext, logger);
+                    using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(checkpointReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
                     await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
-
-                    // 5. Send index metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken).ConfigureAwait(false);
-
-                    // 6. Send snapshot metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken).ConfigureAwait(false);
                 }
 
                 #endregion
@@ -311,51 +303,6 @@ namespace Garnet.cluster
             return (cEntry, aofSyncDriver);
         }
 
-        private async Task SendCheckpointMetadata(
-            GarnetClientSession gcs,
-            GarnetClusterCheckpointManager ckptManager,
-            CheckpointFileType fileType,
-            Guid fileToken)
-        {
-            var retryCount = validateMetadataMaxRetryCount;
-            while (true)
-            {
-                try
-                {
-                    logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
-                    var checkpointMetadata = Array.Empty<byte>();
-                    if (fileToken != default)
-                    {
-                        switch (fileType)
-                        {
-                            case CheckpointFileType.STORE_SNAPSHOT:
-                                checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
-                                break;
-                            case CheckpointFileType.STORE_INDEX:
-                                checkpointMetadata = ckptManager.GetIndexCheckpointMetadata(fileToken);
-                                break;
-                        }
-                    }
-
-                    var resp = await gcs.ExecuteClusterSendCheckpointMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
-                    if (!resp.Equals("OK"))
-                    {
-                        logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
-                        throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
-                    }
-
-                    logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
-                    break; // Exit loop if metadata sent successfully
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError("SendCheckpointMetadata Error: {msg}", ex.Message);
-                    if (retryCount-- <= 0)
-                        throw new Exception("Max retry attempts reached for checkpoint metadata sending.");
-                }
-                await Task.Yield();
-            }
-        }
     }
 
     internal static unsafe class SectorAlignedMemoryExtensions

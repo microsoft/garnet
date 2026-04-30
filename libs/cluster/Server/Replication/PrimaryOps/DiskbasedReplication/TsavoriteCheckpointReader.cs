@@ -10,31 +10,13 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    /// <summary>
-    /// Describes a checkpoint data source entry before device creation.
-    /// </summary>
-    internal readonly struct CheckpointDataSourceEntry
-    {
-        public readonly CheckpointFileType Type;
-        public readonly Guid Token;
-        public readonly long StartOffset;
-        public readonly long EndOffset;
-
-        public CheckpointDataSourceEntry(CheckpointFileType type, Guid token, long startOffset, long endOffset)
-        {
-            Type = type;
-            Token = token;
-            StartOffset = startOffset;
-            EndOffset = endOffset;
-        }
-    }
-
-    internal sealed class TsavoriteCheckpointReader : ICheckpointReader
+    internal sealed class TsavoriteCheckpointReader : ISnapshotReader
     {
         readonly ClusterProvider clusterProvider;
         readonly TimeSpan timeout;
         readonly ILogger logger;
-        readonly List<CheckpointDataSourceEntry> entries = [];
+        readonly List<ISnapshotDataSource> fileDataSources = [];
+        readonly List<ISnapshotDataSource> metadataDataSources = [];
 
         /// <summary>
         /// Computes the maximum batch size for a given checkpoint file type.
@@ -48,7 +30,7 @@ namespace Garnet.cluster
             {
                 CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => 1 << serverOptions.SegmentSizeBits(isObj: false),
                 CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => 1 << serverOptions.SegmentSizeBits(isObj: true),
-                _ => CheckpointDataSource.DefaultBatchSize
+                _ => FileDataSource.DefaultBatchSize
             };
         }
 
@@ -67,14 +49,14 @@ namespace Garnet.cluster
             // 1. send hlog file segments
             if (clusterProvider.serverOptions.EnableStorageTier && logFileInfo.hybridLogFileEndAddress > PageHeader.Size)
             {
-                entries.Add(new CheckpointDataSourceEntry(
+                fileDataSources.Add(CreateFileDataSource(
                     CheckpointFileType.STORE_HLOG,
                     checkpointEntry.metadata.storeHlogToken,
                     logFileInfo.hybridLogFileStartAddress,
                     logFileInfo.hybridLogFileEndAddress));
 
                 if (logFileInfo.hasSnapshotObjects)
-                    entries.Add(new CheckpointDataSourceEntry(
+                    fileDataSources.Add(CreateFileDataSource(
                         CheckpointFileType.STORE_HLOG_OBJ,
                         checkpointEntry.metadata.storeHlogToken,
                         logFileInfo.hybridLogObjectFileStartAddress,
@@ -82,7 +64,7 @@ namespace Garnet.cluster
             }
 
             // 2. Send index file segments
-            entries.Add(new CheckpointDataSourceEntry(
+            fileDataSources.Add(CreateFileDataSource(
                 CheckpointFileType.STORE_INDEX,
                 checkpointEntry.metadata.storeIndexToken,
                 0,
@@ -91,14 +73,14 @@ namespace Garnet.cluster
             // 3. Send snapshot files
             if (logFileInfo.snapshotFileEndAddress > PageHeader.Size)
             {
-                entries.Add(new CheckpointDataSourceEntry(
+                fileDataSources.Add(CreateFileDataSource(
                     CheckpointFileType.STORE_SNAPSHOT,
                     checkpointEntry.metadata.storeHlogToken,
                     0,
                     logFileInfo.snapshotFileEndAddress));
 
                 if (logFileInfo.hasSnapshotObjects)
-                    entries.Add(new CheckpointDataSourceEntry(
+                    fileDataSources.Add(CreateFileDataSource(
                         CheckpointFileType.STORE_SNAPSHOT_OBJ,
                         checkpointEntry.metadata.storeHlogToken,
                         0,
@@ -106,31 +88,61 @@ namespace Garnet.cluster
             }
 
             // 4. Send delta log segments
-            entries.Add(new CheckpointDataSourceEntry(
+            fileDataSources.Add(CreateFileDataSource(
                 CheckpointFileType.STORE_DLOG,
                 checkpointEntry.metadata.storeHlogToken,
                 0,
                 logFileInfo.deltaLogTailAddress));
+
+            // 5. Metadata sources
+            var storeCkptManager = clusterProvider.ReplicationLogCheckpointManager;
+
+            metadataDataSources.Add(new TsavoriteMetadataSource(
+                CheckpointFileType.STORE_INDEX,
+                checkpointEntry.metadata.storeIndexToken,
+                () => checkpointEntry.metadata.storeIndexToken != default
+                    ? storeCkptManager.GetIndexCheckpointMetadata(checkpointEntry.metadata.storeIndexToken)
+                    : []));
+
+            metadataDataSources.Add(new TsavoriteMetadataSource(
+                CheckpointFileType.STORE_SNAPSHOT,
+                checkpointEntry.metadata.storeHlogToken,
+                () => checkpointEntry.metadata.storeHlogToken != default
+                    ? storeCkptManager.GetLogCheckpointMetadata(checkpointEntry.metadata.storeHlogToken, null, true, -1)
+                    : []));
         }
 
         /// <inheritdoc/>
-        public IEnumerable<ICheckpointDataSource> GetDataSources()
+        public IEnumerable<(ISnapshotDataSource dataSource, ISnapshotTransmitSource transmitter)> GetDataSources()
         {
-            foreach (var entry in entries)
-            {
-                var device = CreateCheckpointDevice(entry.Type, entry.Token);
-                var maxBatchSize = Math.Min(CheckpointDataSource.DefaultBatchSize, GetMaxBatchSize(entry.Type, clusterProvider.serverOptions));
+            var fileTransmitter = new FileTransmitSource(logger);
+            var metadataTransmitter = new TsavoriteMetadataTransmitSource(logger);
 
-                yield return new CheckpointDataSource(
-                    entry.Type,
-                    entry.Token,
-                    device,
-                    entry.StartOffset,
-                    entry.EndOffset,
-                    maxBatchSize,
-                    timeout,
-                    logger);
+            foreach (var dataSource in fileDataSources)
+            {
+                yield return (dataSource, fileTransmitter);
             }
+
+            foreach (var dataSource in metadataDataSources)
+            {
+                yield return (dataSource, metadataTransmitter);
+            }
+        }
+
+        private FileDataSource CreateFileDataSource(CheckpointFileType type, Guid token, long startOffset, long endOffset)
+        {
+            var device = CreateCheckpointDevice(type, token);
+            var maxBatchSize = Math.Min(FileDataSource.DefaultBatchSize, GetMaxBatchSize(type, clusterProvider.serverOptions));
+
+            return new FileDataSource(
+                type,
+                token,
+                device,
+                startOffset,
+                endOffset,
+                maxBatchSize,
+                timeout,
+                logger);
         }
 
         private IDevice CreateCheckpointDevice(CheckpointFileType type, Guid token)

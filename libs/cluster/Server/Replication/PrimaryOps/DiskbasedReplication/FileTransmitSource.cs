@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -11,48 +11,34 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.cluster
 {
     /// <summary>
-    /// Context for sending checkpoint segments over the network using GarnetClientSession.
-    /// This class handles only the network transmission logic — reading is delegated to ICheckpointDataSource.
+    /// Transmits checkpoint file segments over the network using chunked reads from an <see cref="ISnapshotDataSource"/>.
+    /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
+    /// followed by an empty end-of-transmission packet.
     /// </summary>
-    internal sealed class CheckpointReadContext : IDisposable
+    internal sealed class FileTransmitSource : ISnapshotTransmitSource
     {
-        readonly GarnetClientSession gcs;
-        readonly TimeSpan timeout;
-        readonly CancellationTokenSource cts;
         readonly ILogger logger;
 
-        public CheckpointReadContext(GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null)
+        public FileTransmitSource(ILogger logger = null)
         {
-            this.gcs = gcs;
-            this.timeout = timeout;
             this.logger = logger;
-            cts = new CancellationTokenSource();
         }
 
-        public void Dispose()
-        {
-            cts.Cancel();
-            cts.Dispose();
-        }
-
-        /// <summary>
-        /// Sends all segments from the given data source over the network.
-        /// </summary>
-        public async Task SendSegmentsAsync(ICheckpointDataSource dataSource, CancellationToken cancellationToken = default)
+        /// <inheritdoc/>
+        public async Task TransmitAsync(GarnetClientSession gcs, ISnapshotDataSource dataSource, TimeSpan timeout, CancellationToken cancellationToken = default)
         {
             var fileTokenBytes = dataSource.Token.ToByteArray();
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, cancellationToken);
 
             while (dataSource.HasNextChunk)
             {
-                var result = await dataSource.ReadNextChunkAsync(linkedCts.Token).ConfigureAwait(false);
+                var result = await dataSource.ReadNextChunkAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     var resp = await gcs.ExecuteClusterSendCheckpointFileSegment(
                         fileTokenBytes,
                         (int)dataSource.Type,
                         startAddress: result.ChunkStartAddress,
-                        result.Buffer.GetSlice(result.BytesRead)).WaitAsync(timeout, linkedCts.Token).ConfigureAwait(false);
+                        result.Buffer.GetSlice(result.BytesRead)).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 
                     if (!resp.Equals("OK"))
                         ExceptionUtils.ThrowException(new GarnetException(
@@ -67,7 +53,7 @@ namespace Garnet.cluster
             // Send empty package to indicate end of transmission
             var endResp = await gcs.ExecuteClusterSendCheckpointFileSegment(
                 fileTokenBytes, (int)dataSource.Type, dataSource.CurrentOffset, [])
-                .WaitAsync(timeout, linkedCts.Token).ConfigureAwait(false);
+                .WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 
             if (!endResp.Equals("OK"))
                 ExceptionUtils.ThrowException(new GarnetException(
