@@ -136,8 +136,8 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
-                    ISnapshotReader[] checkpointReaders =
-                        [new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger)];
+                    using var checkpointReader = new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
+                    ISnapshotReader[] checkpointReaders = [checkpointReader];
 
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(checkpointReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
                     await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);

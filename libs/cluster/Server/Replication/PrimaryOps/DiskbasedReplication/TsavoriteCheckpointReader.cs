@@ -4,19 +4,22 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class TsavoriteCheckpointReader : ISnapshotReader
+    internal sealed class TsavoriteCheckpointReader : ISnapshotReader, IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly TimeSpan timeout;
         readonly ILogger logger;
         readonly List<ISnapshotDataSource> fileDataSources = [];
         readonly List<ISnapshotDataSource> metadataDataSources = [];
+        SectorAlignedBufferPool bufferPool;
+        readonly SemaphoreSlim signalCompletion = new(0);
 
         /// <summary>
         /// Computes the maximum batch size for a given checkpoint file type.
@@ -129,6 +132,7 @@ namespace Garnet.cluster
         private FileDataSource CreateFileDataSource(CheckpointFileType type, Guid token, long startOffset, long endOffset)
         {
             var device = CreateCheckpointDevice(type, token);
+            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
             var maxBatchSize = Math.Min(FileDataSource.DefaultBatchSize, GetMaxBatchSize(type, clusterProvider.serverOptions));
 
             return new FileDataSource(
@@ -139,6 +143,8 @@ namespace Garnet.cluster
                 endOffset,
                 maxBatchSize,
                 timeout,
+                bufferPool,
+                signalCompletion,
                 logger);
         }
 
@@ -177,6 +183,12 @@ namespace Garnet.cluster
                 return logFactory.Get(new FileDescriptor("Store", isObj ? "hlog_objs" : "hlog"));
             }
             return null;
+        }
+
+        public void Dispose()
+        {
+            signalCompletion?.Dispose();
+            bufferPool?.Free();
         }
     }
 }

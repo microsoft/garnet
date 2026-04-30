@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -23,8 +24,8 @@ namespace Garnet.cluster
         private readonly int maxBatchSize;
         private readonly TimeSpan timeout;
         private readonly ILogger logger;
-        private SectorAlignedBufferPool bufferPool;
-        private readonly SemaphoreSlim signalCompletion = new(0);
+        private readonly SectorAlignedBufferPool bufferPool;
+        private readonly SemaphoreSlim signalCompletion;
 
         public CheckpointFileType Type { get; }
         public Guid Token { get; }
@@ -36,7 +37,7 @@ namespace Garnet.cluster
         public bool HasNextChunk => CurrentOffset < EndOffset;
 
         /// <summary>
-        /// Creates a new CheckpointDataSource.
+        /// Creates a new FileDataSource.
         /// </summary>
         /// <param name="type">The checkpoint file type.</param>
         /// <param name="token">The checkpoint token.</param>
@@ -45,6 +46,8 @@ namespace Garnet.cluster
         /// <param name="endOffset">The end offset.</param>
         /// <param name="maxBatchSize">Maximum bytes to read per chunk (will be further capped by sector alignment).</param>
         /// <param name="timeout">Timeout for async read operations.</param>
+        /// <param name="bufferPool">Shared sector-aligned buffer pool for read operations.</param>
+        /// <param name="signalCompletion">Shared semaphore for async I/O completion signaling.</param>
         /// <param name="logger">Optional logger.</param>
         public FileDataSource(
             CheckpointFileType type,
@@ -54,6 +57,8 @@ namespace Garnet.cluster
             long endOffset,
             int maxBatchSize,
             TimeSpan timeout,
+            SectorAlignedBufferPool bufferPool,
+            SemaphoreSlim signalCompletion,
             ILogger logger = null)
         {
             Type = type;
@@ -64,14 +69,14 @@ namespace Garnet.cluster
             EndOffset = endOffset;
             this.maxBatchSize = maxBatchSize;
             this.timeout = timeout;
+            this.bufferPool = bufferPool;
+            this.signalCompletion = signalCompletion;
             this.logger = logger;
         }
 
         /// <inheritdoc/>
         public void Dispose()
         {
-            signalCompletion?.Dispose();
-            bufferPool?.Free();
             Device?.Dispose();
         }
 
@@ -103,8 +108,6 @@ namespace Garnet.cluster
             int size,
             CancellationToken cancellationToken = default)
         {
-            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-
             long numBytesToRead = size;
             numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
@@ -113,7 +116,14 @@ namespace Garnet.cluster
             {
                 device.ReadAsync(address, (IntPtr)buffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
             }
-            _ = await signalCompletion.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+
+            if (!await signalCompletion.WaitAsync(timeout, cancellationToken).ConfigureAwait(false))
+            {
+                buffer.Return();
+                ExceptionUtils.ThrowException(new GarnetException(
+                    $"Timed out reading {Type} checkpoint file at address {address} (requested {numBytesToRead} bytes)"));
+            }
+
             return (buffer, (int)numBytesToRead);
         }
 
