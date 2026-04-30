@@ -175,7 +175,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAppendLog"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterAppendLog"/>
         private bool NetworkClusterAppendLog(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -253,7 +253,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterInitiateReplicaSync"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterInitiateReplicaSync"/>
         private bool NetworkClusterInitiateReplicaSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -299,7 +299,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointMetadata"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointMetadata"/>
         private bool NetworkClusterSendCheckpointMetadata(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -320,11 +320,11 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointMetadata = parseState.GetArgSliceByRef(2).ToArray();
+            var checkpointMetadata = parseState.GetArgSliceByRef(2).ReadOnlySpan;
 
             var fileToken = new Guid(fileTokenBytes);
             var fileType = (CheckpointFileType)fileTypeInt;
-            clusterProvider.replicationManager.ProcessCheckpointMetadata(fileToken, fileType, checkpointMetadata);
+            clusterProvider.replicationManager.recvCheckpointHandler.ProcessMetadata(fileToken, fileType, checkpointMetadata);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
@@ -336,12 +336,12 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
         private bool NetworkClusterSendCheckpointFileSegment(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            if (parseState.Count != 5)
+            if (parseState.Count != 4)
             {
                 invalidParameters = true;
                 return true;
@@ -350,8 +350,7 @@ namespace Garnet.cluster
             var fileTokenBytes = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             if (!parseState.TryGetInt(1, out var ckptFileTypeInt) ||
-                !parseState.TryGetLong(2, out var startAddress) ||
-                !parseState.TryGetInt(4, out var segmentId))
+                !parseState.TryGetLong(2, out var startAddress))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
@@ -365,7 +364,7 @@ namespace Garnet.cluster
 
             // Commenting due to high verbosity
             // logger?.LogTrace("send_ckpt_file_segment {fileToken} {ckptFileType} {startAddress} {dataLength}", fileToken, ckptFileType, startAddress, data.Length);
-            clusterProvider.replicationManager.recvCheckpointHandler.ProcessFileSegments(segmentId, fileToken, ckptFileType, startAddress, data);
+            clusterProvider.replicationManager.recvCheckpointHandler.ProcessFileSegment(fileToken, ckptFileType, startAddress, data);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
@@ -377,7 +376,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterBeginReplicaRecover"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterBeginReplicaRecover"/>
         private bool NetworkClusterBeginReplicaRecover(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -431,7 +430,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAttachSync"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterAttachSync"/>
         private bool NetworkClusterAttachSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -472,9 +471,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.cluster.SnapshotIteratorManager"/>
-        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.TryWriteRecordSpan"/>        
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.SetClusterSyncHeader"/>
+        /// <seealso cref="M:Garnet.cluster.SnapshotIteratorManager"/>
+        /// <seealso cref="M:Garnet.cluster.ReplicaSyncSession.TryWriteRecordSpan"/>        
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.SetClusterSyncHeader"/>
         private bool NetworkClusterSync(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -548,7 +547,7 @@ namespace Garnet.cluster
         /// Implements CLUSTER FLUSHALL
         /// </summary>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.IssueFlushAllAsync"/>
+        /// <seealso cref="M:Garnet.cluster.ReplicaSyncSession.IssueFlushAllAsync"/>
         private bool NetworkClusterFlushAll(out bool invalidParameters)
         {
             invalidParameters = false;
@@ -573,7 +572,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAdvanceTime"/>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterAdvanceTime"/>
         private bool NetworkClusterAdvanceTime(out bool invalidParameters)
         {
             invalidParameters = false;

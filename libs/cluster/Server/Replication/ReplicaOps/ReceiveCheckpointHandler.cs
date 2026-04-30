@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 #if DEBUG
 using Garnet.common;
@@ -12,15 +11,18 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ReceiveCheckpointHandler
+    internal sealed class ReceiveCheckpointHandler : IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly CancellationTokenSource cts;
-        IDevice writeIntoCkptDevice = null;
-        private SemaphoreSlim writeCheckpointSemaphore = null;
-        private SectorAlignedBufferPool writeCheckpointBufferPool = null;
-
         readonly ILogger logger;
+
+        // Shared resources across FileDataSink instances
+        SectorAlignedBufferPool bufferPool;
+        readonly SemaphoreSlim writeSemaphore = new(0);
+
+        // Active file sink (one at a time, matching the sequential protocol)
+        FileDataSink activeFileSink;
 
         public ReceiveCheckpointHandler(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -33,44 +35,40 @@ namespace Garnet.cluster
         {
             cts.Cancel();
             cts.Dispose();
-            writeCheckpointSemaphore?.Dispose();
-            writeCheckpointBufferPool?.Free();
-            writeCheckpointBufferPool = null;
-            CloseDevice();
-        }
-
-        public void CloseDevice()
-        {
-            writeIntoCkptDevice?.Dispose();
-            writeIntoCkptDevice = null;
+            activeFileSink?.Dispose();
+            activeFileSink = null;
+            writeSemaphore?.Dispose();
+            bufferPool?.Free();
+            bufferPool = null;
         }
 
         /// <summary>
-        /// Process file segments send from primary
+        /// Process file segments sent from primary.
+        /// An empty data span signals end-of-stream for the current file.
         /// </summary>
-        /// <param name="token"></param>
-        /// <param name="type"></param>
-        /// <param name="startAddress"></param>
-        /// <param name="data"></param>
-        /// <param name="segmentId"></param>
-        public void ProcessFileSegments(int segmentId, Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
+        /// <param name="token">The checkpoint token.</param>
+        /// <param name="type">The checkpoint file type.</param>
+        /// <param name="startAddress">The start address for this chunk.</param>
+        /// <param name="data">The data to write. Empty signals end-of-stream.</param>
+        public void ProcessFileSegment(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
-            if (writeIntoCkptDevice == null)
-            {
-                Debug.Assert(writeIntoCkptDevice == null);
-                writeIntoCkptDevice = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
-            }
 
             if (data.Length == 0)
             {
-                Debug.Assert(writeIntoCkptDevice != null);
-                CloseDevice();
+                activeFileSink?.Complete();
+                activeFileSink = null;
                 return;
             }
 
-            Debug.Assert(writeIntoCkptDevice != null);
-            WriteInto(writeIntoCkptDevice, (ulong)startAddress, data, data.Length, segmentId);
+            if (activeFileSink == null)
+            {
+                var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
+                bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                activeFileSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+            }
+
+            activeFileSink.WriteChunk(startAddress, data);
 
 #if DEBUG
             ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false).GetAwaiter().GetResult();
@@ -78,59 +76,17 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Note: pads the bytes with zeros to achieve sector alignment
+        /// Process checkpoint metadata transmitted from primary during replica synchronization.
         /// </summary>
-        /// <param name="device"></param>
-        /// <param name="segmentId"></param>
-        /// <param name="address"></param>
-        /// <param name="buffer"></param>
-        /// <param name="size"></param>
-        private unsafe void WriteInto(IDevice device, ulong address, ReadOnlySpan<byte> buffer, int size, int segmentId = -1)
+        /// <param name="token">Checkpoint metadata token.</param>
+        /// <param name="type">Checkpoint metadata filetype.</param>
+        /// <param name="checkpointMetadata">Raw bytes of checkpoint metadata.</param>
+        public void ProcessMetadata(Guid token, CheckpointFileType type, ReadOnlySpan<byte> checkpointMetadata)
         {
-            writeCheckpointBufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-
-            long numBytesToWrite = size;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
-
-            var pbuffer = writeCheckpointBufferPool.Get((int)numBytesToWrite);
-            try
-            {
-                fixed (byte* bufferRaw = buffer)
-                {
-                    Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
-                }
-
-                writeCheckpointSemaphore ??= new(0);
-
-                if (segmentId == -1)
-                    device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
-                else
-                    device.WriteAsync((IntPtr)pbuffer.aligned_pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
-
-                _ = writeCheckpointSemaphore.Wait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
-            }
-            finally
-            {
-                pbuffer.Return();
-            }
-        }
-
-        private void IOCallback(uint errorCode, uint numBytes, object context)
-        {
-            if (errorCode != 0)
-            {
-                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
-                logger?.LogError("[ReceiveCheckpointHandler] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
-            }
-
-            try
-            {
-                _ = writeCheckpointSemaphore.Release();
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, $"{nameof(ReceiveCheckpointHandler)}.IOCallback");
-            }
+            clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
+            using var sink = new MetadataDataSink(type, token, clusterProvider);
+            sink.WriteChunk(0, checkpointMetadata);
+            sink.Complete();
         }
     }
 }
