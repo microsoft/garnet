@@ -32,28 +32,28 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Sends all checkpoint data by iterating source pairs from each reader.
-        /// For each pair, delegates transmission to the associated <see cref="ISnapshotTransmitSource"/>.
+        /// Sends all checkpoint data by iterating transmit sources from each reader.
+        /// For each source, delegates transmission to the <see cref="ISnapshotTransmitSource"/>.
         /// </summary>
         public async Task SendCheckpointAsync(CancellationToken cancellationToken = default)
         {
             foreach (var checkpointReader in checkpointReaders)
             {
-                foreach (var (dataSource, transmitter) in checkpointReader.GetDataSources())
+                foreach (var transmitSource in checkpointReader.GetTransmitSources())
                 {
                     try
                     {
                         logger?.LogInformation("<Begin sending checkpoint data {token} {type} {startAddress} {endAddress}",
-                            dataSource.Token, dataSource.Type, dataSource.StartOffset, dataSource.EndOffset);
+                            transmitSource.DataSource.Token, transmitSource.DataSource.Type, transmitSource.DataSource.StartOffset, transmitSource.DataSource.EndOffset);
 
-                        await transmitter.TransmitAsync(gcs, dataSource, timeout, cancellationToken).ConfigureAwait(false);
+                        await transmitSource.TransmitAsync(gcs, timeout, cancellationToken).ConfigureAwait(false);
 
                         logger?.LogInformation("<Complete sending checkpoint data {token} {type} {startAddress} {endAddress}",
-                            dataSource.Token, dataSource.Type, dataSource.StartOffset, dataSource.EndOffset);
+                            transmitSource.DataSource.Token, transmitSource.DataSource.Type, transmitSource.DataSource.StartOffset, transmitSource.DataSource.EndOffset);
                     }
                     finally
                     {
-                        dataSource.Dispose();
+                        transmitSource.Dispose();
                     }
                 }
             }

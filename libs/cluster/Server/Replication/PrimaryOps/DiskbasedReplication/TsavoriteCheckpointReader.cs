@@ -113,19 +113,16 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
-        public IEnumerable<(ISnapshotDataSource dataSource, ISnapshotTransmitSource transmitter)> GetDataSources()
+        public IEnumerable<ISnapshotTransmitSource> GetTransmitSources()
         {
-            var fileTransmitter = new FileTransmitSource(logger);
-            var metadataTransmitter = new TsavoriteMetadataTransmitSource(logger);
-
             foreach (var dataSource in fileDataSources)
             {
-                yield return (dataSource, fileTransmitter);
+                yield return new FileTransmitSource(dataSource, logger);
             }
 
             foreach (var dataSource in metadataDataSources)
             {
-                yield return (dataSource, metadataTransmitter);
+                yield return new TsavoriteMetadataTransmitSource(dataSource, logger);
             }
         }
 

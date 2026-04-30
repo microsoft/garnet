@@ -302,14 +302,5 @@ namespace Garnet.cluster
 
             return (cEntry, aofSyncDriver);
         }
-
-    }
-
-    internal static unsafe class SectorAlignedMemoryExtensions
-    {
-        public static Span<byte> GetSlice(this SectorAlignedMemory pbuffer, int length)
-        {
-            return new Span<byte>(pbuffer.aligned_pointer, length);
-        }
     }
 }

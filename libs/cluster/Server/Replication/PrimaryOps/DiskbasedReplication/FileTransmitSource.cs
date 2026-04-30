@@ -7,11 +7,12 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
     /// <summary>
-    /// Transmits checkpoint file segments over the network using chunked reads from an <see cref="ISnapshotDataSource"/>.
+    /// Transmits checkpoint file segments over the network using chunked reads from its owned <see cref="FileDataSource"/>.
     /// Sends each chunk via <see cref="GarnetClientSession.ExecuteClusterSendCheckpointFileSegment"/>
     /// followed by an empty end-of-transmission packet.
     /// </summary>
@@ -19,30 +20,33 @@ namespace Garnet.cluster
     {
         readonly ILogger logger;
 
-        public FileTransmitSource(ILogger logger = null)
+        public ISnapshotDataSource DataSource { get; }
+
+        public FileTransmitSource(ISnapshotDataSource dataSource, ILogger logger = null)
         {
+            DataSource = dataSource;
             this.logger = logger;
         }
 
         /// <inheritdoc/>
-        public async Task TransmitAsync(GarnetClientSession gcs, ISnapshotDataSource dataSource, TimeSpan timeout, CancellationToken cancellationToken = default)
+        public async Task TransmitAsync(GarnetClientSession gcs, TimeSpan timeout, CancellationToken cancellationToken = default)
         {
-            var fileTokenBytes = dataSource.Token.ToByteArray();
+            var fileTokenBytes = DataSource.Token.ToByteArray();
 
-            while (dataSource.HasNextChunk)
+            while (DataSource.HasNextChunk)
             {
-                var result = await dataSource.ReadNextChunkAsync(cancellationToken).ConfigureAwait(false);
+                var result = await DataSource.ReadNextChunkAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     var resp = await gcs.ExecuteClusterSendCheckpointFileSegment(
                         fileTokenBytes,
-                        (int)dataSource.Type,
+                        (int)DataSource.Type,
                         startAddress: result.ChunkStartAddress,
                         result.Buffer.GetSlice(result.BytesRead)).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 
                     if (!resp.Equals("OK"))
                         ExceptionUtils.ThrowException(new GarnetException(
-                            $"Primary error at SendFileSegments {dataSource.Type} {resp} [{dataSource.StartOffset},{dataSource.CurrentOffset},{dataSource.EndOffset}]"));
+                            $"Primary error at SendFileSegments {DataSource.Type} {resp} [{DataSource.StartOffset},{DataSource.CurrentOffset},{DataSource.EndOffset}]"));
                 }
                 finally
                 {
@@ -52,12 +56,25 @@ namespace Garnet.cluster
 
             // Send empty package to indicate end of transmission
             var endResp = await gcs.ExecuteClusterSendCheckpointFileSegment(
-                fileTokenBytes, (int)dataSource.Type, dataSource.CurrentOffset, [])
+                fileTokenBytes, (int)DataSource.Type, DataSource.CurrentOffset, [])
                 .WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 
             if (!endResp.Equals("OK"))
                 ExceptionUtils.ThrowException(new GarnetException(
-                    $"Primary error at SendFileSegments Completion {dataSource.Type} {endResp}"));
+                    $"Primary error at SendFileSegments Completion {DataSource.Type} {endResp}"));
+        }
+
+        public void Dispose()
+        {
+            DataSource?.Dispose();
+        }
+    }
+
+    internal static unsafe class SectorAlignedMemoryExtensions
+    {
+        public static Span<byte> GetSlice(this SectorAlignedMemory pbuffer, int length)
+        {
+            return new Span<byte>(pbuffer.aligned_pointer, length);
         }
     }
 }

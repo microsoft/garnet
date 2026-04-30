@@ -48,6 +48,11 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
+        public void Dispose()
+        {
+        }
+
+        /// <inheritdoc/>
         public Task<DataSourceReadResult> ReadNextChunkAsync(CancellationToken cancellationToken = default)
         {
             if (consumed)
@@ -58,11 +63,6 @@ namespace Garnet.cluster
             consumed = true;
 
             return Task.FromResult(new DataSourceReadResult(new ReadOnlyMemory<byte>(data), chunkStartAddress: 0));
-        }
-
-        /// <inheritdoc/>
-        public void Dispose()
-        {
         }
     }
 }

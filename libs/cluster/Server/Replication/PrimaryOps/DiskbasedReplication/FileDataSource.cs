@@ -68,6 +68,14 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
+        public void Dispose()
+        {
+            signalCompletion?.Dispose();
+            bufferPool?.Free();
+            Device?.Dispose();
+        }
+
+        /// <inheritdoc/>
         public async Task<DataSourceReadResult> ReadNextChunkAsync(CancellationToken cancellationToken = default)
         {
             var chunkStartAddress = CurrentOffset;
@@ -117,14 +125,6 @@ namespace Garnet.cluster
                 logger?.LogError("[CheckpointDataSource] ReadAsync error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             _ = signalCompletion.Release();
-        }
-
-        /// <inheritdoc/>
-        public void Dispose()
-        {
-            signalCompletion?.Dispose();
-            bufferPool?.Free();
-            Device?.Dispose();
         }
     }
 }
