@@ -2045,6 +2045,85 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// After checkpoint + recovery, accessing only one RI key and taking a second
+        /// checkpoint causes <c>PurgeOldCheckpointSnapshots</c> to delete the unaccessed
+        /// key's only snapshot (no new one was created because it was never restored).
+        /// A second recovery then loses the unaccessed key entirely.
+        /// </summary>
+        [Test]
+        public void RIUnaccessedKeyLostAfterSecondRecoveryTest()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true);
+            server.Start();
+
+            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
+            var idx1Dir = Path.Combine(rangeIndexDir, RangeIndexManager.HashKeyToDirectoryName("idx1"u8));
+            var idx2Dir = Path.Combine(rangeIndexDir, RangeIndexManager.HashKeyToDirectoryName("idx2"u8));
+
+            // Step 1-3: Create two RI keys with data, then checkpoint
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.Execute("RI.CREATE", "idx1", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "idx1", "key-a", "val-a");
+
+                db.Execute("RI.CREATE", "idx2", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                db.Execute("RI.SET", "idx2", "key-b", "val-b");
+
+                db.Execute("SAVE");
+            }
+
+            // Both keys have snapshots
+            ClassicAssert.AreEqual(1, Directory.GetFiles(idx1Dir, "snapshot.*.bftree").Length, "idx1 should have 1 snapshot");
+            ClassicAssert.AreEqual(1, Directory.GetFiles(idx2Dir, "snapshot.*.bftree").Length, "idx2 should have 1 snapshot");
+
+            // Step 4: Restart and recover from checkpoint
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            // Step 5: Access only idx1, then take a second checkpoint
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                var val = db.Execute("RI.GET", "idx1", "key-a");
+                ClassicAssert.AreEqual("val-a", (string)val);
+
+                // Do NOT access idx2
+
+                db.Execute("SAVE");
+            }
+
+            // idx1 has a new snapshot; idx2's old snapshot was purged with no replacement
+            ClassicAssert.AreEqual(1, Directory.GetFiles(idx1Dir, "snapshot.*.bftree").Length,
+                "idx1 should have 1 snapshot after second checkpoint");
+            ClassicAssert.AreEqual(0, Directory.GetFiles(idx2Dir, "snapshot.*.bftree").Length,
+                "idx2 snapshot should have been purged with no replacement");
+
+            // Step 6: Second restart and recover
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            // Step 7: idx1 should exist, idx2 should be lost
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                var val = db.Execute("RI.GET", "idx1", "key-a");
+                ClassicAssert.AreEqual("val-a", (string)val, "idx1 should survive second recovery");
+
+                val = db.Execute("RI.GET", "idx2", "key-b");
+                ClassicAssert.AreEqual("val-b", (string)val,
+                    "idx2 should survive second recovery (unaccessed key must not be lost by snapshot purge)");
+            }
+        }
+
+        /// <summary>
         /// Verifies pure AOF-only recovery (no checkpoint). RI.CREATE is replayed to
         /// recreate the BfTree, then RI.SET/RI.DEL operations rebuild the data.
         /// </summary>
