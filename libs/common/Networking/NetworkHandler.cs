@@ -140,8 +140,9 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Begin (background) network handler (including auth). Make sure you do not send data
-        /// until authentication completes.
+        /// Begin (background) network handler.
+        /// 
+        /// Blocks until auth completes.
         /// </summary>
         public virtual void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -151,11 +152,12 @@ namespace Garnet.networking
                 throw new Exception("Cannot provide SslServerAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
 
-            _ = AuthenticateAsServerAsync(tlsOptions, remoteEndpointName, token);
+            // Can't use SslStream's sync methods for auth, so we must block
+            AsyncUtils.BlockingWait(AuthenticateAsServerAsync(tlsOptions, remoteEndpointName, token));
         }
 
         /// <summary>
-        /// Begin async network handler (including auth)
+        /// Begin async network handler.
         /// </summary>
         public virtual async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -204,8 +206,9 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Begin (background) network handler (including auth). Make sure you do not send data
-        /// until authentication completes.
+        /// Begin (background) network handler.
+        /// 
+        /// Blocks until auth completes.
         /// </summary>
         public virtual void Start(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -215,11 +218,14 @@ namespace Garnet.networking
                 throw new Exception("Cannot provide SslClientAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
 
-            _ = AuthenticateAsClientAsync(tlsOptions, remoteEndpointName, token);
+            // Can't use SslStream's sync methods for auth, so we must block
+            AsyncUtils.BlockingWait(AuthenticateAsClientAsync(tlsOptions, remoteEndpointName, token));
         }
 
         /// <summary>
-        /// Begin async network handler (including auth)
+        /// Begin async network handler (including auth).
+        /// 
+        /// When tasks completes, authentication has also completed.
         /// </summary>
         public virtual async Task StartAsync(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
@@ -362,7 +368,8 @@ namespace Garnet.networking
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 if (result.IsCompletedSuccessfully)
                 {
-                    transportBytesRead += result.Result;
+                    // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
+                    transportBytesRead += AsyncUtils.BlockingWait(result);
 
                     // Read task has control, process the decrypted transport bytes
                     Process();

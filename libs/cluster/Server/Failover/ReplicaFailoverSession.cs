@@ -67,7 +67,7 @@ namespace Garnet.cluster
         /// Send stop writes message to PRIMARY
         /// </summary>
         /// <returns>True on success, false otherwise</returns>
-        private async Task<bool> PauseWritesAndWaitForSync()
+        private async Task<bool> PauseWritesAndWaitForSyncAsync()
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
             var client = await GetConnectionAsync(primaryId).ConfigureAwait(false);
@@ -86,7 +86,7 @@ namespace Garnet.cluster
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
 
-                var resp = await client.ExecuteClusterFailStopWrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                var resp = await client.ExecuteClusterFailStopWritesAsync(localIdBytes).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
                 var primaryReplicationOffset = AofAddress.FromString(resp);
 
                 // Wait for replica to catch up
@@ -114,7 +114,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Perform series of steps to update local config and take ownership of primary slots.
         /// </summary>
-        private bool TakeOverAsPrimary()
+        private async Task<bool> TakeOverAsPrimaryAsync()
         {
             // Take over as primary and inform old primary
             status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
@@ -129,16 +129,16 @@ namespace Garnet.cluster
                 // Make replica syncing unavailable by setting recovery flag
                 if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, upgradeLock: false))
                 {
-                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimaryAsync)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     return false;
                 }
                 acquiredLock = true;
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
                 {
-                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimaryAsync)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
                     return false;
                 }
 
@@ -152,25 +152,25 @@ namespace Garnet.cluster
                 if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
                 {
                     clusterProvider.storeWrapper.appendOnlyFile.ResetSequenceNumberGenerator();
-                    clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+                    await clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.AdvanceTimeReplicaTask).ConfigureAwait(false);
                 }
 
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
-                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimary));
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimaryAsync));
 
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                _ = clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 // Stop advance time task when reconfiguring node to be replica
                 if (clusterProvider.storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
-                    clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+                    await clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.AdvanceTimeReplicaTask).ConfigureAwait(false);
 
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
                 clusterProvider.storeWrapper.StartPrimaryTasks();
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimary));
+                logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimaryAsync));
                 throw;
             }
             finally
@@ -189,8 +189,11 @@ namespace Garnet.cluster
         /// <param name="replicaId">Replica-id to issue gossip and attache request</param>
         /// <param name="configByteArray">Serialized local cluster config data</param>
         /// <returns></returns>
-        private async Task BroadcastConfigAndRequestAttach(string replicaId, byte[] configByteArray)
+        private async Task BroadcastConfigAndRequestAttachAsync(string replicaId, byte[] configByteArray)
         {
+            // Force async
+            await Task.Yield();
+
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
             var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId).ConfigureAwait(false);
@@ -204,35 +207,32 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                await client.Gossip(configByteArray).ContinueWith(t =>
-                {
-                    var resp = t.Result;
-                    try
-                    {
-                        var current = clusterProvider.clusterManager.CurrentConfig;
-                        if (resp.Length > 0)
-                        {
-                            clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                            var returnedConfigArray = resp.Span.ToArray();
-                            var other = ClusterConfig.FromByteArray(returnedConfigArray);
+                var resp = await client.GossipAsync(configByteArray).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
 
-                            // Check if gossip is from a node that is known and trusted before merging
-                            if (current.IsKnown(other.LocalNodeId))
-                                _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
-                            else
-                                logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
-                        }
-                        resp.Dispose();
-                    }
-                    catch (Exception ex)
+                try
+                {
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    if (resp.Length > 0)
                     {
-                        logger?.LogCritical(ex, "IssueAttachReplicas faulted");
+                        clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
+                        var returnedConfigArray = resp.Span.ToArray();
+                        var other = ClusterConfig.FromByteArray(returnedConfigArray);
+
+                        // Check if gossip is from a node that is known and trusted before merging
+                        if (current.IsKnown(other.LocalNodeId))
+                            _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
+                        else
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
-                    finally
-                    {
-                        resp.Dispose();
-                    }
-                }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogCritical(ex, "IssueAttachReplicas faulted");
+                }
+                finally
+                {
+                    resp.Dispose();
+                }
 
                 var localAddress = oldConfig.LocalNodeIp;
                 var localPort = oldConfig.LocalNodePort;
@@ -254,7 +254,7 @@ namespace Garnet.cluster
         /// Issue attach message to remote replicas
         /// </summary>
         /// <returns></returns>
-        private async Task IssueAttachReplicas()
+        private async Task IssueAttachReplicasAsync()
         {
             // Get information of local node from newConfig
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -275,7 +275,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    attachReplicaTasks.Add(Task.Run(async () => await BroadcastConfigAndRequestAttach(replicaId, configByteArray).ConfigureAwait(false)));
+                    attachReplicaTasks.Add(BroadcastConfigAndRequestAttachAsync(replicaId, configByteArray));
                 }
                 catch (Exception ex)
                 {
@@ -309,7 +309,7 @@ namespace Garnet.cluster
         /// REPLICA main failover task
         /// </summary>
         /// <returns></returns>
-        public async Task<bool> BeginAsyncReplicaFailover()
+        public async Task<bool> BeginAsyncReplicaFailoverAsync()
         {
             // CLUSTER FAILOVER OPTIONS
             // FORCE: Do not await for the primary since it might be unreachable
@@ -318,7 +318,7 @@ namespace Garnet.cluster
             try
             {
                 // Issue stop writes and on ack wait for replica to catch up
-                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSync().ConfigureAwait(false))
+                if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSyncAsync().ConfigureAwait(false))
                 {
                     return false;
                 }
@@ -330,16 +330,16 @@ namespace Garnet.cluster
                 }
 
                 // Transition to primary role
-                if (!TakeOverAsPrimary())
+                if (!await TakeOverAsPrimaryAsync().ConfigureAwait(false))
                 {
                     return false;
                 }
                 failoverSucceeded = true;
 
                 // Attach to old replicas, and old primary if DEFAULT option
-                await IssueAttachReplicas().ConfigureAwait(false);
+                await IssueAttachReplicasAsync().ConfigureAwait(false);
 
-                await clusterProvider.storeWrapper.SuspendReplicaOnlyTasks();
+                await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync();
                 clusterProvider.storeWrapper.StartPrimaryTasks();
 
                 return true;
@@ -363,7 +363,7 @@ namespace Garnet.cluster
                         logger?.LogWarning("Attempting to reset primary after failed failover");
                         if (primaryClient != null)
                         {
-                            _ = await primaryClient.ExecuteClusterFailStopWrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                            _ = await primaryClient.ExecuteClusterFailStopWritesAsync(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex)

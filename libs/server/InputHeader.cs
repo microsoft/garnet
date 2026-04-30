@@ -12,7 +12,7 @@ namespace Garnet.server
 {
     /// <summary>
     /// Flags used by append-only file (AOF/WAL)
-    /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the field used to store the flag stores other data in the case of Object types.
+    /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the "union" field that is used to store the flag stores other data (see RespInputHeader.FlagMask).
     /// In the case of a Rawstring, the last 4 bits are used for flags, and the other 4 bits are unused of the byte.
     /// </summary>
     [Flags]
