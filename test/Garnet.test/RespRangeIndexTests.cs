@@ -2052,7 +2052,7 @@ namespace Garnet.test
         /// rather than by the initial RI.CREATE.
         /// </summary>
         [Test]
-        public void RIDiskFileCleanupOnDeleteAfterEvictionTest()
+        public void RIDiskFileCleanupOnDeleteAfterEvictionAndRestoreTest()
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
