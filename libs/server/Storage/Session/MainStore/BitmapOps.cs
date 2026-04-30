@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -74,11 +75,15 @@ namespace Garnet.server
             var keys = input.parseState.Parameters;
             var keyCount = keys.Length;
 
-            // 8 byte start pointer
-            // 4 byte int length
-            Span<byte> output = stackalloc byte[12];
             var srcBitmapPtrs = stackalloc byte*[keyCount - 1];
             var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
+
+            // Tracks heap-allocated source value buffers (used when the value is stored as overflow byte[]
+            // outside the log) and the pin handle held over them for the duration of BITOP execution.
+            // Allocated lazily and disposed in the finally block.
+            IMemoryOwner<byte>[] overflowOwners = null;
+            MemoryHandle[] overflowHandles = null;
+            var overflowCount = 0;
 
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
@@ -99,15 +104,24 @@ namespace Garnet.server
             {
                 uc.BeginUnsafe();
             readFromScratch:
-                var localHeadAddress = HeadAddress;
+                // Reset all per-attempt state and release any pin handles / heap buffers accumulated by the
+                // previous attempt before re-reading sources from scratch.
+                ReleaseOverflowBuffers(overflowOwners, overflowHandles, ref overflowCount);
+                maxBitmapLen = int.MinValue;
+                minBitmapLen = int.MaxValue;
+
+                var localHeadAddress = uc.Session.HeadAddress;
+                var localReadCacheHeadAddress = uc.Session.ReadCacheHeadAddress;
                 var keysFound = 0;
 
                 for (var i = 1; i < keys.Length; i++)
                 {
                     var srcKey = keys[i];
-                    //Read srcKey
-                    var outputBitmap = StringOutput.FromPinnedSpan(output);
-                    status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
+                    // Read srcKey. The backend populates either SpanByteAndMemory.SpanByte (inline values
+                    // already pinned in log memory) or SpanByteAndMemory.Memory (overflow values copied to
+                    // a heap-rented buffer that we must pin here for BITOP execution).
+                    var outputBitmap = new StringOutput();
+                    status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, localReadCacheHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {
                         goto readFromScratch;
@@ -117,9 +131,31 @@ namespace Garnet.server
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
 
-                    var outputBitmapPtr = outputBitmap.SpanByteAndMemory.SpanByte.ToPointer();
-                    var localBitmapPtr = (byte*)(nuint)(*(ulong*)outputBitmapPtr);
-                    var localBitmapLength = *(int*)(outputBitmapPtr + 8);
+                    byte* localBitmapPtr;
+                    int localBitmapLength;
+
+                    if (outputBitmap.SpanByteAndMemory.IsSpanByte)
+                    {
+                        // Inline value: SpanByte points directly into the log buffer.
+                        localBitmapPtr = outputBitmap.SpanByteAndMemory.SpanByte.ToPointer();
+                        localBitmapLength = outputBitmap.SpanByteAndMemory.SpanByte.Length;
+                    }
+                    else
+                    {
+                        // Overflow value: data was copied into a heap buffer. Pin it so that GC compaction
+                        // cannot relocate the underlying array between now and the BITOP execution below.
+                        var owner = outputBitmap.SpanByteAndMemory.Memory;
+                        localBitmapLength = outputBitmap.SpanByteAndMemory.Length;
+                        var memHandle = owner.Memory.Pin();
+
+                        overflowOwners ??= new IMemoryOwner<byte>[keys.Length - 1];
+                        overflowHandles ??= new MemoryHandle[keys.Length - 1];
+                        overflowOwners[overflowCount] = owner;
+                        overflowHandles[overflowCount] = memHandle;
+                        overflowCount++;
+
+                        localBitmapPtr = (byte*)memHandle.Pointer;
+                    }
 
                     // Keep track of pointers returned from ISessionFunctions
                     srcBitmapPtrs[keysFound] = localBitmapPtr;
@@ -163,11 +199,23 @@ namespace Garnet.server
             {
                 // Suspend Thread
                 uc.EndUnsafe();
+                // Release any overflow pin handles and heap buffers regardless of whether BITOP succeeded.
+                ReleaseOverflowBuffers(overflowOwners, overflowHandles, ref overflowCount);
                 if (createTransaction)
                     txnManager.Commit(true);
             }
             result = maxBitmapLen;
             return status;
+
+            static void ReleaseOverflowBuffers(IMemoryOwner<byte>[] owners, MemoryHandle[] handles, ref int count)
+            {
+                for (var h = 0; h < count; h++)
+                {
+                    handles[h].Dispose();
+                    owners[h].Dispose();
+                }
+                count = 0;
+            }
         }
 
         public GarnetStatus StringBitOperation(BitmapOperation bitOp, PinnedSpanByte destinationKey, PinnedSpanByte[] keys, out long result)

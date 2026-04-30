@@ -135,6 +135,10 @@ namespace Garnet.server
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
+                    // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
+                    // memory we passed in) and never overflow to heap Memory. Assert the contract so any
+                    // future regression is caught immediately rather than silently returning garbage.
+                    Debug.Assert(srcMergeBuffer.SpanByteAndMemory.IsSpanByte, "PFCOUNT backend must populate SpanByte");
                     // Invalid Type
                     if (*(long*)srcReadBuffer == -1)
                     {
@@ -228,6 +232,11 @@ namespace Garnet.server
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
+
+                    // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
+                    // memory we passed in) and never overflow to heap Memory. Assert the contract so any
+                    // future regression is caught immediately rather than silently returning garbage.
+                    Debug.Assert(mergeBuffer.SpanByteAndMemory.IsSpanByte, "PFMERGE backend must populate SpanByte");
 
                     // Invalid Type
                     if (*(long*)readBuffer == -1)

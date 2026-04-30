@@ -789,13 +789,27 @@ namespace Garnet.server
                         }, ref parseState);
 
                         var zAddOutput = new ObjectOutput();
-                        RMWObjectStoreOperation(destinationKey, ref zAddInput, ref ssObjectTransactionalContext, ref zAddOutput);
-                        itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
+                        try
+                        {
+                            RMWObjectStoreOperation(destinationKey, ref zAddInput, ref ssObjectTransactionalContext, ref zAddOutput);
+                            itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
+                        }
+                        finally
+                        {
+                            // ZADD backend writes its result via RespMemoryWriter, which allocates a
+                            // MemoryPool buffer when the (default) SpanByte cannot hold the response.
+                            // Dispose to avoid leaking that buffer back to the pool.
+                            if (!zAddOutput.SpanByteAndMemory.IsSpanByte)
+                                zAddOutput.SpanByteAndMemory.Memory?.Dispose();
+                        }
                     }
                 }
                 finally
                 {
                     rangeOutputHandler.Dispose();
+                    // SortedSetRange writes via RespMemoryWriter, which (with a default SpanByte) rents
+                    // a MemoryPool buffer and assigns it here. Dispose to release it back to the pool.
+                    rangeOutputMem.Dispose();
                 }
                 return status;
             }

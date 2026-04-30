@@ -976,6 +976,94 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedBitmap, actualBitmap);
         }
 
+        // Regression test for a use-after-fixed bug in the BITOP read callback:
+        // for overflow values (byte[] > MaxInlineValueSize, default 4 KB) the callback used to
+        // capture a pointer inside a `fixed` block and dereference it later from the BITOP
+        // execution path; GC compaction between the two could relocate the byte[], causing
+        // BITOP to read garbage. Running BITOP on overflow-sized values while a background
+        // thread periodically triggers compacting GCs must produce stable, correct results.
+        [Test, Order(21)]
+        [Category("BITOP")]
+        public void BitOp_OverflowValues_StableUnderGCCompaction(
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op)
+        {
+            // Pick lengths that exceed the default ObjectAllocator MaxInlineValueSize (4 KB),
+            // which forces values into the overflow (heap byte[]) path inside Tsavorite.
+            const int sharedLength = 4096 + 32 + 3;
+            var additionalLengths = new[] { 0, 7 };
+
+            Func<byte, byte, byte> opFunc = op switch
+            {
+                Bitwise.And => static (a, b) => (byte)(a & b),
+                Bitwise.Or => static (a, b) => (byte)(a | b),
+                Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+                Bitwise.Diff => static (a, b) => (byte)(a & ~b),
+                _ => throw new NotSupportedException()
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var srcKeyCount = additionalLengths.Length;
+            var srcKeys = new RedisKey[srcKeyCount];
+            var srcKeyBitmaps = new byte[srcKeyCount][];
+            var srcMaxLength = sharedLength + Enumerable.Max(additionalLengths);
+
+            const string dstKey = "dst";
+            var expectedBitmap = new byte[srcMaxLength];
+
+            for (var i = 0; i < srcKeys.Length; i++)
+            {
+                srcKeyBitmaps[i] = new byte[sharedLength + additionalLengths[i]];
+                rng.NextBytes(srcKeyBitmaps[i]);
+
+                srcKeys[i] = "src" + i;
+                db.StringSet(srcKeys[i], srcKeyBitmaps[i]);
+
+                if (i == 0)
+                    srcKeyBitmaps[i].AsSpan().CopyTo(expectedBitmap);
+                else
+                    ApplyBitop(ref expectedBitmap, srcKeyBitmaps[i], opFunc);
+            }
+
+            // Background thread that periodically forces compacting GCs to maximize the chance
+            // of the GC running between the BITOP read callback's `fixed` block and the
+            // subsequent in-server BITOP execution. Before the fix this exposed a stale-pointer
+            // dereference that produced wrong bytes.
+            using var stop = new System.Threading.CancellationTokenSource();
+            var gcThread = new System.Threading.Thread(() =>
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    System.Runtime.GCSettings.LargeObjectHeapCompactionMode =
+                        System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+                    System.Threading.Thread.Sleep(1);
+                }
+            })
+            { IsBackground = true, Name = "BitOpGCStress" };
+            gcThread.Start();
+
+            try
+            {
+                const int iterations = 100;
+                for (var iter = 0; iter < iterations; iter++)
+                {
+                    var size = db.StringBitOperation(op, dstKey, srcKeys);
+                    ClassicAssert.AreEqual(expectedBitmap.Length, size, $"Iteration {iter}: BITOP returned wrong size");
+
+                    byte[] actualBitmap = db.StringGet(dstKey);
+                    ClassicAssert.AreEqual(expectedBitmap.Length, actualBitmap.Length, $"Iteration {iter}: GET returned wrong length");
+                    ClassicAssert.AreEqual(expectedBitmap, actualBitmap, $"Iteration {iter}: BITOP {op} produced incorrect bytes");
+                }
+            }
+            finally
+            {
+                stop.Cancel();
+                gcThread.Join();
+            }
+        }
+
         private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
         {
             long startBit = offset;
