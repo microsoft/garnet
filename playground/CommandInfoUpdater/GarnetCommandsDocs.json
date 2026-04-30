@@ -1066,7 +1066,7 @@
   {
     "Command": "GETIFNOTMATCH",
     "Name": "GETIFNOTMATCH",
-    "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
+    "Summary": "Gets the ETag and value if the key's current etag does not match the given etag.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -1236,7 +1236,7 @@
   {
     "Command": "SET",
     "Name": "SET",
-    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn\u0027t exist.",
+    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn't exist.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -1449,6 +1449,50 @@
         "Type": "PureToken",
         "Token": "NOGET",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "Summary": "Sets a key-value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented. Returns the ETag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
       }
     ]
   },
@@ -1986,6 +2030,318 @@
             "ArgumentFlags": "Multiple"
           }
         ]
+      }
+    ]
+  },
+  {
+    "Command": "RICREATE",
+    "Name": "RI.CREATE",
+    "Summary": "Creates a new RangeIndex backed by a BfTree. Returns an error if the key already exists.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "BACKEND",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DISK",
+            "DisplayText": "disk",
+            "Type": "PureToken",
+            "Token": "DISK"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMORY",
+            "DisplayText": "memory",
+            "Type": "PureToken",
+            "Token": "MEMORY"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CACHESIZE",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "CACHESIZE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MINRECORD",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MINRECORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAXRECORD",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MAXRECORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAXKEYLEN",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "MAXKEYLEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PAGESIZE",
+        "DisplayText": "bytes",
+        "Type": "Integer",
+        "Token": "PAGESIZE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "RICONFIG",
+    "Name": "RI.CONFIG",
+    "Summary": "Returns the configuration of a RangeIndex as alternating field-value pairs.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "RIDEL",
+    "Summary": "Deletes an entry from a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "RIEXISTS",
+    "Name": "RI.EXISTS",
+    "Summary": "Checks whether a key exists and is a RangeIndex. Returns 1 if true, 0 otherwise.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "RIGET",
+    "Summary": "Gets the value of an entry in a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "RIMETRICS",
+    "Name": "RI.METRICS",
+    "Summary": "Returns runtime metrics for a RangeIndex including tree handle status and flags.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "RIRANGE",
+    "Summary": "Returns entries in a key range from a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N + M) where M is the number of entries returned",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS_OPTION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY_ONLY",
+            "DisplayText": "KEY",
+            "Type": "PureToken",
+            "Token": "KEY"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE_ONLY",
+            "DisplayText": "VALUE",
+            "Type": "PureToken",
+            "Token": "VALUE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BOTH",
+            "DisplayText": "BOTH",
+            "Type": "PureToken",
+            "Token": "BOTH"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RISCAN",
+    "Name": "RI.SCAN",
+    "Summary": "Scans entries starting from a key in a RangeIndex with a count limit.",
+    "Group": "Generic",
+    "Complexity": "O(log N + M) where M is the count",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS_OPTION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY_ONLY",
+            "DisplayText": "KEY",
+            "Type": "PureToken",
+            "Token": "KEY"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE_ONLY",
+            "DisplayText": "VALUE",
+            "Type": "PureToken",
+            "Token": "VALUE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BOTH",
+            "DisplayText": "BOTH",
+            "Type": "PureToken",
+            "Token": "BOTH"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RISET",
+    "Name": "RI.SET",
+    "Summary": "Inserts or updates an entry in a RangeIndex.",
+    "Group": "Generic",
+    "Complexity": "O(log N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
       }
     ]
   }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -18,7 +19,7 @@ namespace Garnet.cluster
     /// <summary>
     /// MigrateSession
     /// </summary>
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         static readonly Memory<byte> IMPORTING = "IMPORTING"u8.ToArray();
         static readonly Memory<byte> NODE = "NODE"u8.ToArray();
@@ -47,6 +48,9 @@ namespace Garnet.cluster
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
+
+        HashSet<ulong> _namespaces;
+        FrozenDictionary<ulong, ulong> _namespaceMap;
 
         /// <summary>
         /// Get endpoint of target node
@@ -186,27 +190,25 @@ namespace Garnet.cluster
                 migrateOperation[i].Dispose();
         }
 
-        private bool CheckConnection(GarnetClientSession client)
+        private async ValueTask<bool> CheckConnectionAsync(GarnetClientSession client)
         {
-            var status = true;
             if (!client.IsConnected)
             {
-                client.Reconnect((int)_timeout.TotalMilliseconds);
+                await client.ReconnectAsync((int)_timeout.TotalMilliseconds).ConfigureAwait(false);
                 if (_passwd != null)
                 {
                     try
                     {
-                        status = client.Authenticate(_username, _passwd).ContinueWith(resp =>
+                        var authResp = await client.Authenticate(_username, _passwd).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+
+                        if (!authResp.Equals("OK", StringComparison.Ordinal))
                         {
-                            // Check if authenticate succeeded
-                            if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                            {
-                                logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", resp);
-                                Status = MigrateState.FAIL;
-                                return false;
-                            }
-                            return true;
-                        }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
+                            logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", authResp);
+                            Status = MigrateState.FAIL;
+                            return false;
+                        }
+
+                        return true;
                     }
                     catch (Exception ex)
                     {
@@ -215,7 +217,8 @@ namespace Garnet.cluster
                     }
                 }
             }
-            return status;
+
+            return true;
         }
 
         /// <summary>
@@ -246,50 +249,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Change remote slot state
-        /// </summary>
-        /// <param name="nodeid"></param>
-        /// <param name="state"></param>
-        /// <returns></returns>
-        public bool TrySetSlotRanges(string nodeid, MigrateState state)
-        {
-            var status = false;
-            var client = migrateOperation[0].Client;
-            try
-            {
-                if (!CheckConnection(client))
-                    return false;
-                var stateBytes = state switch
-                {
-                    MigrateState.IMPORT => IMPORTING,
-                    MigrateState.STABLE => STABLE,
-                    MigrateState.NODE => NODE,
-                    _ => throw new Exception("Invalid SETSLOT Operation"),
-                };
-
-                status = client.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
-                {
-                    // Check if setslotsrange executed correctly
-                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    {
-                        logger?.LogError("TrySetSlot error: {error}", resp);
-                        Status = MigrateState.FAIL;
-                        return false;
-                    }
-                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid == null ? "" : nodeid);
-                    return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error occurred");
-                return false;
-            }
-
-            return status;
-        }
-
-        /// <summary>
         /// Reset local slot state
         /// </summary>
         public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
@@ -317,29 +276,6 @@ namespace Garnet.cluster
         {
             if (!clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
                 return false;
-            return true;
-        }
-
-        /// <summary>
-        /// Try recover to cluster state before migration task.
-        /// Used only for MIGRATE SLOTS option.
-        /// </summary>
-        public bool TryRecoverFromFailure()
-        {
-            // Set slot at target to stable state when migrate slots fails
-            // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
-            if (!TrySetSlotRanges(null, MigrateState.STABLE))
-            {
-                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
-                return false;
-            }
-
-            // Set slots at source node to their original state when migrate fails
-            // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
-            ResetLocalSlot();
-
-            // Log explicit migration failure.
-            Status = MigrateState.FAIL;
             return true;
         }
     }

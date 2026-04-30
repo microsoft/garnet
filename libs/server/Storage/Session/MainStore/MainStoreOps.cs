@@ -30,6 +30,10 @@ namespace Garnet.server
                 incr_session_found();
                 return GarnetStatus.OK;
             }
+            else if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
             else
             {
                 incr_session_notfound();
@@ -37,7 +41,7 @@ namespace Garnet.server
             }
         }
 
-        public unsafe GarnetStatus ReadWithUnsafeContext<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long localHeadAddress, out bool epochChanged, ref TStringContext context)
+        public unsafe GarnetStatus ReadWithUnsafeContext<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long localHeadAddress, long localReadCacheHeadAddress, out bool epochChanged, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>, IUnsafeContext
         {
             epochChanged = false;
@@ -50,8 +54,12 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
                 context.BeginUnsafe();
-                // Start read of pointers from beginning if epoch changed
-                if (HeadAddress == localHeadAddress)
+                // If either the main-log head or the read-cache head advanced while we waited on
+                // pending I/O, any log/read-cache pointers captured by previous reads in this loop
+                // may now reference evicted pages. Tell the caller to re-read all sources from
+                // scratch. (Synchronously-returned reads can have pointers into either log.)
+                if (context.Session.HeadAddress != localHeadAddress
+                    || context.Session.ReadCacheHeadAddress != localReadCacheHeadAddress)
                 {
                     context.EndUnsafe();
                     epochChanged = true;
@@ -76,19 +84,21 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GET);
             value = default;
 
-            var _output = new StringOutput(new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice() });
+            var _output = new StringOutput(new SpanByteAndMemory { SpanByte = scratchBufferAllocator.ViewRemainingArgSlice() });
 
             var ret = GET(key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.SpanByteAndMemory.IsSpanByte)
                 {
-                    value = scratchBufferBuilder.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
+                    // Output overflowed to heap Memory — copy to SBA and dispose
+                    value = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.ReadOnlySpan);
                     _output.SpanByteAndMemory.Memory.Dispose();
                 }
                 else
                 {
-                    value = scratchBufferBuilder.CreateArgSlice(_output.SpanByteAndMemory.Length);
+                    // Output fit in SBA's remaining space — just claim it (zero copy)
+                    value = scratchBufferAllocator.CreateArgSlice(_output.SpanByteAndMemory.Length);
                 }
             }
             return ret;
@@ -204,16 +214,16 @@ namespace Garnet.server
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
-            return GarnetStatus.OK;
+            var status = context.Upsert((FixedSpanByteKey)key, value.ReadOnlySpan);
+            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, ref StringInput input, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var output = new StringOutput();
-            context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref output);
-            return GarnetStatus.OK;
+            var status = context.Upsert((FixedSpanByteKey)key, ref input, value.ReadOnlySpan, ref output);
+            return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
 
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)

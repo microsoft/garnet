@@ -91,6 +91,8 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
@@ -170,10 +172,6 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
-        run: |
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-        if: ${{ matrix.os == 'ubuntu-latest' }}
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -185,7 +183,7 @@ jobs:
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install and Run Azurite
         shell: bash
         run: |
@@ -265,7 +263,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: yarn
           cache-dependency-path: ./website/yarn.lock
       - name: Install dependencies

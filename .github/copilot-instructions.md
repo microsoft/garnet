@@ -205,6 +205,23 @@ To add a new Garnet server setting:
 - `LightEpoch` instances track ownership — only dispose if owned
 - In parallel tests, share a `LightEpoch` instance across `GarnetClient` instances
 
+### Scratch Buffer Conventions
+
+`StorageSession` has two scratch buffer types — use the right one:
+
+- **`ScratchBufferBuilder` (SBB)** — Single contiguous buffer for temporary workspace. All data is laid out sequentially in one buffer. On expansion, the previous data is copied into a new larger buffer and the old buffer is freed — **any existing pointers into the old buffer become invalid**. Use for building command inputs, Lua serialization, or any data that is consumed immediately and then rewound. **Do not** return `PinnedSpanByte` from SBB to callers — it may be invalidated by subsequent allocations. Always rewind after use. Debug builds enforce single-outstanding-slice discipline via asserts.
+  - Key APIs: `CreateArgSlice` (returns `PinnedSpanByte`, must rewind), `CreateArgSliceAsOffset` (returns `(Offset, Length)`, safe for multi-alloc since offsets survive reallocation), `ViewRemainingArgSlice`/`ViewFullArgSlice` (immediate-use views, do not store), `MoveOffset`, `Reset`, `RewindScratchBuffer`.
+
+- **`ScratchBufferAllocator` (SBA)** — Maintains a collection of fragmented pinned buffers (via `GC.AllocateArray(_, true)`). When the current buffer fills, a new one is allocated and the old buffer is kept rooted in a stack — so previously returned `PinnedSpanByte` values remain valid. Use for `PinnedSpanByte` values returned via `out` parameters or `IGarnetApi` that callers retain across multiple API calls. Reset between batches.
+  - Key APIs: `CreateArgSlice`, `ViewRemainingArgSlice`, `Reset`.
+
+**Rules:**
+1. Any `StorageSession` or `IGarnetApi` method returning `PinnedSpanByte` via `out` must use SBA, not SBB.
+2. When using SBB's `CreateArgSlice`, always `RewindScratchBuffer` after use — debug asserts enforce at most one outstanding slice.
+3. For multiple allocations without rewind, use `CreateArgSliceAsOffset` (returns offsets that survive reallocation).
+4. When copying from `IMemoryOwner<byte>` (e.g., `ObjectOutput.SpanByteAndMemory.Memory`), always `Dispose()` after copying — do not leak pooled buffers.
+5. `ViewFullArgSlice` and `ViewRemainingArgSlice` return immediate-use views — do not store or return them.
+
 ### Releasing a New Version
 
 To update the version and make a new release, increment the `VersionPrefix` in `Version.props` at the repo root and submit a PR with that change.

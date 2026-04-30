@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
@@ -19,7 +20,7 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext basicContext, VectorBasicContext vectorContext, INetworkSender networkSender, ILogger logger = null);
 
 
         /// <summary>
@@ -52,7 +53,7 @@ namespace Garnet.server
         /// Get info on primary from replica perspective.
         /// </summary>
         /// <returns></returns>
-        (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
+        (AofAddress replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
 
         /// <summary>
         /// Get info on replicas from primary perspective.
@@ -72,7 +73,7 @@ namespace Garnet.server
         /// <param name="cmd"></param>
         /// <param name="channel"></param>
         /// <param name="message"></param>
-        void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message);
+        ValueTask ClusterPublishAsync(RespCommand cmd, Span<byte> channel, Span<byte> message);
 
         /// <summary>
         /// Is Primary
@@ -95,7 +96,7 @@ namespace Garnet.server
         /// On checkpoint initiated
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
-        void OnCheckpointInitiated(out long CheckpointCoveredAofAddress);
+        void OnCheckpointInitiated(ref AofAddress CheckpointCoveredAofAddress);
 
         /// <summary>
         /// Recover the cluster
@@ -110,13 +111,13 @@ namespace Garnet.server
         /// <summary>
         /// Safe truncate AOF
         /// </summary>
-        void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
+        void AddNewCheckpointEntry(bool full, AofAddress CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
 
         /// <summary>
         /// Safe truncate AOF until address
         /// </summary>
         /// <param name="truncateUntil"></param>
-        void SafeTruncateAOF(long truncateUntil);
+        void SafeTruncateAOF(AofAddress truncateUntil);
 
         /// <summary>
         /// Start cluster operations

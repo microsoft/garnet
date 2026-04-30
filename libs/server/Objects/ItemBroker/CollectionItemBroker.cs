@@ -94,7 +94,7 @@ namespace Garnet.server
             RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs = null)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await GetCollectionItemAsync(observer, keys, timeoutInSeconds);
+            return await GetCollectionItemAsync(observer, keys, timeoutInSeconds).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -111,7 +111,7 @@ namespace Garnet.server
             RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds);
+            return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds).ConfigureAwait(false);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -120,7 +120,7 @@ namespace Garnet.server
             if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED &&
                 Interlocked.CompareExchange(ref mainLoopTaskStatus, MAIN_LOOP_STARTED, MAIN_LOOP_NOT_STARTED) == MAIN_LOOP_NOT_STARTED)
             {
-                mainLoopTask = Task.Run(Start);
+                mainLoopTask = Task.Run(StartAsync);
             }
         }
 
@@ -143,7 +143,7 @@ namespace Garnet.server
             try
             {
                 // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token);
+                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -668,6 +668,7 @@ namespace Garnet.server
             }
             finally
             {
+                storageSession.scratchBufferBuilder.RewindScratchBuffer(asKey);
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
             }
@@ -677,7 +678,7 @@ namespace Garnet.server
         /// Broker's main loop logic
         /// </summary>
         /// <returns>Task</returns>
-        private async Task Start()
+        private async Task StartAsync()
         {
             try
             {
@@ -692,7 +693,7 @@ namespace Garnet.server
                         // once event is dequeued successfully, call handler method
                         try
                         {
-                            nextEvent = await brokerEventsQueue.DequeueAsync(cts.Token);
+                            nextEvent = await brokerEventsQueue.DequeueAsync(cts.Token).ConfigureAwait(false);
                         }
                         catch (OperationCanceledException)
                         {

@@ -82,7 +82,7 @@ namespace Tsavorite.core
                         continue;
 
                     // Pull Iter records are in temp storage so do not need locks.
-                    stop = !scanFunctions.Reader(in iter, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
+                    stop = !scanFunctions.Reader(in iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -121,7 +121,7 @@ namespace Tsavorite.core
                     // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
                     if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
                         store.LockForScan(ref stackCtx, key);
-                    stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
+                    stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -186,11 +186,14 @@ namespace Tsavorite.core
                 }
 
                 request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
-                stop = !scanFunctions.Reader(in request.diskLogRecord, new RecordMetadata(request.logicalAddress, request.diskLogRecord.ETag), numRecords, out _);
+                if (storeFunctions.CallOnDiskRead)
+                    storeFunctions.OnDiskRead(ref request.diskLogRecord.logRecord);
+                stop = !scanFunctions.Reader(in request.diskLogRecord, new RecordMetadata(request.logicalAddress), numRecords, out _);
                 logicalAddress = request.diskLogRecord.Info.PreviousAddress;
             }
             finally
             {
+                _wrapper.OnDisposeDiskRecord(ref request.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 request.DisposeRecord();
             }
             return !stop;
@@ -304,7 +307,7 @@ namespace Tsavorite.core
             else
             {
                 // A more recent version of the key was not found, so push the original record (with its originalAddress).
-                RecordMetadata recordMetadata = new(originalAddress, srcLogRecord.ETag);
+                RecordMetadata recordMetadata = new(originalAddress);
 
                 epoch.Suspend();
                 try

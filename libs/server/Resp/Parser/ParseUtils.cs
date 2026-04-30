@@ -94,6 +94,23 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Try to read a signed 64-bit long from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// True if long parsed successfully
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadLong(PinnedSpanByte slice, bool allowLeadingZeros, out long number)
+        {
+            number = default;
+            var ptr = slice.ptr;
+            return slice.length != 0 &&
+                   RespReadUtils.TryReadInt64Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
+                       out _, out _, allowLeadingZeros: allowLeadingZeros) &&
+                   (int)bytesRead == slice.length;
+        }
+
+        /// <summary>
         /// Read a signed 64-bit double from a given ArgSlice.
         /// </summary>
         /// <param name="slice">Source</param>
@@ -122,6 +139,44 @@ namespace Garnet.server
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadDouble(PinnedSpanByte slice, out double number, bool canBeInfinite)
+        {
+            var sbNumber = slice.ReadOnlySpan;
+            if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
+                            bytesConsumed == sbNumber.Length)
+                return true;
+
+            return canBeInfinite && RespReadUtils.TryReadInfinity(sbNumber, out number);
+        }
+
+        /// <summary>
+        /// Read a signed 32-bit float from a given ArgSlice.
+        /// </summary>
+        /// <param name="slice">Source</param>
+        /// <param name="canBeInfinite">Allow reading an infinity</param>
+        /// <returns>
+        /// Parsed double
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float ReadFloat(PinnedSpanByte slice, bool canBeInfinite)
+        {
+            if (!TryReadFloat(slice, out var number, canBeInfinite))
+            {
+                RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
+            }
+            return number;
+        }
+
+        /// <summary>
+        /// Try to read a signed 32-bit float from a given ArgSlice.
+        /// </summary>
+        /// <param name="slice">Source</param>
+        /// <param name="number">Result</param>
+        /// <param name="canBeInfinite">Allow reading an infinity</param>
+        /// <returns>
+        /// True if float parsed successfully
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadFloat(PinnedSpanByte slice, out float number, bool canBeInfinite)
         {
             var sbNumber = slice.ReadOnlySpan;
             if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&

@@ -14,7 +14,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTests
 {
-    using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordDisposer>;
+    using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -90,7 +90,7 @@ namespace Tsavorite.test.LockTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = log
-            }, StoreFunctions.Create(keyComparer, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(keyComparer, SpanByteRecordTriggers.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<TestSpanByteKey, long, long, Empty, Functions>(new Functions());
@@ -139,17 +139,19 @@ namespace Tsavorite.test.LockTests
 
         void UpdateFunc(bool useRMW, int numRecords, int numIters)
         {
+            using var localSession = store.NewSession<TestSpanByteKey, long, long, Empty, Functions>(new Functions());
+            var localBContext = localSession.BasicContext;
             for (long keyNum = 0; keyNum < numRecords; ++keyNum)
             {
                 var key = TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref keyNum));
                 for (var iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
-                        ClassicAssert.IsFalse(bContext.Read(key).status.IsPending);
+                        ClassicAssert.IsFalse(localBContext.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
                     long input = default;
-                    _ = useRMW ? bContext.RMW(key, ref input) : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref input));
+                    _ = useRMW ? localBContext.RMW(key, ref input) : localBContext.Upsert(key, SpanByte.FromPinnedVariable(ref input));
                 }
             }
         }

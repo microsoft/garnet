@@ -205,6 +205,12 @@ namespace Tsavorite.core
         /// <summary>Observer for records getting evicted from memory (page closed). May be the same object as <see cref="logSizeTracker"/>.</summary>
         internal IObserver<ITsavoriteScanIterator> onEvictionObserver;
 
+        /// <summary>
+        /// Whether this allocator is the read cache (as opposed to the main hybrid log).
+        /// Set once at construction from <see cref="AllocatorSettings.IsReadCache"/>.
+        /// </summary>
+        internal readonly bool IsReadCache;
+
         /// <summary>Log size tracker; called when an operation at the Tsavorite-internal level adds or removes heap memory size 
         /// (e.g. copying to log tail or read cache, which do not call <see cref="ISessionFunctions{TInputOutput, TContext}"/>).
         /// May be the same object as <see cref="onEvictionObserver"/>.</summary>
@@ -241,18 +247,27 @@ namespace Tsavorite.core
         /// <summary>Flush checkpoint Delta to the Device</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal virtual void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
-            out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+            out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var _completedSemaphore = new SemaphoreSlim(0);
-            completedSemaphore = _completedSemaphore;
-
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+            {
+                completedTask = Task.Run(FlushRunner);
+            }
             else
-                FlushRunner();
+            {
+                try
+                {
+                    FlushRunner();
+                    completedTask = Task.CompletedTask;
+                }
+                catch (Exception ex)
+                {
+                    completedTask = Task.FromException(ex);
+                }
+            }
 
             void FlushRunner()
             {
@@ -340,7 +355,6 @@ namespace Tsavorite.core
 
                 if (destOffset > 0)
                     deltaLog.Seal(destOffset);
-                _completedSemaphore.Release();
             }
         }
 
@@ -403,7 +417,8 @@ namespace Tsavorite.core
             bufferPool.Free();
 
             flushEvent.Dispose();
-            notifyFlushedUntilAddressSemaphore?.Dispose();
+            notifyFlushedUntilAddressTcs?.TrySetCanceled();
+            notifyFlushedUntilAddressTcs = null;
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
@@ -457,6 +472,11 @@ namespace Tsavorite.core
                                 // Clean up temporary bits when applying the delta log
                                 ref var destInfo = ref LogRecord.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
+                                if (storeFunctions.CallOnDiskRead)
+                                {
+                                    var destLogRecord = new LogRecord(destination);
+                                    storeFunctions.OnDiskRead(ref destLogRecord);
+                                }
                             }
                             physicalAddress += size;
                         }
@@ -539,9 +559,15 @@ namespace Tsavorite.core
 
         /// <summary>Instantiate base allocator implementation</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private protected AllocatorBase(LogSettings logSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback,
-                LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
+        private protected AllocatorBase(AllocatorSettings allocatorSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator,
+                ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
         {
+            var logSettings = allocatorSettings.LogSettings;
+            var evictCallback = allocatorSettings.evictCallback;
+            var epoch = allocatorSettings.epoch;
+            var flushCallback = allocatorSettings.flushCallback;
+            IsReadCache = allocatorSettings.IsReadCache;
+
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
@@ -990,7 +1016,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="newReadOnlyAddress">New ReadOnlyAddress</param>
         /// <param name="newHeadAddress">New HeadAddress</param>
-        /// <param name="waitForEviction">Wait for operation to complete (may involve page flushing and closing)</param>
+        /// <param name="waitForEviction">Wait for eviction to complete, i.e., until ClosedUntilAddress catches up (may involve page flushing, closing, and eviction callbacks)</param>
         public void ShiftAddressesWithWait(long newReadOnlyAddress, long newHeadAddress, bool waitForEviction)
         {
             Debug.Assert(newHeadAddress <= newReadOnlyAddress, $"new HeadAddress {newHeadAddress} must not be ahead of newReadOnlyAddress {newReadOnlyAddress}");
@@ -1010,14 +1036,16 @@ namespace Tsavorite.core
                     epoch.Suspend();
                 }
 
-                while (waitForEviction && SafeHeadAddress < newHeadAddress)
+                while (waitForEviction && ClosedUntilAddress < newHeadAddress)
                     _ = Thread.Yield();
                 return;
             }
 
             // Epoch already protected, so launch the shift and wait for eviction to complete
             _ = ShiftHeadAddress(newHeadAddress);
-            while (waitForEviction && SafeHeadAddress < newHeadAddress)
+
+            // We wait for ClosedUntilAddress here to ensure eviction scan is complete
+            while (waitForEviction && ClosedUntilAddress < newHeadAddress)
                 epoch.ProtectAndDrain();
         }
 
@@ -1302,15 +1330,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>Used by applications to make the current state of the database immutable quickly</summary>
-        public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
+        public bool ShiftReadOnlyToTail(out long tailAddress, out Task notifyDone)
         {
             notifyDone = null;
             tailAddress = GetTailAddress();
             var localTailAddress = tailAddress;
             if (MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out _))
             {
-                notifyFlushedUntilAddressSemaphore = new SemaphoreSlim(0);
-                notifyDone = notifyFlushedUntilAddressSemaphore;
+                notifyFlushedUntilAddressTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                notifyDone = notifyFlushedUntilAddressTcs.Task;
                 notifyFlushedUntilAddress = localTailAddress;
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(localTailAddress));
                 return true;
@@ -1387,15 +1415,22 @@ namespace Tsavorite.core
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal void EvictPageForRecovery(long page)
         {
-            if (logSizeTracker is not null)
+            var start = GetLogicalAddressOfStartOfPage(page);
+            var end = GetLogicalAddressOfStartOfPage(page + 1);
+
+            var source = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+
+            // Per-record eviction walk handles internal heap accounting (key + value via
+            // logSizeTracker) and optionally notifies the application via OnEvict.
+            if (logSizeTracker is not null || storeFunctions.CallOnEvict)
             {
-                var start = GetLogicalAddressOfStartOfPage(page);
-                var end = GetLogicalAddressOfStartOfPage(page + 1);
-                MemoryPageScan(start, end, logSizeTracker);
+                _wrapper.EvictRecordsInRange(start, end, source);
+            }
+            if (onEvictionObserver is not null)
+            {
+                MemoryPageScan(start, end, onEvictionObserver);
             }
 
-            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
-            // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
 
@@ -1467,10 +1502,17 @@ namespace Tsavorite.core
                     var start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     var end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
-                    // This scan does not need a store because it does not lock; it is epoch-protected so by the time it runs no current thread
-                    // will have seen a record below the eviction range as "in mutable region".
+                    // Legacy observer path — skip if the observer IS the logSizeTracker, since
+                    // EvictRecordsInRange below already handles heap accounting via logSizeTracker.
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
+
+                    // Per-record eviction walk: handles internal heap-size accounting (key overflow
+                    // and value heap via logSizeTracker) and optionally notifies the application
+                    // via OnEvict for app-level cleanup.
+                    var evictSource = IsReadCache ? EvictionSource.ReadCache : EvictionSource.MainLog;
+                    if (logSizeTracker is not null || storeFunctions.CallOnEvict)
+                        _wrapper.EvictRecordsInRange(start, end, evictSource);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
@@ -1571,7 +1613,7 @@ namespace Tsavorite.core
                     flushEvent.Set();
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
-                        _ = notifyFlushedUntilAddressSemaphore.Release();
+                        _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
                 }
             }
 
@@ -1590,8 +1632,8 @@ namespace Tsavorite.core
         /// <summary>Address for notification of flushed-until</summary>
         public long notifyFlushedUntilAddress;
 
-        /// <summary>Semaphore for notification of flushed-until</summary>
-        public SemaphoreSlim notifyFlushedUntilAddressSemaphore;
+        /// <summary>TaskCompletionSource for notification of flushed-until</summary>
+        public TaskCompletionSource<bool> notifyFlushedUntilAddressTcs;
 
         /// <summary>Reset for recovery</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1862,22 +1904,24 @@ namespace Tsavorite.core
         /// <summary>
         /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
+        /// <param name="flushBuffers"></param>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
+        /// <param name="startLogicalAddress"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
         /// <param name="objectLogDevice"></param>
-        /// <param name="completedSemaphore"></param>
+        /// <param name="completedTask">Task that completes when all pages are flushed, or faults if an exception occurs</param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long startLogicalAddress, long endLogicalAddress,
-            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
-            var _completedSemaphore = new SemaphoreSlim(0);
-            completedSemaphore = _completedSemaphore;
+            var completionTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            completedTask = completionTcs.Task;
 
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
@@ -1889,49 +1933,69 @@ namespace Tsavorite.core
             {
                 var totalNumPages = (int)(endPage - startPage);
 
-                var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
+                var flushCompletionTracker = new FlushCompletionTracker(completionTcs, enableThrottling: throttleCheckpointFlushDelayMs >= 0, totalNumPages);
 
-                // Flush each page in sequence
-                for (long flushPage = startPage; flushPage < endPage; flushPage++)
+                try
                 {
-                    // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
-                    // for middle pages, we flush the entire page.
-                    var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
-                    if (startLogicalAddress > flushStartAddress)
-                        flushStartAddress = startLogicalAddress;
-                    var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
-                    if (endLogicalAddress < flushEndAddress)
-                        flushEndAddress = endLogicalAddress;
-                    var flushSize = flushEndAddress - flushStartAddress;
-                    if (flushSize <= 0)
-                        continue;
-
-                    var asyncResult = new PageAsyncFlushResult<Empty>
+                    // Flush each page in sequence
+                    for (long flushPage = startPage; flushPage < endPage; flushPage++)
                     {
-                        flushCompletionTracker = flushCompletionTracker,
-                        page = flushPage,
-                        fromAddress = flushStartAddress,
-                        untilAddress = flushEndAddress,
-                        count = 1,
-                        flushRequestState = FlushRequestState.Snapshot,
-                        flushBuffers = flushBuffers
-                    };
-
-                    // Intended destination is flushPage
-                    WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
-
-                    // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
-                    // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
-                    if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
-                    {
-                        if (throttleCheckpointFlushDelayMs >= 0)
+                        // For the first page, startLogicalAddress may be in the middle of the page; for the last page, endLogicalAddress may be in the middle of the page;
+                        // for middle pages, we flush the entire page.
+                        var flushStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                        if (startLogicalAddress > flushStartAddress)
+                            flushStartAddress = startLogicalAddress;
+                        var flushEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
+                        if (endLogicalAddress < flushEndAddress)
+                            flushEndAddress = endLogicalAddress;
+                        var flushSize = flushEndAddress - flushStartAddress;
+                        if (flushSize <= 0)
                         {
+                            // No data to flush for this page. Signal completion and drain the
+                            // throttle semaphore so the next real page's WaitOneFlush is not
+                            // satisfied by this page's release.
+                            flushCompletionTracker.CompleteFlush();
                             flushCompletionTracker.WaitOneFlush();
-                            Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            continue;
+                        }
+
+                        var asyncResult = new PageAsyncFlushResult<Empty>
+                        {
+                            flushCompletionTracker = flushCompletionTracker,
+                            page = flushPage,
+                            fromAddress = flushStartAddress,
+                            untilAddress = flushEndAddress,
+                            count = 1,
+                            flushRequestState = FlushRequestState.Snapshot,
+                            flushBuffers = flushBuffers
+                        };
+
+                        // Intended destination is flushPage
+                        WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+
+                        // If we did not issue a flush write (due to HeadAddress moving past flushPage), then WriteAsync set isForSnapshot false and we release the asyncResult here;
+                        // otherwise, we wait for the completion of the flush (and the callback will release the asyncResult).
+                        if (asyncResult.flushRequestState != FlushRequestState.WriteNotIssued)
+                        {
+                            if (throttleCheckpointFlushDelayMs >= 0)
+                            {
+                                flushCompletionTracker.WaitOneFlush();
+                                Thread.Sleep(throttleCheckpointFlushDelayMs);
+                            }
+                        }
+                        else
+                        {
+                            _ = asyncResult.Release();
+                            // Release() called CompleteFlush() which released the throttle semaphore.
+                            // Drain it so the next real page's WaitOneFlush is not satisfied by this no-op.
+                            flushCompletionTracker.WaitOneFlush();
                         }
                     }
-                    else
-                        _ = asyncResult.Release();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed while flushing snapshot pages from {startPage} to {endPage}", nameof(AsyncFlushPagesForSnapshot), startPage, endPage);
+                    flushCompletionTracker.SetException(ex);
                 }
             }
         }
@@ -2077,6 +2141,9 @@ namespace Tsavorite.core
                     if (currentLength >= recordLength)
                     {
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
+                        ctx.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                        if (storeFunctions.CallOnDiskRead)
+                            storeFunctions.OnDiskRead(ref ctx.diskLogRecord.logRecord);
                         return true;
                     }
                 }
@@ -2112,6 +2179,7 @@ namespace Tsavorite.core
                     ctx.logicalAddress = prevAddressToRead;
                     if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
+                        _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                         ctx.DisposeRecord();
                         AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
@@ -2127,6 +2195,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
@@ -2248,6 +2317,7 @@ namespace Tsavorite.core
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;
+                            startAddress += alignedRecordSize;
                         }
                     }
                 }
@@ -2255,9 +2325,8 @@ namespace Tsavorite.core
                 {
                     if (epochTaken)
                         epoch.Suspend();
+                    _ = result.Release();
                 }
-
-                _ = result.Release();
             }
             catch when (disposed) { }
         }

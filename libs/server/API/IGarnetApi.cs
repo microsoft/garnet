@@ -39,14 +39,19 @@ namespace Garnet.server
         GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
-        /// DEL Conditional
-        /// </summary>
-        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input);
-
-        /// <summary>
         /// SET Conditional
         /// </summary>
         GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
+        /// SETWITHETAG / SETIFMATCH / SETIFGREATER — ETag-aware conditional set
+        /// </summary>
+        GarnetStatus SET_ETagConditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
+        /// DELIFGREATER — ETag-aware conditional delete
+        /// </summary>
+        GarnetStatus DEL_ETagConditional(PinnedSpanByte key, ref StringInput input);
 
         /// <summary>
         /// SET
@@ -140,9 +145,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
-        /// <param name="withEtag">Whether to include the ETag in the operation</param>
         /// <returns></returns>
-        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false);
+        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -150,9 +154,8 @@ namespace Garnet.server
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
         /// <param name="result">The result of the operation.</param>
-        /// <param name="withEtag">Whether to include the ETag in the operation</param>
         /// <returns></returns>
-        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false);
+        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result);
         #endregion
 
         #region EXISTS
@@ -1184,6 +1187,146 @@ namespace Garnet.server
         GarnetStatus HyperLogLogMerge(ref StringInput input, out bool error);
 
         #endregion
+
+        #region RangeIndex
+
+        /// <summary>
+        /// RI.CREATE – create a new RangeIndex backed by a BfTree.
+        /// </summary>
+        /// <param name="key">Key under which the index is stored.</param>
+        /// <param name="storageBackend">Storage backend type (Disk or Memory).</param>
+        /// <param name="cacheSize">BfTree circular buffer size in bytes.</param>
+        /// <param name="minRecordSize">BfTree minimum record size.</param>
+        /// <param name="maxRecordSize">BfTree maximum record size.</param>
+        /// <param name="maxKeyLen">BfTree maximum key length.</param>
+        /// <param name="leafPageSize">BfTree leaf page size (0 = auto-compute from maxRecordSize).</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <param name="errorMsg">Error message if the operation failed.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexCreate(PinnedSpanByte key, byte storageBackend,
+            ulong cacheSize, uint minRecordSize, uint maxRecordSize, uint maxKeyLen, uint leafPageSize,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// RI.SET – insert or update a field in a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="field">Entry key within the BfTree.</param>
+        /// <param name="value">Entry value.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <param name="errorMsg">Error message if the operation failed.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexSet(PinnedSpanByte key, PinnedSpanByte field, PinnedSpanByte value,
+            out RangeIndexResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// RI.GET – read a field from a RangeIndex.
+        /// Writes the value as a RESP bulk string directly into <paramref name="output"/>.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="field">Entry key within the BfTree.</param>
+        /// <param name="output">Output buffer (typically pointing at the network buffer).</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexGet(PinnedSpanByte key, PinnedSpanByte field,
+            ref StringOutput output, out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.DEL – delete a field from a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="field">Entry key within the BfTree.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexDel(PinnedSpanByte key, PinnedSpanByte field,
+            out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.SCAN – scan entries from a RangeIndex starting at a key.
+        /// Writes the complete RESP array response into <paramref name="output"/>.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="startKey">Key to start scanning from (inclusive).</param>
+        /// <param name="count">Maximum number of records to return.</param>
+        /// <param name="returnField">Which fields to return (Key, Value, or KeyAndValue).</param>
+        /// <param name="output">Output buffer for the RESP-formatted response (points at network buffer).</param>
+        /// <param name="recordCount">Number of records scanned.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexScan(PinnedSpanByte key, PinnedSpanByte startKey, int count,
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.RANGE – scan entries in [start, end] range from a RangeIndex.
+        /// Writes the complete RESP array response into <paramref name="output"/>.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="startKey">Start key (inclusive).</param>
+        /// <param name="endKey">End key (inclusive).</param>
+        /// <param name="returnField">Which fields to return (Key, Value, or KeyAndValue).</param>
+        /// <param name="output">Output buffer for the RESP-formatted response (points at network buffer).</param>
+        /// <param name="recordCount">Number of records scanned.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexRange(PinnedSpanByte key, PinnedSpanByte startKey, PinnedSpanByte endKey,
+            BfTreeInterop.ScanReturnField returnField, ref StringOutput output,
+            out int recordCount, out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.EXISTS – check whether a key exists and is a RangeIndex.
+        /// Returns <see cref="GarnetStatus.OK"/> with <paramref name="exists"/> = true when
+        /// the key is a RangeIndex, false otherwise (including wrong type or missing key).
+        /// </summary>
+        /// <param name="key">Key to check.</param>
+        /// <param name="exists">True if the key is a RangeIndex.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexExists(PinnedSpanByte key, out bool exists);
+
+        /// <summary>
+        /// RI.CONFIG – return the configuration of a RangeIndex as individual fields.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="storageBackend">Storage backend type (0=Disk, 1=Memory).</param>
+        /// <param name="cacheSize">BfTree circular buffer size in bytes.</param>
+        /// <param name="minRecordSize">BfTree minimum record size.</param>
+        /// <param name="maxRecordSize">BfTree maximum record size.</param>
+        /// <param name="maxKeyLen">BfTree maximum key length.</param>
+        /// <param name="leafPageSize">BfTree leaf page size.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexConfig(PinnedSpanByte key,
+            out byte storageBackend, out ulong cacheSize, out uint minRecordSize,
+            out uint maxRecordSize, out uint maxKeyLen, out uint leafPageSize,
+            out RangeIndexResult result);
+
+        /// <summary>
+        /// RI.METRICS – return runtime metrics for a RangeIndex.
+        /// </summary>
+        /// <param name="key">Key of the RangeIndex.</param>
+        /// <param name="treeHandle">Native pointer of the BfTree instance.</param>
+        /// <param name="isLive">True if the tree handle is registered in live indexes.</param>
+        /// <param name="isFlushed">True if the stub has been flushed.</param>
+        /// <param name="isRecovered">True if the stub was recovered from a checkpoint.</param>
+        /// <param name="result">Result code of the operation.</param>
+        /// <returns>Garnet status.</returns>
+        GarnetStatus RangeIndexMetrics(PinnedSpanByte key,
+            out nint treeHandle, out bool isLive, out bool isFlushed, out bool isRecovered,
+            out RangeIndexResult result);
+
+        #endregion
+
+        #region VectorSet Methods
+        /// <summary>
+        /// Adds to (and may create) a vector set with the given parameters.
+        /// </summary>
+        GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Remove a member from a vector set, if it is present and the key exists.
+        /// </summary>
+        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+        #endregion
     }
 
     /// <summary>
@@ -1953,20 +2096,53 @@ namespace Garnet.server
         GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
-        /// Retrieve the current scratch buffer offset.
+        /// Resets the scratch buffer, releasing all allocated slices.
         /// </summary>
-        /// <returns>Current offset</returns>
-        int GetScratchBufferOffset();
-
-        /// <summary>
-        /// Resets the scratch buffer to the given offset.
-        /// </summary>
-        /// <param name="offset">Offset to reset to</param>
-        /// <returns>True if successful, else false</returns>
-        bool ResetScratchBuffer(int offset);
+        void ResetScratchBuffer();
 
         #endregion
 
+        #region Vector Sets
+
+        /// <summary>
+        /// Perform a similarity search given a vector and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap);
+
+        /// <summary>
+        /// Perform a similarity search given an element already in the vector set and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, PinnedSpanByte element, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap);
+
+        /// <summary>
+        /// Fetch the embedding of a given element in a Vector set.
+        /// </summary>
+        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances);
+
+        /// <summary>
+        /// Fetch the dimensionality of the given Vector Set.
+        /// 
+        /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
+        /// </summary>
+        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions);
+
+        /// <summary>
+        /// Fetch debugging information about the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
+
+        /// <summary>
+        /// Get the attributes associated with an element in the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes);
+
+        #endregion 
     }
 
     /// <summary>

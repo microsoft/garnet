@@ -1188,7 +1188,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofRecoverRawStringTest()
+        public async Task MultiDatabaseAofRecoverRawStringTestAsync()
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
@@ -1214,7 +1214,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2data, value.ToString());
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1240,7 +1240,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseAofRecoverObjectTest()
+        public async Task MultiDatabaseAofRecoverObjectTestAsync()
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
@@ -1266,7 +1266,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, score.Value);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -1288,6 +1288,45 @@ namespace Garnet.test
                 var db3 = redis.GetDatabase(2);
                 ClassicAssert.IsFalse(db3.KeyExists(db1Key));
                 ClassicAssert.IsFalse(db3.KeyExists(db2Key));
+            }
+        }
+
+        [Test]
+        public async Task MultiDatabaseAofObjectMutationRecoverTestAsync()
+        {
+            // Verify that object mutation operations (LPOP, HDEL) that empty collections
+            // are persisted correctly across multiple databases during AOF recovery
+            var listKey = "list:key1";
+            var hashKey = "hash:key1";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                // DB 0: push and pop a list element (empties the list)
+                var db0 = redis.GetDatabase(0);
+                db0.ListLeftPush(listKey, "value1");
+                db0.ListLeftPop(listKey);
+                ClassicAssert.IsFalse(db0.KeyExists(listKey));
+
+                // DB 1: add and delete hash fields (empties the hash)
+                var db1 = redis.GetDatabase(1);
+                db1.HashSet(hashKey, [new HashEntry("f1", "v1"), new HashEntry("f2", "v2")]);
+                db1.HashDelete(hashKey, ["f1", "f2"]);
+                ClassicAssert.IsFalse(db1.KeyExists(hashKey));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                // After recovery, both keys should remain absent
+                var db0 = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db0.KeyExists(listKey));
+
+                var db1 = redis.GetDatabase(1);
+                ClassicAssert.IsFalse(db1.KeyExists(hashKey));
             }
         }
 

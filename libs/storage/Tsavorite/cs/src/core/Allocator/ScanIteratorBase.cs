@@ -28,6 +28,9 @@ namespace Tsavorite.core
         /// <summary>Epoch from the store</summary>
         protected readonly LightEpoch epoch;
 
+        /// <summary>Number of deferred DoReadPage drain callbacks that have been registered but not yet executed.</summary>
+        protected int pendingDrainCallbacks;
+
         /// <summary>Current address for iteration</summary>
         protected long currentAddress;
         /// <summary>Next address for iteration</summary>
@@ -201,6 +204,7 @@ namespace Tsavorite.core
                         var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
 
                         var frameIndex = i;
+                        _ = Interlocked.Increment(ref pendingDrainCallbacks);
                         if (epoch != null)
                             epoch.BumpCurrentEpoch(() => DoReadPage(frameIndex));
                         else
@@ -208,8 +212,16 @@ namespace Tsavorite.core
 
                         void DoReadPage(int frameIndex)
                         {
-                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
-                                context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                            try
+                            {
+                                AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
+                                    context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                            }
+                            catch
+                            {
+                                _ = Interlocked.Decrement(ref pendingDrainCallbacks);
+                                throw;
+                            }
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
@@ -266,16 +278,22 @@ namespace Tsavorite.core
 
         protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context)
         {
-            var result = (PageAsyncReadResult<Empty>)context;
-
-            if (errorCode == 0)
-                _ = result.handle?.Signal();
-            else
+            try
             {
-                logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
-                result.cts?.Cancel();
+                var result = (PageAsyncReadResult<Empty>)context;
+
+                if (errorCode == 0)
+                    _ = result.handle?.Signal();
+                else
+                {
+                    logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
+                    result.cts?.Cancel();
+                }
             }
-            Interlocked.MemoryBarrier();
+            finally
+            {
+                _ = Interlocked.Decrement(ref pendingDrainCallbacks);
+            }
         }
 
         /// <summary>
@@ -316,29 +334,35 @@ namespace Tsavorite.core
         /// </summary>
         public virtual void Dispose()
         {
+            // Wait for all deferred DoReadPage callbacks and their async I/O to complete before freeing
+            // resources. The counter is incremented before BumpCurrentEpoch registration and decremented
+            // in AsyncReadPageFromDeviceToFrameCallback when I/O completes, so reaching zero guarantees
+            // no outstanding access to our state. The deferred callbacks will be drained by other threads'
+            // epoch operations (Resume, Suspend, ProtectAndDrain).
+            while (Volatile.Read(ref pendingDrainCallbacks) > 0)
+                Thread.Yield();
+
             for (var i = 0; i < frameSize; i++)
             {
+                // Wait for ongoing reads to complete/fail; if the wait throws (e.g. due to cancellation), we still
+                // need to dispose the event, CTS, and read buffers below.
                 try
                 {
-                    // Wait for ongoing reads to complete/fail
-                    if (loadCompletionEvents != null)
-                    {
-                        if (loadedPages[i] != -1)
-                            loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
-                        loadCompletionEvents[i]?.Dispose();
-                        loadCompletionEvents = default;
-                    }
-                    if (loadCTSs is not null)
-                    {
-                        loadCTSs[i]?.Dispose();
-                        loadCTSs[i] = null;
-                    }
-                    // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
-                    // things and leaves it in an "initialized" state.
-                    objectReadBuffers?[i]?.Dispose();
+                    if (loadCompletionEvents != null && loadedPages[i] != -1)
+                        loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
                 }
                 catch { }
+
+                // Always dispose resources regardless of whether the wait succeeded.
+                loadCompletionEvents?[i]?.Dispose();
+                loadCTSs?[i]?.Dispose();
+                loadCTSs?[i] = null;
+
+                // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
+                // things and leaves it in an "initialized" state.
+                objectReadBuffers?[i]?.Dispose();
             }
+            loadCompletionEvents = default;
         }
 
         /// <summary>

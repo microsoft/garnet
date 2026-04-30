@@ -27,15 +27,9 @@ namespace Tsavorite.core
         ///  null if we transferred it out.</remarks>
         SectorAlignedMemory recordBuffer;
 
-        /// <summary>The action to perform when disposing the contained LogRecord; the objects may have been transferred.</summary>
-        internal Action<IHeapObject> objectDisposer;
-
         public override readonly string ToString()
         {
-            var disposerDescription = objectDisposer is null
-                ? "<null>"
-                : $"{objectDisposer.Method.DeclaringType?.FullName}.{objectDisposer.Method.Name}";
-            return $"logRec [{logRecord}], recordBuffer [{recordBuffer?.ToString() ?? "<null>"}], objDisp [{disposerDescription}]";
+            return $"logRec [{logRecord}], recordBuffer [{recordBuffer?.ToString() ?? "<null>"}]";
         }
 
         /// <summary>
@@ -46,13 +40,11 @@ namespace Tsavorite.core
         /// <param name="keyOverflow">The key overflow byte[] wrapper, if any</param>
         /// <param name="valueOverflow">The value overflow byte[] wrapper, if any</param>
         /// <param name="valueObject">The value object, if any</param>
-        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
         /// <remarks>We always own the record buffer; it is either transferred to us by TransferFrom, or allocated as a copy of the record memory by CopyFrom</remarks>
         private DiskLogRecord(SectorAlignedMemory recordBuffer, ObjectIdMap transientObjectIdMap, OverflowByteArray keyOverflow,
-            OverflowByteArray valueOverflow, IHeapObject valueObject, Action<IHeapObject> objectDisposer)
+            OverflowByteArray valueOverflow, IHeapObject valueObject)
         {
             this.recordBuffer = recordBuffer;
-            this.objectDisposer = objectDisposer;
             logRecord = new((long)recordBuffer.GetValidPointer(), transientObjectIdMap);
 
             // Assign any out-of-line fields. This will put them into transientObjectIdMap.
@@ -68,10 +60,9 @@ namespace Tsavorite.core
         /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverPinnedTransientMemory"/> which
         /// has transient ObjectIds if it has objects).
         /// </summary>
-        internal DiskLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer)
+        internal DiskLogRecord(in LogRecord memoryLogRecord)
         {
             logRecord = memoryLogRecord;
-            this.objectDisposer = objectDisposer;
         }
 
         /// <summary>
@@ -90,7 +81,7 @@ namespace Tsavorite.core
         /// Creates a <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverPinnedTransientMemory"/> which
         /// has transient ObjectIds if it has objects).
         /// </summary>
-        internal static DiskLogRecord CreateFromTransientLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer) => new(memoryLogRecord, objectDisposer);
+        internal static DiskLogRecord CreateFromTransientLogRecord(in LogRecord memoryLogRecord) => new(memoryLogRecord);
 
         /// <summary>
         /// Allocates <see cref="recordBuffer"/> and copies the LogRecord's record memory into it; any out-of-line objects are shallow-copied.
@@ -98,8 +89,7 @@ namespace Tsavorite.core
         /// <param name="logRecord">The <see cref="LogRecord"/> to copy</param>
         /// <param name="bufferPool">The buffer pool to allocate from</param>
         /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
-        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
-        internal static DiskLogRecord CopyFrom(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
+        internal static DiskLogRecord CopyFrom(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap)
         {
             // Allocate from ActualSize roundup here because the value may have been shrunk.
             var allocatedSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
@@ -111,7 +101,7 @@ namespace Tsavorite.core
             return new DiskLogRecord(recordBuffer, transientObjectIdMap,
                 logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow : default,
                 logRecord.Info.ValueIsOverflow ? logRecord.ValueOverflow : default,
-                logRecord.Info.ValueIsObject ? logRecord.ValueObject : default, objectDisposer);
+                logRecord.Info.ValueIsObject ? logRecord.ValueObject : default);
         }
 
         /// <summary>
@@ -122,11 +112,10 @@ namespace Tsavorite.core
         /// <param name="keyOverflow">The key overflow byte[] wrapper, if any</param>
         /// <param name="valueOverflow">The value overflow byte[] wrapper, if any</param>
         /// <param name="valueObject">The value object, if any</param>
-        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
         internal static DiskLogRecord TransferFrom(ref SectorAlignedMemory recordBuffer, ObjectIdMap transientObjectIdMap, OverflowByteArray keyOverflow,
-            OverflowByteArray valueOverflow, IHeapObject valueObject, Action<IHeapObject> objectDisposer)
+            OverflowByteArray valueOverflow, IHeapObject valueObject)
         {
-            var diskLogRecord = new DiskLogRecord(recordBuffer, transientObjectIdMap, keyOverflow, valueOverflow, valueObject, objectDisposer);
+            var diskLogRecord = new DiskLogRecord(recordBuffer, transientObjectIdMap, keyOverflow, valueOverflow, valueObject);
             recordBuffer = default;     // Transfer ownership to us
             return diskLogRecord;
         }
@@ -135,12 +124,12 @@ namespace Tsavorite.core
         {
             DiskLogRecord diskLogRecord;
             if (srcDiskLogRecord.recordBuffer is not null)
-                diskLogRecord = new DiskLogRecord(in srcDiskLogRecord.logRecord, srcDiskLogRecord.objectDisposer) { recordBuffer = srcDiskLogRecord.recordBuffer };
+                diskLogRecord = new DiskLogRecord(in srcDiskLogRecord.logRecord) { recordBuffer = srcDiskLogRecord.recordBuffer };
             else
             {
                 // Deep copy. This is necessary when srcDiskLogRecord does not own its recordBuffer, because the underlying memory
                 // may be freed or reused--e.g. if it is from an iterator frame.
-                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, srcDiskLogRecord.logRecord.objectIdMap, srcDiskLogRecord.objectDisposer);
+                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, srcDiskLogRecord.logRecord.objectIdMap);
             }
 
             srcDiskLogRecord = default;              // Transfer ownership to us, and make sure we don't try to clear the logRecord
@@ -162,12 +151,17 @@ namespace Tsavorite.core
         public void Dispose()
         {
             if (logRecord.IsSet)
-                logRecord.Dispose(objectDisposer);
+            {
+                // Pure cleanup: clear the inner LogRecord's heap-field slots and release the record buffer.
+                // The IHeapObject owned by this DiskLogRecord (if any) is disposed via the store-level
+                // IRecordTriggers.OnDisposeDiskRecord trigger, which callers must invoke before this
+                // Dispose(). The allocator's OnDisposeDiskRecord forwards to that trigger.
+                logRecord.Dispose();
+            }
             logRecord = default;
 
             recordBuffer?.Return();
             recordBuffer = default;
-            objectDisposer = default;
         }
 
         #region ISourceLogRecord
@@ -195,6 +189,33 @@ namespace Tsavorite.core
         {
             readonly get => logRecord.ValueOverflow;
             set => logRecord.ValueOverflow = value;
+        }
+
+        /// <inheritdoc/>
+        public readonly SpanByteAndMemory ValueSpanByteAndMemory
+        {
+            get
+            {
+                // For an inline value, the underlying SpanByte points into this DiskLogRecord's
+                // recordBuffer (a SectorAlignedMemory rented from a pool). That buffer is returned
+                // to the pool when this DiskLogRecord is disposed -- typically as part of pending-
+                // completion cleanup, immediately after the read callback returns, or when a scan
+                // iterator advances. To keep the contract uniform with in-memory LogRecord (where
+                // SpanByte is stable for the unsafe context), copy the bytes into a pooled
+                // IMemoryOwner so the returned SpanByteAndMemory remains valid past disposal.
+                if (logRecord.IsPinnedValue)
+                {
+                    var span = logRecord.ValueSpan;
+                    var owner = MemoryPool<byte>.Shared.Rent(span.Length);
+                    span.CopyTo(owner.Memory.Span);
+                    return new SpanByteAndMemory(owner, span.Length);
+                }
+
+                // Overflow values come back as a no-copy BorrowedMemoryOwner around the underlying
+                // GC-managed byte[]. The byte[] stays rooted via the Memory<byte> reference inside
+                // the owner, so it survives DiskLogRecord disposal without an extra copy.
+                return logRecord.ValueSpanByteAndMemory;
+            }
         }
 
         /// <inheritdoc/>
@@ -230,7 +251,7 @@ namespace Tsavorite.core
         public readonly long Expiration => logRecord.Expiration;
 
         /// <inheritdoc/>
-        public readonly void ClearValueIfHeap(Action<IHeapObject> disposer) { }  // Nothing to do here; we dispose the object in the pending operation or iteration completion
+        public readonly void ClearValueIfHeap() { }  // Nothing to do here; we dispose the object in the pending operation or iteration completion
 
         /// <inheritdoc/>
         public readonly bool IsMemoryLogRecord => false;
@@ -486,7 +507,7 @@ namespace Tsavorite.core
             var ptr = recordSpan.ToPointer();
             var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
             if (serializedLogRecord.Info.RecordIsInline)
-                return new(serializedLogRecord, obj => { });
+                return new(serializedLogRecord);
             var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
@@ -516,7 +537,7 @@ namespace Tsavorite.core
                     serializedLogRecord.ValueObject = valueObject;
                     valueObjectSerializer.EndDeserialize();
                 }
-                return new(serializedLogRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                return new(serializedLogRecord);
             }
             catch
             {

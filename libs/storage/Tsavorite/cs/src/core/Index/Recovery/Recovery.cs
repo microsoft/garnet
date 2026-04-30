@@ -761,7 +761,7 @@ namespace Tsavorite.core
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
                     if (hlogBase.IsAllocated(pageIndex))
                     {
-                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken);
+                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken).ConfigureAwait(false);
                         hlogBase.EvictPageForRecovery(page);
                         lastFreedPage = page;
                     }
@@ -898,7 +898,7 @@ namespace Tsavorite.core
                         // Trim the log memory again in case we read large objects on the current page. Add 1 to tailPage so that
                         // when the BufferSize subtraction wraps around the buffer it won't try to evict the page we just added.
                         // Decrease trimPageReadCount as we process each page so we don't over-prune.
-                        freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, trimPageReadCount--, cancellationToken);
+                        freedPage = await TrimLogMemorySizeAsync(recoveryStatus, tailPage: p + 1, trimPageReadCount--, cancellationToken).ConfigureAwait(false);
                         if (freedPage != NoPageFreed)
                             lastFreedPage = freedPage;
                     }
@@ -1038,6 +1038,10 @@ namespace Tsavorite.core
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage,
                 out long endPage, out long snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
 
+            // Notify application of checkpoint token before processing snapshot records
+            if (storeFunctions.CallOnDiskRead)
+                storeFunctions.OnRecovery(guid);
+
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
                 var (_, freedPage) = ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page);
@@ -1062,7 +1066,7 @@ namespace Tsavorite.core
                         }
 
                         // We make an extra pass to clear locks when reading pages back into memory
-                        ClearBitsOnPage(p, untilAddress, options);
+                        ClearBitsOnPage(p, untilAddress, options, snapshotFromAddress: scanFromAddress);
                     }
                     else
                     {
@@ -1105,6 +1109,10 @@ namespace Tsavorite.core
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage,
                 out long endPage, out long snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
 
+            // Notify application of checkpoint token before processing snapshot records
+            if (storeFunctions.CallOnDiskRead)
+                storeFunctions.OnRecovery(guid);
+
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
                 var (_, freedPage) = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
@@ -1129,7 +1137,7 @@ namespace Tsavorite.core
                         }
 
                         // We make an extra pass to clear locks when reading pages back into memory
-                        ClearBitsOnPage(p, untilAddress, options);
+                        ClearBitsOnPage(p, untilAddress, options, snapshotFromAddress: scanFromAddress);
                     }
                     else
                     {
@@ -1266,7 +1274,12 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
-        private void ClearBitsOnPage(long page, long untilAddress, RecoveryOptions options)
+        /// <param name="page">The page number to process</param>
+        /// <param name="untilAddress">The last address to process on this page</param>
+        /// <param name="options">Recovery options (headAddress determines if page is in-memory)</param>
+        /// <param name="snapshotFromAddress">If > 0, records at or above this address will get OnRecoverySnapshotRead.
+        /// Records below this address are main-log records that happened to share the boundary page with the snapshot.</param>
+        private void ClearBitsOnPage(long page, long untilAddress, RecoveryOptions options, long snapshotFromAddress = 0)
         {
             var startLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page);
             var endLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
@@ -1284,6 +1297,22 @@ namespace Tsavorite.core
             {
                 var logRecord = new LogRecord(physicalAddress + recordOffset);
                 logRecord.InfoRef.ClearBitsForDiskImages();
+                if (storeFunctions.CallOnDiskRead)
+                {
+                    var recordLogicalAddress = startLogicalAddress + recordOffset;
+
+                    // On the snapshot path, skip records below snapshotFromAddress —
+                    // they are main-log records on the boundary page that were already
+                    // processed (with OnDiskRead) in the main-log recovery pass.
+                    if (snapshotFromAddress == 0 || recordLogicalAddress >= snapshotFromAddress)
+                    {
+                        storeFunctions.OnDiskRead(ref logRecord);
+
+                        // OnRecoverySnapshotRead fires only for snapshot-file records.
+                        if (snapshotFromAddress > 0)
+                            storeFunctions.OnRecoverySnapshotRead(ref logRecord);
+                    }
+                }
 
                 long recordSize = logRecord.AllocatedSize;
                 Debug.Assert(recordSize > 0 && recordSize <= endOffset - recordOffset,

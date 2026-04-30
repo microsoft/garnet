@@ -114,13 +114,13 @@ namespace Garnet.cluster
         /// <param name="command">Subcommand to execute.</param>
         /// <param name="invalidParameters">True if number of parameters is invalid</param>
         /// <returns>True if command is fully processed, false if more processing is needed.</returns>
-        private void ProcessClusterCommands(RespCommand command, out bool invalidParameters)
+        private void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, out bool invalidParameters)
         {
             _ = command switch
             {
                 RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
-                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(out invalidParameters),
+                RespCommand.CLUSTER_ADVANCE_TIME => NetworkClusterAdvanceTime(out invalidParameters),
                 RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
                 RespCommand.CLUSTER_ATTACH_SYNC => NetworkClusterAttachSync(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
@@ -152,6 +152,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_PUBLISH or RespCommand.CLUSTER_SPUBLISH => NetworkClusterPublish(out invalidParameters),
                 RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(out invalidParameters),
                 RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(out invalidParameters),
+                RespCommand.CLUSTER_RESERVE => NetworkClusterReserve(vectorManager, out invalidParameters),
                 RespCommand.CLUSTER_RESET => NetworkClusterReset(out invalidParameters),
                 RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(out invalidParameters),
                 RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(out invalidParameters),
@@ -161,6 +162,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
+                RespCommand.CLUSTER_MLOG_KEY_TIME => NetworkClusterMlogKeyTime(out invalidParameters),
                 RespCommand.CLUSTER_SYNC => NetworkClusterSync(out invalidParameters),
                 _ => throw new Exception($"Unexpected cluster subcommand: {command}")
             };

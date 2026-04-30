@@ -91,7 +91,6 @@ namespace Garnet.common
         /// <inheritdoc/>
         public override readonly string ToString() => SpanByte.ToShortString(KeyBytes);
 
-
         /// <summary>
         /// Convert a pinned and "fixed" (data will be unchanged and unmoving until after any async ops complete) <see cref="ReadOnlySpan{Byte}"/> to a <see cref="FixedSpanByteKey"/>.
         /// </summary>

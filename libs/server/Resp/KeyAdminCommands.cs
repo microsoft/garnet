@@ -111,6 +111,8 @@ namespace Garnet.server
 
             var status = storageApi.SET_Conditional(key, ref input);
 
+            scratchBufferBuilder.RewindScratchBuffer(valArgSlice);
+
             if (status is GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -139,7 +141,7 @@ namespace Garnet.server
 
             var status = storageApi.GET(key, out PinnedSpanByte value);
 
-            if (status is GarnetStatus.NOTFOUND)
+            if (status is GarnetStatus.NOTFOUND or GarnetStatus.WRONGTYPE)
             {
                 WriteNull();
                 return true;
@@ -224,22 +226,13 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
+            if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
 
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
-
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice, withEtag);
+            var status = storageApi.RENAME(oldKeySlice, newKeySlice);
 
             switch (status)
             {
@@ -261,22 +254,13 @@ namespace Garnet.server
         private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
+            if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
 
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
-
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result, withEtag);
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
 
             if (status == GarnetStatus.OK)
             {

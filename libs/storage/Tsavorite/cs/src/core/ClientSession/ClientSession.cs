@@ -34,6 +34,8 @@ namespace Tsavorite.core
         readonly TransactionalUnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
         readonly TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
+        readonly ConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
+        readonly TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tcrContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -88,12 +90,25 @@ namespace Tsavorite.core
             TsavoriteKV<TStoreFunctions, TAllocator> store,
             TsavoriteKV<TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TFunctions functions,
+            bool enableConsistentRead = false,
             ILoggerFactory loggerFactory = null)
         {
-            bContext = new(this);
-            uContext = new(this);
-            lContext = new(this);
-            luContext = new(this);
+            if (enableConsistentRead)
+            {
+                crContext = new(this);
+                tcrContext = new(this);
+                bContext = crContext.BasicContext;
+                uContext = new(this);
+                lContext = tcrContext.TransactionalContext;
+                luContext = new(this);
+            }
+            else
+            {
+                bContext = new(this);
+                uContext = new(this);
+                lContext = new(this);
+                luContext = new(this);
+            }
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -111,6 +126,23 @@ namespace Tsavorite.core
         /// Current version number of the session
         /// </summary>
         public long Version => ctx.version;
+
+        /// <summary>
+        /// The current head address of the underlying store's main log. Reads the live value, so it
+        /// reflects any updates from log eviction or page advancement. Callers that compare snapshots
+        /// (e.g. before vs. after a pending I/O completion) should hold epoch protection so that the
+        /// addresses they read remain meaningful.
+        /// </summary>
+        public long HeadAddress => store.Log.HeadAddress;
+
+        /// <summary>
+        /// The current head address of the underlying store's read cache, or 0 if the read cache is
+        /// not configured. Reads the live value. Callers that capture pointers into records returned
+        /// by <c>Read</c> must check this in addition to <see cref="HeadAddress"/>: a synchronously
+        /// returned pointer can live in the read cache (when the record was cached on a prior disk
+        /// read), and that page can be evicted independently of the main log.
+        /// </summary>
+        public long ReadCacheHeadAddress => store.ReadCache?.HeadAddress ?? 0;
 
         /// <summary>
         /// Dispose session
@@ -144,6 +176,16 @@ namespace Tsavorite.core
         /// Return a session wrapper struct that passes through to client session
         /// </summary>
         public BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
+
+        /// <summary>
+        /// Return the consistent read context;
+        /// </summary>
+        public ConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> ConsistentReadContext => crContext;
+
+        /// <summary>
+        /// Return the transactional consistent read context
+        /// </summary>
+        public TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalConsistentReadContext => tcrContext;
 
         #region ITsavoriteContext
 

@@ -82,6 +82,15 @@ namespace Garnet.server
         SUNION,
         TTL,
         TYPE,
+        VCARD,
+        VDIM,
+        VEMB,
+        VGETATTR,
+        VINFO,
+        VISMEMBER,
+        VLINKS,
+        VRANDMEMBER,
+        VSIM,
         WATCH,
         WATCHMS,
         WATCHOS,
@@ -108,6 +117,14 @@ namespace Garnet.server
         ZSCAN,
         ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
         ZUNION,
+
+        // Read-only RangeIndex commands
+        RICONFIG,
+        RIEXISTS,
+        RIGET,
+        RIMETRICS,
+        RIRANGE,
+        RISCAN,
 
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
@@ -170,6 +187,11 @@ namespace Garnet.server
         PFMERGE,
         PSETEX,
         RENAME,
+        RICREATE,
+        RIDEL,
+        RIPROMOTE,
+        RIRESTORE,
+        RISET,
         RESTORE,
         RENAMENX,
         RPOP,
@@ -186,6 +208,7 @@ namespace Garnet.server
         SETNX,
         SETIFMATCH,
         SETIFGREATER,
+        SETWITHETAG,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -196,6 +219,9 @@ namespace Garnet.server
         SUNIONSTORE,
         SWAPDB,
         UNLINK,
+        VADD,
+        VREM,
+        VSETATTR,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -342,7 +368,7 @@ namespace Garnet.server
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,
-        CLUSTER_AOFSYNC,
+        CLUSTER_ADVANCE_TIME,
         CLUSTER_APPENDLOG,
         CLUSTER_ATTACH_SYNC,
         CLUSTER_BANLIST,
@@ -367,6 +393,7 @@ namespace Garnet.server
         CLUSTER_KEYSLOT,
         CLUSTER_MEET,
         CLUSTER_MIGRATE,
+        CLUSTER_MLOG_KEY_TIME,
         CLUSTER_MTASKS,
         CLUSTER_MYID,
         CLUSTER_MYPARENTID,
@@ -375,6 +402,7 @@ namespace Garnet.server
         CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,
         CLUSTER_REPLICATE,
+        CLUSTER_RESERVE,
         CLUSTER_RESET,
         CLUSTER_SEND_CKPT_FILE_SEGMENT,
         CLUSTER_SEND_CKPT_METADATA,
@@ -556,6 +584,36 @@ namespace Garnet.server
         public static bool IsReadOnly(this RespCommand cmd)
             => cmd <= LastReadCommand;
 
+        /// <summary>
+        /// Returns true if this command can legally operate on a RangeIndex key.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsLegalOnRangeIndex(this RespCommand cmd)
+            => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE
+               or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX
+               or RespCommand.RICREATE or RespCommand.RIPROMOTE or RespCommand.RIRESTORE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL
+               or RespCommand.RISCAN or RespCommand.RIRANGE
+               or RespCommand.RIEXISTS or RespCommand.RICONFIG or RespCommand.RIMETRICS;
+
+        /// <summary>
+        /// Returns true if this command is a RangeIndex-specific command (not a generic command that happens to be legal on RI keys).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsRangeIndexCommand(this RespCommand cmd)
+            => cmd is RespCommand.RICREATE or RespCommand.RISET or RespCommand.RIGET or RespCommand.RIDEL
+               or RespCommand.RISCAN or RespCommand.RIRANGE
+               or RespCommand.RIPROMOTE or RespCommand.RIRESTORE
+               or RespCommand.RIEXISTS or RespCommand.RICONFIG or RespCommand.RIMETRICS;
+
+        /// <summary>
+        /// Returns true if this command is a VectorSet-specific command (not a generic command that happens to be legal on Vector keys).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsVectorSetCommand(this RespCommand cmd)
+            => cmd is RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB
+               or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS
+               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+
         public static bool IsDataCommand(this RespCommand cmd)
         {
             return cmd switch
@@ -628,6 +686,12 @@ namespace Garnet.server
             bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
+
+        /// <summary>
+        /// Returns true if this command can operate on a Vector Set.
+        /// </summary>
+        public static bool IsLegalOnVectorSet(this RespCommand cmd)
+        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
     }
 
     /// <summary>

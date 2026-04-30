@@ -38,10 +38,15 @@ namespace Tsavorite.core
         CANCELED = StatusCode.Canceled,
 
         /// <summary>
+        /// Operation was rejected because the record has a different type than expected.
+        /// </summary>
+        WRONG_TYPE = StatusCode.WrongType,
+
+        /// <summary>
         /// The maximum range that directly maps to the <see cref="StatusCode"/> enumeration; the operation completed. 
         /// This is an internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
         /// </summary>
-        MAX_MAP_TO_COMPLETED_STATUSCODE = CANCELED,
+        MAX_MAP_TO_COMPLETED_STATUSCODE = WRONG_TYPE,
 
         // Not-completed Status codes
 

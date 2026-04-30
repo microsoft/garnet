@@ -444,7 +444,7 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
 
             var expectedResponse = ":1\r\n";
-            var response = lightClientRequest.SendCommand("SET key1 value1 WITHETAG");
+            var response = lightClientRequest.SendCommand("SETWITHETAG key1 value1");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             expectedResponse = "+OK\r\n";
@@ -464,7 +464,7 @@ namespace Garnet.test
             await Task.Run(() =>
             {
                 using var lightClientRequestCopy = TestUtils.CreateRequest();
-                string command = "SET key1 value1_updated WITHETAG";
+                string command = "SETWITHETAG key1 value1_updated";
                 lightClientRequestCopy.SendCommand(command);
             }).ConfigureAwait(false);
 
@@ -478,11 +478,11 @@ namespace Garnet.test
             lightClientRequest.SendCommand("GET key1");
             lightClientRequest.SendCommand("SET key2 value2");
             // check that all the etag commands can be called inside a transaction
-            lightClientRequest.SendCommand("SET key3 value2 WITHETAG");
+            lightClientRequest.SendCommand("SETWITHETAG key3 value2");
             lightClientRequest.SendCommand("GETWITHETAG key3");
             lightClientRequest.SendCommand("GETIFNOTMATCH key3 1");
             lightClientRequest.SendCommand("SETIFMATCH key3 anotherVal 1");
-            lightClientRequest.SendCommand("SET key3 arandomval WITHETAG");
+            lightClientRequest.SendCommand("SETWITHETAG key3 arandomval");
 
             response = lightClientRequest.SendCommand("EXEC");
 
@@ -585,6 +585,46 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand(command);
 
             var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void WatchFailsWhenListEmptiedByLPop()
+        {
+            // WATCH a list key, then LPOP all elements on the same connection.
+            // The LPOP that empties the list should increment the watch version,
+            // causing the subsequent EXEC to fail.
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var key = "watchlist";
+
+            // Create a single-element list
+            var response = lightClientRequest.SendCommand($"LPUSH {key} value1");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // WATCH the list key
+            response = lightClientRequest.SendCommand($"WATCH {key}");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // LPOP the only element (empties and deletes the list) — same connection, before MULTI
+            response = lightClientRequest.SendCommand($"LPOP {key}");
+            expectedResponse = "$6\r\nvalue1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Start a transaction
+            response = lightClientRequest.SendCommand("MULTI");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Queue a command
+            response = lightClientRequest.SendCommand($"LPUSH {key} value2");
+            expectedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // EXEC should fail because the watched key was modified by LPOP
+            response = lightClientRequest.SendCommand("EXEC");
+            expectedResponse = "*-1";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }

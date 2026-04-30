@@ -616,12 +616,53 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public int GetScratchBufferOffset()
-            => garnetApi.GetScratchBufferOffset();
+        public void ResetScratchBuffer()
+            => garnetApi.ResetScratchBuffer();
 
-        /// <inheritdoc />
-        public bool ResetScratchBuffer(int offset)
-            => garnetApi.ResetScratchBuffer(offset);
+        #endregion
+
+        #region Vector Sets
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetValueSimilarity(key, valueType, value, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result, ref filterBitmap);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, PinnedSpanByte element, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result, ref filterBitmap);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetDimensions(key, out dimensions);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes);
+        }
 
         #endregion
     }

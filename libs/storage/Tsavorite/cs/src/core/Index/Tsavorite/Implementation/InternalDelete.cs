@@ -50,12 +50,9 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var latchOperation = LatchOperation.None;
-
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
-            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -71,7 +68,8 @@ namespace Tsavorite.core
                 SessionID = sessionFunctions.Ctx.sessionID
             };
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
+            // We must use try/finally to ensure unlocking even in the presence of exceptions. The inner try/finally ensures
+            // the ephemeral X-lock on the hash bucket is released even if a Post*Operation callback (e.g. AOF append) throws.
             try
             {
                 // Search the entire in-memory region; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
@@ -93,11 +91,11 @@ namespace Tsavorite.core
                 // Check for CPR consistency after checking if source is readcache.
                 if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
-                            goto LatchRelease;
+                            goto Done;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcLogRecord = stackCtx.recSrc.CreateLogRecord();
@@ -113,7 +111,6 @@ namespace Tsavorite.core
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
 
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                    pendingContext.eTag = srcLogRecord.ETag;
 
                     // If we already have a deleted record, there's nothing to do.
                     if (srcLogRecord.Info.Tombstone)
@@ -124,23 +121,27 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
+                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
+                        OnDispose(ref srcLogRecord, DisposeReason.Deleted);
+
+                        srcLogRecord.InfoRef.SetTombstone();
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
-                        else
-                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     if (deleteInfo.Action == DeleteAction.CancelOperation)
                     {
                         status = OperationStatus.CANCELED;
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     // Could not delete in place for some reason - create new record.
@@ -164,36 +165,29 @@ namespace Tsavorite.core
 
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                goto LatchRelease;
+                goto Done;
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                sessionFunctions.PostDeleteOperation(key, ref deleteInfo, epoch);
-                EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
-            }
-
-        LatchRelease:
-            {
-                switch (latchOperation)
+                try
                 {
-                    case LatchOperation.Shared:
-                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                        break;
-                    case LatchOperation.Exclusive:
-                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
-                        break;
-                    default:
-                        break;
+                    sessionFunctions.PostDeleteOperation(key, ref deleteInfo, epoch);
+                }
+                finally
+                {
+                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
             }
+
+        Done:
             return status;
         }
 
-        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
         {
             // This is the same logic as Upsert; neither goes pending.
-            return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status, ref latchOperation);
+            return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status);
         }
 
         /// <summary>
@@ -239,7 +233,7 @@ namespace Tsavorite.core
                 // but we may want it for a later Delete, or for insert with a smaller Key.
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
-                    DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
+                    OnDispose(ref newLogRecord, DisposeReason.InsertAbandoned);
 
                 if (deleteInfo.Action == DeleteAction.CancelOperation)
                     return OperationStatus.CANCELED;
@@ -252,6 +246,10 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // Track key overflow internally — session functions only track value heap.
+                if (newLogRecord.Info.KeyIsOverflow)
+                    hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
+
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
@@ -260,17 +258,20 @@ namespace Tsavorite.core
 
                 // Success should always Seal the old record. This may be readcache or readonly, which is OK.
                 if (stackCtx.recSrc.HasMainLogSrc)
+                {
+                    // Immediately dispose all resources on the source record before sealing.
+                    OnDispose(ref srcLogRecord, DisposeReason.Deleted);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
+                }
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
-                pendingContext.eTag = newLogRecord.ETag;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
+            OnDispose(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

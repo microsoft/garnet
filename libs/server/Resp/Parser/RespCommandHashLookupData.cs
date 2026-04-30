@@ -54,6 +54,7 @@ namespace Garnet.server
             Add("GETIFNOTMATCH", RespCommand.GETIFNOTMATCH);
             Add("SETIFMATCH", RespCommand.SETIFMATCH);
             Add("SETIFGREATER", RespCommand.SETIFGREATER);
+            Add("SETWITHETAG", RespCommand.SETWITHETAG);
             Add("DELIFGREATER", RespCommand.DELIFGREATER);
             Add("LCS", RespCommand.LCS);
 
@@ -209,6 +210,31 @@ namespace Garnet.server
             Add("ZPERSIST", RespCommand.ZPERSIST);
             Add("ZCOLLECT", RespCommand.ZCOLLECT);
 
+            // Vector Set commands
+            Add("VADD", RespCommand.VADD);
+            Add("VCARD", RespCommand.VCARD);
+            Add("VDIM", RespCommand.VDIM);
+            Add("VEMB", RespCommand.VEMB);
+            Add("VGETATTR", RespCommand.VGETATTR);
+            Add("VINFO", RespCommand.VINFO);
+            Add("VISMEMBER", RespCommand.VISMEMBER);
+            Add("VLINKS", RespCommand.VLINKS);
+            Add("VRANDMEMBER", RespCommand.VRANDMEMBER);
+            Add("VREM", RespCommand.VREM);
+            Add("VSETATTR", RespCommand.VSETATTR);
+            Add("VSIM", RespCommand.VSIM);
+
+            // Range Index commands (dot-prefixed wire names)
+            Add("RI.CREATE", RespCommand.RICREATE);
+            Add("RI.SET", RespCommand.RISET);
+            Add("RI.GET", RespCommand.RIGET);
+            Add("RI.DEL", RespCommand.RIDEL);
+            Add("RI.RANGE", RespCommand.RIRANGE);
+            Add("RI.SCAN", RespCommand.RISCAN);
+            Add("RI.EXISTS", RespCommand.RIEXISTS);
+            Add("RI.CONFIG", RespCommand.RICONFIG);
+            Add("RI.METRICS", RespCommand.RIMETRICS);
+
             // Geo commands
             Add("GEOADD", RespCommand.GEOADD);
             Add("GEOPOS", RespCommand.GEOPOS);
@@ -297,7 +323,7 @@ namespace Garnet.server
         [
             ("ADDSLOTS", RespCommand.CLUSTER_ADDSLOTS),
             ("ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
-            ("AOFSYNC", RespCommand.CLUSTER_AOFSYNC),
+            ("ADVANCE_TIME", RespCommand.CLUSTER_ADVANCE_TIME),
             ("APPENDLOG", RespCommand.CLUSTER_APPENDLOG),
             ("ATTACH_SYNC", RespCommand.CLUSTER_ATTACH_SYNC),
             ("BANLIST", RespCommand.CLUSTER_BANLIST),
@@ -322,6 +348,7 @@ namespace Garnet.server
             ("KEYSLOT", RespCommand.CLUSTER_KEYSLOT),
             ("MEET", RespCommand.CLUSTER_MEET),
             ("MIGRATE", RespCommand.CLUSTER_MIGRATE),
+            ("MLOG_KEY_TIME", RespCommand.CLUSTER_MLOG_KEY_TIME),
             ("MTASKS", RespCommand.CLUSTER_MTASKS),
             ("MYID", RespCommand.CLUSTER_MYID),
             ("MYPARENTID", RespCommand.CLUSTER_MYPARENTID),
@@ -330,6 +357,7 @@ namespace Garnet.server
             ("SPUBLISH", RespCommand.CLUSTER_SPUBLISH),
             ("REPLICAS", RespCommand.CLUSTER_REPLICAS),
             ("REPLICATE", RespCommand.CLUSTER_REPLICATE),
+            ("RESERVE", RespCommand.CLUSTER_RESERVE),
             ("RESET", RespCommand.CLUSTER_RESET),
             ("SEND_CKPT_FILE_SEGMENT", RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT),
             ("SEND_CKPT_METADATA", RespCommand.CLUSTER_SEND_CKPT_METADATA),

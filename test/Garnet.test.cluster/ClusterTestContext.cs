@@ -10,6 +10,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ namespace Garnet.test.cluster
         public EndPointCollection endpoints;
         public TextWriter logTextWriter = TestContext.Progress;
         public ILoggerFactory loggerFactory;
+        public NUnitLoggerProvider loggerProvider;
         public ILogger logger;
 
         public int defaultShards = 3;
@@ -44,6 +46,12 @@ namespace Garnet.test.cluster
 
         public CancellationTokenSource cts;
 
+        public void EnableGarnetLoggingEvents(GarnetTestLoggingEventType[] events)
+        {
+            foreach (var e in events)
+                loggerProvider.GarnetTestLoggingEvents[(int)e] = true;
+        }
+
         public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
@@ -52,7 +60,7 @@ namespace Garnet.test.cluster
             var logLevel = LogLevel.Error;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
                 logLevel = value;
-            loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
+            (loggerFactory, loggerProvider) = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
             logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.FullName);
             logger.LogDebug("0. Setup >>>>>>>>>>>>");
             r = new Random(674386);
@@ -118,7 +126,6 @@ namespace Garnet.test.cluster
             nodes[nodeIndex].Start();
         }
 
-
         public void TearDown()
         {
             // Capture test outcome before any teardown work to distinguish
@@ -139,7 +146,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
 
-            var timeoutSeconds = 30;
+            var timeoutSeconds = 60;
             string failureReason = null;
 
             // Phase 1: Dispose cluster nodes (may timeout if handlers are stuck)
@@ -233,6 +240,7 @@ namespace Garnet.test.cluster
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
         /// <param name="deviceType"></param>
+        /// <param name="sublogCount"></param>
         /// <param name="clusterReplicationReestablishmentTimeout"></param>
         /// <param name="aofSizeLimit"></param>
         /// <param name="compactionFrequencySecs"></param>
@@ -245,6 +253,8 @@ namespace Garnet.test.cluster
         /// <param name="expiredObjectCollectionFrequencySecs"></param>
         /// <param name="clusterPreferredEndpointType"></param>
         /// <param name="useClusterAnnounceHostname"></param>
+        /// <param name="vectorSetReplayTaskCount"></param>
+        /// <param name="threadPoolMinIOCompletionThreads"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -291,9 +301,13 @@ namespace Garnet.test.cluster
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            bool useClusterAnnounceHostname = false)
+            bool useClusterAnnounceHostname = false,
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -348,9 +362,13 @@ namespace Garnet.test.cluster
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                 replicaSyncTimeout: replicaSyncTimeout,
+                sublogCount: sublogCount,
+                replayTaskCount: replayTaskCount,
                 expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
-                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
+                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
             foreach (var node in nodes)
                 node.Start();
@@ -364,6 +382,7 @@ namespace Garnet.test.cluster
         /// <param name="endpoint"></param>
         /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
+        /// <param name="disableEpochCollision"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
         /// <param name="lowMemory"></param>
@@ -383,8 +402,12 @@ namespace Garnet.test.cluster
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
         /// <param name="asyncReplay"></param>
-        /// <param name="clusterCreds"></param>
+        /// <param name="sublogCount"></param>
+        /// <param name="vectorSetReplayTaskCount"></param>
+        /// <param name="clusterAnnounceEndpoint"></param>
         /// <param name="certificates"></param>
+        /// <param name="clusterCreds"></param>
+        /// <param name="threadPoolMinIOCompletionThreads"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
@@ -410,15 +433,19 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            int sublogCount = 1,
+            int vectorSetReplayTaskCount = 0,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
-            ServerCredential clusterCreds = new ServerCredential())
+            ServerCredential clusterCreds = new ServerCredential(),
+            int threadPoolMinIOCompletionThreads = 0)
         {
 
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
                 TestFolder,
                 endpoint,
+                logger: loggerFactory?.CreateLogger("GarnetServer"),
                 enableCluster: enableCluster,
                 disablePubSub: true,
                 disableObjects: disableObjects,
@@ -441,11 +468,14 @@ namespace Garnet.test.cluster
                 fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
+                sublogCount: sublogCount,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
                 certificates: certificates,
-                clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
             return new GarnetServer(opts, loggerFactory);
         }
@@ -457,17 +487,17 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                _ = Parallel.For(0, nodes.Length, i =>
+                for (var i = 0; i < nodes.Length; i++)
                 {
                     if (nodes[i] != null)
                     {
-                        logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
                         var node = nodes[i];
                         nodes[i] = null;
                         node.Dispose(true);
-                        logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
                     }
-                });
+                }
             }
         }
 
@@ -567,14 +597,14 @@ namespace Garnet.test.cluster
             //Populate Primary
             if (disableObjects)
             {
-                PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+                if (!performRMW)
+                    PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+                else
+                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
             }
             else
             {
-                if (!performRMW)
-                    PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
-                else
-                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
+                PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
             }
         }
 
@@ -769,31 +799,31 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
+        public void AttachAndWaitForSync(int primaryIndex, int replicaStartIndex, int replicaCount, bool disableObjects)
         {
-            var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
+            var primaryId = clusterTestUtils.GetNodeIdFromNode(primaryIndex, logger);
 
             // Wait until primary node is known so as not to fail replicate
-            for (var i = primary_count; i < primary_count + replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
                 clusterTestUtils.WaitUntilNodeIdIsKnown(i, primaryId, logger: logger);
 
             // Issue cluster replicate and bump epoch manually to capture config.
-            for (var i = primary_count; i < primary_count + replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
                 _ = clusterTestUtils.ClusterReplicate(i, primaryId, async: true, logger: logger);
 
             if (!checkpointTask.Wait(TimeSpan.FromSeconds(100))) Assert.Fail("Checkpoint task timeout");
 
             // Wait for recovery and AofSync
-            for (var i = primary_count; i < replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
             {
                 clusterTestUtils.WaitForReplicaRecovery(i, logger);
-                clusterTestUtils.WaitForReplicaAofSync(0, i, logger);
+                clusterTestUtils.WaitForReplicaAofSync(primaryIndex, i, logger);
             }
 
-            clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, logger: logger);
+            clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, replicaCount, logger: logger);
 
             // Validate data on replicas
-            for (var i = primary_count; i < replica_count; i++)
+            for (var i = replicaStartIndex; i < replicaStartIndex + replicaCount; i++)
             {
                 if (disableObjects)
                     ValidateKVCollectionAgainstReplica(ref kvPairs, i);

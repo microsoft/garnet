@@ -1135,5 +1135,200 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("test", options.ClusterAnnounceHostname);
             }
         }
+
+        [Test]
+        public void RevivificationFlagOrderingIndependence()
+        {
+            // Specifying --reviv alongside explicit bin sizes and counts should work
+            // regardless of argument ordering, because the explicit bins override the
+            // power-of-2 default from --reviv (as documented in --reviv help text).
+            string[][] argOrderings =
+            [
+                ["--reviv", "--reviv-bin-record-sizes", "64,128,256", "--reviv-bin-record-counts", "100,200,300"],
+                ["--reviv-bin-record-sizes", "64,128,256", "--reviv-bin-record-counts", "100,200,300", "--reviv"],
+                ["--reviv-bin-record-sizes", "64,128,256", "--reviv", "--reviv-bin-record-counts", "100,200,300"],
+                ["--reviv-bin-record-counts", "100,200,300", "--reviv", "--reviv-bin-record-sizes", "64,128,256"],
+                ["--reviv-bin-record-counts", "100,200,300", "--reviv-bin-record-sizes", "64,128,256", "--reviv"],
+            ];
+
+            foreach (var args in argOrderings)
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"Parse failed for args: {string.Join(" ", args)}");
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.UseRevivBinsPowerOf2, $"UseRevivBinsPowerOf2 should be false for args: {string.Join(" ", args)}");
+                CollectionAssert.AreEqual(new[] { 64, 128, 256 }, serverOptions.RevivBinRecordSizes, $"RevivBinRecordSizes mismatch for args: {string.Join(" ", args)}");
+                CollectionAssert.AreEqual(new[] { 100, 200, 300 }, serverOptions.RevivBinRecordCounts, $"RevivBinRecordCounts mismatch for args: {string.Join(" ", args)}");
+            }
+
+            // --reviv with only sizes (no counts) should also work in any order
+            string[][] sizesOnlyOrderings =
+            [
+                ["--reviv", "--reviv-bin-record-sizes", "64,128"],
+                ["--reviv-bin-record-sizes", "64,128", "--reviv"],
+            ];
+
+            foreach (var args in sizesOnlyOrderings)
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"Parse failed for args: {string.Join(" ", args)}");
+
+                var serverOptions = options.GetServerOptions();
+                ClassicAssert.IsFalse(serverOptions.UseRevivBinsPowerOf2, $"UseRevivBinsPowerOf2 should be false for args: {string.Join(" ", args)}");
+                CollectionAssert.AreEqual(new[] { 64, 128 }, serverOptions.RevivBinRecordSizes, $"RevivBinRecordSizes mismatch for args: {string.Join(" ", args)}");
+            }
+
+            // --reviv with only counts (no sizes) should still fail regardless of order
+            string[][] countsOnlyOrderings =
+            [
+                ["--reviv", "--reviv-bin-record-counts", "100,200"],
+                ["--reviv-bin-record-counts", "100,200", "--reviv"],
+            ];
+
+            foreach (var args in countsOnlyOrderings)
+            {
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful, $"Parse failed for args: {string.Join(" ", args)}");
+
+                Assert.Throws<Exception>(() => options.GetServerOptions(), $"Should throw for args: {string.Join(" ", args)}");
+            }
+        }
+
+        [Test]
+        public void EnableVectorSetPreview()
+        {
+            // Command line args
+            {
+                // Default accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                }
+
+                // Switch is accepted
+                {
+                    var args = new[] { "--enable-vector-set-preview" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                }
+            }
+
+            // JSON args
+            {
+                // Default accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                }
+
+                // False is accepted
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                }
+
+                // True is accepted
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void MinimumPageSizeWithVectorSetPreview()
+        {
+            // Command line args
+            {
+                // Allow exactly minimum
+                {
+                    var args = new[] { "--enable-vector-set-preview", "--page", "16k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("16k", options.PageSize);
+                }
+
+                // Allow lower than minimum if preview not enabled
+                {
+                    var args = new[] { "--page", "1k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("1k", options.PageSize);
+                }
+
+                // Reject too small
+                {
+                    var args = new[] { "--enable-vector-set-preview", "--page", "4k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // Allow exactly minimum
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""16k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("16k", options.PageSize);
+                }
+
+                // Allow lower than minimum if preview not enabled
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": false, ""PageSize"": ""1k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("1k", options.PageSize);
+                }
+
+                // Reject too small
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""4k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void AofSizeLimitWithoutAofEnabled()
+        {
+            // Setting --aof-size-limit without --aof should throw
+            var args = new[] { "--aof-size-limit", "64m" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            var ex = Assert.Throws<GarnetException>(() => options.GetServerOptions());
+            ClassicAssert.IsTrue(ex.Message.Contains("AofSizeLimit"));
+
+            // Setting --aof-size-limit with --aof enabled should succeed
+            args = ["--aof", "--aof-size-limit", "64m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+        }
     }
 }

@@ -92,10 +92,11 @@ namespace Garnet.server
 
             if (status.Found)
                 return GarnetStatus.OK;
+            else if (status.IsWrongType)
+                return GarnetStatus.WRONGTYPE;
             else
                 return GarnetStatus.NOTFOUND;
         }
-
 
         public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
             where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>

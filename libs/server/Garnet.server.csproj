@@ -13,6 +13,7 @@
     <ProjectReference Include="..\client\Garnet.client.csproj" />
     <ProjectReference Include="..\common\Garnet.common.csproj" />
     <ProjectReference Include="..\resources\Garnet.resources.csproj" />
+    <ProjectReference Include="..\..\libs\native\bftree-garnet\BfTreeInterop.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +23,8 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="System.Numerics.Tensors" />
     <PackageReference Include="KeraLua" />
+		<PackageReference Include="diskann-garnet" />
+		<PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" PrivateAssets="all" IncludeAssets="analyzers"/>
   </ItemGroup>
 
 	<!-- Define compilation symbol for server project -->

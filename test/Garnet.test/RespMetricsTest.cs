@@ -33,7 +33,7 @@ namespace Garnet.test
             server = null;
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            loggerFactory = TestUtils.CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Error);
+            (loggerFactory, _) = TestUtils.CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Error);
         }
 
         [TearDown]

@@ -138,10 +138,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.OnDisposeDiskRecord(ref logRecord, disposeReason);
+
+        /// <inheritdoc/>
+        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) { }
     }
 }

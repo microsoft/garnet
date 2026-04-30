@@ -63,7 +63,6 @@ namespace Tsavorite.core
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
-            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -90,7 +89,6 @@ namespace Tsavorite.core
                         readInfo.Address = kInvalidAddress;     // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-                        pendingContext.eTag = srcLogRecord.ETag;
                         return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
                             ? OperationStatus.SUCCESS
                             : CheckFalseActionStatus(ref readInfo);
@@ -114,7 +112,6 @@ namespace Tsavorite.core
                 {
                     // Mutable region (even fuzzy region is included here)
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-                    pendingContext.eTag = srcLogRecord.ETag;
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
@@ -131,7 +128,6 @@ namespace Tsavorite.core
                 {
                     // Immutable region
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-                    pendingContext.eTag = srcLogRecord.ETag;
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 

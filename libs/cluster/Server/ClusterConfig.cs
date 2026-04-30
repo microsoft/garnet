@@ -549,7 +549,12 @@ namespace Garnet.cluster
             _ = nodeInfoStringBuilder
                 .Append(workers[workerId].Nodeid).Append(' ')
                 .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
-                .Append('@').Append(workers[workerId].Port + 10000).Append(',').Append(workers[workerId].hostname).Append(' ')
+                .Append('@').Append(workers[workerId].Port + 10000);
+
+            if (!string.IsNullOrEmpty(workers[workerId].hostname))
+                nodeInfoStringBuilder.Append(',').Append(workers[workerId].hostname);
+
+            _ = nodeInfoStringBuilder.Append(' ')
                 .Append(workerId == 1 ? "myself," : "")
                 .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(' ')
                 .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : '-').Append(' ')
@@ -662,73 +667,95 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="clusterConnection"></param>
         /// <returns>RESP formatted string</returns>
-        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection)
+        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection, ClusterPreferredEndpointType preferredEndpointType)
         {
-            var shardsInfo = "";
+            var sb = new StringBuilder();
             var shardCount = 0;
+            var shardsStart = sb.Length;
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY)
                 {
                     var shardRanges = GetShardRanges(i);
                     var replicaWorkerIds = GetWorkerReplicas(i);
-                    shardsInfo += CreateFormattedShardInfo(i, shardRanges, replicaWorkerIds);
+                    AppendFormattedShardInfo(sb, i, shardRanges, replicaWorkerIds);
                     shardCount++;
                 }
             }
-            shardsInfo = $"*{shardCount}\r\n" + shardsInfo;
-            return shardsInfo;
+            sb.Insert(shardsStart, $"*{shardCount}\r\n");
+            return sb.ToString();
 
-            string CreateFormattedShardInfo(int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
+            void AppendFormattedShardInfo(StringBuilder sb, int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
             {
-                var shardInfo = $"*4\r\n";
-                shardInfo += $"$5\r\nslots\r\n";
-                shardInfo += $"*{shardRanges.Count * 2}\r\n";
+                sb.Append("*4\r\n");
+                sb.Append("$5\r\nslots\r\n");
+                sb.Append('*').Append(shardRanges.Count * 2).Append("\r\n");
                 for (var i = 0; i < shardRanges.Count; i++)
                 {
                     var range = shardRanges[i];
-                    shardInfo += $":{range.Item1}\r\n";
-                    shardInfo += $":{range.Item2}\r\n";
+                    sb.Append(':').Append(range.Item1).Append("\r\n");
+                    sb.Append(':').Append(range.Item2).Append("\r\n");
                 }
 
-                shardInfo += $"$5\r\nnodes\r\n";
-                shardInfo += $"*{1 + replicaWorkerIds.Count}\r\n";
+                sb.Append("$5\r\nnodes\r\n");
+                sb.Append('*').Append(1 + replicaWorkerIds.Count).Append("\r\n");
                 if (primaryWorkerId == 1)
-                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, true);
+                    AppendFormattedNodeInfo(sb, primaryWorkerId, true);
                 else
                 {
                     _ = clusterConnection.GetConnectionInfo(workers[primaryWorkerId].Nodeid, out var info);
-                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, info.connected);
+                    AppendFormattedNodeInfo(sb, primaryWorkerId, info.connected);
                 }
                 foreach (var id in replicaWorkerIds)
                 {
                     _ = clusterConnection.GetConnectionInfo(workers[id].Nodeid, out var info);
-                    shardInfo += CreateFormattedNodeInfo(id, info.connected);
+                    AppendFormattedNodeInfo(sb, id, info.connected);
                 }
+            }
 
-                return shardInfo;
+            void AppendFormattedNodeInfo(StringBuilder sb, int workerId, bool connected)
+            {
+                var ip = workers[workerId].Address;
+                var hostname = workers[workerId].hostname;
+                var hasHostname = !string.IsNullOrEmpty(hostname);
+                var role = workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave";
 
-                string CreateFormattedNodeInfo(int workerId, bool connected)
+                var endpoint = preferredEndpointType switch
                 {
-                    var nodeInfo = "*12\r\n";
-                    nodeInfo += "$2\r\nid\r\n";
-                    nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
-                    nodeInfo += "$4\r\nport\r\n";
-                    nodeInfo += $":{workers[workerId].Port}\r\n";
-                    nodeInfo += "$7\r\naddress\r\n";
-                    nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
-                    nodeInfo += "$4\r\nrole\r\n";
-                    nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
-                    nodeInfo += "$18\r\nreplication-offset\r\n";
-                    nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
-                    nodeInfo += "$6\r\nhealth\r\n";
-                    nodeInfo += connected ? "$6\r\nonline\r\n" : "$7\r\noffline\r\n";
-                    return nodeInfo;
+                    ClusterPreferredEndpointType.Hostname => hasHostname ? hostname : "?",
+                    ClusterPreferredEndpointType.Unknown => "?",
+                    _ => ip,
+                };
+
+                // Base fields: id(2) + port(2) + ip(2) + endpoint(2) + role(2) + replication-offset(2) + health(2) = 14
+                // Optional: hostname(2) = +2
+                var fieldCount = hasHostname ? 16 : 14;
+
+                sb.Append('*').Append(fieldCount).Append("\r\n");
+                sb.Append("$2\r\nid\r\n");
+                sb.Append("$40\r\n").Append(workers[workerId].Nodeid).Append("\r\n");
+                sb.Append("$4\r\nport\r\n");
+                sb.Append(':').Append(workers[workerId].Port).Append("\r\n");
+                sb.Append("$2\r\nip\r\n");
+                sb.Append('$').Append(ip.Length).Append("\r\n").Append(ip).Append("\r\n");
+                sb.Append("$8\r\nendpoint\r\n");
+                sb.Append('$').Append(endpoint.Length).Append("\r\n").Append(endpoint).Append("\r\n");
+                if (hasHostname)
+                {
+                    sb.Append("$8\r\nhostname\r\n");
+                    sb.Append('$').Append(hostname.Length).Append("\r\n").Append(hostname).Append("\r\n");
                 }
+                sb.Append("$4\r\nrole\r\n");
+                sb.Append('$').Append(role.Length).Append("\r\n").Append(role).Append("\r\n");
+                sb.Append("$18\r\nreplication-offset\r\n");
+                sb.Append(':').Append(workers[workerId].ReplicationOffset).Append("\r\n");
+                sb.Append("$6\r\nhealth\r\n");
+                sb.Append(connected ? "$6\r\nonline\r\n" : "$7\r\noffline\r\n");
             }
         }
 
-        private string CreateFormattedSlotInfo(
+        private void AppendFormattedSlotInfo(
+            StringBuilder sb,
             int slotStart,
             int slotEnd,
             string ipAddress,
@@ -739,24 +766,23 @@ namespace Garnet.cluster
             ClusterPreferredEndpointType preferredEndpointType)
         {
             int countA = replicaIds.Count == 0 ? 3 : 3 + replicaIds.Count;
-            var rangeInfo = $"*{countA}\r\n";
+            sb.Append('*').Append(countA).Append("\r\n");
 
-            rangeInfo += $":{slotStart}\r\n";
-            rangeInfo += $":{slotEnd}\r\n";
+            sb.Append(':').Append(slotStart).Append("\r\n");
+            sb.Append(':').Append(slotEnd).Append("\r\n");
 
-            rangeInfo += CreateNodeNetworkingInfo(ipAddress, port, nodeid, hostname, preferredEndpointType);
+            AppendNodeNetworkingInfo(sb, ipAddress, port, nodeid, hostname, preferredEndpointType);
 
             foreach (var replicaId in replicaIds)
             {
                 var (replicaIp, replicaPort) = GetWorkerAddressFromNodeId(replicaId);
                 var replicaHostname = GetHostNameFromNodeId(replicaId);
-                rangeInfo += CreateNodeNetworkingInfo(replicaIp, replicaPort, replicaId, replicaHostname, preferredEndpointType);
+                AppendNodeNetworkingInfo(sb, replicaIp, replicaPort, replicaId, replicaHostname, preferredEndpointType);
             }
-
-            return rangeInfo;
         }
 
-        private string CreateNodeNetworkingInfo(
+        private void AppendNodeNetworkingInfo(
+            StringBuilder sb,
             string ipAddress,
             int port,
             string nodeid,
@@ -773,58 +799,59 @@ namespace Garnet.cluster
             //  "ip" is included if preferred endpoint type != Ip
             //  "hostname" is included if preferred endpoint type != Hostname AND hostname is not null or empty
 
-            var sb = new StringBuilder();
             sb.Append("*4\r\n");
             var isNullOrEmptyHostname = string.IsNullOrEmpty(hostname);
 
             switch (preferredEndpointType)
             {
                 case ClusterPreferredEndpointType.Ip:
-                    sb.Append(FormatValueOrNull(ipAddress))
-                        .Append(':').Append(port).Append("\r\n")
+                    AppendValueOrNull(sb, ipAddress);
+                    sb.Append(':').Append(port).Append("\r\n")
                         .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
                         .Append('*').Append(isNullOrEmptyHostname ? 0 : 2).Append("\r\n");
 
                     if (!isNullOrEmptyHostname)
                     {
-                        sb.Append("$8\r\nhostname\r\n")
-                            .Append(FormatValueOrNull(hostname));
+                        sb.Append("$8\r\nhostname\r\n");
+                        AppendValueOrNull(sb, hostname);
                     }
 
-                    return sb.ToString();
+                    break;
                 case ClusterPreferredEndpointType.Hostname:
                     var hostnameForResp = isNullOrEmptyHostname ? "?" : hostname;
 
-                    sb.Append(FormatValueOrNull(hostnameForResp))
-                        .Append(':').Append(port).Append("\r\n")
+                    AppendValueOrNull(sb, hostnameForResp);
+                    sb.Append(':').Append(port).Append("\r\n")
                         .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
                         .Append('*').Append(2).Append("\r\n")
-                        .Append("$2\r\nip\r\n")
-                        .Append(FormatValueOrNull(ipAddress));
+                        .Append("$2\r\nip\r\n");
+                    AppendValueOrNull(sb, ipAddress);
 
-                    return sb.ToString();
+                    break;
                 case ClusterPreferredEndpointType.Unknown:
                 default:
-                    sb.Append(FormatValueOrNull(null))
-                        .Append(':').Append(port).Append("\r\n")
+                    AppendValueOrNull(sb, null);
+                    sb.Append(':').Append(port).Append("\r\n")
                         .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
                         .Append('*').Append(isNullOrEmptyHostname ? 2 : 4).Append("\r\n")
-                        .Append("$2\r\nip\r\n")
-                        .Append(FormatValueOrNull(ipAddress));
+                        .Append("$2\r\nip\r\n");
+                    AppendValueOrNull(sb, ipAddress);
 
                     if (!isNullOrEmptyHostname)
                     {
                         sb.Append("$8\r\nhostname\r\n");
-                        sb.Append(FormatValueOrNull(hostname));
+                        AppendValueOrNull(sb, hostname);
                     }
 
-                    return sb.ToString();
+                    break;
             }
 
-            static string FormatValueOrNull(string value)
+            static void AppendValueOrNull(StringBuilder sb, string value)
             {
-                if (string.IsNullOrEmpty(value)) return CmdStrings.GenericNullValue; // "$-1\r\n"
-                return $"${value.Length}\r\n{value}\r\n";
+                if (string.IsNullOrEmpty(value))
+                    sb.Append(CmdStrings.GenericNullValue); // "$-1\r\n"
+                else
+                    sb.Append('$').Append(value.Length).Append("\r\n").Append(value).Append("\r\n");
             }
         }
 
@@ -841,10 +868,11 @@ namespace Garnet.cluster
         /// <returns>Formatted string.</returns>
         public string GetSlotsInfo(ClusterPreferredEndpointType preferredEndpointType)
         {
-            string completeSlotInfo = "";
+            var sb = new StringBuilder();
             int slotRanges = 0;
             int slotStart;
             int slotEnd;
+            var slotsStart = sb.Length;
 
             for (slotStart = 0; slotStart < slotMap.Length; slotStart++)
             {
@@ -864,14 +892,13 @@ namespace Garnet.cluster
                 var hostname = workers[currSlotWorkerId].hostname;
                 var replicas = GetReplicaIds(nodeid);
                 slotEnd--;
-                completeSlotInfo += CreateFormattedSlotInfo(slotStart, slotEnd, address, port, nodeid, hostname, replicas, preferredEndpointType);
+                AppendFormattedSlotInfo(sb, slotStart, slotEnd, address, port, nodeid, hostname, replicas, preferredEndpointType);
                 slotRanges++;
                 slotStart = slotEnd;
             }
-            completeSlotInfo = $"*{slotRanges}\r\n" + completeSlotInfo;
-            //Console.WriteLine(completeSlotInfo);
+            sb.Insert(slotsStart, $"*{slotRanges}\r\n");
 
-            return completeSlotInfo;
+            return sb.ToString();
         }
 
         /// <summary>
@@ -1149,7 +1176,7 @@ namespace Garnet.cluster
                     // will not be able to claim the slot without outside intervention
                     if (currentOwnerNodeId != null && currentOwnerNodeId.Equals(senderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase))
                     {
-                        logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
+                        // logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
                         newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                         newSlotMap[i]._state = SlotState.OFFLINE;
                     }

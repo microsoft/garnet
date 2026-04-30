@@ -49,17 +49,40 @@ namespace Tsavorite.core
         IObjectSerializer<IHeapObject> BeginDeserializeValue(Stream stream);
         #endregion Value Serializer
 
-        #region Record Disposer
-        /// <summary>
-        /// If true, <see cref="DisposeValueObject(IHeapObject, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
-        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
-        /// do any needed disposal there.
-        /// </summary>
-        bool DisposeOnPageEviction { get; }
+        #region Record Triggers
+        /// <inheritdoc cref="IRecordTriggers.CallOnFlush"/>
+        bool CallOnFlush { get; }
 
-        /// <summary>Dispose the Value of a record, if necessary.</summary>
-        void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
-        #endregion Record Disposer
+        /// <inheritdoc cref="IRecordTriggers.CallOnEvict"/>
+        bool CallOnEvict { get; }
+
+        /// <inheritdoc cref="IRecordTriggers.CallOnDiskRead"/>
+        bool CallOnDiskRead { get; }
+
+        /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
+        void OnDispose(ref LogRecord logRecord, DisposeReason reason);
+
+        /// <inheritdoc cref="IRecordTriggers.OnDisposeDiskRecord"/>
+        void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason);
+
+        /// <inheritdoc cref="IRecordTriggers.OnFlush"/>
+        void OnFlush(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnEvict"/>
+        void OnEvict(ref LogRecord logRecord, EvictionSource source);
+
+        /// <inheritdoc cref="IRecordTriggers.OnDiskRead"/>
+        void OnDiskRead(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnRecovery"/>
+        void OnRecovery(System.Guid checkpointToken);
+
+        /// <inheritdoc cref="IRecordTriggers.OnRecoverySnapshotRead"/>
+        void OnRecoverySnapshotRead(ref LogRecord logRecord);
+
+        /// <inheritdoc cref="IRecordTriggers.OnCheckpoint"/>
+        void OnCheckpoint(CheckpointTrigger trigger, System.Guid checkpointToken);
+        #endregion Record Triggers
 
         #region Checkpoint Completion
         /// <summary>Set the parameterless checkpoint completion callback.</summary>

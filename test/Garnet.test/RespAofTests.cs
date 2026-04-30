@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
@@ -52,7 +53,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreRecoverTest()
+        public async Task AofUpsertStoreRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -61,7 +62,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -77,7 +78,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreAutoCommitRecoverTest()
+        public async Task AofUpsertStoreAutoCommitRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -86,7 +87,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
 
-            server.Store.WaitForCommit();
+            await server.Store.WaitForCommitAsync();
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -103,7 +104,7 @@ namespace Garnet.test
 
         [Test]
         [CancelAfter(10_000)]
-        public void AofUpsertStoreCommitTaskRecoverTest()
+        public async Task AofUpsertStoreCommitTaskRecoverTestAsync()
         {
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitFrequencyMs: 100);
@@ -116,7 +117,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
             }
 
-            server.Store.WaitForCommit();
+            await server.Store.WaitForCommitAsync();
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -189,7 +190,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertStoreCkptRecoverTest()
+        public async Task AofUpsertStoreCkptRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -206,7 +207,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -224,20 +225,20 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofRMWStoreRecoverTest()
+        public async Task AofRMWStoreRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
-                db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
+                db.Execute("SETWITHETAG", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
                 db.Execute("SETIFMATCH", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", "1");
                 db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
                 var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -256,7 +257,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofDeleteStoreRecoverTest()
+        public async Task AofDeleteStoreRecoverTestAsync()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -275,7 +276,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(null, val);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -293,7 +294,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofExpiryRMWStoreRecoverTest()
+        public async Task AofExpiryRMWStoreRecoverTestAsync()
         {
             // Test AOF recovery of main store records with an expiry time
 
@@ -339,7 +340,7 @@ namespace Garnet.test
             }
 
             // Commit to AOF and restart server
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -370,7 +371,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofRMWObjectStoreRecoverTest()
+        public async Task AofRMWObjectStoreRecoverTestAsync()
         {
             var key = "AofRMWObjectStoreRecoverTestKey";
 
@@ -388,7 +389,7 @@ namespace Garnet.test
                 ClassicAssert.False(score.HasValue);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -407,7 +408,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofDeleteObjectStoreRecoverTest()
+        public async Task AofDeleteObjectStoreRecoverTestAsync()
         {
             var key1 = "AofDeleteObjectStoreRecoverTestKey1";
             var key2 = "AofDeleteObjectStoreRecoverTestKey2";
@@ -434,7 +435,7 @@ namespace Garnet.test
                 db.KeyDelete(key1);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -450,7 +451,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofExpiryRMWObjectStoreRecoverTest()
+        public async Task AofExpiryRMWObjectStoreRecoverTestAsync()
         {
             // Test AOF recovery of object store records with an expiry time
 
@@ -526,7 +527,7 @@ namespace Garnet.test
             }
 
             // Commit to AOF and restart server
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -557,7 +558,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofRMWObjectStoreCopyUpdateRecoverTest()
+        public async Task AofRMWObjectStoreCopyUpdateRecoverTestAsync()
         {
             var key = "AofRMWObjectStoreRecoverTestKey";
 
@@ -577,7 +578,7 @@ namespace Garnet.test
                 SortedSetEntry[] newEntries = [new SortedSetEntry("bbbb", 4)];
                 db.SortedSetAdd("AofRMWObjectStoreRecoverTestKey" + 1, newEntries);
             }
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -596,7 +597,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertObjectStoreRecoverTest()
+        public async Task AofUpsertObjectStoreRecoverTestAsync()
         {
             var origList = new RedisValue[] { "a", "b", "c", "d" };
             var key1 = "lkey1";
@@ -620,7 +621,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(origList, result);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -635,7 +636,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertCustomObjectRecoverTest()
+        public async Task AofUpsertCustomObjectRecoverTestAsync()
         {
             void RegisterCustomCommand(GarnetServer gServer)
             {
@@ -670,7 +671,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(subKeyValue, (string)retValue);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             RegisterCustomCommand(server);
@@ -686,7 +687,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertCustomScriptRecoverTest()
+        public async Task AofUpsertCustomScriptRecoverTestAsync()
         {
             static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
             {
@@ -714,7 +715,7 @@ namespace Garnet.test
                 ValidateServerData(db, strKey, strValue, listKey, listValue);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Register.NewProcedure("SETMAINANDOBJECT", () => new SetStringAndList());
@@ -727,7 +728,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofMultiRMWStoreCkptRecoverTest()
+        public async Task AofMultiRMWStoreCkptRecoverTestAsync()
         {
             long ret = 0;
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -763,7 +764,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(6, ret);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -777,7 +778,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofListObjectStoreRecoverTest()
+        public async Task AofListObjectStoreRecoverTestAsync()
         {
             var key = "AofListObjectStoreRecoverTest";
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
@@ -794,7 +795,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             server.Start();
@@ -809,7 +810,197 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofCustomTxnRecoverTest()
+        public async Task AofObjectStoreRMWDeleteRecoverListTestAsync()
+        {
+            // Verify LPOP that empties a list is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverListKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.ListLeftPush(key, "value1");
+                var popped = db.ListLeftPop(key);
+                ClassicAssert.AreEqual("value1", popped.ToString());
+
+                // Key should not exist after popping the only element
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                // After recovery, the key should still not exist
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public async Task AofObjectStoreRMWDeleteRecoverSortedSetTestAsync()
+        {
+            // Verify ZREM that removes one member from a sorted set is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverSortedSetKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.SortedSetAdd(key, [new SortedSetEntry("top1", 50), new SortedSetEntry("top2", 60)]);
+                db.SortedSetRemove(key, "top1");
+
+                // Sorted set should have one remaining member
+                var score = db.SortedSetScore(key, "top1");
+                ClassicAssert.IsFalse(score.HasValue);
+
+                score = db.SortedSetScore(key, "top2");
+                ClassicAssert.IsTrue(score.HasValue);
+                ClassicAssert.AreEqual(60, score.Value);
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // After recovery, "top1" should still be absent
+                var score = db.SortedSetScore(key, "top1");
+                ClassicAssert.IsFalse(score.HasValue);
+
+                score = db.SortedSetScore(key, "top2");
+                ClassicAssert.IsTrue(score.HasValue);
+                ClassicAssert.AreEqual(60, score.Value);
+            }
+        }
+
+        [Test]
+        public async Task AofObjectStoreRMWDeleteRecoverSortedSetEmptyTestAsync()
+        {
+            // Verify ZREM that empties a sorted set completely is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverSortedSetEmptyKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.SortedSetAdd(key, [new SortedSetEntry("top1", 50)]);
+                db.SortedSetRemove(key, "top1");
+
+                // Key should not exist after removing the only member
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public async Task AofObjectStoreRMWDeleteRecoverHashTestAsync()
+        {
+            // Verify HDEL that removes fields from a hash is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverHashKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.HashSet(key, [new HashEntry("hkey1", "v1"), new HashEntry("hkey2", "v2")]);
+                db.HashDelete(key, ["hkey1", "hkey2"]);
+
+                // Key should not exist after deleting all hash fields
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public async Task AofObjectStoreRMWDeleteRecoverSetTestAsync()
+        {
+            // Verify SREM that empties a set is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWDeleteRecoverSetKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.SetAdd(key, ["member1", "member2"]);
+                db.SetRemove(key, ["member1", "member2"]);
+
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.IsFalse(db.KeyExists(key));
+            }
+        }
+
+        [Test]
+        public async Task AofObjectStoreRMWPartialDeleteRecoverHashTestAsync()
+        {
+            // Verify HDEL that removes only some fields (not emptying the hash) is persisted to AOF and recovered correctly
+            var key = "AofObjectStoreRMWPartialDeleteRecoverHashKey";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.HashSet(key, [new HashEntry("hkey1", "v1"), new HashEntry("hkey2", "v2"), new HashEntry("hkey3", "v3")]);
+                db.HashDelete(key, "hkey1");
+                db.HashDelete(key, "hkey2");
+
+                // Key should still exist with remaining field
+                ClassicAssert.IsTrue(db.KeyExists(key));
+                ClassicAssert.AreEqual("v3", db.HashGet(key, "hkey3").ToString());
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey1").HasValue);
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey2").HasValue);
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // After recovery, deleted fields should remain deleted
+                ClassicAssert.IsTrue(db.KeyExists(key));
+                ClassicAssert.AreEqual("v3", db.HashGet(key, "hkey3").ToString());
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey1").HasValue);
+                ClassicAssert.IsFalse(db.HashGet(key, "hkey2").HasValue);
+            }
+        }
+
+        [Test]
+        public async Task AofCustomTxnRecoverTestAsync()
         {
             server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
             string readkey = "readme";
@@ -828,7 +1019,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("SUCCESS", result.ToString());
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -852,7 +1043,7 @@ namespace Garnet.test
 
         // Tests that the transaction's finalize step is currently written once into AOF, and replayed twice during replay
         [Test]
-        public void AofTransactionFinalizeStepTest()
+        public async Task AofTransactionFinalizeStepTestAsync()
         {
             const string txnName = "AOFFINDOUBLEREP";
             const string key = "key1";
@@ -872,7 +1063,7 @@ namespace Garnet.test
             }
 
             // so now commit AOF, kill server and force a replay
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -886,6 +1077,52 @@ namespace Garnet.test
                 var res = db.StringGet(key);
                 int resultAfterRecovery = (int)res;
                 ClassicAssert.AreEqual(resultPostTxn, resultAfterRecovery);
+            }
+        }
+
+        // Regression test for https://github.com/microsoft/garnet/issues/1749
+        // A SET / RMW / DEL whose AOF entry exceeds AofPageSize used to leave the per-bucket ephemeral X-lock
+        // held forever (the AOF Enqueue threw "Entry does not fit on page" before EphemeralXUnlock could run),
+        // pinning subsequent ops on the same key in an infinite RETRY_LATER loop and burning 100% CPU.
+        // The server is rebuilt with a small AofPageSize to trigger the oversize path with small payloads.
+        [Test]
+        public void OversizedAofEntryDoesNotHangServer()
+        {
+            const string key = "oversized-aof-key";
+
+            server.Dispose(false);
+            // 4 KB AOF page so we can trigger the oversize path with a small payload.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, aofPageSize: "4k");
+            server.Start();
+
+            // 1) SET with a value larger than the AOF page. The AOF Enqueue throws and StackExchange.Redis
+            //    will see the connection drop. Use a tight syncTimeout so a buggy server hang is detected.
+            var oversizedValue = new string('A', 8 * 1024);
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig() + ",syncTimeout=3000,abortConnect=false"))
+            {
+                var db = redis.GetDatabase(0);
+                Assert.Throws<RedisConnectionException>(() => db.StringSet(key, oversizedValue));
+            }
+
+            // 2) From a fresh connection issue several operations on the same key. Before the fix these would
+            //    spin forever inside Tsavorite waiting on the leaked ephemeral X-lock. With the fix they return
+            //    promptly. We don't care what GET returns, only that the server does not hang.
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig() + ",syncTimeout=3000"))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Reads use an ephemeral S-lock on the same hash bucket, so they block on a leaked X-lock.
+                Assert.DoesNotThrow(() => _ = db.StringGet(key));
+
+                // RMW operations (e.g. APPEND) use the same EphemeralX path as SET; verify they don't hang either.
+                Assert.DoesNotThrow(() => _ = db.StringAppend(key, "x"));
+
+                // Delete also takes the ephemeral X-lock; verify it can complete.
+                Assert.DoesNotThrow(() => _ = db.KeyDelete(key));
+
+                // A small SET on the same key after recovery must succeed end-to-end.
+                Assert.DoesNotThrow(() => _ = db.StringSet(key, "ok"));
+                ClassicAssert.AreEqual("ok", (string)db.StringGet(key));
             }
         }
 

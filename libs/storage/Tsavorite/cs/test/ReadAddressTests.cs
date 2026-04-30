@@ -45,8 +45,8 @@ namespace Tsavorite.test.readaddress
 
 namespace Tsavorite.test.readaddress
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>>;
+    using StructStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     [AllureNUnit]
     [TestFixture]
@@ -188,7 +188,7 @@ namespace Tsavorite.test.readaddress
                     LogMemorySize = 1L << 20, // (1M memory for main log)
 
                     CheckpointDir = Path.Join(MethodTestDir, "chkpt")
-                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordTriggers.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             }

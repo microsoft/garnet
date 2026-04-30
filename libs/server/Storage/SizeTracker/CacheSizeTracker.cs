@@ -15,8 +15,8 @@ namespace Garnet.server
     /// </summary>
     public class CacheSizeTracker
     {
-        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> mainLogTracker;
-        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> readCacheTracker;
+        internal LogSizeTracker<StoreFunctions, StoreAllocator> mainLogTracker;
+        internal LogSizeTracker<StoreFunctions, StoreAllocator> readCacheTracker;
 
         int isStarted = 0;
         private const int HighTargetSizeDeltaFraction = 10; // When memory usage grows, trigger trimming at 10% above target size (for both main log and readcache)
@@ -24,6 +24,9 @@ namespace Garnet.server
 
         internal bool IsStopped => (mainLogTracker == null || mainLogTracker.IsStopped) && (readCacheTracker == null || readCacheTracker.IsStopped);
         internal bool IsStarted => isStarted == 1;
+
+        /// <summary>Whether the tracker has been initialized with a store.</summary>
+        internal bool IsInitialized => mainLogTracker != null || readCacheTracker != null;
 
         /// <summary>Total memory size target for main log</summary>
         public long TargetSize
@@ -47,17 +50,30 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Creates an uninitialized CacheSizeTracker. Call <see cref="Initialize"/> after
+        /// the store is created to subscribe to eviction notifications.
+        /// </summary>
+        public CacheSizeTracker() { }
+
         /// <summary>Class to track and update cache size</summary>
         /// <param name="store">Tsavorite store instance</param>
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="readCacheTargetSize">Target memory size for read cache</param>
         /// <param name="loggerFactory"></param>
         public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
+            => Initialize(store, targetSize, readCacheTargetSize, loggerFactory);
+
+        /// <summary>
+        /// Initialize the tracker with a store. Wires the <see cref="LogSizeTracker"/> for
+        /// heap-size tracking. Tsavorite handles all creation-site and destruction-site
+        /// accounting internally via <c>logSizeTracker</c>.
+        /// </summary>
+        public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
         {
             Debug.Assert(store != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
-            // Subscribe to the eviction notifications. We don't hang onto the LogSubscribeDisposable because the CacheSizeTracker is never disposed once created.
             if (targetSize > 0)
             {
                 mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize,

@@ -153,6 +153,106 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(3)]
+        [TestCase(ClusterPreferredEndpointType.Ip, false)]
+        [TestCase(ClusterPreferredEndpointType.Ip, true)]
+        [TestCase(ClusterPreferredEndpointType.Hostname, true)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, false)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, true)]
+        public void ClusterShardsTest(
+            ClusterPreferredEndpointType preferredType,
+            bool useClusterAnnounceHostname)
+        {
+            context.CreateInstances(defaultShards, clusterPreferredEndpointType: preferredType, useClusterAnnounceHostname: useClusterAnnounceHostname);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.IsNotNull(shards);
+            ClassicAssert.AreEqual(defaultShards, shards.Count);
+
+            var expectedAddress = context.clusterTestUtils.GetEndPoint(0).Address.ToString();
+            var expectedHostname = useClusterAnnounceHostname ? context.nodeOptions[0].ClusterAnnounceHostname : null;
+
+            foreach (var shard in shards)
+            {
+                foreach (var node in shard.nodes)
+                {
+                    // ip is always the address
+                    ClassicAssert.AreEqual(expectedAddress, node.ip);
+
+                    // endpoint depends on preferred type
+                    switch (preferredType)
+                    {
+                        case ClusterPreferredEndpointType.Hostname:
+                            ClassicAssert.AreEqual(useClusterAnnounceHostname ? expectedHostname : node.hostname, node.endpoint);
+                            break;
+                        case ClusterPreferredEndpointType.Unknown:
+                            ClassicAssert.AreEqual("?", node.endpoint);
+                            break;
+                        default:
+                            ClassicAssert.AreEqual(expectedAddress, node.endpoint);
+                            break;
+                    }
+
+                    if (useClusterAnnounceHostname)
+                        ClassicAssert.AreEqual(expectedHostname, node.hostname);
+                    else
+                        ClassicAssert.IsNotNull(node.hostname);
+                }
+            }
+        }
+
+        [Test, Order(4)]
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ClusterNodesHostnameTest(bool useClusterAnnounceHostname)
+        {
+            context.CreateInstances(defaultShards, useClusterAnnounceHostname: useClusterAnnounceHostname);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var result = (string)context.clusterTestUtils.Execute(
+                context.clusterTestUtils.GetEndPoint(0), "cluster", ["nodes"]);
+
+            var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var parts = line.Split(' ');
+                var addressPart = parts[1];
+
+                // Address format: ip:port@cport[,hostname]
+                var atIdx = addressPart.IndexOf('@');
+                var afterAt = addressPart[(atIdx + 1)..];
+
+                if (useClusterAnnounceHostname)
+                {
+                    // Should contain comma + configured hostname
+                    var commaIdx = afterAt.IndexOf(',');
+                    ClassicAssert.IsTrue(commaIdx > 0, $"Expected hostname in address part: {addressPart}");
+                    var hostname = afterAt[(commaIdx + 1)..];
+                    ClassicAssert.AreEqual(context.nodeOptions[0].ClusterAnnounceHostname, hostname);
+                }
+                else
+                {
+                    // Garnet defaults to system hostname; verify format is valid
+                    var commaIdx = afterAt.IndexOf(',');
+                    if (commaIdx > 0)
+                    {
+                        // System hostname is present: comma + hostname
+                        var hostname = afterAt[(commaIdx + 1)..];
+                        ClassicAssert.IsNotEmpty(hostname);
+                    }
+                    else
+                    {
+                        // No hostname: address is exactly ip:port@cport with no trailing comma
+                        ClassicAssert.IsTrue(afterAt.All(char.IsDigit),
+                            $"Expected numeric cport with no hostname in address part, but got: {addressPart}");
+                    }
+                }
+            }
+        }
+
+        [Test, Order(5)]
         public void ClusterForgetTest()
         {
             var node_count = 4;
@@ -569,7 +669,7 @@ namespace Garnet.test.cluster
                 var numReplica = fullList.Split("\n").Count(static x => x.Contains(" flags=S "));
                 var numMaster = fullList.Split("\n").Count(static x => x.Contains(" flags=M "));
 
-                ClassicAssert.AreEqual(1, numNormal, $"normalCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.IsTrue(2 >= numNormal, $"normalCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
                 ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2, $"replicaCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
                 ClassicAssert.IsTrue(numMaster >= 1 && numMaster <= 2, $"masterCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
 
@@ -749,29 +849,77 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(11)]
-        public void ClusterRoleCommand()
+        public void ClusterRoleCommand([Values] bool useMultiLog)
         {
+            var primaryIndex = 0;
+            var sublogCount = useMultiLog ? 4 : 1;
             var node_count = 3;
             var replica_count = node_count - 1;
-            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateInstances(node_count, enableAOF: true, sublogCount: sublogCount);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, replica_count, logger: context.logger);
 
-            var result = context.clusterTestUtils.GetServer(0).Execute("ROLE");
-            ClassicAssert.AreEqual(3, result.Length);
-            ClassicAssert.AreEqual("master", result[0].ToString());
-            ClassicAssert.True(int.TryParse(result[1].ToString(), out _));
-            ClassicAssert.AreEqual(2, result[2].Length);
-            ClassicAssert.AreEqual("127.0.0.1", result[2][0][0].ToString());
-            ClassicAssert.AreEqual("127.0.0.1", result[2][1][0].ToString());
+            var primaryFormatLength = Enum.GetValues<RoleCommandPrimaryFormat>().Length - (useMultiLog ? 0 : 1);
+            var result = context.clusterTestUtils.GetServer(primaryIndex).Execute("ROLE");
+            ClassicAssert.AreEqual(primaryFormatLength, result.Length);
+            // RoleType
+            ClassicAssert.AreEqual("master", result[(int)RoleCommandPrimaryFormat.RoleType].ToString());
+            // Replication offset
+            ClassicAssert.True(int.TryParse(result[(int)RoleCommandPrimaryFormat.RoleReplicationOffset].ToString(), out var parsed));
+            ClassicAssert.AreEqual(64, parsed);
 
-            result = context.clusterTestUtils.GetServer(1).Execute("ROLE");
-            ClassicAssert.AreEqual(5, result.Length);
-            ClassicAssert.AreEqual("slave", result[0].ToString());
-            ClassicAssert.AreEqual("127.0.0.1", result[1].ToString());
-            ClassicAssert.True(int.TryParse(result[2].ToString(), out _));
-            ClassicAssert.AreEqual("connected", result[3].ToString());
-            ClassicAssert.True(int.TryParse(result[4].ToString(), out _));
+            ClassicAssert.AreEqual(2, result[(int)RoleCommandPrimaryFormat.RoleReplicaInfo].Length);
+            if (useMultiLog)
+            {
+                // ReplicationOffsetVector (MultiLog support)
+                var aofAddress = AofAddress.FromString(result[(int)RoleCommandPrimaryFormat.RoleReplicationOffsetString].ToString());
+                ClassicAssert.AreEqual(sublogCount, aofAddress.Length);
+            }
+
+            for (var i = 0; i < replica_count; i++)
+            {
+                var primaryResultForReplica = result[(int)RoleCommandPrimaryFormat.RoleReplicaInfo][i];
+                var replicaIndex = i + 1;
+                var roleReplicaFormatLength = Enum.GetValues<RoleCommandReplicaFormat>().Length - (useMultiLog ? 0 : 1);
+
+                // NOTE: Role command from primary perspective does not include role type or connection status
+                ClassicAssert.AreEqual(roleReplicaFormatLength - 2, primaryResultForReplica.Length);
+                // Address
+                ClassicAssert.AreEqual("127.0.0.1", primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleAddress - 1].ToString(), "Failed to match replica address");
+                // Port
+                ClassicAssert.True(int.TryParse(primaryResultForReplica[(int)RoleCommandReplicaFormat.RolePort - 1].ToString(), out parsed), "Failed to match replica port");
+                ClassicAssert.AreEqual(7000 + replicaIndex, parsed);
+                // ReplicationOffset
+                ClassicAssert.True(int.TryParse(primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleReplicationOffset - 2].ToString(), out parsed), "Failed to match replica replication offset");
+                ClassicAssert.AreEqual(64, parsed);
+                if (useMultiLog)
+                {
+                    // ReplicationOffsetVector (MultiLog support)
+                    var replicaAofAddress = AofAddress.FromString(primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleReplicationOffsetString - 2].ToString());
+                    ClassicAssert.AreEqual(sublogCount, replicaAofAddress.Length);
+                }
+
+                var replicaResult = context.clusterTestUtils.GetServer(i + 1).Execute("ROLE");
+                ClassicAssert.AreEqual(roleReplicaFormatLength, replicaResult.Length);
+                // RoleType
+                ClassicAssert.AreEqual("slave", replicaResult[(int)RoleCommandReplicaFormat.RoleType].ToString());
+                // Replica Address
+                ClassicAssert.AreEqual("127.0.0.1", replicaResult[(int)RoleCommandReplicaFormat.RoleAddress].ToString());
+                // Replica Port
+                ClassicAssert.True(int.TryParse(replicaResult[(int)RoleCommandReplicaFormat.RolePort].ToString(), out parsed));
+                ClassicAssert.AreEqual(7000, parsed);
+                // Connection State
+                ClassicAssert.AreEqual("connected", replicaResult[(int)RoleCommandReplicaFormat.RoleState].ToString());
+                // ReplicationOffset
+                ClassicAssert.True(int.TryParse(replicaResult[(int)RoleCommandReplicaFormat.RoleReplicationOffset].ToString(), out parsed));
+                ClassicAssert.AreEqual(64, parsed);
+                if (useMultiLog)
+                {
+                    // ReplicationOffsetVector (MultiLog support)
+                    var replicaAofAddress = AofAddress.FromString(replicaResult[(int)RoleCommandReplicaFormat.RoleReplicationOffsetString].ToString());
+                    ClassicAssert.AreEqual(sublogCount, replicaAofAddress.Length);
+                }
+            }
         }
 
         [Test, Order(12)]

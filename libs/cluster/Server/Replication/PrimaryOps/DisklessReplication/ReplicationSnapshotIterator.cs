@@ -4,6 +4,8 @@
 using System;
 using System.Buffers;
 using System.Threading;
+using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -30,7 +32,7 @@ namespace Garnet.cluster
         long currentFlushEventCount = 0;
         long lastFlushEventCount = 0;
 
-        public long CheckpointCoveredAddress { get; private set; }
+        AofAddress CheckpointCoveredAddress { get; set; }
 
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
         {
@@ -41,7 +43,7 @@ namespace Garnet.cluster
             sessions = replicationSyncManager.Sessions;
             numSessions = replicationSyncManager.NumSessions;
 
-            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
             for (var i = 0; i < numSessions; i++)
             {
                 if (!replicationSyncManager.IsActive(i)) continue;
@@ -131,7 +133,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, MigrationRecordSpanType.LogRecord, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -142,7 +144,7 @@ namespace Garnet.cluster
                     break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-                replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
                 needToFlush = false;
             }
@@ -184,7 +186,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), MigrationRecordSpanType.LogRecord, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -195,7 +197,7 @@ namespace Garnet.cluster
                     break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-                replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
             }
 
@@ -212,7 +214,7 @@ namespace Garnet.cluster
             }
 
             // Wait for flush and response to complete
-            replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
 
             logger?.LogTrace("{OnStop} {numberOfRecords} {targetVersion}",
                 nameof(OnStop), numberOfRecords, targetVersion);

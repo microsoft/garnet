@@ -8,7 +8,7 @@ namespace Tsavorite.core
 {
     // This is unused; just allows things to build. TsavoriteLog does not do key comparisons or value operations; it is just a memory allocator
 #pragma warning disable IDE0065 // Misplaced using directive
-    using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordTriggers>;
 
     /// <summary>
     /// Struct wrapper (for inlining) around the TsavoriteLogAllocator used by TsavoriteLog.
@@ -137,10 +137,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+        public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+
+        /// <inheritdoc/>
+        public void EvictRecordsInRange(long startAddress, long endAddress, EvictionSource source) { }
     }
 }

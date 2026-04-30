@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
@@ -75,17 +76,26 @@ namespace Garnet.cluster
             }
 
             logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeId, expirySeconds);
-            if (!clusterProvider.clusterManager.TryRemoveWorker(nodeId, expirySeconds, out var errorMessage))
+            // NOTE: Release epoch to prevent deadlock when acquiring SuspendConfigMerge exclusive lock within TryRemoveWorker.
+            ReleaseCurrentEpoch();
+            try
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
+                if (!clusterProvider.clusterManager.TryRemoveWorker(nodeId, expirySeconds, out var errorMessage))
+                {
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    // Terminate any outstanding migration tasks
+                    _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeId);
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
-            else
+            finally
             {
-                // Terminate any outstanding migration tasks
-                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeId);
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                AcquireCurrentEpoch();
             }
 
             return true;
@@ -331,7 +341,8 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore);
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore, preferredType);
             while (!RespWriteUtils.TryWriteAsciiDirect(shardsInfo, ref dcurr, dend))
                 SendAndReset();
 
@@ -379,7 +390,16 @@ namespace Garnet.cluster
                 // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                 if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                 {
-                    _ = clusterProvider.clusterManager.TryMerge(other);
+                    // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
+                    ReleaseCurrentEpoch();
+                    try
+                    {
+                        _ = clusterProvider.clusterManager.TryMerge(other);
+                    }
+                    finally
+                    {
+                        AcquireCurrentEpoch();
+                    }
 
                     // Remember that this connection is being used for another cluster node to talk to us
                     Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
@@ -448,7 +468,17 @@ namespace Garnet.cluster
                 }
             }
 
-            var resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
+            // NOTE: Release epoch to prevent deadlock when acquiring SuspendConfigMerge exclusive lock within TryReset.
+            ReleaseCurrentEpoch();
+            ReadOnlySpan<byte> resp = default;
+            try
+            {
+                resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
+            }
+            finally
+            {
+                AcquireCurrentEpoch();
+            }
             if (!soft) clusterProvider.FlushDB(true);
 
             while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
@@ -462,6 +492,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
+        /// <seealso cref="M:Garnet.client.GarnetClientExtensions.ExecuteClusterPublishNoResponse"/>
         private bool NetworkClusterPublish(out bool invalidParameters)
         {
             invalidParameters = false;

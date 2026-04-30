@@ -62,7 +62,7 @@ namespace Garnet.server
         /// <summary>
         /// Process cluster commands
         /// </summary>
-        unsafe void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
+        unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Reset cached slot verification result
@@ -76,8 +76,9 @@ namespace Garnet.server
         /// <param name="keySlice"></param>
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
+        /// <param name="waitForStableSlot"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking);
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot);
 
         /// <summary>
         /// Write cached slot verification message to output
@@ -111,5 +112,27 @@ namespace Garnet.server
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        void UnsafeSetConfig(string replicaOf);
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        void Dispose();
+
+        /// <summary>
+        /// NOTE: Used for micro-benchmark
+        /// </summary>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="record"></param>
+        /// <param name="recordLength"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        unsafe void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress);
     }
 }

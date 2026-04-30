@@ -126,6 +126,9 @@ namespace Garnet.test
             }
         }
 
+        internal static bool IsRunningAsGitHubAction
+        => "true".Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), StringComparison.OrdinalIgnoreCase);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
         {
@@ -234,6 +237,7 @@ namespace Garnet.test
             bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
+            bool commandStatsMonitor = false,
             int commitFrequencyMs = 0,
             bool commitWait = false,
             bool useAzureStorage = false,
@@ -271,7 +275,11 @@ namespace Garnet.test
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
             bool useInChainRevivOnly = false,
-            bool useLogNullDevice = false
+            bool useLogNullDevice = false,
+            bool enableVectorSetPreview = true,
+            bool enableRangeIndexPreview = false,
+            string aofMemorySize = "64m",
+            string aofPageSize = null
             )
         {
             if (useAzureStorage)
@@ -320,6 +328,7 @@ namespace Garnet.test
                 IndexMemorySize = indexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 TlsOptions = enableTLS ? new GarnetTlsOptions(
@@ -334,6 +343,7 @@ namespace Garnet.test
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
+                CommandStatsMonitor = commandStatsMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
                         : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
@@ -354,6 +364,8 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
+                EnableVectorSetPreview = enableVectorSetPreview,
+                EnableRangeIndexPreview = enableRangeIndexPreview,
             };
 
             if (!string.IsNullOrEmpty(memorySize))
@@ -376,6 +388,9 @@ namespace Garnet.test
 
             if (indexMaxSize != default)
                 opts.IndexMaxMemorySize = indexMaxSize;
+
+            if (!string.IsNullOrEmpty(aofPageSize))
+                opts.AofPageSize = aofPageSize;
 
             if (lowMemory)
             {
@@ -448,13 +463,20 @@ namespace Garnet.test
         /// <param name="recvOnly"></param>
         /// <param name="matchLevel"></param>
         /// <returns></returns>
-        public static ILoggerFactory CreateLoggerFactoryInstance(TextWriter textWriter, LogLevel logLevel, string scope = "", HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false)
+        public static (ILoggerFactory, NUnitLoggerProvider) CreateLoggerFactoryInstance(
+            TextWriter textWriter,
+            LogLevel logLevel,
+            string scope = "",
+            HashSet<string> skipCmd = null,
+            bool recvOnly = false,
+            bool matchLevel = false)
         {
-            return LoggerFactory.Create(builder =>
+            var provider = new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel);
+            return (LoggerFactory.Create(builder =>
             {
-                builder.AddProvider(new NUnitLoggerProvider(textWriter, scope, skipCmd, recvOnly, matchLevel, logLevel));
+                builder.AddProvider(provider);
                 builder.SetMinimumLevel(logLevel);
-            });
+            }), provider);
         }
 
         public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
@@ -510,9 +532,13 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -575,9 +601,13 @@ namespace Garnet.test
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout,
+                    sublogCount: sublogCount,
+                    replayTaskCount: replayTaskCount,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
-                    clusterAnnounceHostname: clusterAnnounceHostname);
+                    clusterAnnounceHostname: clusterAnnounceHostname,
+                    vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -654,9 +684,15 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            bool enableVectorSetPreview = true,
+            int vectorSetReplayTaskCount = 0,
+            bool enableRangeIndexPreview = false,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -703,7 +739,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                ThreadPoolMinThreads = 100,
+                ThreadPoolMinThreads = 512,
                 SegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
@@ -778,7 +814,13 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                AofPhysicalSublogCount = sublogCount,
+                AofReplayTaskCount = replayTaskCount,
+                EnableVectorSetPreview = enableVectorSetPreview,
+                VectorSetReplayTaskCount = vectorSetReplayTaskCount,
+                EnableRangeIndexPreview = enableRangeIndexPreview,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
+                ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
 
             if (lowMemory)

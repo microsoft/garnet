@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -11,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class ClusterSession : IClusterSession
+    internal sealed partial class ClusterSession : IClusterSession
     {
         readonly ClusterProvider clusterProvider;
         readonly TransactionManager txnManager;
@@ -28,7 +29,7 @@ namespace Garnet.cluster
         UserHandle userHandle;
 
         SessionParseState parseState;
-        byte* dcurr, dend;
+        unsafe byte* dcurr, dend;
         long _localCurrentEpoch = 0;
 
         public long LocalCurrentEpoch => _localCurrentEpoch;
@@ -49,7 +50,10 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public IGarnetServer Server { get; set; }
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+        private StringBasicContext stringBasicContext;
+        private VectorBasicContext vectorBasicContext;
+
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -57,11 +61,13 @@ namespace Garnet.cluster
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
+            this.stringBasicContext = stringBasicContext;
+            this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
             this.logger = logger;
         }
 
-        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
+        public unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
             this.dcurr = dcurr;
             this.dend = dend;
@@ -81,15 +87,15 @@ namespace Garnet.cluster
                             return;
                     }
 
-                    ProcessClusterCommands(command, out invalidParameters);
+                    ProcessClusterCommands(command, vectorManager, out invalidParameters);
                 }
                 else
                 {
                     _ = command switch
                     {
-                        RespCommand.MIGRATE => TryMIGRATE(out invalidParameters),
+                        RespCommand.MIGRATE => NetworkTryMIGRATE(out invalidParameters),
                         RespCommand.FAILOVER => TryFAILOVER(),
-                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => TryREPLICAOF(out invalidParameters),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => NetworkTryREPLICAOF(out invalidParameters),
                         _ => false
                     };
                 }
@@ -109,7 +115,7 @@ namespace Garnet.cluster
             }
         }
 
-        void SendAndReset()
+        unsafe void SendAndReset()
         {
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
@@ -121,7 +127,7 @@ namespace Garnet.cluster
             }
         }
 
-        void SendAndReset(ref byte* dcurr, ref byte* dend)
+        unsafe void SendAndReset(ref byte* dcurr, ref byte* dend)
         {
             byte* d = networkSender.GetResponseObjectHead();
             if ((int)(dcurr - d) > 0)
@@ -134,7 +140,7 @@ namespace Garnet.cluster
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void Send(byte* d)
+        unsafe void Send(byte* d)
         {
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
@@ -145,8 +151,8 @@ namespace Garnet.cluster
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
-                    var task = clusterProvider.storeWrapper.appendOnlyFile.WaitForCommitAsync();
-                    if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
+                    var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
+                    if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
                 }
                 int sendBytes = (int)(dcurr - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
@@ -168,11 +174,32 @@ namespace Garnet.cluster
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
         /// </summary>
-        public void UnsafeBumpAndWaitForEpochTransition()
+        public async Task UnsafeBumpAndWaitForEpochTransitionAsync()
         {
             ReleaseCurrentEpoch();
-            _ = clusterProvider.BumpAndWaitForEpochTransition();
+            _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
             AcquireCurrentEpoch();
+        }
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        public void UnsafeSetConfig(string replicaOf = null)
+        {
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            config = config.MakeReplicaOf(replicaOf);
+            clusterProvider.clusterManager.UnsafeSetConfig(config);
+
+            if (replicaOf != null)
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+        }
+
+        public void Dispose()
+        {
+            // Call dispose on ref of this session if this session is a replication task
+            if (IsReplicating)
+                replicaReplayDriverStore?.Dispose();
         }
     }
 }

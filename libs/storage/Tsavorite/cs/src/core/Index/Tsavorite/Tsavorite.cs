@@ -86,11 +86,37 @@ namespace Tsavorite.core
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
+        internal readonly ManualResetEventSlim pauseRevivEvent = new(false);
+        private readonly object pauseRevivLock = new();
+
         /// <summary>
         /// Pause Revivification
         /// </summary>
-        public void PauseRevivification()
-            => RevivificationManager.PauseRevivification();
+        /// <param name="timeout"></param>
+        /// /// <param name="token"></param>
+        public void PauseRevivification(TimeSpan timeout, CancellationToken token)
+        {
+            lock (pauseRevivLock)
+            {
+                try
+                {
+                    epoch.Resume();
+                    // Pause Reviv
+                    RevivificationManager.PauseRevivification();
+                    // Reset event to be used for signaling that everyone has observed the pause signal
+                    pauseRevivEvent.Reset();
+                    // BumpEpoch with Set signal
+                    epoch.BumpCurrentEpoch(() => pauseRevivEvent.Set());
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
+
+                // Wait for everyone to observe the reviv suspend signal
+                pauseRevivEvent.Wait(timeout, token);
+            }
+        }
 
         /// <summary>
         /// Resume Revivification
@@ -162,6 +188,7 @@ namespace Tsavorite.core
                 };
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
+                allocatorSettings.IsReadCache = true;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
                 readcacheBase = readcache.GetBase<TAllocator>();
                 readcacheBase.Initialize();
@@ -468,7 +495,7 @@ namespace Tsavorite.core
             token.ThrowIfCancellationRequested();
             try
             {
-                await stateMachineDriver.CompleteAsync(token);
+                await stateMachineDriver.CompleteAsync(token).ConfigureAwait(false);
             }
             catch
             {
@@ -642,7 +669,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -685,7 +712,7 @@ namespace Tsavorite.core
                 internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -707,7 +734,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -729,7 +756,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -751,7 +778,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -771,7 +798,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -804,7 +831,7 @@ namespace Tsavorite.core
 
             var indexResizeTask = new IndexResizeSMTask<TStoreFunctions, TAllocator>(this);
             var indexResizeSM = new IndexResizeSM(indexResizeTask);
-            return await stateMachineDriver.RunAsync(indexResizeSM);
+            return await stateMachineDriver.RunAsync(indexResizeSM).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -820,6 +847,7 @@ namespace Tsavorite.core
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
+            pauseRevivEvent?.Dispose();
         }
 
         /// <summary>

@@ -204,6 +204,18 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [IntRangeValidation(1, 64, isRequired: false)]
+        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
+        public int AofPhysicalSublogCount { get; set; }
+
+        [IntRangeValidation(1, 256, isRequired: false)]
+        [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
+        public int AofReplayTaskCount { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
+        public int AofTailWitnessFreqMs { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -311,6 +323,10 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
+        [OptionValidation]
+        [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections). Exposed via INFO COMMANDSTATS.")]
+        public bool? CommandStatsMonitor { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
         public int SlowLogThreshold { get; set; }
@@ -414,7 +430,7 @@ namespace Garnet
         public bool? FastAofTruncate { get; set; }
 
         [OptionValidation]
-        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
+        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]
@@ -438,7 +454,7 @@ namespace Garnet
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
 
         [OptionValidation]
-        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        [Option("aof-null-device", Required = false, HelpText = "With fast-aof-truncate replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool? UseAofNullDevice { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
@@ -625,6 +641,17 @@ namespace Garnet
         [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
         public bool ClusterReplicaResumeWithData { get; set; }
 
+        [RequiresMinimumMemory(nameof(PageSize), minimumValue: "16K")]
+        [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableVectorSetPreview { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
+        public int VectorSetReplayTaskCount { get; set; }
+
+        [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableRangeIndexPreview { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -708,8 +735,13 @@ namespace Garnet
             if (ClusterAnnounceIp != null)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
-                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
+                    endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
+                    listenEp.Port == announceEp.Port &&
+                    (listenEp.Address.Equals(announceEp.Address) ||
+                     listenEp.Address.Equals(IPAddress.Any) ||
+                     listenEp.Address.Equals(IPAddress.IPv6Any))))
                     throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
             }
 
@@ -734,7 +766,7 @@ namespace Garnet
             }
             if (hasRecordCounts)
             {
-                if (enableRevivification)
+                if (useRevivBinsPowerOf2)
                     throw new Exception("Revivification cannot specify both record counts and powerof2 bins.");
                 if (!hasRecordSizes)
                     throw new Exception("Revivification bin counts require bin sizes.");
@@ -765,6 +797,15 @@ namespace Garnet
             {
                 if (SlowLogThreshold < 100)
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
+            }
+
+            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
+                throw new Exception("Cannot use sharded-log without FastCommit!");
+
+            if (!EnableAOF.GetValueOrDefault())
+            {
+                if (!string.IsNullOrEmpty(AofSizeLimit))
+                    throw new GarnetException("AofSizeLimit cannot be enforced with disabled AOF!");
             }
 
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
@@ -817,6 +858,9 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                AofPhysicalSublogCount = AofPhysicalSublogCount,
+                AofReplayTaskCount = AofReplayTaskCount,
+                AofTailWitnessFreqMs = AofTailWitnessFreqMs,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
@@ -846,6 +890,7 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
@@ -898,6 +943,9 @@ namespace Garnet
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
+                EnableVectorSetPreview = EnableVectorSetPreview,
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                EnableRangeIndexPreview = EnableRangeIndexPreview,
             };
         }
 

@@ -77,7 +77,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
@@ -86,7 +86,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
@@ -95,7 +95,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, in inputLogRecord, ref output, ref upsertInfo))
@@ -167,7 +167,7 @@ namespace Tsavorite.core
 
         #region InPlaceUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
         {
             // This wraps the ISessionFunctions call to provide expiration logic.
             if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
@@ -193,12 +193,14 @@ namespace Tsavorite.core
             }
             else if (rmwInfo.Action == RMWAction.ExpireAndStop)
             {
-                logRecord.InfoRef.SetTombstone();
+                // Tombstone is set by the caller (InternalRMW) AFTER OnDispose,
+                // so that internal heap accounting reads the pre-tombstone value size.
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
             }
             else if (rmwInfo.Action == RMWAction.WrongType)
             {
-                logRecord.InfoRef.SetTombstone();
+                // WrongType means the operation was rejected — the record must NOT be modified.
+                // Do not set Tombstone; the key should remain intact for correct-type operations.
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
             }
             else
@@ -238,8 +240,8 @@ namespace Tsavorite.core
         {
             if (!_clientSession.functions.InPlaceDeleter(ref logRecord, ref deleteInfo))
                 return false;
-            logRecord.InfoRef.SetTombstone();
-            logRecord.InfoRef.SetDirtyAndModified();
+            // Tombstone and Dirty/Modified are set by the caller (InternalDelete) AFTER
+            // OnDispose, so that internal heap accounting reads the pre-tombstone value size.
             return true;
         }
 
