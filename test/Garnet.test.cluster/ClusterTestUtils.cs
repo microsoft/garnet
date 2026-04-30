@@ -76,7 +76,9 @@ namespace Garnet.test.cluster
     {
         public int nodeIndex;
         public string nodeid;
-        public string address;
+        public string ip;
+        public string endpoint;
+        public string hostname;
         public int port;
         public NodeRole role;
         public long replicationOffset;
@@ -399,7 +401,8 @@ namespace Garnet.test.cluster
                                 {
                                     nodeIndex = i,
                                     nodeid = GetNodeIdFromNode(i, logger),
-                                    address = endpoint.Address.ToString(),
+                                    ip = endpoint.Address.ToString(),
+                                    endpoint = endpoint.Address.ToString(),
                                     port = endpoint.Port,
                                     role = NodeRole.PRIMARY,
                                     replicationOffset = 0
@@ -463,7 +466,8 @@ namespace Garnet.test.cluster
                         {
                             nodeIndex = i,
                             nodeid = GetNodeIdFromNode(i, logger),
-                            address = GetAddressFromNodeIndex(i),
+                            ip = GetAddressFromNodeIndex(i),
+                            endpoint = GetAddressFromNodeIndex(i),
                             port = GetPortFromNodeIndex(i),
                             role = NodeRole.REPLICA,
                             replicationOffset = 0
@@ -608,6 +612,7 @@ namespace Garnet.test.cluster
         {
             if (cancellationToken.IsCancellationRequested)
                 Assert.Fail(msg ?? "Cancellation Requested");
+
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 
@@ -2249,16 +2254,41 @@ namespace Garnet.test.cluster
                     shardInfo.nodes = [];
                     foreach (var node in nodes.Select(v => (RedisResult[])v))
                     {
-                        ClassicAssert.AreEqual(12, node.Length);
-                        NodeInfo nodeInfo = new()
+                        ClassicAssert.IsTrue(node.Length % 2 == 0, "CLUSTER SHARDS node info must have even number of elements (key-value pairs)");
+
+                        // Parse key-value pairs dynamically
+                        var nodeInfo = new NodeInfo();
+                        for (var j = 0; j < node.Length; j += 2)
                         {
-                            nodeIndex = GetNodeIndexFromPort((int)node[3]),
-                            nodeid = (string)node[1],
-                            port = (int)node[3],
-                            address = (string)node[5],
-                            role = Enum.Parse<NodeRole>((string)node[7]),
-                            replicationOffset = (long)node[9]
-                        };
+                            var key = (string)node[j];
+                            switch (key)
+                            {
+                                case "id":
+                                    nodeInfo.nodeid = (string)node[j + 1];
+                                    break;
+                                case "port":
+                                    nodeInfo.port = (int)node[j + 1];
+                                    nodeInfo.nodeIndex = GetNodeIndexFromPort(nodeInfo.port);
+                                    break;
+                                case "ip":
+                                    nodeInfo.ip = (string)node[j + 1];
+                                    break;
+                                case "endpoint":
+                                    nodeInfo.endpoint = (string)node[j + 1];
+                                    break;
+                                case "hostname":
+                                    nodeInfo.hostname = (string)node[j + 1];
+                                    break;
+                                case "role":
+                                    var roleStr = (string)node[j + 1];
+                                    ClassicAssert.IsTrue(roleStr is "master" or "slave", $"Unexpected role value: {roleStr}");
+                                    nodeInfo.role = roleStr == "master" ? NodeRole.PRIMARY : NodeRole.REPLICA;
+                                    break;
+                                case "replication-offset":
+                                    nodeInfo.replicationOffset = (long)node[j + 1];
+                                    break;
+                            }
+                        }
                         shardInfo.nodes.Add(nodeInfo);
                     }
 

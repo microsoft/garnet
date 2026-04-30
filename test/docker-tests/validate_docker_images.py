@@ -426,16 +426,19 @@ def test_library_resolution(images: list[ImageDef], results: TestResult):
             results.skip(f"{img.name}: library check", "no shell in distroless image")
             continue
 
-        # Check libaio
+        # Check libaio. On Debian/Ubuntu glibc images we no longer pre-create a libaio.so.1
+        # symlink at build time — the C# loader creates it on demand next to libnative_device.so
+        # when the native device is first used. Therefore accept either libaio.so.1 (classic
+        # distros, chiseled, or post-auto-repair) or libaio.so.1t64 (unopened noble/trixie).
         r = docker(
             f"run --rm --entrypoint sh {img.tag} -c "
-            f"'find / -name libaio.so.1 2>/dev/null | head -1'"
+            f"'find / \\( -name libaio.so.1 -o -name libaio.so.1t64 \\) 2>/dev/null | head -1'"
         )
         libaio_path = r.stdout.strip()
         if libaio_path:
-            results.ok(f"{img.name}: libaio.so.1 found at {libaio_path}")
+            results.ok(f"{img.name}: libaio found at {libaio_path}")
         else:
-            results.fail(f"{img.name}: libaio.so.1 not found")
+            results.fail(f"{img.name}: libaio not found (neither libaio.so.1 nor libaio.so.1t64)")
 
         # Check liblua54 in .NET runtime dir
         r = docker(
@@ -448,7 +451,12 @@ def test_library_resolution(images: list[ImageDef], results: TestResult):
         else:
             results.fail(f"{img.name}: liblua54.so not in .NET runtime dir")
 
-        # Check libnative_device resolves
+        # Check libnative_device resolves via ldd. All glibc images pre-stage libaio.so.1 at build
+        # time (either as the real file from libaio1 / apk libaio / tdnf libaio on non-t64 distros,
+        # or as a libaio.so.1 -> libaio.so.1t64 symlink installed by the Dockerfile on Debian/Ubuntu
+        # t64 distros). The C# loader also has a runtime fallback that creates the symlink next to
+        # libnative_device.so if libaio.so.1 is missing (for non-Docker users on t64 hosts), but we
+        # don't rely on that here.
         r = docker(
             f"run --rm --entrypoint sh {img.tag} -c "
             f"'ldd /app/runtimes/linux-x64/native/libnative_device.so 2>&1'"

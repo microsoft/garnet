@@ -10,23 +10,102 @@ namespace Garnet.cluster
     internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
+        /// Change remote slot state
+        /// </summary>
+        /// <param name="nodeid"></param>
+        /// <param name="state"></param>
+        /// <returns></returns>
+        public async Task<bool> TrySetSlotRangesAsync(string nodeid, MigrateState state)
+        {
+            var client = migrateOperation[0].Client;
+            try
+            {
+                if (!await CheckConnectionAsync(client).ConfigureAwait(false))
+                {
+                    Status = MigrateState.FAIL;
+                    return false;
+                }
+
+                var stateBytes = state switch
+                {
+                    MigrateState.IMPORT => IMPORTING,
+                    MigrateState.STABLE => STABLE,
+                    MigrateState.NODE => NODE,
+                    _ => throw new Exception("Invalid SETSLOT Operation"),
+                };
+
+                logger?.LogTrace("Sending CLUSTER SETSLOTRANGE {state} {nodeid} {slots}", state, nodeid ?? "null", ClusterManager.GetRange([.. _sslots]));
+
+                var result = await client.SetSlotRange(stateBytes, nodeid, _slotRanges)
+                    .WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+
+                // Check if setslotsrange executed correctly
+                if (!result.Equals("OK", StringComparison.Ordinal))
+                {
+                    logger?.LogError("SetSlotRange error: {error}", result);
+                    Status = MigrateState.FAIL;
+                    return false;
+                }
+
+                logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid ?? "");
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                logger?.LogError("SetSlotRange operation timed out or was cancelled after {timeout}ms for slots {slots}", _timeout.TotalMilliseconds, ClusterManager.GetRange([.. _sslots]));
+                Status = MigrateState.FAIL;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error occurred during SetSlotRange for slots {slots}", ClusterManager.GetRange([.. _sslots]));
+                Status = MigrateState.FAIL;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Try recover to cluster state before migration task.
+        /// Used only for MIGRATE SLOTS option.
+        /// </summary>
+        public async Task<bool> TryRecoverFromFailureAsync()
+        {
+            // Set slot at target to stable state when migrate slots fails
+            // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
+            if (!await TrySetSlotRangesAsync(null, MigrateState.STABLE).ConfigureAwait(false))
+            {
+                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
+                return false;
+            }
+
+            // Set slots at source node to their original state when migrate fails
+            // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
+            ResetLocalSlot();
+
+            // TODO: Need to relinquish any migrating Vector Set contexts from target node
+
+            // Log explicit migration failure.
+            Status = MigrateState.FAIL;
+            return true;
+        }
+
+        /// <summary>
         /// Begin migration task
         /// </summary>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryStartMigrationTaskAsync()
         {
-            errorMessage = default;
+            ReadOnlyMemory<byte> errorMessage = default;
             if (transferOption == TransferOption.KEYS)
             {
                 try
                 {
                     // This executes synchronously and serves the keys variant of resp command
-                    if (!MigrateKeys())
+                    if (!await MigrateKeysAsync().ConfigureAwait(false))
                     {
-                        errorMessage = "IOERR Migrate keys failed."u8;
+                        errorMessage = "IOERR Migrate keys failed."u8.ToArray();
                         Status = MigrateState.FAIL;
-                        return false;
+                        return (false, errorMessage);
                     }
 
                     Status = MigrateState.SUCCESS;
@@ -40,27 +119,30 @@ namespace Garnet.cluster
             else
             {
                 // This will execute as a background task for the slots or slotsrange variant
-                _ = Task.Run(BeginAsyncMigrationTask);
+                _ = BeginAsyncMigrationTaskAsync();
             }
 
-            return true;
+            return (true, errorMessage);
         }
 
         /// <summary>
         /// Migrate slots session background task
         /// </summary>
-        private async Task BeginAsyncMigrationTask()
+        private async Task BeginAsyncMigrationTaskAsync()
         {
+            // Force async
+            await Task.Yield();
+
             var configResumed = true;
             try
             {
                 clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
 
                 // Set target node to import state
-                if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
+                if (!await TrySetSlotRangesAsync(GetSourceNodeId, MigrateState.IMPORT).ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to set remote slots {slots} to import state", ClusterManager.GetRange([.. GetSlots]));
-                    TryRecoverFromFailure();
+                    await TryRecoverFromFailureAsync().ConfigureAwait(false);
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -70,12 +152,12 @@ namespace Garnet.cluster
                 if (!TryPrepareLocalForMigration())
                 {
                     logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
-                    TryRecoverFromFailure();
+                    await TryRecoverFromFailureAsync().ConfigureAwait(false);
                     Status = MigrateState.FAIL;
                     return;
                 }
 
-                if (!clusterProvider.BumpAndWaitForEpochTransition()) return;
+                if (!await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false)) return;
                 #endregion
 
                 // Acquire namespaces at this point, after slots have been switch to migration
@@ -86,17 +168,17 @@ namespace Garnet.cluster
                 if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync())
                 {
                     logger?.LogError("Failed to reserve destination vector sets, migration failed");
-                    TryRecoverFromFailure();
+                    await TryRecoverFromFailureAsync().ConfigureAwait(false);
                     Status = MigrateState.FAIL;
                     return;
                 }
 
                 #region migrateData
                 // Migrate actual data
-                if (!await MigrateSlotsDriverInline())
+                if (!await MigrateSlotsDriverInlineAsync())
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
-                    TryRecoverFromFailure();
+                    await TryRecoverFromFailureAsync().ConfigureAwait(false);
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -110,10 +192,10 @@ namespace Garnet.cluster
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
 
                 // Change ownership of slots to target node.
-                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
+                if (!await TrySetSlotRangesAsync(GetTargetNodeId, MigrateState.NODE).ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to assign ownership to target node:({tgtNodeId}) ({endpoint})", GetTargetNodeId, GetTargetEndpoint);
-                    TryRecoverFromFailure();
+                    await TryRecoverFromFailureAsync().ConfigureAwait(false);
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -122,7 +204,7 @@ namespace Garnet.cluster
                 if (!RelinquishOwnership())
                 {
                     logger?.LogError("Failed to relinquish ownership from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
-                    TryRecoverFromFailure();
+                    await TryRecoverFromFailureAsync().ConfigureAwait(false);
                     Status = MigrateState.FAIL;
                     return;
                 }

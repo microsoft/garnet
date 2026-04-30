@@ -227,6 +227,12 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Enable per-command usage statistics tracking (calls, failures, rejections).
+        /// Exposed via INFO COMMANDSTATS.
+        /// </summary>
+        public bool CommandStatsMonitor = false;
+
+        /// <summary>
         /// Threshold (microseconds) for logging command in the slow log. 0 to disable
         /// </summary>
         public int SlowLogThreshold = 0;
@@ -538,6 +544,11 @@ namespace Garnet.server
         /// This is a preview feature, subject to substantial change, and should not be relied upon.
         /// </summary>
         public bool EnableVectorSetPreview = false;
+
+        /// <summary>
+        /// Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count).
+        /// </summary>
+        public int VectorSetReplayTaskCount = 0;
 
         /// <summary>
         /// Get the directory name for database checkpoints

@@ -213,6 +213,20 @@ namespace Garnet.cluster
                 return;
             }
 
+            // Suppress auto-resync while a failover is in progress.
+            // Without this guard, EnsureReplication would acquire a ReadRole lock that blocks
+            // TakeOverAsPrimary from obtaining its ClusterFailover write lock, aborting the failover.
+            var failoverStatus = clusterProvider.failoverManager.lastFailoverStatus;
+            if (failoverStatus is FailoverStatus.BEGIN_FAILOVER
+                              or FailoverStatus.ISSUING_PAUSE_WRITES
+                              or FailoverStatus.WAITING_FOR_SYNC
+                              or FailoverStatus.FAILOVER_IN_PROGRESS
+                              or FailoverStatus.TAKING_OVER_AS_PRIMARY)
+            {
+                logger?.LogDebug("Suppressing auto-resync during active failover (status: {failoverStatus})", failoverStatus);
+                return;
+            }
+
             // Now we're going to attempt to re-establish replication
 
             // To avoid a TOCTOU issue, we need to prevent role change while we do this
@@ -242,17 +256,17 @@ namespace Garnet.cluster
                 // At this point we need to hold the lock until this upcoming task completes
                 suppressUnlock = true;
                 _ = Task.Run(
-                    () =>
+                    async () =>
                     {
                         try
                         {
                             // Because of lock shenanigans we can't use Background: true here
                             ReplicateSyncOptions syncOpts = new(primaryId, Background: false, Force: true, TryAddReplica: true, AllowReplicaResetOnFailure: false, UpgradeLock: true);
-                            ReadOnlySpan<byte> errorMessage;
-                            var success =
-                                    clusterProvider.serverOptions.ReplicaDisklessSync ?
-                                    clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, syncOpts, out errorMessage) :
-                                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, syncOpts, out errorMessage);
+                            var (success, errorMessage) =
+                                    await
+                                        (clusterProvider.serverOptions.ReplicaDisklessSync ?
+                                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(activeSession, syncOpts) :
+                                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(activeSession, syncOpts)).ConfigureAwait(false);
 
                             if (success)
                             {
@@ -260,7 +274,7 @@ namespace Garnet.cluster
                             }
                             else
                             {
-                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage.Span));
                             }
                         }
                         catch (Exception ex)
@@ -532,7 +546,13 @@ namespace Garnet.cluster
                 if (storeWrapper.appendOnlyFile.TailAddress < recoveredSafeAofAddress)
                     storeWrapper.appendOnlyFile.Initialize(recoveredSafeAofAddress, recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
-                ReplicationOffset = storeWrapper.ReplayAOF();
+
+                var replayAofOffset = storeWrapper.ReplayAOF();
+
+                // Before advertising new replication offset, wait for any queued Vector Set ops to complete
+                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+
+                ReplicationOffset = replayAofOffset;
             }
 
             // First recover and then load latest checkpoint info in-memory
@@ -545,7 +565,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="primaryReplicationOffset"></param>
         /// <returns></returns>
-        public async Task<long> WaitForReplicationOffset(long primaryReplicationOffset)
+        public async Task<long> WaitForReplicationOffsetAsync(long primaryReplicationOffset)
         {
             while (ReplicationOffset < primaryReplicationOffset)
             {
@@ -577,12 +597,17 @@ namespace Garnet.cluster
                     AllowReplicaResetOnFailure: false,
                     UpgradeLock: false
                 );
-                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    TryReplicateDisklessSync(null, syncOpts, out var errorMessage) :
-                    TryReplicateDiskbasedSync(null, syncOpts, out errorMessage);
+
+                // Cannot avoid blocking here
+                var (success, errorMessage) =
+                    AsyncUtils.BlockingWait(
+                        (clusterProvider.serverOptions.ReplicaDisklessSync ?
+                            TryReplicateDisklessSyncAsync(null, syncOpts) :
+                            TryReplicateDiskbasedSyncAsync(null, syncOpts))
+                   );
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!success)
-                    logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage.Span));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {

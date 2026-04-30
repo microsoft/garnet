@@ -351,6 +351,10 @@ namespace Garnet
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
 
+        [OptionValidation]
+        [Option("commandstats-monitor", Required = false, HelpText = "Track per-command usage statistics (calls, failures, rejections). Exposed via INFO COMMANDSTATS.")]
+        public bool? CommandStatsMonitor { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
         public int SlowLogThreshold { get; set; }
@@ -672,6 +676,10 @@ namespace Garnet
         [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableVectorSetPreview { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
+        public int VectorSetReplayTaskCount { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -759,8 +767,13 @@ namespace Garnet
             if (ClusterAnnounceIp != null)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
-                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
+                    endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
+                    listenEp.Port == announceEp.Port &&
+                    (listenEp.Address.Equals(announceEp.Address) ||
+                     listenEp.Address.Equals(IPAddress.Any) ||
+                     listenEp.Address.Equals(IPAddress.IPv6Any))))
                     throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
             }
 
@@ -907,6 +920,7 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
@@ -960,6 +974,7 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount
             };
         }
 

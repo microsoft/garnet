@@ -28,7 +28,7 @@ namespace Garnet.server
         readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
-        VectorManager activeVectorManager;
+        internal VectorManager activeVectorManager;
 
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
@@ -85,12 +85,11 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
-            foreach (var dbSession in databaseSessionsSnapshot)
-            {
-                dbSession.StorageSession.basicContext.Session?.Dispose();
-                dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
-            }
+            activeVectorManager?.WaitForVectorOperationsToComplete();
+            activeVectorManager?.ShutdownReplayTasks();
+
+            aofReplayCoordinator.Dispose();
+            respServerSession.Dispose();
         }
 
         /// <summary>
@@ -177,15 +176,16 @@ namespace Garnet.server
                     if (storeWrapper.serverOptions.FailOnRecoveryError)
                         throw;
                 }
-                finally
-                {
-                    aofReplayCoordinator.Dispose();
-                    respServerSession.Dispose();
-                }
 
                 return -1;
             }
         }
+
+        /// <summary>
+        /// Wait for any queued Vector Set operations to complete.
+        /// </summary>
+        public void WaitForVectorOperationsToComplete()
+        => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
         /// Process AOF record internal
@@ -240,7 +240,8 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                // Must block here, cannot move off the thread
+                                _ = AsyncUtils.BlockingWait(storeWrapper.TakeCheckpointAsync(background: false, logger));
                             }
 
                             // Process buffered records

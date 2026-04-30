@@ -16,7 +16,7 @@ namespace Garnet.cluster
         readonly TimeSpan clusterTimeout;
         readonly ILogger logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
-        public FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
+        public volatile FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
 
         /// <summary>
         /// Shared epoch instance for failover GarnetClient connections
@@ -89,7 +89,7 @@ namespace Garnet.cluster
                 logger: logger);
             _ = Task.Run(async () =>
             {
-                var success = await currentFailoverSession.BeginAsyncReplicaFailover();
+                var success = await currentFailoverSession.BeginAsyncReplicaFailoverAsync();
                 lastFailoverStatus = success ? FailoverStatus.FAILOVER_COMPLETED : FailoverStatus.FAILOVER_ABORTED;
                 Reset();
             });
@@ -121,7 +121,7 @@ namespace Garnet.cluster
                 logger: logger);
             _ = Task.Run(async () =>
             {
-                _ = await currentFailoverSession.BeginAsyncPrimaryFailover();
+                _ = await currentFailoverSession.BeginAsyncPrimaryFailoverAsync();
                 Reset();
             });
             return true;

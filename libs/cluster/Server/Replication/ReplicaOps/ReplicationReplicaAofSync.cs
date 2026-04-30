@@ -69,6 +69,10 @@ namespace Garnet.cluster
                         {
                             logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
                             storeWrapper.appendOnlyFile.SafeInitialize(currentAddress, currentAddress);
+
+                            // If any Vector Set ops in progress, we must wait for them before we advertise a new eplication offset
+                            storeWrapper.DefaultDatabase?.VectorManager.WaitForVectorOperationsToComplete();
+
                             ReplicationOffset = currentAddress;
                         }
                     }
@@ -122,7 +126,7 @@ namespace Garnet.cluster
                             recover: false,
                             logger: logger);
 
-                        System.Threading.Tasks.Task.Run(ReplicaReplayTask);
+                        _ = System.Threading.Tasks.Task.Run(ReplicaReplayTaskAsync);
                     }
                 }
             }

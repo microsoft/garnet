@@ -236,6 +236,7 @@ namespace Garnet.test
             bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
+            bool commandStatsMonitor = false,
             int commitFrequencyMs = 0,
             bool commitWait = false,
             bool useAzureStorage = false,
@@ -278,7 +279,8 @@ namespace Garnet.test
             bool useInChainRevivOnly = false,
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
-            string aofMemorySize = "64m"
+            string aofMemorySize = "64m",
+            string aofPageSize = null
         )
         {
             if (useAzureStorage)
@@ -346,6 +348,7 @@ namespace Garnet.test
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
+                CommandStatsMonitor = commandStatsMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
                         : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
@@ -393,6 +396,9 @@ namespace Garnet.test
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
             if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
+
+            if (!string.IsNullOrEmpty(aofPageSize))
+                opts.AofPageSize = aofPageSize;
 
             if (lowMemory)
             {
@@ -525,7 +531,9 @@ namespace Garnet.test
             int replicaSyncTimeout = 60,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
-            string clusterAnnounceHostname = null)
+            string clusterAnnounceHostname = null,
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -590,7 +598,9 @@ namespace Garnet.test
                     replicaSyncTimeout: replicaSyncTimeout,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
-                    clusterAnnounceHostname: clusterAnnounceHostname);
+                    clusterAnnounceHostname: clusterAnnounceHostname,
+                    vectorSetReplayTaskCount: vectorSetReplayTaskCount,
+                    threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -670,7 +680,9 @@ namespace Garnet.test
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            int vectorSetReplayTaskCount = 0,
+            int threadPoolMinIOCompletionThreads = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -717,7 +729,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                ThreadPoolMinThreads = 100,
+                ThreadPoolMinThreads = 512,
                 SegmentSize = segmentSize,
                 ObjectStoreSegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
@@ -795,7 +807,9 @@ namespace Garnet.test
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
                 EnableVectorSetPreview = enableVectorSetPreview,
-                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs
+                VectorSetReplayTaskCount = vectorSetReplayTaskCount,
+                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
+                ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
             };
 
             if (lowMemory)

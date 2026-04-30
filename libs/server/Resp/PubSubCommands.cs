@@ -115,7 +115,9 @@ namespace Garnet.server
             {
                 var _key = parseState.GetArgSliceByRef(0).Span;
                 var _val = parseState.GetArgSliceByRef(1).Span;
-                storeWrapper.clusterProvider.ClusterPublish(cmd, ref _key, ref _val);
+
+                // No choice but to block here as we're on the network thread
+                AsyncUtils.BlockingWait(storeWrapper.clusterProvider.ClusterPublishAsync(cmd, _key, _val));
             }
 
             while (!RespWriteUtils.TryWriteInt32(numClients, ref dcurr, dend))

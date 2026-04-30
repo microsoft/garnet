@@ -113,12 +113,14 @@ namespace Garnet.server
 
         private void WriteError(scoped ReadOnlySpan<byte> errorString)
         {
+            commandErrorWritten = true;
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))
                 SendAndReset();
         }
 
         private void WriteError(ReadOnlySpan<char> errorString)
         {
+            commandErrorWritten = true;
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))
                 SendAndReset();
         }

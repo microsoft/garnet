@@ -53,10 +53,10 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="commands"></param>
         /// <returns></returns>
-        public Task<string> ExecuteAsync(params string[] commands)
+        public async Task<string> ExecuteAsync(params string[] commands)
         {
-            WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.ExecuteAsync(commands);
+            await WaitForFlushAsync().ConfigureAwait(false);
+            return await AofSyncTask.garnetClient.ExecuteAsync(commands).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -64,7 +64,7 @@ namespace Garnet.cluster
         /// </summary>
         public void InitializeIterationBuffer()
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             AofSyncTask.garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
         }
 
@@ -74,7 +74,7 @@ namespace Garnet.cluster
         /// <param name="isMainStore"></param>
         public void SetClusterSyncHeader(bool isMainStore)
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             if (AofSyncTask.garnetClient.NeedsInitialization)
                 AofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
         }
@@ -88,7 +88,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             return AofSyncTask.garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
         }
 
@@ -102,7 +102,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             return AofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
         }
 
@@ -112,7 +112,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public void SendAndResetIterationBuffer()
         {
-            WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
             SetFlushTask(AofSyncTask.garnetClient.SendAndResetIterationBuffer());
         }
         #endregion
@@ -152,16 +152,20 @@ namespace Garnet.cluster
         {
             if (task != null)
             {
-                flushTask = task.ContinueWith(resp =>
+                flushTask = ContinueFlushTaskAsync(task).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+            }
+
+            async Task<bool> ContinueFlushTaskAsync(Task<string> task)
+            {
+                var resp = await task.ConfigureAwait(false);
+                if (!resp.Equals("OK", StringComparison.Ordinal))
                 {
-                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
-                    {
-                        logger?.LogError("ReplicaSyncSession: {errorMsg}", resp.Result);
-                        SetStatus(SyncStatus.FAILED, resp.Result);
-                        return false;
-                    }
-                    return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
+                    logger?.LogError("ReplicaSyncSession: {errorMsg}", resp);
+                    SetStatus(SyncStatus.FAILED, resp);
+                    return false;
+                }
+
+                return true;
             }
         }
 
@@ -169,16 +173,16 @@ namespace Garnet.cluster
         /// Wait for network buffer flush
         /// </summary>
         /// <returns></returns>
-        public async Task WaitForFlush()
+        public async Task WaitForFlushAsync()
         {
             try
             {
-                if (flushTask != null) _ = await flushTask;
+                if (flushTask != null) _ = await flushTask.ConfigureAwait(false);
                 flushTask = null;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.WaitForFlush)}");
+                logger?.LogError(ex, "{method}", $"{nameof(WaitForFlushAsync)}");
                 SetStatus(SyncStatus.FAILED, "Flush task faulted");
             }
         }
@@ -187,16 +191,16 @@ namespace Garnet.cluster
         /// Wait until sync of checkpoint is completed
         /// </summary>
         /// <returns></returns>
-        public async Task WaitForSyncCompletion()
+        public async Task WaitForSyncCompletionAsync()
         {
             try
             {
-                await signalCompletion.WaitAsync(token);
+                await signalCompletion.WaitAsync(token).ConfigureAwait(false);
                 Debug.Assert(ssInfo.syncStatus is SyncStatus.SUCCESS or SyncStatus.FAILED);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method} failed waiting for sync", nameof(WaitForSyncCompletion));
+                logger?.LogError(ex, "{method} failed waiting for sync", nameof(WaitForSyncCompletionAsync));
                 SetStatus(SyncStatus.FAILED, "Wait for sync task faulted");
             }
         }
@@ -231,7 +235,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin syncing AOF to the replica
         /// </summary>
-        public async Task BeginAofSync()
+        public async Task BeginAofSyncAsync()
         {
             var aofSyncTask = AofSyncTask;
             try
@@ -251,10 +255,10 @@ namespace Garnet.cluster
                     currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
                     checkpointEntry: null);
 
-                var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray());
+                var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray()).ConfigureAwait(false);
                 if (!long.TryParse(result, out var syncFromAofAddress))
                 {
-                    logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSync));
+                    logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSyncAsync));
                     SetStatus(SyncStatus.FAILED, "Failed to parse recovery offset");
                     return;
                 }
@@ -274,7 +278,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.BeginAofSync)}");
+                logger?.LogError(ex, "{method}", $"{nameof(BeginAofSyncAsync)}");
                 SetStatus(SyncStatus.FAILED, ex.Message);
                 _ = clusterProvider.replicationManager.TryRemoveReplicationTask(AofSyncTask);
             }

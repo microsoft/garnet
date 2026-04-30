@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 
@@ -13,12 +14,12 @@ namespace Garnet.cluster
         /// Wait for config propagation based on the type of MigrateSession that is currently in progress
         /// </summary>
         /// <exception cref="GarnetException"></exception>
-        private void WaitForConfigPropagation()
+        private Task WaitForConfigPropagationAsync()
         {
             if (transferOption == TransferOption.KEYS)
-                clusterSession.UnsafeBumpAndWaitForEpochTransition();
+                return clusterSession.UnsafeBumpAndWaitForEpochTransitionAsync();
             else if (transferOption == TransferOption.SLOTS)
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                return clusterProvider.BumpAndWaitForEpochTransitionAsync();
             else
                 throw new GarnetException($"MigrateSession Invalid TransferOption {transferOption}");
         }

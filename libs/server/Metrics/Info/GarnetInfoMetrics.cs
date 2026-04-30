@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Garnet.networking;
 using Garnet.server.Metrics;
 
 namespace Garnet.server
@@ -22,6 +23,7 @@ namespace Garnet.server
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
                 InfoMetricsType.HLOGSCAN => false,
+                InfoMetricsType.COMMANDSTATS => false,
                 _ => true
             })];
 
@@ -47,6 +49,7 @@ namespace Garnet.server
         MetricsItem[] bufferPoolStats = null;
         MetricsItem[] checkpointStats = null;
         MetricsItem[][] hlogScanStats = null;
+        MetricsItem[] commandStatsInfo = null;
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
@@ -62,6 +65,7 @@ namespace Garnet.server
                 new("monitor_task", storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? "enabled" : "disabled"),
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
+                new("commandstats_monitor", storeWrapper.serverOptions.CommandStatsMonitor ? "enabled" : "disabled"),
                 new("run_id", storeWrapper.RunId),
                 new("redis_version", storeWrapper.redisProtocolVersion),
                 new("redis_mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
@@ -233,6 +237,70 @@ namespace Garnet.server
                 Array.Copy(gossipStats, 0, tmp, statsInfo.Length, gossipStats.Length);
                 statsInfo = tmp;
             }
+        }
+
+        private void PopulateCommandStatsInfo(StoreWrapper storeWrapper)
+        {
+            if (storeWrapper.monitor == null || !storeWrapper.serverOptions.CommandStatsMonitor)
+            {
+                commandStatsInfo = [new("", "Command stats monitoring is disabled. Enable with --commandstats-monitor flag.")];
+                return;
+            }
+
+            // Build an aggregate from history (disposed sessions) + active sessions
+            CommandStats aggregate = new();
+
+            if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0)
+            {
+                // Periodic sampling is running — globalCommandStats already includes
+                // history + active sessions from the last sampling tick.
+                CommandStats globalStats = storeWrapper.monitor.GlobalMetrics.globalCommandStats;
+                if (globalStats != null)
+                    aggregate.Add(globalStats);
+            }
+            else
+            {
+                // No periodic sampling — aggregate history + active sessions on demand
+                CommandStats historyStats = storeWrapper.monitor.GlobalMetrics.historyCommandStats;
+                if (historyStats != null)
+                    aggregate.Add(historyStats);
+
+                foreach (IGarnetServer server in storeWrapper.monitor.Servers)
+                {
+                    foreach (IMessageConsumer consumer in ((GarnetServerBase)server).ActiveConsumers())
+                    {
+                        CommandStats sessionStats = ((RespServerSession)consumer).GetCommandStats;
+                        if (sessionStats != null)
+                            aggregate.Add(sessionStats);
+                    }
+                }
+            }
+
+            var items = new List<MetricsItem>();
+            RespCommand[] allCommands = Enum.GetValues<RespCommand>();
+
+            foreach (RespCommand cmd in allCommands)
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                    continue;
+
+                int idx = (int)cmd;
+                if ((uint)idx >= (uint)aggregate.entries.Length)
+                    continue;
+
+                CommandStatsEntry entry = aggregate.entries[idx];
+                if (entry.Calls == 0 && entry.RejectedCalls == 0)
+                    continue;
+
+                string cmdName = RespCommandsInfo.GetRespCommandName(cmd).ToLowerInvariant();
+                if (cmdName == "unknown")
+                    continue;
+
+                items.Add(new($"cmdstat_{cmdName}",
+                    $"calls={entry.Calls},usec=0,usec_per_call=0.00,rejected_calls={entry.RejectedCalls},failed_calls={entry.FailedCalls}"));
+            }
+
+            commandStatsInfo = items.Count > 0 ? [.. items] : null;
         }
 
         private void PopulateStoreStats(StoreWrapper storeWrapper)
@@ -449,6 +517,7 @@ namespace Garnet.server
                 InfoMetricsType.BPSTATS => "BufferPoolStats",
                 InfoMetricsType.CINFO => "CheckpointInfo",
                 InfoMetricsType.HLOGSCAN => $"MainStoreHLogScan_DB_{dbId}",
+                InfoMetricsType.COMMANDSTATS => "Commandstats",
                 _ => "Default",
             };
         }
@@ -557,6 +626,10 @@ namespace Garnet.server
                     PopulateHlogScanInfo(storeWrapper);
                     GetSectionRespInfo(header, hlogScanStats[dbId], sbResponse);
                     return;
+                case InfoMetricsType.COMMANDSTATS:
+                    PopulateCommandStatsInfo(storeWrapper);
+                    GetSectionRespInfo(header, commandStatsInfo, sbResponse);
+                    return;
                 default:
                     return;
             }
@@ -632,6 +705,9 @@ namespace Garnet.server
                     return keyspaceInfo;
                 case InfoMetricsType.MODULES:
                     return null;
+                case InfoMetricsType.COMMANDSTATS:
+                    PopulateCommandStatsInfo(storeWrapper);
+                    return commandStatsInfo;
                 default:
                     return null;
             }
