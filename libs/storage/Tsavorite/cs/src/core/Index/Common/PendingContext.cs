@@ -52,9 +52,6 @@ namespace Tsavorite.core
             /// the address of the record we will push to the caller if it is not found later in the log.</summary>
             internal long originalAddress;
 
-            /// <summary>The record's ETag, if any; used to create <see cref="RecordMetadata"/> output in RUMD.</summary>
-            internal long eTag;
-
             /// <summary>The initial highest logical address of the search; used to limit search ranges when the pending operation completes (e.g. to see if a duplicate was inserted).</summary>
             internal long initialLatestLogicalAddress;
 
@@ -87,7 +84,7 @@ namespace Tsavorite.core
             {
                 var keyStr = !requestKey.IsEmpty ? SpanByte.ToShortString(requestKey.KeyBytes, 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
-                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ETag={eTag}, ReadCopyOpt={readCopyOptions}";
+                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ReadCopyOpt={readCopyOptions}";
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

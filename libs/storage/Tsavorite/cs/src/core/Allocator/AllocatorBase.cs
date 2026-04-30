@@ -1904,8 +1904,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
+        /// <param name="flushBuffers"></param>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
+        /// <param name="startLogicalAddress"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>

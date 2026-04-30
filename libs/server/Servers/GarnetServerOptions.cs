@@ -77,6 +77,21 @@ namespace Garnet.server
         public int AofReplicationRefreshFrequencyMs = 10;
 
         /// <summary>
+        /// Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.
+        /// </summary>
+        public int AofPhysicalSublogCount = 1;
+
+        /// <summary>
+        /// Number of replay tasks per physical sublog at the replica.
+        /// </summary>
+        public int AofReplayTaskCount = 1;
+
+        /// <summary>
+        /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
+        /// </summary>
+        public int AofTailWitnessFreqMs = 100;
+
+        /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
         /// </summary>
         public int SubscriberRefreshFrequencyMs = 0;
@@ -502,6 +517,14 @@ namespace Garnet.server
         public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
+        /// Check if the startup configuration allows the possibility of data loss during replication
+        /// NOTE: null device cannot or FastAofTruncate without OnDemandCheckpoint cannot guarantee the integrity of replication
+        /// since the AOF is being truncated aggresively.
+        /// </summary>
+        public bool AllowDataLoss
+            => UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint);
+
+        /// <summary>
         /// If true, enable Vector Set commands.
         /// 
         /// This is a preview feature, subject to substantial change, and should not be relied upon.
@@ -785,33 +808,38 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">DB ID</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        public void GetAofSettings(int dbId, LightEpoch epoch, out TsavoriteLogSettings tsavoriteLogSettings)
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings[] tsavoriteLogSettings)
         {
-            tsavoriteLogSettings = new TsavoriteLogSettings
+            tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
+            for (var i = 0; i < AofPhysicalSublogCount; i++)
             {
-                MemorySizeBits = AofMemorySizeBits(),
-                PageSizeBits = AofPageSizeBits(),
-                LogDevice = GetAofDevice(dbId),
-                TryRecoverLatest = false,
-                SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
-                FastCommitMode = EnableFastCommit,
-                AutoCommit = CommitFrequencyMs == 0,
-                MutableFraction = 0.9,
-                Epoch = epoch
-            };
-            if (tsavoriteLogSettings.PageSize > tsavoriteLogSettings.MemorySize)
-            {
-                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
-                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
-            }
+                tsavoriteLogSettings[i] = new TsavoriteLogSettings
+                {
+                    MemorySizeBits = AofMemorySizeBits(),
+                    PageSizeBits = AofPageSizeBits(),
+                    LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
+                    TryRecoverLatest = false,
+                    SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
+                    FastCommitMode = EnableFastCommit,
+                    AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
+                    MutableFraction = 0.9,
+                    Epoch = null
+                };
 
-            var aofDir = GetAppendOnlyFileDirectory(dbId);
-            // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
-            tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
-                FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
-                    new DefaultCheckpointNamingScheme(aofDir),
-                    removeOutdated: true,
-                    fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+                if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].MemorySize)
+                {
+                    logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
+                    throw new Exception("AOF Page size cannot be more than the AOF memory size.");
+                }
+
+                var aofDir = GetAppendOnlyFileDirectory(dbId);
+                // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
+                tsavoriteLogSettings[i].LogCommitManager = new DeviceLogCommitCheckpointManager(
+                    FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
+                        new DefaultCheckpointNamingScheme(aofDir, AofPhysicalSublogCount == 1 ? -1 : i),
+                        removeOutdated: true,
+                        fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+            }
         }
 
         /// <summary>
@@ -874,14 +902,41 @@ namespace Garnet.server
         /// Get device for AOF
         /// </summary>
         /// <returns></returns>
-        IDevice GetAofDevice(int dbId)
+        IDevice GetAofDevice(int dbId, int subLogIdx = -1)
         {
             if (UseAofNullDevice && EnableCluster && !FastAofTruncate)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
 
-            return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
-                .Get(new FileDescriptor(GarnetServerOptions.GetAppendOnlyFileDirectoryName(dbId), "aof.log"));
+            if (subLogIdx == -1)
+            {
+                return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                    .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), "aof.log"));
+            }
+            else
+            {
+                return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                    .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), $"aof.{subLogIdx}.log"));
+            }
         }
+
+        /// <summary>
+        /// Indicates whether AOF auto-commit is enabled.
+        /// </summary>
+        public bool AofAutoCommit
+            => CommitFrequencyMs == 0;
+
+        /// <summary>
+        /// Check if multi-log is enabled
+        /// </summary>
+        /// <returns></returns>
+        public bool MultiLogEnabled
+            => AofPhysicalSublogCount > 1 || AofReplayTaskCount > 1;
+
+        /// <summary>
+        /// Number of virtual sublogs expected
+        /// </summary>
+        public int AofVirtualSublogCount
+            => AofPhysicalSublogCount * AofReplayTaskCount;
     }
 }

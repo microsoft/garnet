@@ -84,7 +84,7 @@ namespace Garnet.server
             foreach (var db in databases)
             {
                 store_index_size += db.Store.IndexSize * 64;
-                aof_log_memory_size += db.AppendOnlyFile?.MemorySizeBytes ?? 0;
+                aof_log_memory_size += db.AppendOnlyFile != null ? db.AppendOnlyFile.Log.MemorySizeBytes.AggregateDiff(0) : 0;
 
                 if (db.SizeTracker?.mainLogTracker is null)
                     store_mainlog_memory_size += db.Store.Log.MemorySizeBytes;
@@ -353,11 +353,11 @@ namespace Garnet.server
 
             return
             [
-                new($"CommittedBeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedBeginAddress.ToString()),
-                new($"CommittedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedUntilAddress.ToString()),
-                new($"FlushedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.FlushedUntilAddress.ToString()),
-                new($"BeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.BeginAddress.ToString()),
-                new($"TailAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.TailAddress.ToString()),
+                new($"CommittedBeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.CommittedBeginAddress.ToString()),
+                new($"CommittedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.CommittedUntilAddress.ToString()),
+                new($"FlushedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.FlushedUntilAddress.ToString()),
+                new($"BeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.BeginAddress.ToString()),
+                new($"TailAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.Log.TailAddress.ToString()),
                 new($"SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString())
             ];
         }

@@ -278,7 +278,8 @@ namespace Garnet.test
             bool useLogNullDevice = false,
             bool enableVectorSetPreview = true,
             bool enableRangeIndexPreview = false,
-            string aofMemorySize = "64m"
+            string aofMemorySize = "64m",
+            string aofPageSize = null
             )
         {
             if (useAzureStorage)
@@ -387,6 +388,9 @@ namespace Garnet.test
 
             if (indexMaxSize != default)
                 opts.IndexMaxMemorySize = indexMaxSize;
+
+            if (!string.IsNullOrEmpty(aofPageSize))
+                opts.AofPageSize = aofPageSize;
 
             if (lowMemory)
             {
@@ -528,6 +532,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
@@ -595,6 +601,8 @@ namespace Garnet.test
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout,
+                    sublogCount: sublogCount,
+                    replayTaskCount: replayTaskCount,
                     expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                     clusterPreferredEndpointType: clusterPreferredEndpointType,
                     clusterAnnounceHostname: clusterAnnounceHostname,
@@ -676,6 +684,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int sublogCount = 1,
+            int replayTaskCount = 1,
             int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             string clusterAnnounceHostname = null,
@@ -804,6 +814,8 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                AofPhysicalSublogCount = sublogCount,
+                AofReplayTaskCount = replayTaskCount,
                 EnableVectorSetPreview = enableVectorSetPreview,
                 VectorSetReplayTaskCount = vectorSetReplayTaskCount,
                 EnableRangeIndexPreview = enableRangeIndexPreview,

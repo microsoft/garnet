@@ -210,15 +210,15 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITOP:
-                    var outPtr = output.SpanByteAndMemory.SpanByte.ToPointer();
-
-                    if (srcLogRecord.IsPinnedValue)
-                        *(long*)outPtr = ((IntPtr)srcLogRecord.PinnedValuePointer).ToInt64();
-                    else
-                        fixed (byte* valuePtr = value)
-                            *(long*)outPtr = ((IntPtr)valuePtr).ToInt64();
-
-                    *(int*)(outPtr + sizeof(long)) = value.Length;
+                    // Expose the value as a SpanByteAndMemory: inline values point directly at log memory
+                    // (stable under the unsafe context); overflow values come back as a no-copy borrowed
+                    // Memory<byte> that the caller pins for the duration of BITOP execution. For values
+                    // sourced from a DiskLogRecord (pending completion of a disk read), the inline
+                    // SectorAlignedMemory recordBuffer would be returned to the pool when the
+                    // DiskLogRecord is disposed; the getter handles that by copying inline values into a
+                    // pooled IMemoryOwner before returning, so the SpanByteAndMemory returned here is
+                    // always safe to use beyond this callback.
+                    output.SpanByteAndMemory = srcLogRecord.ValueSpanByteAndMemory;
                     return;
 
                 case RespCommand.BITFIELD:
@@ -253,36 +253,43 @@ namespace Garnet.server
 
                 case RespCommand.PFCOUNT:
                 case RespCommand.PFMERGE:
+                    // Caller (HyperLogLogOps) provides a sector-aligned destination buffer sized to
+                    // HyperLogLog.DefaultHLL.DenseBytes. Validate signature AND size before the copy
+                    // so a corrupted/oversized value cannot overflow the destination.
+                    var pfDstPtr = output.SpanByteAndMemory.SpanByte.ToPointer();
+                    var pfDstCapacity = output.SpanByteAndMemory.SpanByte.Length;
+
                     bool isValid;
                     if (srcLogRecord.IsPinnedValue)
                     {
                         isValid = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, value.Length);
-                        if (isValid)
-                            Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, output.SpanByteAndMemory.SpanByte.ToPointer(), value.Length, value.Length);
                     }
                     else
                     {
                         fixed (byte* valuePtr = value)
-                        {
                             isValid = HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length);
-                            if (isValid)
-                                Buffer.MemoryCopy(valuePtr, output.SpanByteAndMemory.SpanByte.ToPointer(), value.Length, value.Length);
-                        }
                     }
 
-                    if (!isValid)
+                    // Surface invalid OR oversized as the -1 sentinel; the caller already checks for it.
+                    if (!isValid || value.Length > pfDstCapacity)
                     {
-                        *(long*)output.SpanByteAndMemory.SpanByte.ToPointer() = -1;
+                        *(long*)pfDstPtr = -1;
                         return;
                     }
 
-                    if (value.Length <= output.SpanByteAndMemory.Length)
+                    // Pass the actual destination capacity to MemoryCopy so the bounds check is meaningful.
+                    if (srcLogRecord.IsPinnedValue)
                     {
-                        output.SpanByteAndMemory.SpanByte.Length = value.Length;
-                        return;
+                        Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, pfDstPtr, pfDstCapacity, value.Length);
+                    }
+                    else
+                    {
+                        fixed (byte* valuePtr = value)
+                            Buffer.MemoryCopy(valuePtr, pfDstPtr, pfDstCapacity, value.Length);
                     }
 
-                    throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
+                    output.SpanByteAndMemory.SpanByte.Length = value.Length;
+                    return;
 
                 case RespCommand.TTL:
                     var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
@@ -691,20 +698,20 @@ namespace Garnet.server
             return true;
         }
 
-        void CopyRespWithEtagData(ReadOnlySpan<byte> value, ref StringOutput dst, bool hasETag, MemoryPool<byte> memoryPool)
+        void CopyRespWithEtagData(ReadOnlySpan<byte> value, ref StringOutput dst, bool hasETag, long etag, MemoryPool<byte> memoryPool)
         {
             int valueLength = value.Length;
             // always writing an array of size 2 => *2\r\n
             int desiredLength = 4;
 
-            // get etag to write, default etag 0 for when no etag
-            long etag = hasETag ? functionsState.etagState.ETag : LogRecord.NoETag;
+            // use provided etag, default etag 0 for when no etag
+            long etagToWrite = hasETag ? etag : LogRecord.NoETag;
 
-            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-            desiredLength += 1 + NumUtils.CountDigits(etag) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
+            // Account for the two RESP array elements written separately below:
+            // *2\r\n :(etag digits)\r\n $(value length digits)\r\n (value bytes)\r\n
+            desiredLength += 1 + NumUtils.CountDigits(etagToWrite) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
 
-            WriteValAndEtagToDst(desiredLength, value, etag, ref dst, memoryPool);
+            WriteValAndEtagToDst(desiredLength, value, etagToWrite, ref dst, memoryPool);
         }
 
         static void WriteValAndEtagToDst(int desiredLength, ReadOnlySpan<byte> value, long etag, ref StringOutput dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
@@ -750,9 +757,15 @@ namespace Garnet.server
             if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
-                key, value, ref input, epochAccessor, out _);
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreUpsert,
+                version,
+                sessionId,
+                key,
+                value,
+                ref input,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>
@@ -773,9 +786,14 @@ namespace Garnet.server
 
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                key, ref input, epochAccessor, out _);
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreRMW,
+                version,
+                sessionId,
+                key,
+                ref input,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>
@@ -786,11 +804,16 @@ namespace Garnet.server
         void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
-            if (functionsState.StoredProcMode)
-                return;
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID },
-                key, item2: default, epochAccessor, out _);
+            if (functionsState.StoredProcMode) return;
+
+            functionsState.appendOnlyFile.Log.Enqueue(
+                AofEntryType.StoreDelete,
+                version,
+                sessionID,
+                key,
+                value: default,
+                epochAccessor,
+                out _);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref StringInput input)

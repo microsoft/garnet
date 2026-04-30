@@ -168,13 +168,6 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal enum LatchOperation : byte
-        {
-            None,
-            Shared,
-            Exclusive
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetRecordInvalid(long logicalAddress)
         {

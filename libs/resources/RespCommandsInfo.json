@@ -614,10 +614,10 @@
         "AclCategories": "Admin, Dangerous, Slow"
       },
       {
-        "Command": "CLUSTER_AOFSYNC",
-        "Name": "CLUSTER|AOFSYNC",
+        "Command": "CLUSTER_ADVANCE_TIME",
+        "Name": "CLUSTER|ADVANCE_TIME",
         "IsInternal": true,
-        "Arity": 3,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -978,6 +978,13 @@
             "Flags": "RO"
           }
         ]
+      },
+      {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Arity": -2,
+        "Flags": "Admin, Readonly, NoMulti, NoScript",
+        "AclCategories": "Admin, Slow, Garnet"
       },
       {
         "Command": "CLUSTER_SYNC",
@@ -4606,6 +4613,32 @@
           "Limit": 0
         },
         "Flags": "RW, Access, Update, VariableFlags"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert, Update"
       }
     ],
     "StoreType": "Main"

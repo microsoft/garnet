@@ -353,6 +353,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public SpanByteAndMemory ValueSpanByteAndMemory => diskLogRecord.ValueSpanByteAndMemory;
+
+        /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;
 
         /// <inheritdoc/>

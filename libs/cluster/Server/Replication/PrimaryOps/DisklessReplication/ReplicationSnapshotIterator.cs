@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Threading;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -31,7 +32,7 @@ namespace Garnet.cluster
         long currentFlushEventCount = 0;
         long lastFlushEventCount = 0;
 
-        public long CheckpointCoveredAddress { get; private set; }
+        AofAddress CheckpointCoveredAddress { get; set; }
 
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
         {
@@ -42,7 +43,7 @@ namespace Garnet.cluster
             sessions = replicationSyncManager.Sessions;
             numSessions = replicationSyncManager.NumSessions;
 
-            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+            CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
             for (var i = 0; i < numSessions; i++)
             {
                 if (!replicationSyncManager.IsActive(i)) continue;
@@ -143,7 +144,7 @@ namespace Garnet.cluster
                     break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-                replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
                 needToFlush = false;
             }
@@ -196,7 +197,7 @@ namespace Garnet.cluster
                     break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-                replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
                 currentFlushEventCount++;
             }
 
@@ -213,7 +214,7 @@ namespace Garnet.cluster
             }
 
             // Wait for flush and response to complete
-            replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+            AsyncUtils.BlockingWait(replicationSyncManager.WaitForFlushAsync());
 
             logger?.LogTrace("{OnStop} {numberOfRecords} {targetVersion}",
                 nameof(OnStop), numberOfRecords, targetVersion);

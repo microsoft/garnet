@@ -125,7 +125,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
-        public static ReadOnlySpan<byte> WITHETAG => "WITHETAG"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
         public static ReadOnlySpan<byte> RANK => "RANK"u8;
@@ -166,6 +165,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
         public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
+        public static ReadOnlySpan<byte> SETWITHETAG => "SETWITHETAG"u8;
         public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> MEMBERS => "MEMBERS"u8;
@@ -201,7 +201,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE_HLL => "WRONGTYPE Key is not a valid HyperLogLog string value."u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_ETAG_ON_CUSTOM_PROC => "WRONGTYPE Key with etag cannot be used for custom procedure."u8;
 
         public static ReadOnlySpan<byte> RESP_ERR_NOSCRIPT => "ERR This Redis command is not allowed from script"u8;
 
@@ -220,7 +219,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_WITHETAG_AND_GETVALUE => "ERR WITHETAG option not allowed with GET inside of SET"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY => "ERR value is NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY_INCR => "ERR increment would produce NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SCORE_NAN => "ERR resulting score is not a number (NaN)"u8;
@@ -452,7 +450,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> spublish => "SPUBLISH"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> reserve => "RESERVE"u8;
-        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
         public static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
         public static ReadOnlySpan<byte> banlist => "BANLIST"u8;
@@ -463,7 +460,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        public static ReadOnlySpan<byte> mlog_key_time => "MLOG_KEY_TIME"u8;
         public static ReadOnlySpan<byte> cluster_sync => "SYNC"u8;
+        public static ReadOnlySpan<byte> cluster_advance_time => "ADVANCE_TIME"u8;
 
         // Lua scripting strings
         public static ReadOnlySpan<byte> LUA_OK => "OK"u8;

@@ -112,5 +112,27 @@ namespace Garnet.server
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        void UnsafeSetConfig(string replicaOf);
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        void Dispose();
+
+        /// <summary>
+        /// NOTE: Used for micro-benchmark
+        /// </summary>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="record"></param>
+        /// <param name="recordLength"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        unsafe void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress);
     }
 }

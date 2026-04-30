@@ -1638,6 +1638,13 @@
         "Summary": "Processes a forwarded published message from a node in the same shard",
         "Group": "Cluster",
         "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Summary": "Returns sequence number for provided key.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
       }
     ]
   },
@@ -7366,6 +7373,50 @@
         "Type": "PureToken",
         "Token": "NOGET",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SETWITHETAG",
+    "Name": "SETWITHETAG",
+    "Summary": "Sets a key-value pair with an ETag. If the key already exists, the value is overwritten and the ETag is incremented. Returns the ETag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
       }
     ]
   },

@@ -67,14 +67,15 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref StringInput input, ReadOnlySpan<byte> srcValue, ref StringOutput output, ref UpsertInfo upsertInfo)
         {
-            // Prevent SET from overwriting VectorSet or RangeIndex stubs
-            if (logRecord.RecordType == VectorManager.RecordType || logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+            // Prevent SET from overwriting VectorSet or RangeIndex stubs – normal string records have RecordType 0; skip all checks in that common case.
+            var recordType = logRecord.RecordType;
+            if (recordType != 0 && (recordType == VectorManager.RecordType || recordType == RangeIndexManager.RangeIndexRecordType))
             {
                 upsertInfo.Action = UpsertAction.WrongType;
                 return false;
             }
 
-            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, srcValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
+            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, srcValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -95,7 +96,7 @@ namespace Garnet.server
         {
             if (inputLogRecord.Info.ValueIsObject)
                 GarnetException.Throw("String store should not be called with IHeapObject");
-            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.header.CheckWithETagFlag(), input.arg1))
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -103,6 +104,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER
@@ -115,6 +117,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
 #if NET9_0_OR_GREATER

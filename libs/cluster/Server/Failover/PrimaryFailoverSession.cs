@@ -5,20 +5,21 @@ using System;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
-        private Task<long> CheckReplicaSync(GarnetClient gclient)
+        private async Task<string> CheckReplicaSyncAsync(GarnetClient gclient)
         {
             try
             {
                 if (!gclient.IsConnected)
-                    gclient.Connect();
+                    await gclient.ConnectAsync().ConfigureAwait(false);
 
-                return gclient.ExecuteClusterFailReplicationOffset(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token);
+                return await gclient.ExecuteClusterFailReplicationOffsetAsync(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -27,17 +28,17 @@ namespace Garnet.cluster
             }
         }
 
-        private async Task<GarnetClient> WaitForFirstReplicaSync()
+        private async Task<GarnetClient> WaitForFirstReplicaSyncAsync()
         {
             if (clients.Length > 1)
             {
-                var tasks = new Task<long>[clients.Length + 1];
+                var tasks = new Task<string>[clients.Length + 1];
 
                 var tcount = 0;
                 foreach (var _gclient in clients)
-                    tasks[tcount++] = CheckReplicaSync(_gclient);
+                    tasks[tcount++] = CheckReplicaSyncAsync(_gclient);
 
-                tasks[clients.Length] = Task.Delay(failoverTimeout).ContinueWith(_ => default(long));
+                tasks[clients.Length] = DelayToDefaultAsync(failoverTimeout);
                 var completedTask = await Task.WhenAny(tasks).ConfigureAwait(false);
 
                 // No replica was able to catch up with primary so timeout
@@ -50,14 +51,15 @@ namespace Garnet.cluster
                 // Return client for replica that has caught up with replication primary
                 for (var i = 0; i < tasks.Length; i++)
                 {
-                    if (completedTask == tasks[i] && tasks[i].Result == clusterProvider.replicationManager.ReplicationOffset)
+                    var replicationOffset = AofAddress.FromString(await tasks[i].ConfigureAwait(false));
+                    if (completedTask == tasks[i] && replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
                         return clients[i];
                 }
                 return null;
             }
             else
             {
-                var syncTask = CheckReplicaSync(clients[0]);
+                var syncTask = CheckReplicaSyncAsync(clients[0]);
                 var timeoutTask = Task.Delay(failoverTimeout, cts.Token);
                 var completedTask = await Task.WhenAny(syncTask, timeoutTask).ConfigureAwait(false);
 
@@ -68,19 +70,27 @@ namespace Garnet.cluster
                     return null;
                 }
 
-                if (syncTask.Result != clusterProvider.replicationManager.ReplicationOffset)
+                var replicationOffset = AofAddress.FromString(await syncTask.ConfigureAwait(false));
+                if (!replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
                     return null;
                 else
                     return clients[0];
             }
+
+            static async Task<string> DelayToDefaultAsync(TimeSpan failoverTimeout)
+            {
+                await Task.Delay(failoverTimeout).ConfigureAwait(false);
+
+                return default;
+            }
         }
 
-        private async Task<bool> InitiateReplicaTakeOver(GarnetClient gclient)
+        private async Task<bool> InitiateReplicaTakeOverAsync(GarnetClient gclient)
         {
             try
             {
                 if (!gclient.IsConnected)
-                    gclient.Connect();
+                    await gclient.ConnectAsync().ConfigureAwait(false);
 
                 return await gclient.Failover(FailoverOption.TAKEOVER).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
@@ -91,7 +101,7 @@ namespace Garnet.cluster
             }
         }
 
-        public async Task<bool> BeginAsyncPrimaryFailover()
+        public async Task<bool> BeginAsyncPrimaryFailoverAsync()
         {
             try
             {
@@ -101,14 +111,14 @@ namespace Garnet.cluster
                 var oldRole = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
                 var replicas = clusterProvider.clusterManager.CurrentConfig.GetReplicaIds(localId);
                 clusterProvider.clusterManager.TryStopWrites(replicas[0]);
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                var newPrimary = await WaitForFirstReplicaSync().ConfigureAwait(false);
+                var newPrimary = await WaitForFirstReplicaSyncAsync().ConfigureAwait(false);
                 if (newPrimary == null) return false;
 
                 status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
-                var success = await InitiateReplicaTakeOver(newPrimary).ConfigureAwait(false);
+                var success = await InitiateReplicaTakeOverAsync(newPrimary).ConfigureAwait(false);
                 if (!success) return false;
             }
             catch (Exception ex)

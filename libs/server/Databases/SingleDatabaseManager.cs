@@ -108,46 +108,43 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
+        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
         {
             // Check if checkpoint already in progress
             if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(
-                t =>
-                {
-                    try
-                    {
-                        if (t.IsCompletedSuccessfully)
-                        {
-                            var storeTailAddress = t.Result;
-
-                            if (storeTailAddress.HasValue)
-                                defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                            defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
-                        }
-                    }
-                    finally
-                    {
-                        ResumeCheckpoints(defaultDatabase.Id);
-                    }
-                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
-
+            var checkpointTask = TakeCheckpointHelperAsync(defaultDatabase, logger, token);
             if (background)
                 return true;
 
-            checkpointTask.GetResult();
+            await checkpointTask.ConfigureAwait(false);
             return true;
+
+            async Task TakeCheckpointHelperAsync(GarnetDatabase defaultDatabase, ILogger logger, CancellationToken token)
+            {
+                try
+                {
+                    var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
+
+                    if (storeTailAddress.HasValue)
+                        defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+
+                    defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                }
+                finally
+                {
+                    ResumeCheckpoints(defaultDatabase.Id);
+                }
+            }
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return TakeCheckpoint(background, logger, token);
+            return TakeCheckpointAsync(background, logger, token);
         }
 
         /// <inheritdoc/>
@@ -166,7 +163,7 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger);
+                var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger).ConfigureAwait(false);
 
                 var storeTailAddress = result;
 
@@ -185,10 +182,10 @@ namespace Garnet.server
         public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit,
             CancellationToken token = default, ILogger logger = null)
         {
-            var aofSize = AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
+            var aofSize = StoreWrapper.AofSize();
             if (aofSize <= aofSizeLimit) return;
 
-            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            if (!await TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).ConfigureAwait(false))
                 return;
 
             try
@@ -203,7 +200,7 @@ namespace Garnet.server
                 logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
                     aofSize, aofSizeLimit);
 
-                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
+                var storeTailAddress = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ConfigureAwait(false);
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
 
@@ -220,13 +217,13 @@ namespace Garnet.server
         {
             try
             {
-                await AppendOnlyFile.CommitAsync(token: token);
+                await AppendOnlyFile.Log.CommitAsync(token: token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex,
                     "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
-                    AppendOnlyFile.TailAddress, AppendOnlyFile.CommittedUntilAddress);
+                    AppendOnlyFile.Log.TailAddress, AppendOnlyFile.Log.CommittedUntilAddress);
                 throw;
             }
         }
@@ -236,23 +233,23 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            await CommitToAofAsync(token, logger);
+            await CommitToAofAsync(token, logger).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>
         public override async Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
-            await AppendOnlyFile.WaitForCommitAsync(token: token);
+            await AppendOnlyFile.Log.WaitForCommitAsync(token: token).ConfigureAwait(false);
         }
 
         /// <inheritdoc/>
         public override void RecoverAOF() => RecoverDatabaseAOF(defaultDatabase);
 
         /// <inheritdoc/>
-        public override long ReplayAOF(long untilAddress = -1)
+        public override AofAddress ReplayAOF(AofAddress untilAddress)
         {
             if (!StoreWrapper.serverOptions.EnableAOF)
-                return -1;
+                return default;
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
@@ -269,11 +266,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(defaultDatabase);
+        public override ValueTask DoCompactionAsync(CancellationToken token = default, ILogger logger = null) => DoCompactionAsync(defaultDatabase);
 
         /// <inheritdoc/>
-        public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
-            GrowIndexesIfNeeded(defaultDatabase);
+        public override ValueTask<bool> GrowIndexesIfNeededAsync(CancellationToken token = default) =>
+            GrowIndexesIfNeededAsync(defaultDatabase);
 
         /// <inheritdoc/>
         public override void ExecuteObjectCollection() =>
@@ -327,8 +324,8 @@ namespace Garnet.server
 
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
-            if (safeTruncateAof)
-                SafeTruncateAOF(AofEntryType.FlushDb, unsafeTruncateLog);
+            if (safeTruncateAof && StoreWrapper.serverOptions.EnableAOF)
+                SafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -338,8 +335,10 @@ namespace Garnet.server
 
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
+            // We truncate AOF safely only in the cluster case.
+            // For standalone FlushDatabase will take care of the AOF truncation
             if (safeTruncateAof)
-                SafeTruncateAOF(AofEntryType.FlushAll, unsafeTruncateLog);
+                SafeFlushAOF(AofEntryType.FlushAll, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -380,20 +379,15 @@ namespace Garnet.server
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
-        private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
+        private unsafe void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
-            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.TailAddress);
+            // Safe truncate up to tail for botth primary and replica
+            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.Log.TailAddress);
+
+            // Only enqueue operation if this is a primary
             if (StoreWrapper.clusterProvider.IsPrimary())
             {
-                AofHeader header = new()
-                {
-                    opType = entryType,
-                    storeVersion = 0,
-                    sessionID = -1,
-                    unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                    databaseId = (byte)defaultDatabase.Id
-                };
-                AppendOnlyFile?.Enqueue(header, out _);
+                AppendOnlyFile.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog, defaultDatabase.Id);
             }
         }
 

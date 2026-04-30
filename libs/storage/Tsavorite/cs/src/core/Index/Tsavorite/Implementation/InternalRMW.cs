@@ -57,12 +57,9 @@ namespace Tsavorite.core
 #endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var latchOperation = LatchOperation.None;
-
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
-            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -78,7 +75,8 @@ namespace Tsavorite.core
                 SessionID = sessionFunctions.Ctx.sessionID
             };
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
+            // We must use try/finally to ensure unlocking even in the presence of exceptions. The inner try/finally ensures
+            // the ephemeral X-lock on the hash bucket is released even if a Post*Operation callback (e.g. AOF append) throws.
             try
             {
                 // Search the entire in-memory region.
@@ -99,11 +97,11 @@ namespace Tsavorite.core
                 // Check for CPR consistency after checking if source is readcache.
                 if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.Ctx.phase, ref stackCtx, ref status);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
-                            goto LatchRelease;
+                            goto Done;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcLogRecord = stackCtx.recSrc.CreateLogRecord();
@@ -131,60 +129,44 @@ namespace Tsavorite.core
                             if (!sessionFunctions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo))
                             {
                                 status = OperationStatus.NOTFOUND;
-                                goto LatchRelease;
+                                goto Done;
                             }
 
                             if (TryRevivifyInChain(ref srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref rmwInfo, out status)
                                     || status != OperationStatus.SUCCESS)
-                                goto LatchRelease;
+                                goto Done;
                         }
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
-
-                    // Track value heap delta across in-place update. Only measure when value is
-                    // heap-allocated (overflow or object); inline values have zero heap cost.
-                    var ipuPreInline = srcLogRecord.Info.ValueIsInline;
-                    var ipuPreHeap = ipuPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-
-                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
+                    // Track value heap delta across in-place update. HeapMemorySize is zero for inline values but IPU may change the value from inline to object or vice-versa.
+                    var sizeTracker = hlogBase.logSizeTracker;
+                    var ipuPreHeap = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() : 0L;
+                    var ipuResult = sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref input, ref output, ref rmwInfo, out status);
+                    var ipuDelta = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() - ipuPreHeap : 0L;
+                    if (ipuResult)
                     {
-                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
-                        {
-                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-                            var ipuDelta = ipuPostHeap - ipuPreHeap;
-                            if (ipuDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
-                        }
+                        if (ipuDelta != 0)
+                            sizeTracker.IncrementSize(ipuDelta);
 
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // status has been set by InPlaceUpdater
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed)
-                        // before IPU returned false. Track the delta before OnDispose subtracts the
-                        // remaining empty-collection overhead.
-                        if (!ipuPreInline || !srcLogRecord.Info.ValueIsInline)
-                        {
-                            var ipuPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-                            var ipuDelta = ipuPostHeap - ipuPreHeap;
-                            if (ipuDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipuDelta);
-                        }
+                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed) before IPU returned false.
+                        // Track the delta before OnDispose subtracts the remaining empty-collection overhead.
+                        if (ipuDelta != 0)
+                            sizeTracker.IncrementSize(ipuDelta);
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
 
-                        // Dispose resources and decrement value heap BEFORE setting Tombstone,
-                        // so that GetValueHeapMemorySize returns the correct pre-tombstone value.
+                        // Dispose resources and decrement value heap BEFORE setting Tombstone so GetValueHeapMemorySize returns the correct pre-tombstone value.
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                         srcLogRecord.InfoRef.SetTombstone();
@@ -195,25 +177,23 @@ namespace Tsavorite.core
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
 
-                        goto LatchRelease;
+                        goto Done;
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
-                        // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called
-                        // OnDispose(Deleted). If it failed and we fall through to CreateNewRecord,
-                        // the record is already disposed.
+                        // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called OnDispose(Deleted).
+                        // If it failed and we fall through to CreateNewRecord, the record is already disposed.
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {
                         // status has been set by InPlaceUpdater, and no modification should have been made to the record.
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = srcLogRecord.ETag;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
-                        goto LatchRelease;
+                        goto Done;
 
                     // InPlaceUpdater failed (e.g. insufficient space, another thread set Tombstone, etc). Use this record as the CopyUpdater source.
                     goto CreateNewRecord;
@@ -222,7 +202,7 @@ namespace Tsavorite.core
                 {
                     // Fuzzy Region: Must retry after epoch refresh, due to lost-update anomaly
                     status = OperationStatus.RETRY_LATER;
-                    goto LatchRelease;
+                    goto Done;
                 }
                 if (stackCtx.recSrc.HasMainLogSrc)
                 {
@@ -238,7 +218,7 @@ namespace Tsavorite.core
                     // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
                     CreatePendingRMWContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                    goto LatchRelease;
+                    goto Done;
                 }
 
                 // No record exists - drop through to create new record.
@@ -251,31 +231,23 @@ namespace Tsavorite.core
                                                 doingCU: stackCtx.recSrc.HasInMemorySrc && !srcLogRecord.Info.Tombstone, ref rmwInfo);
 
                     // OperationStatus.SUCCESS is OK here even if !OperationStatusUtils.IsAppend(status); it means NeedCopyUpdate or NeedInitialUpdate returned false
-                    goto LatchRelease;
+                    goto Done;
                 }
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                sessionFunctions.PostRMWOperation(key, ref input, ref rmwInfo, epoch);
-                EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
-            }
-
-        LatchRelease:
-            if (latchOperation != LatchOperation.None)
-            {
-                switch (latchOperation)
+                try
                 {
-                    case LatchOperation.Shared:
-                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                        break;
-                    case LatchOperation.Exclusive:
-                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
-                        break;
-                    default:
-                        break;
+                    sessionFunctions.PostRMWOperation(key, ref input, ref rmwInfo, epoch);
+                }
+                finally
+                {
+                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
             }
+
+        Done:
             return status;
         }
 
@@ -323,7 +295,6 @@ namespace Tsavorite.core
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        pendingContext.eTag = logRecord.ETag;
 
                         // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically).
                         // OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
@@ -348,7 +319,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
         {
             // The idea of CPR is that if a thread in version V tries to perform an operation and notices a record in V+1, it needs to back off and run CPR_SHIFT_DETECTED.
             // Similarly, a V+1 thread cannot update a V record; it needs to do a read-copy-update (or upsert at tail) instead of an in-place update.
@@ -702,7 +673,6 @@ namespace Tsavorite.core
             Done:
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
-                pendingContext.eTag = newLogRecord.ETag;
                 return status;
             }
 

@@ -225,7 +225,7 @@ namespace Tsavorite.devices
                 // retry the delete
                 try
                 {
-                    await blob.DeleteAsync();
+                    await blob.DeleteAsync().ConfigureAwait(false);
                     return true;
                 }
                 catch (Azure.RequestFailedException ex) when (BlobDoesNotExist(ex))
