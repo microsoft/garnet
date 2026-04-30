@@ -1080,6 +1080,52 @@ namespace Garnet.test
             }
         }
 
+        // Regression test for https://github.com/microsoft/garnet/issues/1749
+        // A SET / RMW / DEL whose AOF entry exceeds AofPageSize used to leave the per-bucket ephemeral X-lock
+        // held forever (the AOF Enqueue threw "Entry does not fit on page" before EphemeralXUnlock could run),
+        // pinning subsequent ops on the same key in an infinite RETRY_LATER loop and burning 100% CPU.
+        // The server is rebuilt with a small AofPageSize to trigger the oversize path with small payloads.
+        [Test]
+        public void OversizedAofEntryDoesNotHangServer()
+        {
+            const string key = "oversized-aof-key";
+
+            server.Dispose(false);
+            // 4 KB AOF page so we can trigger the oversize path with a small payload.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, aofPageSize: "4k");
+            server.Start();
+
+            // 1) SET with a value larger than the AOF page. The AOF Enqueue throws and StackExchange.Redis
+            //    will see the connection drop. Use a tight syncTimeout so a buggy server hang is detected.
+            var oversizedValue = new string('A', 8 * 1024);
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig() + ",syncTimeout=3000,abortConnect=false"))
+            {
+                var db = redis.GetDatabase(0);
+                Assert.Throws<RedisConnectionException>(() => db.StringSet(key, oversizedValue));
+            }
+
+            // 2) From a fresh connection issue several operations on the same key. Before the fix these would
+            //    spin forever inside Tsavorite waiting on the leaked ephemeral X-lock. With the fix they return
+            //    promptly. We don't care what GET returns, only that the server does not hang.
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig() + ",syncTimeout=3000"))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Reads use an ephemeral S-lock on the same hash bucket, so they block on a leaked X-lock.
+                Assert.DoesNotThrow(() => _ = db.StringGet(key));
+
+                // RMW operations (e.g. APPEND) use the same EphemeralX path as SET; verify they don't hang either.
+                Assert.DoesNotThrow(() => _ = db.StringAppend(key, "x"));
+
+                // Delete also takes the ephemeral X-lock; verify it can complete.
+                Assert.DoesNotThrow(() => _ = db.KeyDelete(key));
+
+                // A small SET on the same key after recovery must succeed end-to-end.
+                Assert.DoesNotThrow(() => _ = db.StringSet(key, "ok"));
+                ClassicAssert.AreEqual("ok", (string)db.StringGet(key));
+            }
+        }
+
         private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
         {
             RedisResult res = db.Execute("GETWITHETAG", key);
