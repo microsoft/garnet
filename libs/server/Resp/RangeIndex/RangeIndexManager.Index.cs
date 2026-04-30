@@ -141,6 +141,10 @@ namespace Garnet.server
         {
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(valueSpan));
             stub.TreeHandle = newTreeHandle;
+
+            // Clear FlagRecovered so that future eviction cycles use the flush snapshot
+            // (which reflects post-recovery writes) instead of the stale checkpoint snapshot.
+            stub.Flags &= unchecked((byte)~RangeIndexStub.FlagRecovered);
         }
 
         /// <summary>

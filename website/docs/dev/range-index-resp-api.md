@@ -65,8 +65,12 @@ When `ReadRangeIndex` detects `TreeHandle == 0`:
 3. Re-read stub — if another thread already restored, return
 4. Determine snapshot path: `FlagRecovered` → checkpoint file, else → `flush.bftree`
 5. Copy snapshot to `data.bftree` (working path), open via `RecoverFromSnapshot`
-6. Register in `liveIndexes`, issue `RIRESTORE` RMW to set new `TreeHandle`
+6. Register in `liveIndexes`, issue `RIRESTORE` RMW to set new `TreeHandle` and clear `FlagRecovered`
 7. Release exclusive lock, retry
+
+> **Note:** `RecreateIndex()` clears `FlagRecovered` when setting the new `TreeHandle`.
+> This ensures that subsequent eviction cycles restore from `flush.bftree` (which
+> reflects post-recovery writes) rather than the stale checkpoint snapshot.
 
 ### Checkpoint Consistency
 
