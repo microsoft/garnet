@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -1968,6 +1970,11 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true);
             server.Start();
 
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var rangeIndexDir = Path.Combine(TestUtils.MethodTestDir, "checkpoints", "rangeindex");
+            var idx1Dir = Path.Combine(rangeIndexDir, RangeIndexManager.HashKeyToDirectoryName("idx1"u8));
+            var idx2Dir = Path.Combine(rangeIndexDir, RangeIndexManager.HashKeyToDirectoryName("idx2"u8));
+
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
@@ -1979,13 +1986,27 @@ namespace Garnet.test
                 db.Execute("RI.CREATE", "idx2", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
                 db.Execute("RI.SET", "idx2", "key-b", "val-b");
 
+                // First checkpoint — both trees get snapshot files
                 db.Execute("SAVE");
             }
+
+            // Both key directories should have data.bftree + snapshot file
+            ClassicAssert.IsTrue(Directory.Exists(idx1Dir), "idx1 directory should exist after first checkpoint");
+            ClassicAssert.IsTrue(Directory.Exists(idx2Dir), "idx2 directory should exist after first checkpoint");
+            ClassicAssert.IsTrue(File.Exists(Path.Combine(idx1Dir, "data.bftree")), "idx1 data.bftree should exist");
+            ClassicAssert.IsTrue(File.Exists(Path.Combine(idx2Dir, "data.bftree")), "idx2 data.bftree should exist");
+            var idx1Snapshots = Directory.GetFiles(idx1Dir, "snapshot.*.bftree");
+            var idx2Snapshots = Directory.GetFiles(idx2Dir, "snapshot.*.bftree");
+            ClassicAssert.AreEqual(1, idx1Snapshots.Length, "idx1 should have 1 snapshot after first checkpoint");
+            ClassicAssert.AreEqual(1, idx2Snapshots.Length, "idx2 should have 1 snapshot after first checkpoint");
 
             // Recover — both stubs get FlagRecovered=true, TreeHandle=0
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
             server.Start();
+
+            rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "No trees should be live right after recovery");
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -1994,12 +2015,26 @@ namespace Garnet.test
                 // Access idx1 only — this restores it and registers in liveIndexes
                 var val = db.Execute("RI.GET", "idx1", "key-a");
                 ClassicAssert.AreEqual("val-a", (string)val);
+                ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "Only idx1 should be live after restore");
 
                 // Do NOT access idx2 — it stays unrestored (TreeHandle=0, FlagRecovered=true)
 
                 // Second checkpoint: idx1 gets a new snapshot, idx2 does not.
                 // PurgeOldCheckpointSnapshots deletes the old checkpoint snapshot files.
                 db.Execute("SAVE");
+
+                // idx1: old snapshot purged, new snapshot created
+                idx1Snapshots = Directory.GetFiles(idx1Dir, "snapshot.*.bftree");
+                ClassicAssert.AreEqual(1, idx1Snapshots.Length, "idx1 should have 1 snapshot after second checkpoint (old purged, new created)");
+
+                // idx2: old snapshot purged, NO new snapshot created (tree was never restored)
+                idx2Snapshots = Directory.GetFiles(idx2Dir, "snapshot.*.bftree");
+                ClassicAssert.AreEqual(0, idx2Snapshots.Length,
+                    "idx2 old snapshot should be purged and no new snapshot created (tree was never restored)");
+
+                // idx2 data.bftree should still exist (working file from initial creation)
+                ClassicAssert.IsTrue(File.Exists(Path.Combine(idx2Dir, "data.bftree")),
+                    "idx2 data.bftree should still exist (not deleted by purge)");
 
                 // Now access idx2 — its old checkpoint snapshot was purged,
                 // and no flush.bftree was ever written.
