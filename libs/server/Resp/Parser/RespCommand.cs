@@ -768,67 +768,12 @@ namespace Garnet.server
             var ptr = recvBufferPtr + readHead;
             var remainingBytes = bytesRead - readHead;
 
-            // SIMD fast path: match the full RESP-encoded pattern (*N\r\n$L\r\nCMD\r\n) in a
-            // single Vector128 comparison. Each check validates the header AND command name
-            // simultaneously: 1 load + 1 AND (mask) + 1 EqualsAll = 3 ops per candidate.
+            // SIMD fast path delegated to non-inlined helper to keep this method small enough to inline.
             if (Vector128.IsHardwareAccelerated && remainingBytes >= 16)
             {
-                var input = Vector128.LoadUnsafe(ref Unsafe.AsRef<byte>(ptr));
-
-                // 13-byte patterns: 3-char commands (GET, SET, DEL, TTL)
-                var m13 = Vector128.BitwiseAnd(input, s_mask13);
-                if (Vector128.EqualsAll(m13, s_GET)) { readHead += 13; count = 1; return RespCommand.GET; }
-                if (Vector128.EqualsAll(m13, s_SET)) { readHead += 13; count = 2; return RespCommand.SET; }
-                if (Vector128.EqualsAll(m13, s_DEL)) { readHead += 13; count = 1; return RespCommand.DEL; }
-                if (Vector128.EqualsAll(m13, s_TTL)) { readHead += 13; count = 1; return RespCommand.TTL; }
-
-                // 14-byte patterns: 4-char commands (PING, INCR, DECR, EXEC, PTTL)
-                var m14 = Vector128.BitwiseAnd(input, s_mask14);
-                if (Vector128.EqualsAll(m14, s_PING)) { readHead += 14; count = 0; return RespCommand.PING; }
-                if (Vector128.EqualsAll(m14, s_INCR)) { readHead += 14; count = 1; return RespCommand.INCR; }
-                if (Vector128.EqualsAll(m14, s_DECR)) { readHead += 14; count = 1; return RespCommand.DECR; }
-                if (Vector128.EqualsAll(m14, s_EXEC)) { readHead += 14; count = 0; return RespCommand.EXEC; }
-                if (Vector128.EqualsAll(m14, s_PTTL)) { readHead += 14; count = 1; return RespCommand.PTTL; }
-
-                // 15-byte patterns: 5-char commands (MULTI, SETNX, SETEX)
-                var m15 = Vector128.BitwiseAnd(input, s_mask15);
-                if (Vector128.EqualsAll(m15, s_MULTI)) { readHead += 15; count = 0; return RespCommand.MULTI; }
-                if (Vector128.EqualsAll(m15, s_SETNX)) { readHead += 15; count = 2; return RespCommand.SETNX; }
-                if (Vector128.EqualsAll(m15, s_SETEX)) { readHead += 15; count = 3; return RespCommand.SETEX; }
-
-                // 16-byte patterns: 6-char commands (no mask — exact 16-byte match)
-                if (Vector128.EqualsAll(input, s_EXISTS)) { readHead += 16; count = 1; return RespCommand.EXISTS; }
-                if (Vector128.EqualsAll(input, s_GETDEL)) { readHead += 16; count = 1; return RespCommand.GETDEL; }
-                if (Vector128.EqualsAll(input, s_APPEND)) { readHead += 16; count = 2; return RespCommand.APPEND; }
-                if (Vector128.EqualsAll(input, s_INCRBY)) { readHead += 16; count = 2; return RespCommand.INCRBY; }
-                if (Vector128.EqualsAll(input, s_DECRBY)) { readHead += 16; count = 2; return RespCommand.DECRBY; }
-                if (Vector128.EqualsAll(input, s_PSETEX)) { readHead += 16; count = 3; return RespCommand.PSETEX; }
-
-                // MRU cache check: catches repeated commands that aren't in the SIMD pattern table
-                // (e.g., HSET, LPUSH, ZADD, ZRANGEBYSCORE). Same 3-op cost as one SIMD pattern check.
-                if (_cachedCmd0 != RespCommand.NONE)
-                {
-                    if (Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask0), _cachedPattern0))
-                    {
-                        readHead += _cachedLen0;
-                        count = _cachedCount0;
-                        return _cachedCmd0;
-                    }
-
-                    if (_cachedCmd1 != RespCommand.NONE &&
-                        Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask1), _cachedPattern1))
-                    {
-                        readHead += _cachedLen1;
-                        count = _cachedCount1;
-                        // Promote slot 1 → slot 0 (swap)
-                        (_cachedPattern0, _cachedPattern1) = (_cachedPattern1, _cachedPattern0);
-                        (_cachedMask0, _cachedMask1) = (_cachedMask1, _cachedMask0);
-                        (_cachedCmd0, _cachedCmd1) = (_cachedCmd1, _cachedCmd0);
-                        (_cachedLen0, _cachedLen1) = (_cachedLen1, _cachedLen0);
-                        (_cachedCount0, _cachedCount1) = (_cachedCount1, _cachedCount0);
-                        return _cachedCmd0;
-                    }
-                }
+                var simdResult = SimdFastParse(ptr, out count);
+                if (simdResult != RespCommand.NONE)
+                    return simdResult;
             }
 
             // Scalar fast path: uses ulong comparisons to match common commands.
@@ -930,6 +875,77 @@ namespace Garnet.server
             else
             {
                 return FastParseInlineCommand(out count);
+            }
+
+            count = -1;
+            return RespCommand.NONE;
+        }
+
+        /// <summary>
+        /// SIMD Vector128 pattern matching for the most common commands.
+        /// Each check validates the full RESP-encoded pattern (*N\r\n$L\r\nCMD\r\n)
+        /// in a single 16-byte comparison: 1 load + 1 AND (mask) + 1 EqualsAll = 3 ops.
+        /// Also checks the per-session MRU cache for repeated commands.
+        /// Caller must ensure ptr has at least 16 bytes available.
+        /// Marked NoInlining so FastParseCommand stays small enough to inline.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand SimdFastParse(byte* ptr, out int count)
+        {
+            var input = Vector128.LoadUnsafe(ref Unsafe.AsRef<byte>(ptr));
+
+            // 13-byte patterns: 3-char commands (GET, SET, DEL, TTL)
+            var m13 = Vector128.BitwiseAnd(input, s_mask13);
+            if (Vector128.EqualsAll(m13, s_GET)) { readHead += 13; count = 1; return RespCommand.GET; }
+            if (Vector128.EqualsAll(m13, s_SET)) { readHead += 13; count = 2; return RespCommand.SET; }
+            if (Vector128.EqualsAll(m13, s_DEL)) { readHead += 13; count = 1; return RespCommand.DEL; }
+            if (Vector128.EqualsAll(m13, s_TTL)) { readHead += 13; count = 1; return RespCommand.TTL; }
+
+            // 14-byte patterns: 4-char commands (PING, INCR, DECR, EXEC, PTTL)
+            var m14 = Vector128.BitwiseAnd(input, s_mask14);
+            if (Vector128.EqualsAll(m14, s_PING)) { readHead += 14; count = 0; return RespCommand.PING; }
+            if (Vector128.EqualsAll(m14, s_INCR)) { readHead += 14; count = 1; return RespCommand.INCR; }
+            if (Vector128.EqualsAll(m14, s_DECR)) { readHead += 14; count = 1; return RespCommand.DECR; }
+            if (Vector128.EqualsAll(m14, s_EXEC)) { readHead += 14; count = 0; return RespCommand.EXEC; }
+            if (Vector128.EqualsAll(m14, s_PTTL)) { readHead += 14; count = 1; return RespCommand.PTTL; }
+
+            // 15-byte patterns: 5-char commands (MULTI, SETNX, SETEX)
+            var m15 = Vector128.BitwiseAnd(input, s_mask15);
+            if (Vector128.EqualsAll(m15, s_MULTI)) { readHead += 15; count = 0; return RespCommand.MULTI; }
+            if (Vector128.EqualsAll(m15, s_SETNX)) { readHead += 15; count = 2; return RespCommand.SETNX; }
+            if (Vector128.EqualsAll(m15, s_SETEX)) { readHead += 15; count = 3; return RespCommand.SETEX; }
+
+            // 16-byte patterns: 6-char commands (no mask — exact 16-byte match)
+            if (Vector128.EqualsAll(input, s_EXISTS)) { readHead += 16; count = 1; return RespCommand.EXISTS; }
+            if (Vector128.EqualsAll(input, s_GETDEL)) { readHead += 16; count = 1; return RespCommand.GETDEL; }
+            if (Vector128.EqualsAll(input, s_APPEND)) { readHead += 16; count = 2; return RespCommand.APPEND; }
+            if (Vector128.EqualsAll(input, s_INCRBY)) { readHead += 16; count = 2; return RespCommand.INCRBY; }
+            if (Vector128.EqualsAll(input, s_DECRBY)) { readHead += 16; count = 2; return RespCommand.DECRBY; }
+            if (Vector128.EqualsAll(input, s_PSETEX)) { readHead += 16; count = 3; return RespCommand.PSETEX; }
+
+            // MRU cache check: catches repeated commands that aren't in the SIMD pattern table
+            if (_cachedCmd0 != RespCommand.NONE)
+            {
+                if (Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask0), _cachedPattern0))
+                {
+                    readHead += _cachedLen0;
+                    count = _cachedCount0;
+                    return _cachedCmd0;
+                }
+
+                if (_cachedCmd1 != RespCommand.NONE &&
+                    Vector128.EqualsAll(Vector128.BitwiseAnd(input, _cachedMask1), _cachedPattern1))
+                {
+                    readHead += _cachedLen1;
+                    count = _cachedCount1;
+                    // Promote slot 1 → slot 0 (swap)
+                    (_cachedPattern0, _cachedPattern1) = (_cachedPattern1, _cachedPattern0);
+                    (_cachedMask0, _cachedMask1) = (_cachedMask1, _cachedMask0);
+                    (_cachedCmd0, _cachedCmd1) = (_cachedCmd1, _cachedCmd0);
+                    (_cachedLen0, _cachedLen1) = (_cachedLen1, _cachedLen0);
+                    (_cachedCount0, _cachedCount1) = (_cachedCount1, _cachedCount0);
+                    return _cachedCmd0;
+                }
             }
 
             count = -1;
