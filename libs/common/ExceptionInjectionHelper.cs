@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Garnet.common
@@ -89,7 +90,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="exceptionType"></param>
         /// <returns></returns>
-        public static async Task WaitOnSet(ExceptionInjectionType exceptionType)
+        public static async Task WaitOnSetAsync(ExceptionInjectionType exceptionType)
         {
             if (exceptionType == ExceptionInjectionType.None)
             {
@@ -103,6 +104,17 @@ namespace Garnet.common
                 while (!IsEnabled(exceptionType))
                     await Task.Yield();
             }
+        }
+
+        /// <summary>
+        /// Wait on clear condition
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static void WaitOnClear(ExceptionInjectionType exceptionType)
+        {
+            while (ExceptionInjectionTypes[(int)exceptionType])
+                Thread.Yield();
         }
 
         /// <summary>

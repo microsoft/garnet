@@ -207,13 +207,27 @@ namespace Garnet.server
                     }, ref parseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput();
-                    RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
+                    try
+                    {
+                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
 
-                    writer.WriteInt32(foundItems);
+                        writer.WriteInt32(foundItems);
+                    }
+                    finally
+                    {
+                        // ZADD backend writes its result via RespMemoryWriter, which allocates a
+                        // MemoryPool buffer when the (default) SpanByte cannot hold the response.
+                        // Dispose to avoid leaking that buffer back to the pool.
+                        if (!zAddOutput.SpanByteAndMemory.IsSpanByte)
+                            zAddOutput.SpanByteAndMemory.Memory?.Dispose();
+                    }
                 }
                 finally
                 {
                     searchOutHandler.Dispose();
+                    // GeoSearch writes via RespMemoryWriter, which (with a default SpanByte) rents a
+                    // MemoryPool buffer and assigns it here. Dispose to release it back to the pool.
+                    searchOutMem.Memory?.Dispose();
                 }
 
                 return GarnetStatus.OK;

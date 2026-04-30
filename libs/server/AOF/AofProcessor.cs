@@ -240,7 +240,8 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                // Must block here, cannot move off the thread
+                                _ = AsyncUtils.BlockingWait(storeWrapper.TakeCheckpointAsync(background: false, logger));
                             }
 
                             // Process buffered records

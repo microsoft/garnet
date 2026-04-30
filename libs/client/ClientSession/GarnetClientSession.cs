@@ -134,11 +134,10 @@ namespace Garnet.client
         /// <summary>
         /// Connect to server
         /// </summary>
-        /// <param name="timeoutMs">Timeout in milliseconds (default 0 for immediate timeout)</param>
         /// <param name="token"></param>
-        public unsafe void Connect(int timeoutMs = 0, CancellationToken token = default)
+        public unsafe void Connect(CancellationToken token = default)
         {
-            socket = ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false).GetAwaiter().GetResult();
+            socket = ConnectSendSocket();
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
@@ -148,7 +147,7 @@ namespace Garnet.client
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
-            networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.Start(sslOptions, EndPoint.ToString(), token);
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
             offset = networkSender.GetResponseObjectHead();
@@ -159,11 +158,52 @@ namespace Garnet.client
             {
                 if (authUsername != null)
                 {
-                    ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
+                    Execute("AUTH", authUsername, authPassword == null ? "" : authPassword);
                 }
                 else if (authPassword != null)
                 {
-                    ExecuteAsync("AUTH", authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
+                    Execute("AUTH", authPassword);
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "AUTH returned error");
+                throw;
+            }
+        }
+
+        /// <inheritdoc cref="Connect"/>
+        public async Task ConnectAsync(int timeoutMs = 0, CancellationToken token = default)
+        {
+            socket = await ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false);
+            networkHandler = new GarnetClientSessionTcpNetworkHandler(
+                this,
+                socket,
+                networkBufferSettings,
+                networkPool,
+                sslOptions != null,
+                messageConsumer: this,
+                networkSendThrottleMax: networkSendThrottleMax,
+                logger: logger);
+            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
+            networkSender = networkHandler.GetNetworkSender();
+            networkSender.GetResponseObject();
+            unsafe
+            {
+                offset = networkSender.GetResponseObjectHead();
+                end = networkSender.GetResponseObjectTail();
+            }
+            numCommands = 0;
+
+            try
+            {
+                if (authUsername != null)
+                {
+                    _ = await ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false);
+                }
+                else if (authPassword != null)
+                {
+                    _ = await ExecuteAsync("AUTH", authPassword).ConfigureAwait(false);
                 }
             }
             catch (Exception e)
@@ -176,9 +216,40 @@ namespace Garnet.client
         /// <summary>
         /// Connect client send socket
         /// </summary>
-        /// <param name="millisecondsTimeout"></param>
-        /// <returns></returns>
         /// <exception cref="Exception"></exception>
+        private Socket ConnectSendSocket()
+        {
+            if (EndPoint is DnsEndPoint dnsEndpoint)
+            {
+                var hostEntries = Dns.GetHostEntry(dnsEndpoint.Host);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    if (TryConnectSocket(socket, endpoint))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (EndPoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (TryConnectSocket(socket, EndPoint))
+                    return socket;
+            }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", EndPoint);
+            throw new Exception($"Failed to connect at {EndPoint}");
+        }
+
+        /// <inheritdoc cref="ConnectSendSocket()"/>
         private async Task<Socket> ConnectSendSocketAsync(int millisecondsTimeout = 0, CancellationToken cancellationToken = default)
         {
             if (EndPoint is DnsEndPoint dnsEndpoint)
@@ -211,14 +282,36 @@ namespace Garnet.client
             throw new Exception($"Failed to connect at {EndPoint}");
         }
 
+
         /// <summary>
         /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="endpoint"></param>
-        /// <param name="millisecondsTimeout"></param>
-        /// <param name="cancellationToken">The cancellation token</param>
         /// <returns></returns>
+        private bool TryConnectSocket(Socket socket, EndPoint endpoint)
+        {
+            try
+            {
+                socket.Connect(endpoint);
+
+                if (!socket.Connected)
+                {
+                    socket.Close();
+                    throw new Exception($"Failed to connect server {endpoint}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
+                socket.Dispose();
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc cref="TryConnectSocket(Socket, EndPoint)"/>
         private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, int millisecondsTimeout, CancellationToken cancellationToken = default)
         {
             try
@@ -264,7 +357,7 @@ namespace Garnet.client
         /// <summary>
         /// Reconnect to server
         /// </summary>
-        public void Reconnect(int timeoutMs = 0, CancellationToken token = default)
+        public Task ReconnectAsync(int timeoutMs = 0, CancellationToken token = default)
         {
             if (Disposed) throw new ObjectDisposedException("GarnetClientSession");
             try
@@ -274,7 +367,7 @@ namespace Garnet.client
                 networkHandler?.Dispose();
             }
             catch { }
-            Connect(timeoutMs, token);
+            return ConnectAsync(timeoutMs, token);
         }
 
         /// <summary>

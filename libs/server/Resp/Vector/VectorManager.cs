@@ -286,16 +286,15 @@ namespace Garnet.server
         {
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             _ = replicationReplayChannel.Writer.TryComplete();
-            replicationReplayChannel.Reader.Completion.Wait();
-
-            Task.WhenAll(replicationReplayTasks).Wait();
+            AsyncUtils.BlockingWait(replicationReplayChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
 
             replicationBlockEvent.Dispose();
 
             // Wait for any in progress cleanup to finish
             cleanupTaskChannel.Writer.Complete();
-            cleanupTaskChannel.Reader.Completion.Wait();
-            cleanupTask.Wait();
+            AsyncUtils.BlockingWait(cleanupTaskChannel.Reader.Completion);
+            AsyncUtils.BlockingWait(cleanupTask);
         }
 
         private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext ctx)
