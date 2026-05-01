@@ -115,10 +115,6 @@ namespace Tsavorite.benchmark
             HelpText = "Use Snapshot checkpoint if doing periodic checkpoints (default is FoldOver)")]
         public bool PeriodicCheckpointUseSnapshot { get; set; }
 
-        [Option("chkptincr", Required = false, Default = false,
-            HelpText = "Try incremental checkpoint if doing periodic checkpoints")]
-        public bool PeriodicCheckpointTryIncremental { get; set; }
-
         [Option("dumpdist", Required = false, Default = false,
             HelpText = "Dump the distribution of each non-empty bucket in the hash table")]
         public bool DumpDistribution { get; set; }
@@ -132,8 +128,7 @@ namespace Tsavorite.benchmark
             return $"b: {Benchmark}; a: {allocator}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
                         + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; ov: {boolStr(UseOverflowValues)}; obj: {boolStr(UseObjectValues)}; hp: {HashPacking};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; synth: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
-                        + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"
-                        + $" chkptincr: {boolStr(PeriodicCheckpointTryIncremental)}";
+                        + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")}";
         }
     }
 }

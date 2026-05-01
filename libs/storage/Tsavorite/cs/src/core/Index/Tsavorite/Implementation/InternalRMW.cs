@@ -149,7 +149,6 @@ namespace Tsavorite.core
                         if (ipuDelta != 0)
                             sizeTracker.IncrementSize(ipuDelta);
 
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // status has been set by InPlaceUpdater
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -158,11 +157,11 @@ namespace Tsavorite.core
 
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed) before IPU returned false.
-                        // Track the delta before OnDispose subtracts the remaining empty-collection overhead.
+                        // ExpireAndStop: the object was mutated in-place (e.g. last element removed)
+                        // before IPU returned false. Track the delta before OnDispose subtracts the
+                        // remaining empty-collection overhead.
                         if (ipuDelta != 0)
                             sizeTracker.IncrementSize(ipuDelta);
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
@@ -170,7 +169,7 @@ namespace Tsavorite.core
                         OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                         srcLogRecord.InfoRef.SetTombstone();
-                        srcLogRecord.InfoRef.SetDirtyAndModified();
+                        srcLogRecord.InfoRef.SetModified();
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
@@ -293,7 +292,6 @@ namespace Tsavorite.core
                             hlogBase.logSizeTracker?.IncrementSize(valueHeap);
 
                         // Success
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                         // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically).
@@ -419,7 +417,7 @@ namespace Tsavorite.core
                         if (allocOptions.elideSourceRecord)
                         {
                             srcLogRecord.InfoRef.SetTombstone();
-                            srcLogRecord.InfoRef.SetDirtyAndModified();
+                            srcLogRecord.InfoRef.SetModified();
 
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer. srcLogRecord is elidable so must be a memory LogRecord.
                             ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
@@ -518,7 +516,7 @@ namespace Tsavorite.core
                         OnDispose(ref srcLogRecord.AsMemoryLogRecordRef(), DisposeReason.Deleted);
                     addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
-                    newLogRecord.InfoRef.SetDirtyAndModified();
+                    newLogRecord.InfoRef.SetModified();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -556,7 +554,7 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
-                newLogRecord.InfoRef.SetDirtyAndModified();
+                newLogRecord.InfoRef.SetModified();
                 newLogRecord.InfoRef.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }

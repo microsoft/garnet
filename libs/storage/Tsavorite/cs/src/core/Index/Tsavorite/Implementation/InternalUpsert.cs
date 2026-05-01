@@ -143,7 +143,6 @@ namespace Tsavorite.core
                         if (ipwDelta != 0)
                             sizeTracker.IncrementSize(ipwDelta);
 
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -234,7 +233,6 @@ namespace Tsavorite.core
                         hlogBase.logSizeTracker?.IncrementSize(valueHeap);
 
                     // Success
-                    MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                     // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.

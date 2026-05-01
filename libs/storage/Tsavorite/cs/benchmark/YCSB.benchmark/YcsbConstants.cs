@@ -59,7 +59,6 @@ namespace Tsavorite.benchmark
         internal const string OpsPerSec = "ops/sec";
 
         internal const CheckpointType kPeriodicCheckpointType = CheckpointType.FoldOver;
-        internal const bool kPeriodicCheckpointTryIncremental = false;
 
         internal const double SyntheticZipfTheta = 0.99;
 
