@@ -36,7 +36,6 @@ namespace Tsavorite.core
         internal Guid _indexCheckpointToken;
         internal Guid _hybridLogCheckpointToken;
         internal HybridLogCheckpointInfo _hybridLogCheckpoint;
-        internal HybridLogCheckpointInfo _lastSnapshotCheckpoint;
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
@@ -56,17 +55,6 @@ namespace Tsavorite.core
         {
             checkpointManager.CleanupLogCheckpoint(_hybridLogCheckpointToken);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
-        }
-
-        internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
-        {
-            _hybridLogCheckpoint.info.cookie = checkpointManager.GetCookie();
-            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray(), deltaLog);
-        }
-
-        internal void CleanupLogIncrementalCheckpoint()
-        {
-            checkpointManager.CleanupLogIncrementalCheckpoint(_hybridLogCheckpointToken);
         }
 
         internal void WriteIndexMetaInfo()

@@ -40,14 +40,14 @@ by `GarnetRecordTriggers`:
 | Trigger | When | What it does for RangeIndex |
 |---------|------|---------------------------|
 | `OnFlush` | Page moves to read-only | Snapshot BfTree to `flush.bftree` under exclusive lock; set `FlagFlushed` |
-| `OnEvict` | Page evicted past HeadAddress | Free BfTree under exclusive lock via `DisposeTreeUnderLock` |
+| `OnEvict` | Page evicted past HeadAddress | Free BfTree under exclusive lock via `DisposeTreeUnderLock`; data files preserved for lazy restore |
 | `OnDiskRead` | Record loaded from disk | Zero `TreeHandle` (native pointer is stale) |
 | `OnCheckpoint(VersionShift)` | PREPARE→IN_PROGRESS | Set checkpoint barrier; mark all live trees `SnapshotPending=1` |
 | `OnCheckpoint(FlushBegin)` | WAIT_FLUSH | Snapshot trees with `SnapshotPending=1` under exclusive lock; clear barrier |
 | `OnCheckpoint(CheckpointCompleted)` | REST | Purge old checkpoint snapshot files (if `removeOutdated`) |
 | `OnRecovery(Guid)` | Before snapshot file recovery | Store recovered checkpoint token |
 | `OnRecoverySnapshotRead` | Per record from snapshot file | Set `FlagRecovered` on RI stubs |
-| `OnDispose(Deleted)` | DEL/UNLINK | Free BfTree under exclusive lock |
+| `OnDispose(Deleted)` | DEL/UNLINK | Free BfTree under exclusive lock; delete data files (`data.bftree`, `flush.bftree`, snapshots, key directory) |
 
 ### Lazy Promote (Flush → Tail)
 
@@ -2204,7 +2204,7 @@ The `StorageBackend` byte in the stub determines the behavior.
 | Boundary | What happens | RangeIndex action required |
 |---|---|---|
 | **Page flush** | Tsavorite moves pages to read-only, then flushes to disk. | `OnFlushRecord` snapshots BfTree + sets Flushed flag. Next access promotes stub to tail via RIPROMOTE. `DisposeRecord(PageEviction)` frees native instance. `OnDiskReadRecord` zeros TreeHandle on disk reads. Lazy restore via `RestoreTreeFromFlush`. |
-| **Checkpoint** | Tsavorite takes a full or incremental checkpoint of the hybrid log. All stubs are included. | Stubs in mutable region are flushed (triggering `OnFlushRecord`). Promoted stubs capture latest BfTree state. |
+| **Checkpoint** | Tsavorite takes a full checkpoint of the hybrid log. All stubs are included. | Stubs in mutable region are flushed (triggering `OnFlushRecord`). Promoted stubs capture latest BfTree state. |
 | **Recovery** | Tsavorite recovers from checkpoint. Stubs loaded from disk. | `OnDiskReadRecord` zeros TreeHandle. First access promotes (IsFlushed) → restores BfTree from flush file via `RestoreTreeFromFlush`. |
 | **Key migration** | Individual keys are transferred to another node during cluster slot migration. | For disk-backed trees: serialize the BfTree snapshot alongside the stub. Memory-only trees: same approach once snapshot is supported. |
 | **Replica sync** | Full checkpoint is sent to a replica. | For disk-backed trees: send BfTree data files alongside checkpoint, or use `ScanAll()` to stream the full tree state record-by-record. Memory-only trees: send snapshot once supported. |
@@ -2283,7 +2283,7 @@ internal static string HashKeyToDirectoryName(ReadOnlySpan<byte> keyBytes)
    promoted records.
 
 **`OnDiskReadRecord` — invalidate stale handles:** Called per record loaded from disk
-(recovery, delta log apply, pending reads, push scans). Zeros `TreeHandle` on RangeIndex
+(recovery, pending reads, push scans). Zeros `TreeHandle` on RangeIndex
 stubs so operations detect the stub as "needs lazy restore."
 
 **On cold read (after eviction past HeadAddress):**
@@ -2439,7 +2439,7 @@ the restore cost. This is the same approach used by VectorManager on the dev bra
 > **Reference:** `libs/cluster/Server/Replication/PrimaryOps/ReplicaSyncSession.cs` —
 > `SendCheckpoint()` sends checkpoint files categorized by `CheckpointFileType` enum.
 > `libs/cluster/Server/Replication/CheckpointFileType.cs` — currently defines types for
-> `STORE_HLOG`, `STORE_HLOG_OBJ`, `STORE_DLOG`, `STORE_INDEX`, `STORE_SNAPSHOT`,
+> `STORE_HLOG`, `STORE_HLOG_OBJ`, `STORE_INDEX`, `STORE_SNAPSHOT`,
 > `STORE_SNAPSHOT_OBJ`. A new `RANGEINDEX_SNAPSHOT` type must be added.
 
 **Problem:** The Tsavorite checkpoint files contain stubs with stale `TreePtr` values. The
@@ -2629,7 +2629,7 @@ The core FFI functions for disk-backed tree persistence are implemented in
 | Callback | Gating Property | When Called | RangeIndex Action |
 |---|---|---|---|
 | `OnFlushRecord(ref LogRecord)` | `CallOnFlush` | Per valid record on original in-memory page in `OnPagesMarkedReadOnlyWorker`, before flush | Snapshot BfTree to flush file, set Flushed flag |
-| `OnDiskReadRecord(ref LogRecord)` | `CallOnDiskRead` | Per record loaded from disk (recovery, delta log, pending reads, push scans) | Zero TreeHandle (invalidate stale pointer) |
+| `OnDiskReadRecord(ref LogRecord)` | `CallOnDiskRead` | Per record loaded from disk (recovery, pending reads, push scans) | Zero TreeHandle (invalidate stale pointer) |
 | `DisposeRecord(ref LogRecord, reason)` | `DisposeOnPageEviction` | Per record on page eviction, delete | Free native BfTree via `DisposeTreeIfOwned` |
 
 **Memory-only trees:** bf-tree's `snapshot_memory_to_disk` panics for `cache_only`

@@ -246,19 +246,9 @@ namespace Garnet.server
         public bool QuietMode = false;
 
         /// <summary>
-        /// SAVE and BGSAVE: Enable incremental snapshots, try to write only changes compared to base snapshot
-        /// </summary>
-        public bool EnableIncrementalSnapshots = false;
-
-        /// <summary>
         /// SAVE and BGSAVE: We will take a full (index + log) checkpoint when ReadOnlyAddress of log increases by this amount, from the last full checkpoint.
         /// </summary>
         public long FullCheckpointLogInterval = 1L << 30;
-
-        /// <summary>
-        /// SAVE and BGSAVE: Limit on size of delta log for incremental snapshot, we perform a non-incremental checkpoint after this limit is reached.
-        /// </summary>
-        public long IncrementalSnapshotLogSizeLimit = 1L << 30;
 
         /// <summary>
         /// SAVE and BGSAVE: Use fold-over checkpoints instead of snapshots.

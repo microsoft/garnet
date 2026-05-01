@@ -30,11 +30,6 @@ namespace Tsavorite.core
         FoldOverSMTaskHybridLogFlushed,
 
         /// <summary>
-        /// Waiting for the hybrid log flush to complete (IncrementalSnapshotCheckpointSMTask).
-        /// </summary>
-        IncrementalSnapshotCheckpointSMTaskHybridLogFlushed,
-
-        /// <summary>
         /// Waiting for the hybrid log flush to complete (SnapshotCheckpointSMTask).
         /// </summary>
         SnapshotCheckpointSMTaskHybridLogFlushed,

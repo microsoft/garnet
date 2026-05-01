@@ -67,14 +67,10 @@ namespace Garnet.test.cluster
                 new(() => ClusterSRPrimaryRestart(true, false), "ClusterSRPrimaryRestart(true, false)"),
                 new(() => ClusterSRPrimaryRestart(true, true), "ClusterSRPrimaryRestart(true, true)"),
                 new(ClusterSRRedirectWrites, "ClusterSRRedirectWrites()"),
-                new(() => ClusterReplicationCheckpointCleanupTest(false, false, false), "ClusterReplicationCheckpointCleanupTest(false, false, false)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(false, false, true), "ClusterReplicationCheckpointCleanupTest(false, false, true)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(false, true, false), "ClusterReplicationCheckpointCleanupTest(false, true, false)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(false, true, true), "ClusterReplicationCheckpointCleanupTest(false, true, true)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(true, false, false), "ClusterReplicationCheckpointCleanupTest(true, false, false)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(true, false, true), "ClusterReplicationCheckpointCleanupTest(true, false, true)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(true, true, false), "ClusterReplicationCheckpointCleanupTest(true, true, false)"),
-                new(() => ClusterReplicationCheckpointCleanupTest(true, true, true), "ClusterReplicationCheckpointCleanupTest(true, true, true)")
+                new(() => ClusterReplicationCheckpointCleanupTest(false, false), "ClusterReplicationCheckpointCleanupTest(false, false)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(false, true), "ClusterReplicationCheckpointCleanupTest(false, true)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(true, false), "ClusterReplicationCheckpointCleanupTest(true, false)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(true, true), "ClusterReplicationCheckpointCleanupTest(true, true)")
             ];
             return testList.ToArray();
         }
@@ -306,22 +302,15 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
         {
-            ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true, false);
-        }
-
-        [Test, Order(5)]
-        [Category("REPLICATION")]
-        public void ClusterCheckpointRetrieveDelta([Values] bool performRMW)
-        {
-            ClusterSRPrimaryCheckpointRetrieve(performRMW, true, false, false, false, true);
+            ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true);
         }
 
         [Test, Order(6)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
-            => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false, false);
+            => ClusterSRPrimaryCheckpointRetrieve(performRMW: performRMW, disableObjects: disableObjects, lowMemory: lowMemory, manySegments: manySegments, false);
 
-        void ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier, bool incrementalSnapshots)
+        void ClusterSRPrimaryCheckpointRetrieve(bool performRMW, bool disableObjects, bool lowMemory, bool manySegments, bool disableStorageTier)
         {
             // Test many segments on or off with lowMemory
             manySegments = lowMemory && manySegments;
@@ -338,7 +327,6 @@ namespace Garnet.test.cluster
                 lowMemory: lowMemory,
                 segmentSize: manySegments ? "4k" : "1g",
                 DisableStorageTier: disableStorageTier,
-                EnableIncrementalSnapshots: incrementalSnapshots,
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
@@ -371,9 +359,9 @@ namespace Garnet.test.cluster
             if (disableObjects)
             {
                 if (!performRMW)
-                    context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null, incrementalSnapshots, primaryIndex);
+                    context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
                 else
-                    context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, addCount, null, incrementalSnapshots, primaryIndex);
+                    context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
             }
             else
             {
@@ -668,13 +656,13 @@ namespace Garnet.test.cluster
 
         [Test, Order(12)]
         [Category("REPLICATION")]
-        public void ClusterFailoverAttachReplicas([Values] bool performRMW, [Values] bool takePrimaryCheckpoint, [Values] bool takeNewPrimaryCheckpoint, [Values] bool enableIncrementalSnapshots)
+        public void ClusterFailoverAttachReplicas([Values] bool performRMW, [Values] bool takePrimaryCheckpoint, [Values] bool takeNewPrimaryCheckpoint)
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -749,7 +737,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(13)]
         [Category("REPLICATION")]
-        public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
+        public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects)
         {
             var primaryIndex = 0;
             var replicaIndex = 1;
@@ -763,7 +751,6 @@ namespace Garnet.test.cluster
                 disableObjects: disableObjects,
                 lowMemory: true,
                 segmentSize: "4k",
-                EnableIncrementalSnapshots: enableIncrementalSnapshots,
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
