@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Hashing;
 using System.Threading;
@@ -58,6 +59,12 @@ namespace Garnet.server
         /// Base directory for deterministic BfTree data file paths.
         /// </summary>
         private readonly string dataDir;
+
+        /// <summary>
+        /// Gets the base data directory for RangeIndex file paths.
+        /// Used by the replication layer to construct destination paths on replicas.
+        /// </summary>
+        public string DataDir => dataDir;
 
         /// <summary>
         /// Global checkpoint barrier. When non-zero, a checkpoint is snapshotting trees.
@@ -441,6 +448,35 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Failed to enumerate old checkpoint snapshots for cleanup");
+            }
+        }
+        /// <summary>
+        /// Enumerates all RangeIndex checkpoint snapshot files for a given checkpoint token.
+        /// Used by the replication layer to discover which BfTree snapshot files need to be
+        /// shipped to replicas during disk-based checkpoint synchronization.
+        /// </summary>
+        /// <param name="checkpointToken">The checkpoint token identifying the snapshot files.</param>
+        /// <returns>
+        /// An enumerable of tuples containing:
+        /// - keyHashDir: The key hash subdirectory name (32-char hex string).
+        /// - filePath: The full path to the snapshot file.
+        /// - fileSize: The size of the snapshot file in bytes.
+        /// </returns>
+        public IEnumerable<(string keyHashDir, string filePath, long fileSize)> EnumerateCheckpointSnapshotFiles(Guid checkpointToken)
+        {
+            var snapshotFileName = $"snapshot.{checkpointToken:N}.bftree";
+            var rangeIndexDir = Path.Combine(dataDir ?? string.Empty, "rangeindex");
+            if (!Directory.Exists(rangeIndexDir))
+                yield break;
+
+            foreach (var keyHashSubDir in Directory.EnumerateDirectories(rangeIndexDir))
+            {
+                var snapshotPath = Path.Combine(keyHashSubDir, snapshotFileName);
+                if (!File.Exists(snapshotPath))
+                    continue;
+
+                var fileInfo = new FileInfo(snapshotPath);
+                yield return (Path.GetFileName(keyHashSubDir), snapshotPath, fileInfo.Length);
             }
         }
     }

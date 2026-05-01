@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 
 namespace Garnet.cluster
@@ -8,7 +9,7 @@ namespace Garnet.cluster
     /// <summary>
     /// Interface for a checkpoint reader that provides an enumeration of transmit sources.
     /// </summary>
-    internal interface ISnapshotReader
+    internal interface ISnapshotReader : IDisposable
     {
         /// <summary>
         /// Returns an enumeration of transmit sources with initialized data sources.

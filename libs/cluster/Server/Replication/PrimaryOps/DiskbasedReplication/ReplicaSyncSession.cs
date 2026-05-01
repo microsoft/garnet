@@ -137,11 +137,26 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
-                    using var checkpointReader = new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    ISnapshotReader[] checkpointReaders = [checkpointReader];
+                    var checkpointReader = new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
+                    var rangeIndexManager = storeWrapper.RangeIndexManager;
+                    var riReader = rangeIndexManager is { IsEnabled: true }
+                        ? new RangeIndexCheckpointReader(rangeIndexManager, localEntry.metadata.storeHlogToken, storeWrapper.serverOptions.ReplicaSyncTimeout, logger)
+                        : null;
 
-                    using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(checkpointReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
+                    ISnapshotReader[] readers = riReader != null
+                        ? [checkpointReader, riReader]
+                        : [checkpointReader];
+
+                    try
+                    {
+                        using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(readers, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
+                        await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        foreach (var reader in readers)
+                            reader.Dispose();
+                    }
                 }
                 #endregion
 

@@ -11,7 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class TsavoriteCheckpointReader : ISnapshotReader, IDisposable
+    internal sealed class TsavoriteCheckpointReader : ISnapshotReader
     {
         readonly ClusterProvider clusterProvider;
         readonly TimeSpan timeout;

@@ -124,6 +124,12 @@ namespace Garnet.server
         internal readonly RangeIndexManager rangeIndexManager;
 
         /// <summary>
+        /// Gets the RangeIndex (BfTree) manager, if enabled.
+        /// Used by the cluster replication layer for checkpoint shipping.
+        /// </summary>
+        public RangeIndexManager RangeIndexManager => rangeIndexManager;
+
+        /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
         public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
