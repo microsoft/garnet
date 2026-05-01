@@ -71,7 +71,7 @@ namespace Garnet.cluster
             activeFileSink.WriteChunk(startAddress, data);
 
 #if DEBUG
-            ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false).GetAwaiter().GetResult();
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
 #endif
         }
 
@@ -134,7 +134,7 @@ namespace Garnet.cluster
             activeFileSink.WriteChunk(startAddress, data);
 
 #if DEBUG
-            ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false).GetAwaiter().GetResult();
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
 #endif
         }
     }

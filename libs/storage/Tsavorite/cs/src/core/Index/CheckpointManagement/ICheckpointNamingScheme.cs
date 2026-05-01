@@ -51,11 +51,6 @@ namespace Tsavorite.core
         FileDescriptor ObjectLogSnapshot(Guid token);
 
         /// <summary>
-        /// Delta log
-        /// </summary>
-        FileDescriptor DeltaLog(Guid token);
-
-        /// <summary>
         /// TsavoriteLog commit metadata
         /// </summary>
         FileDescriptor TsavoriteLogCommitMetadata(long commitNumber);

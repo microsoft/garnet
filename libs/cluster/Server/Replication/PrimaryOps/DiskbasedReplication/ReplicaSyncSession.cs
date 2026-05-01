@@ -83,7 +83,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Start sending the latest checkpoint to replica
         /// </summary>
-        public async Task<bool> SendCheckpoint()
+        public async Task<bool> SendCheckpointAsync()
         {
             errorMsg = default;
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -103,7 +103,7 @@ namespace Garnet.cluster
                 tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword,
-                clientName: nameof(ReplicaSyncSession.SendCheckpoint),
+                clientName: nameof(ReplicaSyncSession.SendCheckpointAsync),
                 logger: logger);
             CheckpointEntry localEntry = default;
             AofSyncDriver aofSyncDriver = null;
@@ -114,7 +114,8 @@ namespace Garnet.cluster
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion);
 
                 logger?.LogInformation("Attempting to acquire checkpoint");
-                (localEntry, aofSyncDriver) = await AcquireCheckpointEntry().ConfigureAwait(false);
+
+                (localEntry, aofSyncDriver) = await AcquireCheckpointEntryAsync().ConfigureAwait(false);
                 logger?.LogInformation("Checkpoint search completed");
 
                 await gcs.ConnectAsync((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token).ConfigureAwait(false);
@@ -142,7 +143,6 @@ namespace Garnet.cluster
                     using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(checkpointReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
                     await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
                 }
-
                 #endregion
 
                 #region startAofSync
@@ -214,7 +214,7 @@ namespace Garnet.cluster
             return true;
         }
 
-        private async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntry()
+        private async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntryAsync()
         {
             AofSyncDriver aofSyncDriver;
             CheckpointEntry cEntry;
@@ -279,7 +279,7 @@ namespace Garnet.cluster
                         cEntry.RemoveReader();
                         numOdcAttempts++;
                         logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
-                        await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime).ConfigureAwait(false);
+                        await storeWrapper.TakeOnDemandCheckpointAsync(lastSaveTime).ConfigureAwait(false);
                         await Task.Yield();
                         continue;
                     }

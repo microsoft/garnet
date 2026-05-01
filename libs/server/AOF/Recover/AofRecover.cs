@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -145,7 +146,10 @@ namespace Garnet.server
 
                 try
                 {
-                    Task.WaitAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTask())]);
+                    // TODO: Can we async this method rather than blocking?  We're in recovery.
+                    var recoveryTasks = Task.WhenAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTaskAsync())]);
+                    AsyncUtils.BlockingWait(recoveryTasks);
+
                     recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);
                 }
                 finally

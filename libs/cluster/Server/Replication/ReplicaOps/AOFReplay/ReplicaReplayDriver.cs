@@ -72,11 +72,11 @@ namespace Garnet.cluster
                 {
                     if (!useChannels)
                     {
-                        _ = Task.Run(async () => await replayTask.FullPageBasedBackgroundReplay().ConfigureAwait(false));
+                        _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
                     }
                     else
                     {
-                        _ = Task.Run(async () => await replayTask.ChannelBasedBackgroundReplay().ConfigureAwait(false));
+                        _ = Task.Run(() => replayTask.ChannelBasedBackgroundReplayAsync());
                     }
                 }
             }
@@ -293,11 +293,14 @@ namespace Garnet.cluster
             if (replayIterator == null)
             {
                 replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                _ = Task.Run(async () => await BackgroundReplayTask());
+                _ = BackgroundReplayTaskAsync();
             }
 
-            async Task BackgroundReplayTask()
+            async Task BackgroundReplayTaskAsync()
             {
+                // Force async
+                await Task.Yield();
+
                 var readLock = ResumeReplay();
                 try
                 {

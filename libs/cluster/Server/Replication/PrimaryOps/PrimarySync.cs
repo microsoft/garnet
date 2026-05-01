@@ -3,6 +3,8 @@
 
 using System;
 using System.Text;
+using System.Threading.Tasks;
+
 #if DEBUG
 using Garnet.common;
 #endif
@@ -19,30 +21,29 @@ namespace Garnet.cluster
         /// Try attach sync session from replica
         /// </summary>
         /// <param name="replicaSyncMetadata"></param>
-        /// <param name="errorMessage"></param>
         /// <returns></returns>
-        public bool TryBeginDisklessSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
+        public async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDisklessSyncAsync(SyncMetadata replicaSyncMetadata)
         {
-            errorMessage = [];
+            ReadOnlyMemory<byte> errorMessage = default;
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
             {
                 if (!replicationSyncManager.AddReplicaSyncSession(replicaSyncMetadata, out var replicaSyncSession))
                 {
                     replicaSyncSession?.Dispose();
-                    errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
-                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
+                    errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
+                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
                 }
 
 #if DEBUG
-                ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).GetAwaiter().GetResult();
+                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).ConfigureAwait(false);
 #endif
 
-                var status = replicationSyncManager.ReplicationSyncDriver(replicaSyncSession).GetAwaiter().GetResult();
+                var status = await replicationSyncManager.ReplicationSyncDriverAsync(replicaSyncSession).ConfigureAwait(false);
                 if (status.syncStatus == SyncStatus.FAILED)
                     errorMessage = Encoding.ASCII.GetBytes(status.error);
             }
 
-            return true;
+            return (true, errorMessage);
         }
 
         /// <summary>
@@ -53,48 +54,50 @@ namespace Garnet.cluster
         /// <param name="replicaCheckpointEntry">Most recent checkpoint entry at replica</param>
         /// <param name="replicaAofBeginAddress">AOF begin address at replica</param>
         /// <param name="replicaAofTailAddress">AOF tail address at replica</param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryBeginDiskbasedSync(
+        public Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryBeginDiskbasedSyncAsync(
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
             AofAddress replicaAofBeginAddress,
-            AofAddress replicaAofTailAddress,
-            out ReadOnlySpan<byte> errorMessage)
+            AofAddress replicaAofTailAddress)
         {
+            ReadOnlyMemory<byte> errorMessage = default;
+
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress))
             {
-                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
-                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
-                return false;
+                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR.ToArray();
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
+                return Task.FromResult((false, errorMessage));
             }
 
-            return ReplicaSyncSessionBackgroundTask(replicaNodeId, out errorMessage);
+            return ReplicaSyncSessionBackgroundTaskAsync(replicaNodeId);
 
-            bool ReplicaSyncSessionBackgroundTask(string replicaId, out ReadOnlySpan<byte> errorMessage)
+            async Task<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> ReplicaSyncSessionBackgroundTaskAsync(string replicaId)
             {
                 try
                 {
+                    ReadOnlyMemory<byte> errorMessage = default;
+
                     if (!replicaSyncSessionTaskStore.TryGetSession(replicaId, out var session))
                     {
-                        errorMessage = CmdStrings.RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR;
-                        logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
-                        return false;
+                        errorMessage = CmdStrings.RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR.ToArray();
+                        logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage.Span));
+                        return (false, errorMessage);
                     }
 
 #if DEBUG
-                    ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).GetAwaiter().GetResult();
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).ConfigureAwait(false);
 #endif
 
-                    if (!session.SendCheckpoint().GetAwaiter().GetResult())
+                    if (!await session.SendCheckpointAsync().ConfigureAwait(false))
                     {
                         errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
-                        return false;
+                        return (false, errorMessage);
                     }
 
-                    errorMessage = CmdStrings.RESP_OK;
-                    return true;
+                    errorMessage = CmdStrings.RESP_OK.ToArray();
+                    return (true, errorMessage);
                 }
                 finally
                 {

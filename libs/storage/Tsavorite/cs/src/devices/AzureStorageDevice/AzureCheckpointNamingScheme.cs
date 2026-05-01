@@ -33,9 +33,6 @@ namespace Tsavorite.devices
         /// <inheritdoc />
         public FileDescriptor ObjectLogSnapshot(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), "snapshot.obj.dat");
         /// <inheritdoc />
-        public FileDescriptor DeltaLog(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), "delta.dat");
-
-        /// <inheritdoc />
         public FileDescriptor IndexCheckpointBase(Guid token) => new(string.Join('/', IndexCheckpointBasePath, token.ToString()), null);
         /// <inheritdoc />
         public FileDescriptor IndexCheckpointMetadata(Guid token) => new(string.Join('/', IndexCheckpointBasePath, token.ToString()), "info.dat");

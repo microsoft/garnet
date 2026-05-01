@@ -90,14 +90,7 @@ namespace Garnet.cluster
                         logFileInfo.snapshotObjectFileEndAddress));
             }
 
-            // 4. Send delta log segments
-            fileDataSources.Add(CreateFileDataSource(
-                CheckpointFileType.STORE_DLOG,
-                checkpointEntry.metadata.storeHlogToken,
-                0,
-                logFileInfo.deltaLogTailAddress));
-
-            // 5. Metadata sources
+            // 4. Metadata sources
             var storeCkptManager = clusterProvider.ReplicationLogCheckpointManager;
 
             metadataDataSources.Add(new TsavoriteMetadataSource(
@@ -111,7 +104,7 @@ namespace Garnet.cluster
                 CheckpointFileType.STORE_SNAPSHOT,
                 checkpointEntry.metadata.storeHlogToken,
                 () => checkpointEntry.metadata.storeHlogToken != default
-                    ? storeCkptManager.GetLogCheckpointMetadata(checkpointEntry.metadata.storeHlogToken, null, true, -1)
+                    ? storeCkptManager.GetLogCheckpointMetadata(checkpointEntry.metadata.storeHlogToken)
                     : []));
         }
 

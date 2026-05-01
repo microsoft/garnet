@@ -26,11 +26,6 @@ namespace Tsavorite.core
         public long LastCheckpointedVersion => lastVersion;
 
         /// <summary>
-        /// Size (tail address) of current incremental snapshot delta log
-        /// </summary>
-        public long IncrementalSnapshotTailAddress => _lastSnapshotCheckpoint.deltaLog?.TailAddress ?? 0;
-
-        /// <summary>
         /// Current version number of the store
         /// </summary>
         public long CurrentVersion => stateMachineDriver.SystemState.Version;

@@ -72,13 +72,13 @@ namespace Garnet.cluster
         /// Wait for network flush to complete for all sessions
         /// </summary>
         /// <returns></returns>
-        public async Task WaitForFlush()
+        public async Task WaitForFlushAsync()
         {
             for (var i = 0; i < NumSessions; i++)
             {
                 if (!IsActive(i)) continue;
                 // Wait for network flush
-                await Sessions[i].WaitForFlush().ConfigureAwait(false);
+                await Sessions[i].WaitForFlushAsync().ConfigureAwait(false);
                 if (Sessions[i].Failed) Sessions[i] = null;
             }
         }
@@ -116,7 +116,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="replicaSyncSession"></param>
         /// <returns></returns>
-        public async Task<SyncStatusInfo> ReplicationSyncDriver(ReplicaSyncSession replicaSyncSession)
+        public async Task<SyncStatusInfo> ReplicationSyncDriverAsync(ReplicaSyncSession replicaSyncSession)
         {
             try
             {
@@ -135,12 +135,12 @@ namespace Garnet.cluster
                 {
                     using SemaphoreSlim signalCompletion = new(0);
                     // Launch a background task to sync the attached replicas using streaming snapshot
-                    _ = Task.Run(() => MainStreamingSnapshotDriver(signalCompletion));
+                    _ = Task.Run(() => MainStreamingSnapshotDriverAsync(signalCompletion));
                     await signalCompletion.WaitAsync().ConfigureAwait(false);
                 }
 
                 // Wait for main sync driver to complete
-                await replicaSyncSession.WaitForSyncCompletion().ConfigureAwait(false);
+                await replicaSyncSession.WaitForSyncCompletionAsync().ConfigureAwait(false);
 
                 // If session faulted return early
                 if (replicaSyncSession.Failed)
@@ -152,7 +152,7 @@ namespace Garnet.cluster
                 }
 
                 // Start AOF sync background task for this replica
-                await replicaSyncSession.BeginAofSync().ConfigureAwait(false);
+                await replicaSyncSession.BeginAofSyncAsync().ConfigureAwait(false);
                 return replicaSyncSession.GetSyncStatusInfo;
             }
             finally
@@ -168,7 +168,7 @@ namespace Garnet.cluster
         /// when the synchronization process finishes.</param>
         /// <returns>A task that represents the asynchronous operation of the streaming snapshot synchronization driver.</returns>
         /// <exception cref="GarnetException">Thrown if the streaming checkpoint operation fails during synchronization.</exception>
-        async Task MainStreamingSnapshotDriver(SemaphoreSlim signalCompletion)
+        async Task MainStreamingSnapshotDriverAsync(SemaphoreSlim signalCompletion)
         {
             // Parameters for sync operation
             var syncInProgressAcquired = false;
@@ -195,7 +195,7 @@ namespace Garnet.cluster
                     await Task.Yield();
 
                 // Choose to perform a full sync or not
-                var fullSync = await PrepareForSync().ConfigureAwait(false);
+                var fullSync = await PrepareForSyncAsync().ConfigureAwait(false);
 
                 // If at least one replica requires a full sync, take a streaming checkpoint
                 // NOTE:
@@ -203,7 +203,7 @@ namespace Garnet.cluster
                 //      It is possible that some replicas may not require a full sync and can continue with partial sync.
                 //      See #chooseBetweenFullAndPartialSync
                 if (fullSync)
-                    await TakeStreamingCheckpoint().ConfigureAwait(false);
+                    await TakeStreamingCheckpointAsync().ConfigureAwait(false);
 
                 // Notify sync session of success success
                 for (var i = 0; i < NumSessions; i++)
@@ -211,7 +211,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method} faulted", nameof(MainStreamingSnapshotDriver));
+                logger?.LogError(ex, "{method} faulted", nameof(MainStreamingSnapshotDriverAsync));
                 for (var i = 0; i < NumSessions; i++)
                     Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
             }
@@ -232,7 +232,7 @@ namespace Garnet.cluster
             }
 
             // Acquire checkpoint and lock AOF if possible
-            async Task<bool> PrepareForSync()
+            async Task<bool> PrepareForSyncAsync()
             {
                 // Try to lock AOF address to avoid truncation
                 #region pauseAofTruncation
@@ -259,7 +259,7 @@ namespace Garnet.cluster
                     try
                     {
                         // Initialize connections
-                        Sessions[i].Connect();
+                        await Sessions[i].ConnectAsync().ConfigureAwait(false);
 
                         // Set store version to operate on
                         Sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
@@ -286,14 +286,14 @@ namespace Garnet.cluster
                 }
 
                 // Flush network buffers for all active sessions
-                await WaitForFlush().ConfigureAwait(false);
+                await WaitForFlushAsync().ConfigureAwait(false);
                 #endregion
 
                 return fullSync;
             }
 
             // Stream Diskless
-            async Task TakeStreamingCheckpoint()
+            async Task TakeStreamingCheckpointAsync()
             {
                 // Store snapshot iterator manager
                 var manager = new SnapshotIteratorManager(this, cts.Token, logger);
@@ -302,14 +302,14 @@ namespace Garnet.cluster
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
                     TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
 
-                var (success, _) = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager).ConfigureAwait(false);
+                var (success, _) = await WaitOrDieAsync(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager).ConfigureAwait(false);
                 if (!success)
                     throw new GarnetException("Main store checkpoint stream failed!");
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
                 // WaitOrDie is needed here to check if streaming checkpoint is making progress.
                 // We cannot use a timeout on the cancellationToken because we don't know in total how long the streaming checkpoint will take
-                async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
+                async ValueTask<(bool success, Guid token)> WaitOrDieAsync(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
                 {
                     try
                     {
@@ -340,10 +340,10 @@ namespace Garnet.cluster
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "{method} faulted", nameof(WaitOrDie));
+                        logger?.LogError(ex, "{method} faulted", nameof(WaitOrDieAsync));
                         for (var i = 0; i < NumSessions; i++)
                             Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
-                        cts.Cancel();
+                        await cts.CancelAsync().ConfigureAwait(false);
                     }
 
                     // At this point we failed through a timeout or any other exception

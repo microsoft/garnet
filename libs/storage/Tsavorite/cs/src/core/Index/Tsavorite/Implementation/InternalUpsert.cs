@@ -57,8 +57,6 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            var latchOperation = LatchOperation.None;
-
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
             pendingContext.logicalAddress = kInvalidAddress;
@@ -77,7 +75,8 @@ namespace Tsavorite.core
                 SessionID = sessionFunctions.Ctx.sessionID
             };
 
-            // We must use try/finally to ensure unlocking even in the presence of exceptions.
+            // We must use try/finally to ensure unlocking even in the presence of exceptions. The inner try/finally ensures
+            // the ephemeral X-lock on the hash bucket is released even if a Post*Operation callback (e.g. AOF append) throws.
             try
             {
                 // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
@@ -96,11 +95,11 @@ namespace Tsavorite.core
                 // Check for CPR consistency after checking if source is readcache.
                 if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
-                            goto LatchRelease;
+                            goto Done;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcLogRecord = stackCtx.recSrc.CreateLogRecord();
@@ -128,44 +127,36 @@ namespace Tsavorite.core
                             if (TryRevivifyInChain<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                                         ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
                                     || status != OperationStatus.SUCCESS)
-                                goto LatchRelease;
+                                goto Done;
                         }
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = new RecordSizeInfo(); // TODO temporary for perf work
-
                     // Track value heap delta across in-place write.
-                    var ipwPreInline = srcLogRecord.Info.ValueIsInline;
-                    var ipwPreHeap = ipwPreInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-
-                    // Type arg specification is needed because we don't pass TContext
-                    if (TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                        ref srcLogRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions))
+                    var sizeTracker = hlogBase.logSizeTracker;
+                    var ipwPreHeap = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() : 0L;
+                    var ipwResult = TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                        ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+                    var ipwDelta = sizeTracker is not null ? srcLogRecord.GetValueHeapMemorySize() - ipwPreHeap : 0L;
+                    if (ipwResult)
                     {
-                        if (!ipwPreInline || !srcLogRecord.Info.ValueIsInline)
-                        {
-                            var ipwPostHeap = srcLogRecord.Info.ValueIsInline ? 0L : srcLogRecord.GetValueHeapMemorySize();
-                            var ipwDelta = ipwPostHeap - ipwPreHeap;
-                            if (ipwDelta != 0)
-                                hlogBase.logSizeTracker?.IncrementSize(ipwDelta);
-                        }
+                        if (ipwDelta != 0)
+                            sizeTracker.IncrementSize(ipwDelta);
 
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                        goto LatchRelease;
+                        goto Done;
                     }
                     if (upsertInfo.Action == UpsertAction.CancelOperation)
                     {
                         status = OperationStatus.CANCELED;
-                        goto LatchRelease;
+                        goto Done;
                     }
                     if (upsertInfo.Action == UpsertAction.WrongType)
                     {
                         status = OperationStatus.WRONG_TYPE;
-                        goto LatchRelease;
+                        goto Done;
                     }
 
                     // InPlaceWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
@@ -186,31 +177,23 @@ namespace Tsavorite.core
                         key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo);
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                 Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                goto LatchRelease;
+                goto Done;
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TValueSelector.PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, LightEpoch>(key, ref input,
-                    srcStringValue, srcObjectValue, in inputLogRecord, ref upsertInfo, sessionFunctions, epoch);
-                EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
-            }
-
-        LatchRelease:
-            if (latchOperation != LatchOperation.None)
-            {
-                switch (latchOperation)
+                try
                 {
-                    case LatchOperation.Shared:
-                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
-                        break;
-                    case LatchOperation.Exclusive:
-                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
-                        break;
-                    default:
-                        break;
+                    TValueSelector.PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, LightEpoch>(key, ref input,
+                        srcStringValue, srcObjectValue, in inputLogRecord, ref upsertInfo, sessionFunctions, epoch);
+                }
+                finally
+                {
+                    EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
             }
+
+        Done:
             return status;
         }
 
@@ -250,7 +233,6 @@ namespace Tsavorite.core
                         hlogBase.logSizeTracker?.IncrementSize(valueHeap);
 
                     // Success
-                    MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                     // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
@@ -273,7 +255,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
         {
             // See explanatory comments in CheckCPRConsistencyRMW.
 

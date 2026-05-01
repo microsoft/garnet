@@ -116,7 +116,7 @@ namespace Garnet.server
             return numSubscribers;
         }
 
-        async Task Start(CancellationToken cancellationToken = default)
+        async Task StartAsync(CancellationToken cancellationToken = default)
         {
             try
             {
@@ -174,7 +174,7 @@ namespace Garnet.server
             done.Reset();
             subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
             patternSubscriptions = new ReadOptimizedConcurrentSet<PatternSubscriptionEntry>();
-            Task.Run(() => Start(cts.Token));
+            _ = Task.Run(() => StartAsync(cts.Token));
             initialized = true;
         }
 

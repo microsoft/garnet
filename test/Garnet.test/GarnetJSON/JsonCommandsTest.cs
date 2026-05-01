@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Allure.NUnit;
 using Garnet.server;
 using GarnetJSON;
@@ -386,7 +387,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AofUpsertRecoverTest()
+        public async Task AofUpsertRecoverTestAsync()
         {
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
@@ -402,7 +403,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("{\"a\":1}", (string)retValue);
             }
 
-            server.Store.CommitAOF(true);
+            _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
             RegisterCustomCommand();

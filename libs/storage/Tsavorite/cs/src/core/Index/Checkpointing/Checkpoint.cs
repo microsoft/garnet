@@ -71,13 +71,6 @@ namespace Tsavorite.core
             }
         }
 
-        public static IStateMachine IncrementalHybridLogOnly<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
-            where TStoreFunctions : IStoreFunctions
-            where TAllocator : IAllocator<TStoreFunctions>
-        {
-            var backend = new IncrementalSnapshotCheckpointSMTask<TStoreFunctions, TAllocator>(store, guid);
-            return new HybridLogCheckpointSM(backend);
-        }
         #endregion
 
         #region Two-store APIs
@@ -171,19 +164,6 @@ namespace Tsavorite.core
             }
         }
 
-        public static IStateMachine IncrementalHybridLogOnly<TStoreFunctions1, TAllocator1, TStoreFunctions2, TAllocator2>(
-            TsavoriteKV<TStoreFunctions1, TAllocator1> store1,
-            TsavoriteKV<TStoreFunctions2, TAllocator2> store2,
-            Guid guid)
-            where TStoreFunctions1 : IStoreFunctions
-            where TAllocator1 : IAllocator<TStoreFunctions1>
-            where TStoreFunctions2 : IStoreFunctions
-            where TAllocator2 : IAllocator<TStoreFunctions2>
-        {
-            var backend1 = new IncrementalSnapshotCheckpointSMTask<TStoreFunctions1, TAllocator1>(store1, guid);
-            var backend2 = new IncrementalSnapshotCheckpointSMTask<TStoreFunctions2, TAllocator2>(store2, guid);
-            return new HybridLogCheckpointSM(backend1, backend2);
-        }
         #endregion
     }
 }
