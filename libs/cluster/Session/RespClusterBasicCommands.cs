@@ -374,7 +374,9 @@ namespace Garnet.cluster
 
                 Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
                 if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
+                {
                     gossipWithMeet = true;
+                }
             }
 
             var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
@@ -406,7 +408,9 @@ namespace Garnet.cluster
                     RemoteNodeId = other.LocalNodeId;
                 }
                 else
+                {
                     logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
+                }
             }
 
             // Respond if configuration has changed or gossipWithMeet option is specified
