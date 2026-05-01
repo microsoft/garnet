@@ -1356,10 +1356,10 @@ namespace Tsavorite.core
                 // Clear in-flight slot before suspending, re-publish after resuming
                 EndInflightEnqueue();
                 epoch.Suspend();
-                if (cannedException != null)
-                    throw cannedException;
                 try
                 {
+                    if (cannedException != null)
+                        throw cannedException;
                     flushEvent.Wait();
                 }
                 finally
