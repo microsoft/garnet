@@ -49,7 +49,14 @@ namespace Tsavorite.core
                     || this.NextAddress < this.tsavoriteLog.RefreshSafeTailAddress())
                     return true;
 
-                // Ignore refresh-uncommitted exceptions, except when the token is signaled
+                // Arm the notifier so the next producer completion schedules a wake.
+                Volatile.Write(ref this.tsavoriteLog.notifierState, 1); // NotifyArmed
+
+                // Race closure: a producer may have completed between our last refresh and arming.
+                if (this.NextAddress < this.tsavoriteLog.RefreshSafeTailAddress())
+                    return true;
+
+                // Park until the notifier signals us.
                 await onEnqueue.WaitAsync().ConfigureAwait(false);
             }
             return false;

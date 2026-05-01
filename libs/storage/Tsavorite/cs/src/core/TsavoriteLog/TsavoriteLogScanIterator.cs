@@ -188,6 +188,13 @@ namespace Tsavorite.core
                 if (NextAddress < tsavoriteLog.SafeTailAddress || NextAddress < tsavoriteLog.RefreshSafeTailAddress())
                     return true;
 
+                // Arm the notifier so the next producer completion schedules a wake.
+                Volatile.Write(ref tsavoriteLog.notifierState, 1); // NotifyArmed
+
+                // Race closure: recheck after arming.
+                if (NextAddress < tsavoriteLog.RefreshSafeTailAddress())
+                    return true;
+
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
                 try
                 {

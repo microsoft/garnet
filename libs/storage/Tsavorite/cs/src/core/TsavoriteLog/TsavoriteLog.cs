@@ -142,6 +142,18 @@ namespace Tsavorite.core
         readonly int inflightWord;
 
         /// <summary>
+        /// Coalesced notifier state machine for waking parked iterators without per-enqueue
+        /// cross-core cache-line reads. Producers read this log-owned field (not per-consumer state).
+        /// <list type="bullet">
+        /// <item><c>Idle (0)</c>: no parked waiters — producer does one volatile read, branch-not-taken.</item>
+        /// <item><c>Armed (1)</c>: waiters exist — first completing producer CAS→Queued and schedules notifier.</item>
+        /// <item><c>Queued (2)</c>: notifier already scheduled — producers just read and skip.</item>
+        /// </list>
+        /// </summary>
+        const int NotifyIdle = 0, NotifyArmed = 1, NotifyQueued = 2;
+        internal int notifierState;
+
+        /// <summary>
         /// Sentinel written to the in-flight slot when the thread has no enqueue in progress. Chosen as
         /// <see cref="long.MaxValue"/> so that idle threads contribute neutrally to the <c>min</c> fold
         /// that computes SafeTailAddress.
@@ -337,38 +349,67 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Wake any iterators parked in <see cref="WaitUncommittedAsync"/> or as single-iterators.
-        /// Fast path (no waiters): two null-check loads. When waiters exist, defers to the slow path.
+        /// Notify parked waiters via the coalesced log-level notifier. Producer reads only the
+        /// log-owned <see cref="notifierState"/> field (not per-consumer wait state), avoiding
+        /// cross-core cache-line bouncing that causes producer throughput regression.
+        /// When no consumers are parked (<c>Idle</c>), cost is one volatile read + branch-not-taken.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void NotifyParkedWaiters()
         {
-            // Fast path: both references are null when no iterators/waiters exist (NoCons scenario).
-            // The JIT can inline these two loads and the branch without hitting IL size limits.
-            if (refreshUncommittedTcs != null || activeSingleIterators != null)
-                NotifyParkedWaitersSlow();
+            if (Volatile.Read(ref notifierState) != NotifyArmed)
+                return;
+            NotifyParkedWaitersSlow();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         void NotifyParkedWaitersSlow()
         {
-            var tcs = refreshUncommittedTcs;
+            // CAS Armed→Queued. Only one producer wins and schedules the notifier.
+            if (Interlocked.CompareExchange(ref notifierState, NotifyQueued, NotifyArmed) != NotifyArmed)
+                return;
+            ThreadPool.UnsafeQueueUserWorkItem(static state => ((TsavoriteLog)state).RunNotifier(), this, preferLocal: false);
+        }
+
+        /// <summary>
+        /// Notifier work item: refresh SafeTailAddress once (one scan serves all parked iterators),
+        /// wake all parked iterators, and manage the state machine for re-arming.
+        /// </summary>
+        void RunNotifier()
+        {
+            RefreshSafeTailAddress();
+
+            // Wake all parked single iterators
             var asi = activeSingleIterators;
-
-            // When multiple iterators exist, refresh before signaling so they all see
-            // the fresh cache and skip their own RefreshSafeTailAddress scan.
-            // The count is a stale-tolerant hint: if we read an old value of 1 when it's actually 2,
-            // the extra iterator simply does its own scan (correct, just redundant). If we read 2 when
-            // it's actually 1, we do one extra scan (harmless).
-            if (asi != null && Volatile.Read(ref activeSingleIteratorCount) > 1)
-                _ = RefreshSafeTailAddress();
-
-            if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
-                tcs.TrySetResult(Empty.Default);
             if (asi != null)
             {
                 foreach (var iter in asi)
                     iter.Signal();
+            }
+
+            // Wake TCS waiters (multi-waiter path)
+            var tcs = refreshUncommittedTcs;
+            if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
+                tcs.TrySetResult(Empty.Default);
+
+            // Re-arm if iterators still exist, otherwise go Idle
+            if (activeSingleIterators != null || refreshUncommittedTcs != null)
+            {
+                Volatile.Write(ref notifierState, NotifyArmed);
+
+                // Race closure: a producer may have completed between our refresh and re-arm.
+                // Refresh once more and wake any newly ready iterators.
+                RefreshSafeTailAddress();
+                asi = activeSingleIterators;
+                if (asi != null)
+                {
+                    foreach (var iter in asi)
+                        iter.Signal();
+                }
+            }
+            else
+            {
+                Volatile.Write(ref notifierState, NotifyIdle);
             }
         }
 
