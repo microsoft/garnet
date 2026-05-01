@@ -352,7 +352,8 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task RepeatedCreateDeleteAsync()
+        [CancelAfter(120_000)]
+        public async Task RepeatedCreateDeleteAsync(CancellationToken testCancellationToken)
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
@@ -1285,7 +1286,8 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task MigrateVectorSetWhileModifyingAsync()
+        [CancelAfter(120_000)]
+        public async Task MigrateVectorSetWhileModifyingAsync(CancellationToken testCancellationToken)
         {
             // Test migrating a single slot with a vector set while moving it
 
@@ -1593,7 +1595,8 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task MigrateVectorStressAsync()
+        [CancelAfter(120_000)]
+        public async Task MigrateVectorStressAsync(CancellationToken testCancellationToken)
         {
             // Move vector sets back and forth between replicas, making sure we don't drop data
             // Keeps reads and writes going continuously
