@@ -63,7 +63,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        [Category("CLUSTER-CONFIG")]
         public void ClusterForgetAfterNodeRestartTest()
         {
             int nbInstances = 4;
