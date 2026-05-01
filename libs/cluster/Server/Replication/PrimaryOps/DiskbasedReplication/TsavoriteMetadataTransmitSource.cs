@@ -33,6 +33,7 @@ namespace Garnet.cluster
         public async Task TransmitAsync(GarnetClientSession gcs, TimeSpan timeout, CancellationToken cancellationToken = default)
         {
             var retryCount = MaxRetryCount;
+
             while (true)
             {
                 try
@@ -46,8 +47,10 @@ namespace Garnet.cluster
                         checkpointMetadata = result.Data.ToArray();
                     }
 
-                    var resp = await gcs.ExecuteClusterSendCheckpointMetadata(
-                        DataSource.Token.ToByteArray(), (int)DataSource.Type, checkpointMetadata)
+                    // A startAddress of -1 signals the receiver that this is a single-message payload
+                    // (the entire content fits in one message, no streaming or end-of-stream marker needed).
+                    var resp = await gcs.ExecuteClusterSnapshotData(
+                        DataSource.Token.ToByteArray(), (int)DataSource.Type, -1, checkpointMetadata)
                         .WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 
                     if (!resp.Equals("OK"))

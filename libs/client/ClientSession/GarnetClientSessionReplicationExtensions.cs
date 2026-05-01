@@ -249,6 +249,83 @@ namespace Garnet.client
             return tcs.Task;
         }
 
+        static ReadOnlySpan<byte> snapshot_data => "SNAPSHOT_DATA"u8;
+
+        /// <summary>
+        /// Send snapshot data (file segments or metadata) via unified CLUSTER SNAPSHOT_DATA command.
+        /// </summary>
+        /// <param name="fileTokenBytes">The checkpoint token bytes.</param>
+        /// <param name="fileType">The checkpoint file type (including metadata variants).</param>
+        /// <param name="startAddress">The start address for this chunk (0 for metadata).</param>
+        /// <param name="data">The data to send.</param>
+        /// <seealso cref="M:Garnet.cluster.ClusterSession.NetworkClusterSnapshotData"/>
+        public Task<string> ExecuteClusterSnapshotData(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data)
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            byte* curr = offset;
+            int arraySize = 6;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //2
+            while (!RespWriteUtils.TryWriteBulkString(snapshot_data, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //3
+            while (!RespWriteUtils.TryWriteBulkString(fileTokenBytes.Span, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //4
+            while (!RespWriteUtils.TryWriteArrayItem(fileType, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //5
+            while (!RespWriteUtils.TryWriteArrayItem(startAddress, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //6
+            while (!RespWriteUtils.TryWriteBulkString(data, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
+        }
+
         /// <summary>
         /// Signal replica to recover
         /// </summary>

@@ -88,5 +88,54 @@ namespace Garnet.cluster
             sink.WriteChunk(0, checkpointMetadata);
             sink.Complete();
         }
+
+        /// <summary>
+        /// Unified entry point for receiving snapshot data from primary.
+        /// Handles both file segments and single-message payloads (e.g., metadata) based on the startAddress.
+        /// <para>
+        /// Convention: A <paramref name="startAddress"/> of -1 indicates that the entire payload fits in a single message
+        /// and should be committed directly (e.g., checkpoint metadata). No end-of-stream marker is expected.
+        /// Any other startAddress indicates a streamed file segment. Empty data signals end-of-stream for file types.
+        /// </para>
+        /// </summary>
+        /// <param name="token">The checkpoint token.</param>
+        /// <param name="type">The checkpoint file type.</param>
+        /// <param name="startAddress">The start address for this chunk, or -1 for single-message payloads.</param>
+        /// <param name="data">The data to write. Empty signals end-of-stream for streamed file segments.</param>
+        public void ProcessSnapshotData(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
+        {
+            clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
+
+            // A startAddress of -1 indicates a single-message payload (e.g., metadata)
+            // that should be committed directly without streaming or end-of-stream signaling.
+            if (startAddress == -1)
+            {
+                using var sink = new MetadataDataSink(type, token, clusterProvider);
+                sink.WriteChunk(0, data);
+                sink.Complete();
+                return;
+            }
+
+            // File segment handling
+            if (data.Length == 0)
+            {
+                activeFileSink?.Complete();
+                activeFileSink = null;
+                return;
+            }
+
+            if (activeFileSink == null)
+            {
+                var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
+                bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                activeFileSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+            }
+
+            activeFileSink.WriteChunk(startAddress, data);
+
+#if DEBUG
+            ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false).GetAwaiter().GetResult();
+#endif
+        }
     }
 }

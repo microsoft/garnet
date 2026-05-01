@@ -411,6 +411,7 @@ namespace Garnet.server
         CLUSTER_SHARDS,
         CLUSTER_SLOTS,
         CLUSTER_SLOTSTATE,
+        CLUSTER_SNAPSHOT_DATA,
         CLUSTER_SYNC, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
 
         // Don't require AUTH (if auth is enabled)
@@ -2392,6 +2393,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.snapshot_data))
+                {
+                    return RespCommand.CLUSTER_SNAPSHOT_DATA;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.mlog_key_time))
                 {

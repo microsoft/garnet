@@ -904,6 +904,14 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
+        "Command": "CLUSTER_SNAPSHOT_DATA",
+        "Name": "CLUSTER|SNAPSHOT_DATA",
+        "IsInternal": true,
+        "Arity": 6,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_SETCONFIGEPOCH",
         "Name": "CLUSTER|SET-CONFIG-EPOCH",
         "Arity": 3,

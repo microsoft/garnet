@@ -372,6 +372,46 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Implements CLUSTER SNAPSHOT_DATA command (only for internode use).
+        /// Unified command for receiving both file segments and metadata from a primary.
+        /// API: CLUSTER SNAPSHOT_DATA token type startAddress data
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.ExecuteClusterSnapshotData"/>
+        private bool NetworkClusterSnapshotData(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            if (parseState.Count != 4)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var fileTokenBytes = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            if (!parseState.TryGetInt(1, out var ckptFileTypeInt) ||
+                !parseState.TryGetLong(2, out var startAddress))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
+
+            var fileToken = new Guid(fileTokenBytes);
+            var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
+
+            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(fileToken, ckptFileType, startAddress, data);
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// Implements CLUSTER begin_replica_recover (only for internode use)
         /// </summary>
         /// <param name="invalidParameters"></param>

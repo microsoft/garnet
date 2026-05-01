@@ -305,6 +305,19 @@
         "SubCommands": null
       },
       {
+        "Command": "CLUSTER_SNAPSHOT_DATA",
+        "Name": "CLUSTER|SNAPSHOT_DATA",
+        "IsInternal": true,
+        "Arity": 6,
+        "Flags": "Admin, NoScript, NoMulti",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
         "Command": "CLUSTER_SETSLOTSRANGE",
         "Name": "CLUSTER|SETSLOTSRANGE",
         "IsInternal": true,

@@ -38,7 +38,7 @@ namespace Garnet.cluster
                 var result = await DataSource.ReadNextChunkAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
-                    var resp = await gcs.ExecuteClusterSendCheckpointFileSegment(
+                    var resp = await gcs.ExecuteClusterSnapshotData(
                         fileTokenBytes,
                         (int)DataSource.Type,
                         startAddress: result.ChunkStartAddress,
@@ -55,7 +55,7 @@ namespace Garnet.cluster
             }
 
             // Send empty package to indicate end of transmission
-            var endResp = await gcs.ExecuteClusterSendCheckpointFileSegment(
+            var endResp = await gcs.ExecuteClusterSnapshotData(
                 fileTokenBytes, (int)DataSource.Type, DataSource.CurrentOffset, [])
                 .WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 
