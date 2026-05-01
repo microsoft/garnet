@@ -329,7 +329,7 @@ namespace Garnet.cluster
         public void ThrottlePrimary()
         {
             while (serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset) > serverOptions.ReplicationOffsetMaxLag)
+                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > serverOptions.ReplicationOffsetMaxLag)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();

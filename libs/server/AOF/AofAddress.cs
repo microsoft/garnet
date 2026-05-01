@@ -8,6 +8,10 @@ using System.Text;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Represents a fixed-size collection of addresses used for append-only file (AOF) operations, supporting efficient
+    /// serialization, comparison, and manipulation of address sequences.
+    /// </summary>
     public unsafe struct AofAddress
     {
         readonly byte length;
@@ -16,7 +20,7 @@ namespace Garnet.server
         /// <summary>
         /// Maximum number of sublogs supported
         /// </summary>
-        public const int MaxSublogCount = 64;
+        public const int MaxSublogCount = 4;
 
         /// <summary>
         /// AofAddress length

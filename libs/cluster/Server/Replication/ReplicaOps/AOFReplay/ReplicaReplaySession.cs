@@ -92,8 +92,8 @@ namespace Garnet.cluster
                 if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail)
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
-                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.ReplicationOffset, tail);
-                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.ReplicationOffset}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
+                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), tail);
+                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx)}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Initialize sublog ref if first time
