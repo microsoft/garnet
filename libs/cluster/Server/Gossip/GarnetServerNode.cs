@@ -165,7 +165,7 @@ namespace Garnet.cluster
                 if (clusterProvider.replicationManager != null)
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
-                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset[0]);
+                    lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
                 byteArray = lastConfig.ToByteArray();
             }
             else
