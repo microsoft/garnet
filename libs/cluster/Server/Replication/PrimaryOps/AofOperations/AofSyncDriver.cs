@@ -69,14 +69,14 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Return previous address for a specific sublog without allocating an AofAddress struct
+        /// Return previous address for a specific sublog without copying the full AofAddress struct
         /// </summary>
         /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
         /// <returns>The previous address of the specified sublog's sync task.</returns>
         public long GetPreviousAddress(int physicalSublogIdx) => aofSyncTasks[physicalSublogIdx].PreviousAddress;
 
         /// <summary>
-        /// Return start address for a specific sublog without allocating an AofAddress struct
+        /// Return start address for a specific sublog without copying the full AofAddress struct
         /// </summary>
         /// <param name="physicalSublogIdx">Index of the physical sublog.</param>
         /// <returns>The start address of the specified sublog's sync task.</returns>

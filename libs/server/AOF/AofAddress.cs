@@ -48,7 +48,7 @@ namespace Garnet.server
         /// <returns></returns>
         public long this[int i]
         {
-            get
+            readonly get
             {
                 return addresses[i];
             }
