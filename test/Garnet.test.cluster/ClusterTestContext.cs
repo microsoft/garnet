@@ -779,7 +779,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
+        public async Task AttachAndWaitForSyncAsync(int primary_count, int replica_count, bool disableObjects)
         {
             var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
 
@@ -800,7 +800,7 @@ namespace Garnet.test.cluster
                 clusterTestUtils.WaitForReplicaAofSync(0, i, logger);
             }
 
-            clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, logger: logger);
+            await clusterTestUtils.WaitForConnectedReplicaCountAsync(0, replica_count, logger: logger).ConfigureAwait(false);
 
             // Validate data on replicas
             for (var i = primary_count; i < replica_count; i++)

@@ -356,81 +356,94 @@ namespace Garnet.cluster
         /// <returns></returns>
         private bool NetworkClusterGossip(out bool invalidParameters)
         {
-            invalidParameters = false;
-
-            // Expecting 1 or 2 arguments
-            if (parseState.Count is < 1 or > 2)
+            try
             {
-                invalidParameters = true;
-                return true;
-            }
+                invalidParameters = false;
 
-            var gossipWithMeet = false;
-
-            var currTokenIdx = 0;
-            if (parseState.Count > 1)
-            {
-                var withMeetSpan = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-
-                Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
-                if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
-                    gossipWithMeet = true;
-            }
-
-            var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
-
-            clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
-            var current = clusterProvider.clusterManager.CurrentConfig;
-
-            // Try merge if not just a ping message
-            if (gossipMessage.Length > 0)
-            {
-                var other = ClusterConfig.FromByteArray(gossipMessage);
-                // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
-                // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
-                if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
+                // Expecting 1 or 2 arguments
+                if (parseState.Count is < 1 or > 2)
                 {
-                    // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
-                    ReleaseCurrentEpoch();
-                    try
-                    {
-                        _ = clusterProvider.clusterManager.TryMerge(other);
-                    }
-                    finally
-                    {
-                        AcquireCurrentEpoch();
-                    }
+                    invalidParameters = true;
+                    return true;
+                }
 
-                    // Remember that this connection is being used for another cluster node to talk to us
-                    Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
-                    RemoteNodeId = other.LocalNodeId;
+                var gossipWithMeet = false;
+
+                var currTokenIdx = 0;
+                if (parseState.Count > 1)
+                {
+                    var withMeetSpan = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
+                    Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
+                    if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
+                    {
+                        gossipWithMeet = true;
+                    }
+                }
+
+                var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+
+                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
+                var current = clusterProvider.clusterManager.CurrentConfig;
+
+                // Try merge if not just a ping message
+                if (gossipMessage.Length > 0)
+                {
+                    var other = ClusterConfig.FromByteArray(gossipMessage);
+                    // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
+                    // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
+                    if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
+                    {
+                        // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
+                        ReleaseCurrentEpoch();
+                        try
+                        {
+                            _ = clusterProvider.clusterManager.TryMerge(other);
+                        }
+                        finally
+                        {
+                            AcquireCurrentEpoch();
+                        }
+
+                        // Remember that this connection is being used for another cluster node to talk to us
+                        Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
+                        RemoteNodeId = other.LocalNodeId;
+                    }
+                    else
+                    {
+                        logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
+                    }
+                }
+
+                // Respond if configuration has changed or gossipWithMeet option is specified
+                if (lastSentConfig != current || gossipWithMeet)
+                {
+                    var configByteArray = current.ToByteArray();
+                    clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
+                    while (!RespWriteUtils.TryWriteBulkString(configByteArray, ref dcurr, dend))
+                        SendAndReset();
+                    lastSentConfig = current;
                 }
                 else
-                    logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
-            }
+                {
+                    while (!RespWriteUtils.TryWriteBulkString([], ref dcurr, dend))
+                        SendAndReset();
+                }
 
-            // Respond if configuration has changed or gossipWithMeet option is specified
-            if (lastSentConfig != current || gossipWithMeet)
-            {
-                var configByteArray = current.ToByteArray();
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
-                while (!RespWriteUtils.TryWriteBulkString(configByteArray, ref dcurr, dend))
-                    SendAndReset();
-                lastSentConfig = current;
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteBulkString([], ref dcurr, dend))
-                    SendAndReset();
-            }
+                // After each GOSSIP, ensure cluster connections for replication are in a good state
+                if (Server is GarnetServerBase garnetServer)
+                {
+                    clusterProvider.replicationManager.EnsureReplication(this, garnetServer.ActiveClusterSessions());
+                }
 
-            // After each GOSSIP, ensure cluster connections for replication are in a good state
-            if (Server is GarnetServerBase garnetServer)
-            {
-                clusterProvider.replicationManager.EnsureReplication(this, garnetServer.ActiveClusterSessions());
+                return true;
             }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Gossip failure");
 
-            return true;
+                throw;
+            }
         }
 
         /// <summary>
