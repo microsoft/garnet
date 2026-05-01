@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 
@@ -63,11 +62,11 @@ namespace Garnet.server
         /// and must have the same length as the current instance.</param>
         /// <returns><see langword="true"/> if the specified <see cref="AofAddress"/> is equal to the current instance;
         /// otherwise, <see langword="false"/>.</returns>
-        public bool Equals([NotNullWhen(true)] AofAddress other)
+        public bool Equals(in AofAddress other)
         {
             Debug.Assert(other.Length == Length);
             for (var i = 0; i < Length; i++)
-                if (addresses[i] != other.addresses[i]) return false;
+                if (addresses[i] != other[i]) return false;
             return true;
         }
 
@@ -229,7 +228,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value"></param>
         /// <param name="comparand"></param>
-        public void SetValueIf(AofAddress value, long comparand)
+        public void SetValueIf(in AofAddress value, long comparand)
         {
             for (var i = 0; i < Length; i++)
             {
@@ -297,7 +296,7 @@ namespace Garnet.server
             _ = Tsavorite.core.Utility.MonotonicUpdate(ref addresses[physicalSublogIdx], update, out _);
         }
 
-        public void MinExchange(AofAddress address)
+        public void MinExchange(in AofAddress address)
         {
             for (var i = 0; i < Length; i++)
                 addresses[i] = Math.Min(addresses[i], address[i]);
@@ -309,14 +308,14 @@ namespace Garnet.server
                 addresses[i] = Math.Max(addresses[i], address);
         }
 
-        public bool AnyLesser(AofAddress address)
+        public bool AnyLesser(in AofAddress address)
         {
             for (var i = 0; i < Length; i++)
                 if (addresses[i] < address[i]) return true;
             return false;
         }
 
-        public bool AnyGreater(AofAddress address)
+        public bool AnyGreater(in AofAddress address)
         {
             for (var i = 0; i < Length; i++)
                 if (addresses[i] > address[i]) return true;
@@ -330,16 +329,16 @@ namespace Garnet.server
             return true;
         }
 
-        public AofAddress Diff(AofAddress other)
+        public AofAddress Diff(in AofAddress other)
         {
             Debug.Assert(other.Length == Length);
             var aofAddress = new AofAddress(other.Length);
             for (var i = 0; i < other.Length; i++)
-                aofAddress[i] = this.addresses[i] - other.addresses[i];
+                aofAddress[i] = this.addresses[i] - other[i];
             return aofAddress;
         }
 
-        public long AggregateDiff(AofAddress aofAddress)
+        public long AggregateDiff(in AofAddress aofAddress)
         {
             var diff = 0L;
             for (var i = 0; i < Length; i++)
@@ -355,7 +354,7 @@ namespace Garnet.server
             return diff;
         }
 
-        public bool EqualsAll(AofAddress input)
+        public bool EqualsAll(in AofAddress input)
         {
             for (var i = 0; i < Length; i++)
                 if (addresses[i] != input[i])
@@ -363,7 +362,7 @@ namespace Garnet.server
             return true;
         }
 
-        public bool IsOutOfRange(AofAddress begin, AofAddress end)
+        public bool IsOutOfRange(in AofAddress begin, in AofAddress end)
         {
             for (var i = 0; i < Length; i++)
             {
