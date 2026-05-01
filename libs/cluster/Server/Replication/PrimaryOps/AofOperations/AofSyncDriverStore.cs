@@ -126,7 +126,7 @@ namespace Garnet.cluster
         /// Safely truncate AOF until provided address by checking against active AofSyncDrivers
         /// </summary>
         /// <param name="truncateUntil"></param>
-        public void SafeTruncateAof(AofAddress truncateUntil)
+        public void SafeTruncateAof(in AofAddress truncateUntil)
         {
             _lock.WriteLock();
 
@@ -175,7 +175,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="PrimaryReplicationOffset"></param>
         /// <returns></returns>
-        public List<RoleInfo> GetReplicaInfo(AofAddress PrimaryReplicationOffset)
+        public List<RoleInfo> GetReplicaInfo(in AofAddress PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
             List<RoleInfo> replicaInfo = new(numDrivers);
