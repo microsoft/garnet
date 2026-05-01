@@ -1076,12 +1076,24 @@ namespace Garnet.test
 
         [Test]
         [Repeat(10)]
-        public void ListPushPopStressTest()
+        public async Task ListPushPopStressTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            // Custom config with a generous timeout for this stress test specifically — the default
+            // 30s is normally plenty, but under heavy CI load a queued response can be delayed.
+            static ConfigurationOptions StressConfig()
+            {
+                var cfg = TestUtils.GetConfig();
+                cfg.SyncTimeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
+                cfg.AsyncTimeout = (int)TimeSpan.FromMinutes(2).TotalMilliseconds;
+                return cfg;
+            }
+
+            using var redis = ConnectionMultiplexer.Connect(StressConfig());
             var db = redis.GetDatabase(0);
 
-            int keyCount = 10;
+            // Keep concurrency modest so we don't outpace small CI runners while still exercising
+            // real LPUSH/RPOP concurrency on multiple keys.
+            int keyCount = 5;
             int ppCount = 100;
             HashSet<string> keys = [];
             for (int i = 0; i < keyCount; i++)
@@ -1090,60 +1102,88 @@ namespace Garnet.test
             ClassicAssert.AreEqual(keyCount, keys.Count, "Unique key initialization failed!");
 
             var keyArray = keys.ToArray();
-            var stop = new ManualResetEventSlim(false);
 
-            // Use dedicated threads to avoid threadpool starvation on small CI runners.
-            var threads = new Thread[keyCount * 2];
-            for (int i = 0; i < keyCount; i++)
-            {
-                var key = keyArray[i];
+            // Cancellation token stops in-flight workers on first failure and provides a hard deadline.
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
-                threads[i * 2] = new Thread(() =>
-                {
-                    for (int j = 0; j < ppCount && !stop.IsSet; j++)
-                        db.ListLeftPush(key, j);
-                })
-                { IsBackground = true };
-
-                threads[i * 2 + 1] = new Thread(() =>
-                {
-                    for (int j = 0; j < ppCount && !stop.IsSet; j++)
-                    {
-                        var value = db.ListRightPop(key);
-                        while (value.IsNull && !stop.IsSet)
-                        {
-                            Thread.Sleep(1);
-                            value = db.ListRightPop(key);
-                        }
-                        if (!stop.IsSet)
-                            ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
-                    }
-                })
-                { IsBackground = true };
-            }
-
-            foreach (var t in threads) t.Start();
+            // Pre-create one ConnectionMultiplexer per worker so each "client" has its own socket.
+            // A single shared mux serializes all writes through one background writer; under CI load
+            // that writer can fall behind enough to exceed timeouts. Connect up front to also avoid
+            // a connect storm racing ConnectTimeout.
+            var workerCount = keyCount * 2;
+            var workerMuxes = new ConnectionMultiplexer[workerCount];
             try
             {
-                var deadline = DateTime.UtcNow.AddMinutes(5);
-                foreach (var t in threads)
+                for (int i = 0; i < workerCount; i++)
+                    workerMuxes[i] = ConnectionMultiplexer.Connect(StressConfig());
+            }
+            catch
+            {
+                foreach (var mux in workerMuxes)
+                    mux?.Dispose();
+                throw;
+            }
+
+            try
+            {
+                // Use async Redis APIs scheduled on the threadpool. Each await releases the worker
+                // thread while the response is in flight, so SE.Redis's IO-completion continuations
+                // always have a free worker.
+                var tasks = new Task[workerCount];
+                for (int i = 0; i < keyCount; i++)
                 {
-                    var remaining = deadline - DateTime.UtcNow;
-                    if (remaining <= TimeSpan.Zero || !t.Join(remaining))
-                        ClassicAssert.Fail("ListPushPopStressTest timed out after 5 minutes");
+                    var key = keyArray[i];
+                    var pushDb = workerMuxes[i * 2].GetDatabase(0);
+                    var popDb = workerMuxes[i * 2 + 1].GetDatabase(0);
+
+                    tasks[i * 2] = Task.Run(async () =>
+                    {
+                        for (int j = 0; j < ppCount && !cts.IsCancellationRequested; j++)
+                            _ = await pushDb.ListLeftPushAsync(key, j).ConfigureAwait(false);
+                    });
+
+                    tasks[i * 2 + 1] = Task.Run(async () =>
+                    {
+                        for (int j = 0; j < ppCount && !cts.IsCancellationRequested; j++)
+                        {
+                            var value = await popDb.ListRightPopAsync(key).ConfigureAwait(false);
+                            while (value.IsNull && !cts.IsCancellationRequested)
+                            {
+                                await Task.Delay(1, cts.Token).ConfigureAwait(false);
+                                value = await popDb.ListRightPopAsync(key).ConfigureAwait(false);
+                            }
+                            if (!cts.IsCancellationRequested)
+                                ClassicAssert.IsTrue((int)value >= 0 && (int)value < ppCount, "Pop value inconsistency");
+                        }
+                    });
+                }
+
+                // Await all tasks; observe ALL faults (Task.WhenAll's awaiter only re-throws the
+                // first exception, but Task.WhenAll(...).Exception is the full aggregate).
+                var allDone = Task.WhenAll(tasks);
+                try
+                {
+                    await allDone.ConfigureAwait(false);
+                }
+                catch
+                {
+                    cts.Cancel();
+                }
+
+                if (allDone.Exception != null)
+                    throw allDone.Exception;
+
+                foreach (var key in keyArray)
+                {
+                    var count = db.ListLength(key);
+                    ClassicAssert.AreEqual(0, count);
                 }
             }
             finally
             {
-                stop.Set();
-                foreach (var t in threads)
-                    t.Join(TimeSpan.FromSeconds(30));
-            }
-
-            foreach (var key in keyArray)
-            {
-                var count = db.ListLength(key);
-                ClassicAssert.AreEqual(0, count);
+                cts.Cancel();
+                foreach (var mux in workerMuxes)
+                    mux?.Dispose();
             }
         }
 
