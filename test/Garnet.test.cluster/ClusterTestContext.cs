@@ -54,6 +54,12 @@ namespace Garnet.test.cluster
 
         public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
+            // Pull timeout off [CancelAfter] if its specified, otherwise use default
+            if (TestContext.CurrentContext.Test.Properties.ContainsKey("Timeout"))
+            {
+                testTimeoutSeconds = ((int)TestContext.CurrentContext.Test.Properties["Timeout"].First()) / 1_000;
+            }
+
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
