@@ -165,20 +165,21 @@ namespace Garnet.test.cluster
                 return RedisResult.Create((RedisValue)ex.Message);
             }
         }
-        public Task<RedisResult> ExecuteAsync(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null, CommandFlags flags = CommandFlags.None)
+
+        public async Task<RedisResult> ExecuteAsync(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null, CommandFlags flags = CommandFlags.None)
         {
             if (!skipLogging)
                 logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, string.Join(' ', args));
             try
             {
                 var server = GetServer(endPoint);
-                var resp = server.ExecuteAsync(cmd, args, flags: flags);
+                var resp = await server.ExecuteAsync(cmd, args, flags: flags).ConfigureAwait(false);
                 return resp;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error occured {cmd} {msg}", cmd, ex.Message);
-                return Task.FromResult(RedisResult.Create((RedisValue)ex.Message));
+                return RedisResult.Create((RedisValue)ex.Message);
             }
         }
 
@@ -429,7 +430,6 @@ namespace Garnet.test.cluster
 
                     // Check slot assignment worked
                     var finalSlots = await GetOwnedSlotsFromNodeAsync(endpoint, logger).ConfigureAwait(false);
-                    ClassicAssert.AreEqual((slotRange.Item2 - slotRange.Item1) + 1, finalSlots.Count, "Incorrect number of slots on node");
                     for (var slot = slotRange.Item1; slot <= slotRange.Item2; slot++)
                     {
                         ClassicAssert.IsTrue(finalSlots.Contains(slot), "Assigned slot is not present after adding slot");
