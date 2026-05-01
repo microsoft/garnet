@@ -34,10 +34,10 @@ namespace Garnet.test.cluster
                 new(() => ClusterSRNoCheckpointRestartSecondary(false, true), "ClusterSRNoCheckpointRestartSecondary(false, true)"),
                 new(() => ClusterSRNoCheckpointRestartSecondary(true, false), "ClusterSRNoCheckpointRestartSecondary(true, false)"),
                 new(() => ClusterSRNoCheckpointRestartSecondary(true, true), "ClusterSRNoCheckpointRestartSecondary(true, true)"),
-                new(() => ClusterSRPrimaryCheckpoint(false, false), "ClusterSRPrimaryCheckpoint(false, false)"),
-                new(() => ClusterSRPrimaryCheckpoint(false, true), "ClusterSRPrimaryCheckpoint(false, true)"),
-                new(() => ClusterSRPrimaryCheckpoint(true, false), "ClusterSRPrimaryCheckpoint(true, false)"),
-                new(() => ClusterSRPrimaryCheckpoint(true, true), "ClusterSRPrimaryCheckpoint(true, true)"),
+                new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(false, false)), "ClusterSRPrimaryCheckpointAsync(false, false)"),
+                new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(false, true)), "ClusterSRPrimaryCheckpointAsync(false, true)"),
+                new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, false)), "ClusterSRPrimaryCheckpointAsync(true, false)"),
+                new(() => AsyncUtils.BlockingWait(ClusterSRPrimaryCheckpointAsync(true, true)), "ClusterSRPrimaryCheckpointAsync(true, true)"),
                 new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, false)"),
                 new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, true)"),
                 new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, false)"),
@@ -219,7 +219,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(3)]
         [Category("REPLICATION")]
-        public void ClusterSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
+        public async Task ClusterSRPrimaryCheckpointAsync([Values] bool performRMW, [Values] bool disableObjects)
         {
             if (useTLS)
                 context.EnableGarnetLoggingEvents([GarnetTestLoggingEventType.LogPrimaryStreamType, GarnetTestLoggingEventType.LogRunAofSyncTask]);
@@ -288,9 +288,10 @@ namespace Garnet.test.cluster
             context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
-            for (var i = 1; i < replica_count; i++)
+
+            for (var i = 1; i < replica_count; i++) 
                 context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
-            context.clusterTestUtils.WaitForConnectedReplicaCount(primaryIndex, replica_count, context.logger);
+            await context.clusterTestUtils.WaitForConnectedReplicaCountAsync(0, replica_count, context.logger).ConfigureAwait(false);
 
             // Validate synchronization was success
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
@@ -775,7 +776,7 @@ namespace Garnet.test.cluster
             context.kvPairs = [];
             context.kvPairsObj = [];
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true));
-            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primaryIndex, primary_count, replica_count, disableObjects));
+            var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSyncAsync(primaryIndex, primary_count, replica_count, disableObjects));
 
             var tasks = new Task[] { context.checkpointTask, attachReplicaTask };
             if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
@@ -1016,7 +1017,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(22)]
         [Category("REPLICATION")]
-        public void ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
+        public async Task ClusterReplicationCheckpointAlignmentTestAsync([Values] bool performRMW)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1118,7 +1119,7 @@ namespace Garnet.test.cluster
             var primaryNodeId = context.clusterTestUtils.ClusterMyId(primaryNodeIndex, logger: context.logger);
 
             // Enable replication
-            context.clusterTestUtils.WaitUntilNodeIdIsKnown(replicaNodeIndex, primaryNodeId, logger: context.logger);
+            await context.clusterTestUtils.WaitUntilNodeIdIsKnownAsync(replicaNodeIndex, primaryNodeId, logger: context.logger).ConfigureAwait(false);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger));
 
             // Both nodes are at version 1 despite replica recovering to version earlier
@@ -1546,7 +1547,7 @@ namespace Garnet.test.cluster
         [Test, Order(28)]
         [Category("CLUSTER")]
         [Category("REPLICATION")]
-        public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
+        public async Task ClusterReplicationDivergentHistoryWithoutCheckpointAsync()
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1593,7 +1594,7 @@ namespace Garnet.test.cluster
                 cleanClusterConfig: false,
                 sublogCount: sublogCount);
             context.nodes[primaryNodeIndex].Start();
-            context.clusterTestUtils.Reconnect([primaryNodeIndex]);
+            await context.clusterTestUtils.ReconnectAsync([primaryNodeIndex]).ConfigureAwait(false);
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
 
             offset += keyCount;
@@ -1611,7 +1612,7 @@ namespace Garnet.test.cluster
                 cleanClusterConfig: false,
                 sublogCount: sublogCount);
             context.nodes[replicaNodeIndex].Start();
-            context.clusterTestUtils.Reconnect([primaryNodeIndex, replicaNodeIndex]);
+            await context.clusterTestUtils.ReconnectAsync([primaryNodeIndex, replicaNodeIndex]).ConfigureAwait(false);
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
