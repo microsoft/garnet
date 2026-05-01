@@ -594,7 +594,7 @@ namespace Garnet.test.cluster
 
                         var replicas = await GetClusterReplicasAsync(primaryEndpoint, logger).ConfigureAwait(false);
 
-                        if(!replicas.Any(c => c.StartsWith($"{replicaId} ")))
+                        if (!replicas.Any(c => c.StartsWith($"{replicaId} ")))
                         {
                             await BackOffAsync(context.cts.Token).ConfigureAwait(false);
                             continue;
