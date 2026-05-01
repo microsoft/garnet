@@ -288,8 +288,7 @@ namespace Garnet.test.cluster
             context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
-
-            for (var i = 1; i < replica_count; i++) 
+            for (var i = 1; i < replica_count; i++)
                 context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
             await context.clusterTestUtils.WaitForConnectedReplicaCountAsync(0, replica_count, context.logger).ConfigureAwait(false);
 
