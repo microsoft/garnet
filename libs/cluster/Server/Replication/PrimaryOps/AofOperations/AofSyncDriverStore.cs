@@ -96,8 +96,9 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; i++)
                 {
                     Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
-                    if (syncDrivers[i].PreviousAddress[physicalSublogIdx] < TruncatedUntil)
-                        TruncatedUntil = syncDrivers[i].PreviousAddress[physicalSublogIdx];
+                    var prevAddress = syncDrivers[i].GetPreviousAddress(physicalSublogIdx);
+                    if (prevAddress < TruncatedUntil)
+                        TruncatedUntil = prevAddress;
                 }
 
                 // Inform that we have logically truncatedUntil
