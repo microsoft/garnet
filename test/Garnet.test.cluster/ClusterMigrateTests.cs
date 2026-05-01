@@ -1339,7 +1339,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(15)]
         [Category("CLUSTER")]
-        public void ClusterAllowWritesDuringMigrateTest()
+        public async Task ClusterAllowWritesDuringMigrateTestAsync()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateTestWithReadWrite started");
             var Shards = defaultShards;
@@ -1363,7 +1363,7 @@ namespace Garnet.test.cluster
 
             // Get slot mapping
             var slot = context.clusterTestUtils.ClusterKeySlot(srcNode.EndPoint.ToIPEndPoint(), Encoding.ASCII.GetString(keyExists));
-            var tgtNode = context.clusterTestUtils.GetAnyOtherNode(srcNode.EndPoint.ToIPEndPoint(), logger: context.logger);
+            var tgtNode = await context.clusterTestUtils.GetAnyOtherNodeAsync(srcNode.EndPoint.ToIPEndPoint(), logger: context.logger).ConfigureAwait(false);
 
             // Set slot to IMPORTING state
             var resp = context.clusterTestUtils.SetSlot(tgtNode.EndPoint.ToIPEndPoint(), slot, "IMPORTING", srcNode.NodeId);
