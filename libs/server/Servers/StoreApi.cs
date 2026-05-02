@@ -99,7 +99,7 @@ namespace Garnet.server
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>false if checkpoint was skipped due to node state or another checkpoint in progress</returns>
-        public bool TakeCheckpoint(bool background = false, CancellationToken token = default)
+        public async ValueTask<bool> TakeCheckpointAsync(bool background = false, CancellationToken token = default)
         {
             using (PreventRoleChange(out var acquired))
             {
@@ -108,7 +108,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                return storeWrapper.TakeCheckpoint(background, logger: null, token: token);
+                return await storeWrapper.TakeCheckpointAsync(background, logger: null, token: token).ConfigureAwait(false);
             }
         }
 

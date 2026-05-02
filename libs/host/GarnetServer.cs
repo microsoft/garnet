@@ -630,7 +630,7 @@ namespace Garnet
             logger?.LogDebug("Taking checkpoint for tiered storage...");
             try
             {
-                var checkpointSuccess = Store.TakeCheckpoint(background: false, token: token);
+                var checkpointSuccess = await Store.TakeCheckpointAsync(background: false, token: token).ConfigureAwait(false);
                 if (checkpointSuccess)
                 {
                     logger?.LogDebug("Checkpoint completed successfully.");
