@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -137,24 +138,20 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
-                    var checkpointReader = new TsavoriteCheckpointReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
-                    var rangeIndexManager = storeWrapper.RangeIndexManager;
-                    var riReader = rangeIndexManager is { IsEnabled: true }
-                        ? new RangeIndexCheckpointReader(rangeIndexManager, localEntry.metadata.storeHlogToken, storeWrapper.serverOptions.ReplicaSyncTimeout, logger)
-                        : null;
+                    var tsavoriteSnaphotReader = new TsavoriteSnapshotReader(clusterProvider, localEntry, hlog_size, index_size, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
+                    List<ISnapshotReader> snapshotReaders = [tsavoriteSnaphotReader];
 
-                    ISnapshotReader[] readers = riReader != null
-                        ? [checkpointReader, riReader]
-                        : [checkpointReader];
+                    if (storeWrapper.serverOptions.EnableRangeIndexPreview)
+                        snapshotReaders.Add(new RangeIndexSnapshotReader(storeWrapper.RangeIndexManager, localEntry.metadata.storeHlogToken, storeWrapper.serverOptions.ReplicaSyncTimeout, logger));
 
                     try
                     {
-                        using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(readers, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
+                        using var checkpointTransmissionDriver = new SnapshotTransmissionDriver(snapshotReaders, gcs, storeWrapper.serverOptions.ReplicaSyncTimeout, logger);
                         await checkpointTransmissionDriver.SendCheckpointAsync(cts.Token).ConfigureAwait(false);
                     }
                     finally
                     {
-                        foreach (var reader in readers)
+                        foreach (var reader in snapshotReaders)
                             reader.Dispose();
                     }
                 }

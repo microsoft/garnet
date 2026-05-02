@@ -14,9 +14,9 @@ namespace Garnet.cluster
     /// Checkpoint reader that enumerates RangeIndex BfTree snapshot files for a given
     /// checkpoint token and yields transmit sources for each file.
     /// Uses <see cref="ManagedLocalStorageDevice"/> and <see cref="SectorAlignedBufferPool"/>
-    /// for sector-aligned, zero-copy reads matching the <see cref="TsavoriteCheckpointReader"/> pattern.
+    /// for sector-aligned, zero-copy reads matching the <see cref="TsavoriteSnapshotReader"/> pattern.
     /// </summary>
-    internal sealed class RangeIndexCheckpointReader : ISnapshotReader
+    internal sealed class RangeIndexSnapshotReader : ISnapshotReader
     {
         readonly RangeIndexManager rangeIndexManager;
         readonly Guid checkpointToken;
@@ -33,7 +33,7 @@ namespace Garnet.cluster
         /// <param name="checkpointToken">The checkpoint token identifying the snapshot files.</param>
         /// <param name="timeout">Timeout for async I/O operations.</param>
         /// <param name="logger">Optional logger.</param>
-        public RangeIndexCheckpointReader(RangeIndexManager rangeIndexManager, Guid checkpointToken, TimeSpan timeout, ILogger logger = null)
+        public RangeIndexSnapshotReader(RangeIndexManager rangeIndexManager, Guid checkpointToken, TimeSpan timeout, ILogger logger = null)
         {
             this.rangeIndexManager = rangeIndexManager;
             this.checkpointToken = checkpointToken;

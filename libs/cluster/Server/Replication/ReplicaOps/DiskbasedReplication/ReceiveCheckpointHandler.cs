@@ -113,19 +113,32 @@ namespace Garnet.cluster
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
 
             // Single-message payload (startAddress == -1)
+            // NOTE: Use for single write metadata or to configure initialization parameters for shipping multi-segments files.
             if (startAddress == -1)
             {
-                if (type == CheckpointFileType.RINDEX_SNAPSHOT)
+                switch (type)
                 {
-                    // RangeIndex header: carries key hash directory name for the next file stream
-                    pendingRangeIndexKeyHashDir = ValidateAndExtractKeyHashDir(data);
-                    return;
+                    case CheckpointFileType.RINDEX_SNAPSHOT:
+                        // RangeIndex header: carries key hash directory name for the next file stream
+                        pendingRangeIndexKeyHashDir = ValidateAndExtractKeyHashDir(data);
+                        return;
+                    case CheckpointFileType.STORE_INDEX:
+                    case CheckpointFileType.STORE_SNAPSHOT:
+                        var sink = new MetadataDataSink(type, token, clusterProvider);
+                        try
+                        {
+                            sink.WriteChunk(0, data);
+                            sink.Complete();
+                            return;
+                        }
+                        finally
+                        {
+                            sink.Dispose();
+                        }
+                    default:
+                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
+                        return;
                 }
-
-                using var sink = new MetadataDataSink(type, token, clusterProvider);
-                sink.WriteChunk(0, data);
-                sink.Complete();
-                return;
             }
 
             // File segment handling: empty data signals end-of-stream
@@ -136,17 +149,26 @@ namespace Garnet.cluster
                 return;
             }
 
+            // Initialize sink for multi-segment file transmission
             if (activeSink == null)
             {
-                if (type == CheckpointFileType.RINDEX_SNAPSHOT)
+                switch (type)
                 {
-                    activeSink = CreateRangeIndexFileSink(token);
-                }
-                else
-                {
-                    var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
-                    bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
-                    activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+                    case CheckpointFileType.RINDEX_SNAPSHOT:
+                        activeSink = CreateRangeIndexFileSink(token);
+                        break;
+                    case CheckpointFileType.STORE_HLOG:
+                    case CheckpointFileType.STORE_HLOG_OBJ:
+                    case CheckpointFileType.STORE_SNAPSHOT:
+                    case CheckpointFileType.STORE_SNAPSHOT_OBJ:
+                    case CheckpointFileType.STORE_INDEX:
+                        var device = clusterProvider.replicationManager.CreateCheckpointDevice(token, type);
+                        bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                        activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
+                        break;
+                    default:
+                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
+                        return;
                 }
             }
 

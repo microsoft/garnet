@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -14,12 +15,12 @@ namespace Garnet.cluster
     /// </summary>
     internal sealed class SnapshotTransmissionDriver : IDisposable
     {
-        readonly ISnapshotReader[] checkpointReaders;
+        readonly List<ISnapshotReader> checkpointReaders;
         readonly GarnetClientSession gcs;
         readonly TimeSpan timeout;
         readonly ILogger logger;
 
-        public SnapshotTransmissionDriver(ISnapshotReader[] checkpointReaders, GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null)
+        public SnapshotTransmissionDriver(List<ISnapshotReader> checkpointReaders, GarnetClientSession gcs, TimeSpan timeout, ILogger logger = null)
         {
             this.checkpointReaders = checkpointReaders;
             this.gcs = gcs;
