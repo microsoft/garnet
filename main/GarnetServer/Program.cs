@@ -10,7 +10,7 @@ namespace Garnet
     /// </summary>
     public class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             try
             {
@@ -22,18 +22,28 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                using var shutdownEvent = new ManualResetEventSlim(false);
+                using var cts = new CancellationTokenSource();
 
+                // Signal cancellation on Ctrl+C; avoid blocking the event handler with async work
                 Console.CancelKeyPress += (sender, e) =>
                 {
-                    e.Cancel = true;
-                    // Graceful shutdown: drain connections, commit AOF, take checkpoint
-                    server.ShutdownAsync(TimeSpan.FromSeconds(5))
-                        .GetAwaiter().GetResult();
-                    shutdownEvent.Set();
+                    e.Cancel = true; // Prevent the process from terminating immediately
+                    cts.Cancel();
                 };
 
-                shutdownEvent.Wait();
+                // Signal cancellation on SIGTERM (e.g., container orchestrators, systemd)
+                AppDomain.CurrentDomain.ProcessExit += (sender, e) => cts.Cancel();
+
+                // Wait until a shutdown signal is received
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Graceful shutdown: drain connections, commit AOF, take checkpoint
+                    await server.ShutdownAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
