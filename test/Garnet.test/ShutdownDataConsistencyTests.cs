@@ -4,6 +4,9 @@
 using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -128,16 +131,20 @@ namespace Garnet.test
         /// Takes checkpoint first, then commits AOF.
         /// </summary>
         [Test]
-        public void CheckpointThenAofCommit_DataConsistencyTest()
+        public async Task CheckpointThenAofCommit_DataConsistencyTest()
         {
             server = CreateServerWithAofAndStorage();
             server.Start();
 
             PopulateData();
 
+            // Create CanclellationTokenSource with a long timeout to prevent hanging indefinitely in case of issues during shutdown
+            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            TestContext.Progress.WriteLine($"Created CancellationTokenSource with 5 minute timeout for test shutdown");
+
             // Sequence: Checkpoint first, then AOF commit
-            server.Store.TakeCheckpoint(background: false);
-            server.Store.CommitAOF(spinWait: true);
+            await server.Store.TakeCheckpointAsync(background: false);
+            await server.Store.CommitAOFAsync(cts.Token);
 
             server.Dispose(false);
 
@@ -161,16 +168,20 @@ namespace Garnet.test
         /// Commits AOF first, then takes checkpoint.
         /// </summary>
         [Test]
-        public void AofCommitThenCheckpoint_DataConsistencyTest()
+        public async Task AofCommitThenCheckpoint_DataConsistencyTest()
         {
             server = CreateServerWithAofAndStorage();
             server.Start();
 
             PopulateData();
 
+            // Create CanclellationTokenSource with a long timeout to prevent hanging indefinitely in case of issues during shutdown
+            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            TestContext.Progress.WriteLine($"Created CancellationTokenSource with 5 minute timeout for test shutdown");
+
             // Sequence: AOF commit first, then Checkpoint (matches current FinalizeDataAsync order)
-            server.Store.CommitAOF(spinWait: true);
-            server.Store.TakeCheckpoint(background: false);
+            await server.Store.CommitAOFAsync(cts.Token);
+            await server.Store.TakeCheckpointAsync(background: false);
 
             server.Dispose(false);
 
@@ -194,15 +205,17 @@ namespace Garnet.test
         /// Only commits AOF before shutdown.
         /// </summary>
         [Test]
-        public void AofCommitOnly_DataConsistencyTest()
+        public async Task AofCommitOnly_DataConsistencyTest()
         {
             server = CreateServerWithAofAndStorage();
             server.Start();
 
             PopulateData();
 
+            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
             // Sequence: AOF commit only
-            server.Store.CommitAOF(spinWait: true);
+            await server.Store.CommitAOFAsync(cts.Token);
 
             server.Dispose(false);
 
@@ -226,7 +239,7 @@ namespace Garnet.test
         /// Only takes checkpoint before shutdown.
         /// </summary>
         [Test]
-        public void CheckpointOnly_DataConsistencyTest()
+        public async Task CheckpointOnly_DataConsistencyTest()
         {
             server = CreateServerWithAofAndStorage();
             server.Start();
@@ -234,7 +247,7 @@ namespace Garnet.test
             PopulateData();
 
             // Sequence: Checkpoint only (no AOF commit)
-            server.Store.TakeCheckpoint(background: false);
+            await server.Store.TakeCheckpointAsync(background: false);
 
             server.Dispose(false);
 
@@ -291,7 +304,7 @@ namespace Garnet.test
         /// Simulates the case where new writes happen between checkpoint and AOF commit.
         /// </summary>
         [Test]
-        public void CheckpointThenMoreWritesThenAofCommit_DataConsistencyTest()
+        public async Task CheckpointThenMoreWritesThenAofCommit_DataConsistencyTest()
         {
             server = CreateServerWithAofAndStorage();
             server.Start();
@@ -299,8 +312,10 @@ namespace Garnet.test
             // Phase 1: Initial data
             PopulateData();
 
+            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
             // Take checkpoint
-            server.Store.TakeCheckpoint(background: false);
+            await server.Store.TakeCheckpointAsync(background: false);
 
             // Phase 2: Write additional data AFTER checkpoint
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -313,7 +328,7 @@ namespace Garnet.test
             }
 
             // Now commit AOF (should capture phase 2 writes)
-            server.Store.CommitAOF(spinWait: true);
+            await server.Store.CommitAOFAsync(cts.Token);
 
             server.Dispose(false);
 
@@ -356,7 +371,7 @@ namespace Garnet.test
         /// Simulates the case where new writes happen between AOF commit and checkpoint.
         /// </summary>
         [Test]
-        public void AofCommitThenMoreWritesThenCheckpoint_DataConsistencyTest()
+        public async Task AofCommitThenMoreWritesThenCheckpoint_DataConsistencyTest()
         {
             server = CreateServerWithAofAndStorage();
             server.Start();
@@ -364,8 +379,10 @@ namespace Garnet.test
             // Phase 1: Initial data
             PopulateData();
 
+            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
             // Commit AOF
-            server.Store.CommitAOF(spinWait: true);
+            await server.Store.CommitAOFAsync(cts.Token);
 
             // Phase 2: Write additional data AFTER AOF commit
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -378,7 +395,7 @@ namespace Garnet.test
             }
 
             // Now take checkpoint (should capture phase 2 writes)
-            server.Store.TakeCheckpoint(background: false);
+            await server.Store.TakeCheckpointAsync(background: false);
 
             server.Dispose(false);
 
