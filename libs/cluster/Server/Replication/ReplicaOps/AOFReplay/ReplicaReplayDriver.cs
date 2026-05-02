@@ -197,7 +197,7 @@ namespace Garnet.cluster
 
             if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != nextAddress)
             {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.GetReplicationOffset(physicalSublogIdx));
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
             }
         }
@@ -269,7 +269,7 @@ namespace Garnet.cluster
 
             if (replicationOffset != nextAddress)
             {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.GetReplicationOffset(physicalSublogIdx));
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
             }
         }
@@ -329,7 +329,7 @@ namespace Garnet.cluster
         public void ThrottlePrimary()
         {
             while (serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset) > serverOptions.ReplicationOffsetMaxLag)
+                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > serverOptions.ReplicationOffsetMaxLag)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 Thread.Yield();

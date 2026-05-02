@@ -67,6 +67,22 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Return the replication offset for a specific sublog without copying the full AofAddress struct.
+        /// </summary>
+        /// <param name="sublogIdx">Index of the physical sublog.</param>
+        /// <returns>The replication offset of the specified sublog.</returns>
+        public long GetReplicationOffset(int sublogIdx)
+        {
+            if (!storeWrapper.serverOptions.EnableAOF)
+                return replicationOffset[sublogIdx];
+
+            var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
+            if (role == NodeRole.PRIMARY)
+                return storeWrapper.appendOnlyFile.Log.GetTailAddress(sublogIdx);
+            return replicationOffset[sublogIdx];
+        }
+
         public void SetSublogReplicationOffset(int sublogIdx, long offset)
             => replicationOffset[sublogIdx] = offset;
         public long GetSublogReplicationOffset(int sublogIdx)

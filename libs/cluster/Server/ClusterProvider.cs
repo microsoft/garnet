@@ -172,7 +172,7 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(AofAddress truncateUntil)
+        public void SafeTruncateAOF(in AofAddress truncateUntil)
         {
             if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
                 replicationManager.AofSyncDriverStore.SafeTruncateAof(truncateUntil);

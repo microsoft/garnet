@@ -75,25 +75,25 @@ namespace Garnet.cluster
                 // Injection for a "something went wrong with THIS Replica's AOF file"
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
 
-                var tail = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
-                var nextPageBeginAddress = ((tail[physicalSublogIdx] >> clusterProvider.replicationManager.PageSizeBits) + 1) << clusterProvider.replicationManager.PageSizeBits;
+                var tail = clusterProvider.storeWrapper.appendOnlyFile.Log.GetTailAddress(physicalSublogIdx);
+                var nextPageBeginAddress = ((tail >> clusterProvider.replicationManager.PageSizeBits) + 1) << clusterProvider.replicationManager.PageSizeBits;
                 // Check to ensure:
                 // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)
                 // 2. if record does not fit in current page start address of the next page matches incoming currentAddress (address of chunk send from primary node)
                 // otherwise fail and break the connection
-                if ((tail[physicalSublogIdx] + recordLength <= nextPageBeginAddress && tail[physicalSublogIdx] != currentAddress) ||
-                    (tail[physicalSublogIdx] + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
+                if ((tail + recordLength <= nextPageBeginAddress && tail != currentAddress) ||
+                    (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
                 {
                     logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
                     throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Address check only if synchronous replication is enabled
-                if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail[physicalSublogIdx])
+                if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail)
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
-                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.ReplicationOffset, tail);
-                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.ReplicationOffset}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
+                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), tail);
+                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx)}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Initialize sublog ref if first time
