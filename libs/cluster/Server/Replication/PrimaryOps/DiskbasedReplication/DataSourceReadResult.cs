@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Tsavorite.core;
 
 namespace Garnet.cluster
@@ -21,9 +20,9 @@ namespace Garnet.cluster
 
         /// <summary>
         /// The in-memory data (memory-backed sources).
-        /// Empty for device-backed sources.
+        /// Null for device-backed sources.
         /// </summary>
-        public readonly ReadOnlyMemory<byte> Data;
+        public readonly byte[] Data;
 
         /// <summary>
         /// The number of bytes read.
@@ -49,7 +48,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Creates a memory-backed chunk read result.
         /// </summary>
-        public DataSourceReadResult(ReadOnlyMemory<byte> data, long chunkStartAddress)
+        public DataSourceReadResult(byte[] data, long chunkStartAddress)
         {
             Buffer = null;
             Data = data;

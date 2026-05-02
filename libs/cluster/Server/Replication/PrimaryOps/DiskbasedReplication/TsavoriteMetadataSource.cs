@@ -62,7 +62,7 @@ namespace Garnet.cluster
             EndOffset = data.Length;
             consumed = true;
 
-            return Task.FromResult(new DataSourceReadResult(new ReadOnlyMemory<byte>(data), chunkStartAddress: 0));
+            return Task.FromResult(new DataSourceReadResult(data, chunkStartAddress: 0));
         }
     }
 }

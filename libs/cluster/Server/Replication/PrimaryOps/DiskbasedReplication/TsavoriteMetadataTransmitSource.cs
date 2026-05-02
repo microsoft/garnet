@@ -40,11 +40,11 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("<Begin sending checkpoint metadata {token} {type}", DataSource.Token, DataSource.Type);
 
-                    var checkpointMetadata = Array.Empty<byte>();
+                    byte[] checkpointMetadata = [];
                     if (DataSource.HasNextChunk)
                     {
                         var result = await DataSource.ReadNextChunkAsync(cancellationToken).ConfigureAwait(false);
-                        checkpointMetadata = result.Data.ToArray();
+                        checkpointMetadata = result.Data;
                     }
 
                     // A startAddress of -1 signals the receiver that this is a single-message payload
