@@ -465,7 +465,18 @@ namespace Garnet
 
             try
             {
-                // Stop accepting new connections first
+                // Quiesce existing sessions first: they will reject the next incoming message
+                // and close themselves, so FinalizeDataAsync runs with no concurrent writers.
+                if (servers != null)
+                {
+                    foreach (var server in servers)
+                        server.BeginQuiesce();
+                }
+
+                // Quiesce pub/sub fan-out so no new messages are delivered after this point.
+                subscribeBroker?.BeginQuiesce();
+
+                // Stop accepting new connections.
                 StopListening();
 
                 // Wait for existing connections to complete (cancellable)

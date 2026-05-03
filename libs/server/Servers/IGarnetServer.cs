@@ -58,5 +58,18 @@ namespace Garnet.server
         /// without waiting for active connections to drain.
         /// </summary>
         public void Close();
+
+        /// <summary>
+        /// Signal all active sessions to reject incoming commands.
+        /// Sessions complete any in-flight command, respond with a LOADING error
+        /// on the next received message, then close the connection.
+        /// Must be called before <see cref="StopListening"/> for deterministic shutdown.
+        /// </summary>
+        public void BeginQuiesce();
+
+        /// <summary>
+        /// True after <see cref="BeginQuiesce"/> has been called.
+        /// </summary>
+        public bool IsQuiescing { get; }
     }
 }

@@ -468,6 +468,20 @@ namespace Garnet.server
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
+            // Reject new commands when the server is quiescing for shutdown.
+            // Complete any in-flight operation is not possible here (this is the entry point before parsing),
+            // so we send a LOADING error and dispose the connection immediately.
+            if (server is GarnetServerBase { IsQuiescing: true })
+            {
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                while (!RespWriteUtils.TryWriteError("LOADING Garnet is shutting down"u8, ref dcurr, dend))
+                    SendAndReset();
+                Send(networkSender.GetResponseObjectHead());
+                networkSender.ExitAndReturnResponseObject();
+                networkSender.DisposeNetworkSender(true);
+                return 0;
+            }
+
             bytesRead = bytesReceived;
             if (!txnManager.IsSkippingOperations())
                 readHead = 0;
