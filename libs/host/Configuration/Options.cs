@@ -407,7 +407,7 @@ namespace Garnet
         public int NetworkConnectionLimit { get; set; }
 
         [IntRangeValidation(1, int.MaxValue)]
-        [Option("shutdown-timeout", Required = false, Default = 5, HelpText = "Timeout in seconds to wait for active connections to drain during graceful shutdown. " +
+        [Option("shutdown-timeout", Required = false, HelpText = "Timeout in seconds to wait for active connections to drain during graceful shutdown. " +
             "The Windows SCM default pre-kill wait is 5 seconds, so values below 5 are not recommended when running as a Windows service.")]
         public int ShutdownTimeoutSeconds { get; set; }
 
