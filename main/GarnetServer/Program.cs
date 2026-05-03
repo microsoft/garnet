@@ -10,7 +10,7 @@ namespace Garnet
     /// </summary>
     public class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             try
             {
@@ -22,7 +22,52 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                Thread.Sleep(Timeout.Infinite);
+                using var cts = new CancellationTokenSource();
+
+                ConsoleCancelEventHandler cancelKeyPressHandler = (sender, e) =>
+                {
+                    e.Cancel = true; // Prevent the process from terminating immediately
+                    if (!cts.IsCancellationRequested)
+                        cts.Cancel();
+                };
+
+                EventHandler processExitHandler = (sender, e) =>
+                {
+                    try
+                    {
+                        if (!cts.IsCancellationRequested)
+                            cts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // The cancellation source may already be disposed during process teardown.
+                    }
+                };
+
+                // Signal cancellation on Ctrl+C; avoid blocking the event handler with async work
+                Console.CancelKeyPress += cancelKeyPressHandler;
+
+                // Signal cancellation on SIGTERM (e.g., container orchestrators, systemd)
+                AppDomain.CurrentDomain.ProcessExit += processExitHandler;
+
+                // Wait until a shutdown signal is received
+                try
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, cts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Graceful shutdown: drain connections, commit AOF, take checkpoint
+                        await server.ShutdownAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    Console.CancelKeyPress -= cancelKeyPressHandler;
+                    AppDomain.CurrentDomain.ProcessExit -= processExitHandler;
+                }
             }
             catch (Exception ex)
             {

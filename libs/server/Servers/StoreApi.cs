@@ -94,6 +94,35 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Take checkpoint for all active databases
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>false if checkpoint was skipped due to node state or another checkpoint in progress</returns>
+        public async ValueTask<bool> TakeCheckpointAsync(bool background = false, CancellationToken token = default)
+        {
+            using (PreventRoleChange(out var acquired))
+            {
+                if (!acquired || IsReplica)
+                {
+                    return false;
+                }
+
+                return await storeWrapper.TakeCheckpointAsync(background, logger: null, token: token).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Check if storage tier is enabled
+        /// </summary>
+        public bool IsStorageTierEnabled => storeWrapper.serverOptions.EnableStorageTier;
+
+        /// <summary>
+        /// Check if AOF is enabled
+        /// </summary>
+        public bool IsAOFEnabled => storeWrapper.serverOptions.EnableAOF;
+
+        /// <summary>
         /// Helper to disable role changes during a using block.
         /// 
         /// <paramref name="acquired"/> is set if, and only if, the role will not change until the return is disposed.
