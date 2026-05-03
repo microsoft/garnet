@@ -680,6 +680,10 @@ namespace Garnet
         [Option("vector-set-replay-task-count", Required = false, HelpText = "Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count)")]
         public int VectorSetReplayTaskCount { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue, isRequired: false)]
+        [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count)")]
+        public int VectorSetQuantizationTaskCount { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -980,7 +984,8 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
                 EnableVectorSetPreview = EnableVectorSetPreview,
-                VectorSetReplayTaskCount = VectorSetReplayTaskCount
+                VectorSetReplayTaskCount = VectorSetReplayTaskCount,
+                VectorSetQuantizationTaskCount = VectorSetQuantizationTaskCount,
             };
         }
 

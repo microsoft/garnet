@@ -79,7 +79,7 @@ namespace Garnet.server
 
         private readonly Channel<object> cleanupTaskChannel;
         private readonly Task cleanupTask;
-        private readonly Func<IMessageConsumer> getCleanupSession;
+        private readonly Func<IMessageConsumer> getTempSession;
 
         private async Task RunCleanupTaskAsync()
         {
@@ -102,7 +102,7 @@ namespace Garnet.server
                     }
 
                     // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
-                    using var cleanupSession = (RespServerSession)getCleanupSession();
+                    using var cleanupSession = (RespServerSession)getTempSession();
                     if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
                     {
                         throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");

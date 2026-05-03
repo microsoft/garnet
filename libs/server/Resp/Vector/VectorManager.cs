@@ -64,6 +64,8 @@ namespace Garnet.server
         /// </summary>
         public bool IsEnabled { get; }
 
+        private bool initialized;
+
         /// <summary>
         /// Unique id for this <see cref="VectorManager"/>.
         /// 
@@ -75,7 +77,7 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
+        public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
 
@@ -98,9 +100,17 @@ namespace Garnet.server
 
             vectorSetLocks = new(vectorSetReplayCount);
 
-            this.getCleanupSession = getCleanupSession;
+            this.getTempSession = getTempSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
+
+            quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+
+            if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
+                throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
+            var vectorSetQuantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationTasks = new Task[vectorSetQuantizationTaskCount];
+            Array.Fill(quantizationTasks, Task.CompletedTask);
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -110,9 +120,11 @@ namespace Garnet.server
         /// </summary>
         public void Initialize()
         {
-            if (!IsEnabled) return;
+            if (!IsEnabled || initialized) return;
 
-            using var session = (RespServerSession)getCleanupSession();
+            initialized = true;
+
+            using var session = (RespServerSession)getTempSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
             {
                 throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
@@ -147,6 +159,7 @@ namespace Garnet.server
                 }
             }
 
+            StartQuantizationTasks();
         }
 
         /// <summary>
@@ -156,7 +169,7 @@ namespace Garnet.server
         {
             if (!IsEnabled) return;
 
-            using var session = (RespServerSession)getCleanupSession();
+            using var session = (RespServerSession)getTempSession();
 
             ref var ctx = ref session.storageSession.vectorContext;
 
@@ -295,6 +308,11 @@ namespace Garnet.server
             cleanupTaskChannel.Writer.Complete();
             AsyncUtils.BlockingWait(cleanupTaskChannel.Reader.Completion);
             AsyncUtils.BlockingWait(cleanupTask);
+
+            // drain quantization task
+            _ = quantizationChannel.Writer.TryComplete();
+            while (quantizationChannel.Reader.TryRead(out _)) { }
+            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
         }
 
         private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext ctx)
@@ -316,6 +334,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryAdd(
+            scoped ref SpanByte key,
             scoped ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             VectorValueType valueType,
@@ -380,11 +399,17 @@ namespace Garnet.server
                     element,
                     valueType,
                     values,
-                    attributes
+                    attributes,
+                    out var needsQuantization
                 );
 
             if (insert)
             {
+                if (needsQuantization)
+                {
+                    _ = this.quantizationChannel.Writer.TryWrite(new(key.ToByteArray(), QuantizationStep.BuildQuantizationTable, 0));
+                }
+
                 return VectorManagerResult.OK;
             }
 
