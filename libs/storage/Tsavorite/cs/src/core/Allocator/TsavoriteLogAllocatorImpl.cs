@@ -27,12 +27,17 @@ namespace Tsavorite.core
         public override void Reset()
         {
             base.Reset();
+            Initialize();
+        }
+
+        /// <inheritdoc />
+        protected override void FreeAllAllocatedPages()
+        {
             for (var index = 0; index < BufferSize; index++)
             {
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
         }
 
         /// <summary>
