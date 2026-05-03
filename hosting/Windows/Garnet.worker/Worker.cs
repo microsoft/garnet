@@ -12,12 +12,20 @@ namespace Garnet
     {
         private bool _isDisposed = false;
         private readonly string[] args;
+        private readonly TimeSpan _shutdownTimeout;
 
         private GarnetServer server;
 
-        public Worker(string[] args)
+        /// <param name="args">Command line arguments forwarded to <see cref="GarnetServer"/>.</param>
+        /// <param name="shutdownTimeout">
+        /// How long to wait for active connections to drain during graceful shutdown.
+        /// Must be less than the host <see cref="Microsoft.Extensions.Hosting.HostOptions.ShutdownTimeout"/>
+        /// so that data finalization (AOF commit / checkpoint) can also complete within the host budget.
+        /// </param>
+        public Worker(string[] args, TimeSpan shutdownTimeout)
         {
             this.args = args;
+            _shutdownTimeout = shutdownTimeout;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,7 +58,7 @@ namespace Garnet
                     // If cancellation is requested, we will skip the graceful shutdown and proceed to dispose immediately
                     bool isForceShutdown = cancellationToken.IsCancellationRequested;
                     // Perform graceful shutdown with AOF commit and checkpoint when not forced Shutdown From OS.
-                    await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5), noSave: isForceShutdown, token: cancellationToken).ConfigureAwait(false);
+                    await server.ShutdownAsync(timeout: _shutdownTimeout, noSave: isForceShutdown, token: cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)

@@ -308,6 +308,13 @@ namespace Garnet.server
         public int NetworkConnectionLimit = -1;
 
         /// <summary>
+        /// Timeout in seconds for graceful shutdown, used to wait for active connections to drain.
+        /// The Windows Service Control Manager (SCM) default pre-kill wait is 5 seconds, so 5 is the minimum recommended value.
+        /// Note: the total host shutdown timeout must be set higher than this value to also account for data finalization (AOF commit / checkpoint).
+        /// </summary>
+        public int ShutdownTimeoutSeconds = 5;
+
+        /// <summary>
         /// Instance of interface to create named device factories
         /// </summary>
         public INamedDeviceFactoryCreator DeviceFactoryCreator = null;
