@@ -147,41 +147,67 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override async Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
+        public override Task<bool> TakeCheckpointAsync(bool background, ILogger logger = null, CancellationToken token = default)
         {
             var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired) return false;
+            if (!lockAcquired) return Task.FromResult(false);
 
-            var checkpointTask = TakeCheckpointHelperAsync();
+            var checkpointLockTaken = false;
+            var pausedCount = 0;
 
-            if (background)
-                return true;
-
-            return await checkpointTask.ConfigureAwait(false);
-
-            async Task<bool> TakeCheckpointHelperAsync()
+            try
             {
-                // Force async 
-                await Task.Yield();
+                var activeDbIdsMapSize = activeDbIds.ActualSize;
 
-                var checkpointLockTaken = false;
-
-                try
+                if (activeDbIdsMapSize > 1)
                 {
-                    var activeDbIdsMapSize = activeDbIds.ActualSize;
-
-                    if (activeDbIdsMapSize > 1)
+                    if (!multiDbCheckpointingLock.TryWriteLock())
                     {
-                        if (!multiDbCheckpointingLock.TryWriteLock())
-                            return false;
-
-                        checkpointLockTaken = true;
+                        databasesContentLock.ReadUnlock();
+                        return Task.FromResult(false);
                     }
 
-                    var activeDbIdsMapSnapshot = activeDbIds.Map;
-                    Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
+                    checkpointLockTaken = true;
+                }
 
-                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).ConfigureAwait(false);
+                // Synchronously pause per-DB checkpoints for all active DBs so that any per-DB BGSAVE
+                // issued after this method returns reliably observes the in-progress checkpoint.
+                // Compactly store only successfully paused DB IDs in dbIdsToCheckpoint.
+                var activeDbIdsMapSnapshot = activeDbIds.Map;
+                for (var i = 0; i < activeDbIdsMapSize; i++)
+                {
+                    var dbId = activeDbIdsMapSnapshot[i];
+                    if (TryPauseCheckpoints(dbId))
+                        dbIdsToCheckpoint[pausedCount++] = dbId;
+                }
+            }
+            catch
+            {
+                for (var i = 0; i < pausedCount; i++)
+                    ResumeCheckpoints(dbIdsToCheckpoint[i]);
+
+                if (checkpointLockTaken)
+                    multiDbCheckpointingLock.WriteUnlock();
+
+                databasesContentLock.ReadUnlock();
+                throw;
+            }
+
+            var checkpointTask = TakeCheckpointHelperAsync(pausedCount, checkpointLockTaken);
+
+            if (background)
+                return Task.FromResult(true);
+
+            return checkpointTask;
+
+            async Task<bool> TakeCheckpointHelperAsync(int dbIdsCount, bool checkpointLockTaken)
+            {
+                try
+                {
+                    // Force async 
+                    await Task.Yield();
+
+                    return await TakeDatabasesCheckpointAsync(dbIdsCount, alreadyPaused: true, logger: logger, token: token).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -989,7 +1015,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if checkpointing already in progress</returns>
-        private async Task<bool> TakeDatabasesCheckpointAsync(int dbIdsCount, ILogger logger = null,
+        private async Task<bool> TakeDatabasesCheckpointAsync(int dbIdsCount, bool alreadyPaused = false, ILogger logger = null,
             CancellationToken token = default)
         {
             Debug.Assert(checkpointTasks != null);
@@ -999,7 +1025,19 @@ namespace Garnet.server
                 checkpointTasks[i] = Task.CompletedTask;
 
             var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired) return false;
+            if (!lockAcquired)
+            {
+                // Resume any pre-paused DB IDs since we can't proceed to hand them off
+                if (alreadyPaused)
+                {
+                    for (var i = 0; i < dbIdsCount; i++)
+                        ResumeCheckpoints(dbIdsToCheckpoint[i]);
+                }
+
+                return false;
+            }
+
+            var handedOffCount = 0;
 
             try
             {
@@ -1009,11 +1047,13 @@ namespace Garnet.server
                 {
                     var dbId = dbIdsToCheckpoint[currIdx];
 
-                    // If a checkpoint is already in progress for this database, skip it
-                    if (!TryPauseCheckpoints(dbId))
+                    // If a checkpoint is already in progress for this database, skip it.
+                    // When alreadyPaused is true, the caller has already paused checkpoints for all DBs in the list.
+                    if (!alreadyPaused && !TryPauseCheckpoints(dbId))
                         continue;
 
                     checkpointTasks[currIdx] = TakeCheckpointHelperAsync(databaseMapSnapshot, dbId);
+                    handedOffCount = currIdx + 1;
                 }
 
                 await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
@@ -1021,6 +1061,14 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Checkpointing threw exception");
+
+                // For pre-paused DBs that didn't get handed off to a per-DB helper, resume their locks here.
+                // Per-DB helpers that were started always resume their own dbId in finally.
+                if (alreadyPaused)
+                {
+                    for (var i = handedOffCount; i < dbIdsCount; i++)
+                        ResumeCheckpoints(dbIdsToCheckpoint[i]);
+                }
             }
             finally
             {

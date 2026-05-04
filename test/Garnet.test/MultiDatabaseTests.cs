@@ -1397,6 +1397,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseGeneralSaveBlocksGeneralSaveTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db1 = redis.GetDatabase(0);
+            var db2 = redis.GetDatabase(1);
+
+            // Touch DB 1 so there are multiple active databases (which is what triggers
+            // multiDbCheckpointingLock acquisition in MultiDatabaseManager.TakeCheckpointAsync).
+            db2.StringSet("k", "v");
+
+            // Add some data so the checkpoint takes a measurable amount of time
+            for (var i = 0; i < 1024; i++)
+            {
+                db1.StringSet($"k{i}", new string('x', 256));
+                db2.StringSet($"k{i}", new string('x', 256));
+            }
+
+            // Issue general background save
+            var res = db1.Execute("BGSAVE");
+            ClassicAssert.AreEqual("Background saving started", res.ToString());
+
+            // Issuing another general BGSAVE while the first is in progress must fail. With multiple
+            // active DBs, multiDbCheckpointingLock is acquired synchronously by the first BGSAVE,
+            // so the second one reliably observes the in-progress checkpoint.
+            Assert.Throws<RedisServerException>(() => db1.Execute("BGSAVE"),
+                Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS));
+
+            var lastsave = 0;
+            do
+            {
+                Thread.Sleep(10);
+                lastsave = (int)db1.Execute("LASTSAVE");
+            }
+            while (lastsave == 0);
+        }
+
+        [Test]
         [TestCase(false)]
         [TestCase(true)]
         public void MultiDatabaseSaveRecoverByDbIdTest(bool backgroundSave)
