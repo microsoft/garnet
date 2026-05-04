@@ -135,6 +135,22 @@ namespace Garnet.cluster
                                 if (!RespReadUtils.GetSerializedRecordSpan(out var payloadRaw, ref payloadPtr, payloadEndPtr))
                                     return;
 
+                                // An error has occurred
+                                if (migrateState > 0)
+                                {
+                                    i++;
+                                    continue;
+                                }
+
+                                // Protocol enforcement: while receiving a RangeIndex stream, only SerializedRangeIndexStream records are valid
+                                if (rangeIndexMigrationState.IsReceiving && kind != MigrationRecordSpanType.SerializedRangeIndexStream)
+                                {
+                                    logger?.LogError("Protocol violation: expected SerializedRangeIndexStream continuation, got {Kind}", kind);
+                                    migrateState = 1;
+                                    i++;
+                                    continue;
+                                }
+
                                 if (kind == MigrationRecordSpanType.VectorSetElement)
                                 {
                                     // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
@@ -159,6 +175,15 @@ namespace Garnet.cluster
                                     }
 
                                     clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedElementKey(ref stringBasicContext, ref vectorBasicContext, namespaceBytes, keyBytes, valueBytes);
+                                }
+                                else if (kind == MigrationRecordSpanType.SerializedRangeIndexStream)
+                                {
+                                    if (!rangeIndexMigrationState.ProcessRecord(payloadRaw.ReadOnlySpan, currentConfig, ref stringBasicContext, replaceOption))
+                                    {
+                                        migrateState = 1;
+                                        i++;
+                                        continue;
+                                    }
                                 }
                                 else if (kind == MigrationRecordSpanType.LogRecord)
                                 {

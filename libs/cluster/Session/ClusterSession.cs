@@ -51,6 +51,7 @@ namespace Garnet.cluster
 
         private StringBasicContext stringBasicContext;
         private VectorBasicContext vectorBasicContext;
+        private readonly RangeIndexMigrationReceiveState rangeIndexMigrationState;
 
         public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
         {
@@ -64,6 +65,12 @@ namespace Garnet.cluster
             this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
             this.logger = logger;
+            rangeIndexMigrationState = new RangeIndexMigrationReceiveState(clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager);
+        }
+
+        public void Dispose()
+        {
+            rangeIndexMigrationState?.Dispose();
         }
 
         public void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)

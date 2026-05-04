@@ -34,8 +34,13 @@ namespace Garnet.cluster
                 WaitForConfigPropagation();
 
                 // Discover Vector Sets linked namespaces
+                var allKeys = migrateTask.sketch.Keys.Select(t => t.Item1.ToArray());
                 var indexesToMigrate = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
-                _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForKeys(clusterProvider.storeWrapper, migrateTask.sketch.Keys.Select(t => t.Item1.ToArray()), indexesToMigrate);
+                _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForKeys(clusterProvider.storeWrapper, allKeys, indexesToMigrate);
+
+                // Discover RangeIndex keys upfront
+                var rangeIndexKeysToMigrate = clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager?.GetRangeIndexKeysForMigration(clusterProvider.storeWrapper, allKeys)
+                    ?? new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
 
                 // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
                 // we need to reserve destination sets on the other side
@@ -45,8 +50,8 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // Transmit keys from store
-                if (!migrateTask.TransmitKeys(indexesToMigrate))
+                // Transmit keys from store (skipping VectorSet and RangeIndex keys, which are handled out-of-band)
+                if (!migrateTask.TransmitKeys(indexesToMigrate, rangeIndexKeysToMigrate))
                 {
                     logger?.LogError("Failed transmitting keys from store");
                     return false;
@@ -122,6 +127,20 @@ namespace Garnet.cluster
                     {
                         logger?.LogCritical("Final flush after Vector Set migration failed");
                         return false;
+                    }
+                }
+
+                // Migrate RangeIndex keys (snapshot + chunk stream)
+                if (rangeIndexKeysToMigrate.Count > 0)
+                {
+                    logger?.LogWarning("Migrating {count} RangeIndex key(s) via KEYS path", rangeIndexKeysToMigrate.Count);
+                    foreach (var (key, stubBytes) in rangeIndexKeysToMigrate)
+                    {
+                        if (!TransmitRangeIndex(migrateTask, key, stubBytes))
+                        {
+                            logger?.LogError("Failed to migrate RangeIndex key via KEYS path");
+                            return false;
+                        }
                     }
                 }
 

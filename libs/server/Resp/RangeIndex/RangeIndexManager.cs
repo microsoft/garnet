@@ -38,10 +38,10 @@ namespace Garnet.server
         /// Stored in <c>RecordDataHeader.RecordType</c> to distinguish RI stubs
         /// from normal strings (0) and VectorSet stubs.
         /// </summary>
-        internal const byte RangeIndexRecordType = 2;
+        public const byte RangeIndexRecordType = 2;
 
         /// <summary>Size of the RangeIndex stub in bytes.</summary>
-        internal const int IndexSizeBytes = RangeIndexStub.Size;
+        public const int IndexSizeBytes = RangeIndexStub.Size;
 
         /// <summary>Whether range index commands are enabled.</summary>
         public bool IsEnabled { get; }
@@ -55,6 +55,9 @@ namespace Garnet.server
         private readonly ConcurrentDictionary<nint, TreeEntry> liveIndexes = new();
 
         private readonly ILogger logger;
+
+        /// <summary>Logger for migration diagnostics.</summary>
+        public ILogger Logger => logger;
 
         /// <summary>
         /// Base directory for deterministic BfTree data file paths.
@@ -130,6 +133,23 @@ namespace Garnet.server
             this.removeOutdatedCheckpoints = removeOutdatedCheckpoints;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
+
+            // Clean up partial migration artifacts from prior crashes
+            if (dataDir != null)
+            {
+                var migrationTmpDir = Path.Combine(dataDir, "rangeindex", ".migration-tmp");
+                if (Directory.Exists(migrationTmpDir))
+                {
+                    try
+                    {
+                        Directory.Delete(migrationTmpDir, recursive: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "Failed to clean up migration temp directory: {Path}", migrationTmpDir);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -209,7 +229,7 @@ namespace Garnet.server
         /// <param name="bfTree">The BfTree instance to register.</param>
         /// <param name="keyHash">Hash of the Garnet key, used for lock striping.</param>
         /// <param name="keyBytes">Raw key bytes, used to derive the snapshot directory name.</param>
-        internal void RegisterIndex(BfTreeService bfTree, long keyHash, ReadOnlySpan<byte> keyBytes)
+        public void RegisterIndex(BfTreeService bfTree, long keyHash, ReadOnlySpan<byte> keyBytes)
         {
             var keyDir = Path.Combine(dataDir ?? string.Empty, "rangeindex", HashKeyToDirectoryName(keyBytes));
             liveIndexes[bfTree.NativePtr] = new TreeEntry(bfTree, keyHash, keyDir);

@@ -304,7 +304,8 @@ namespace Garnet.test.cluster
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            bool enableRangeIndexPreview = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -363,7 +364,8 @@ namespace Garnet.test.cluster
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
-                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads);
+                threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
+                enableRangeIndexPreview: enableRangeIndexPreview);
 
             foreach (var node in nodes)
                 node.Start();

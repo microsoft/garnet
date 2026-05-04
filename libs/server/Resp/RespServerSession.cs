@@ -365,6 +365,7 @@ namespace Garnet.server
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
             sessionScriptCache?.Dispose();
+            clusterSession?.Dispose();
 
             // Cancel the async processor, if any
             asyncWaiterCancel?.Cancel();

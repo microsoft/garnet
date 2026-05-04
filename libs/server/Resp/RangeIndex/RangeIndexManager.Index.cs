@@ -27,7 +27,7 @@ namespace Garnet.server
         /// <para>Total size: <see cref="Size"/> (35 bytes).</para>
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = Size)]
-        internal struct RangeIndexStub
+        public struct RangeIndexStub
         {
             internal const int Size = 35;
 
@@ -125,7 +125,7 @@ namespace Garnet.server
         /// <param name="value">Raw value bytes from the store record.</param>
         /// <returns>A readonly reference to the reinterpreted stub.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ref readonly RangeIndexStub ReadIndex(ReadOnlySpan<byte> value)
+        public static ref readonly RangeIndexStub ReadIndex(ReadOnlySpan<byte> value)
             => ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(value));
 
         /// <summary>

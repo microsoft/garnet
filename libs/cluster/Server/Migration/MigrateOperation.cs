@@ -21,6 +21,7 @@ namespace Garnet.cluster
             public StoreScan storeScan;
 
             private readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+            private readonly ConcurrentDictionary<byte[], byte[]> rangeIndexKeysToMigrate;
 
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
@@ -28,7 +29,11 @@ namespace Garnet.cluster
 
             public GarnetClientSession Client => gcs;
 
+            public LocalServerSession LocalSession => localServerSession;
+
             public IEnumerable<KeyValuePair<byte[], byte[]>> VectorSets => vectorSetsIndexKeysToMigrate;
+
+            public IEnumerable<KeyValuePair<byte[], byte[]>> RangeIndexes => rangeIndexKeysToMigrate;
 
             public void ThrowIfCancelled() => session._cts.Token.ThrowIfCancellationRequested();
 
@@ -45,6 +50,9 @@ namespace Garnet.cluster
             public void EncounteredVectorSet(byte[] key, byte[] value)
             => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
+            public void EncounteredRangeIndex(byte[] key, byte[] value)
+            => rangeIndexKeysToMigrate.TryAdd(key, value);
+
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
@@ -54,6 +62,7 @@ namespace Garnet.cluster
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
+                rangeIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
             public bool Initialize()
@@ -126,7 +135,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            public bool TransmitKeys(Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
+            public bool TransmitKeys(Dictionary<byte[], byte[]> vectorSetKeysToIgnore, Dictionary<byte[], byte[]> rangeIndexKeysToIgnore)
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
@@ -135,7 +144,8 @@ namespace Garnet.cluster
                 var output = new UnifiedOutput();
 
 #if NET9_0_OR_GREATER
-                var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
+                var vectorSetIgnoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
+                var rangeIndexIgnoreLookup = rangeIndexKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
 
                 try
@@ -153,19 +163,23 @@ namespace Garnet.cluster
 
                         var spanByte = keys[i].Item1;
 
-                        // Don't transmit if a Vector Set
-                        var isVectorSet =
-                            vectorSetKeysToIgnore.Count > 0 &&
+                        // Don't transmit VectorSet or RangeIndex keys — these are handled out-of-band
+                        var shouldSkip =
+                            (vectorSetKeysToIgnore.Count > 0 &&
 #if NET9_0_OR_GREATER
-                            ignoreLookup.ContainsKey(spanByte.ReadOnlySpan);
+                            vectorSetIgnoreLookup.ContainsKey(spanByte.ReadOnlySpan)) ||
 #else
-                                vectorSetKeysToIgnore.ContainsKey(spanByte.ToArray());
+                            vectorSetKeysToIgnore.ContainsKey(spanByte.ToArray())) ||
+#endif
+                            (rangeIndexKeysToIgnore.Count > 0 &&
+#if NET9_0_OR_GREATER
+                            rangeIndexIgnoreLookup.ContainsKey(spanByte.ReadOnlySpan));
+#else
+                            rangeIndexKeysToIgnore.ContainsKey(spanByte.ToArray()));
 #endif
 
-                        if (isVectorSet)
-                        {
+                        if (shouldSkip)
                             continue;
-                        }
 
                         if (!session.WriteOrSendRecord(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
                             return false;
@@ -283,6 +297,19 @@ namespace Garnet.cluster
                 var delRes = localServerSession.BasicGarnetApi.DELETE(key);
 
                 session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key), delRes);
+            }
+
+            /// <summary>
+            /// Delete a RangeIndex after migration if _copyOption is not set.
+            /// </summary>
+            public void DeleteRangeIndex(PinnedSpanByte key)
+            {
+                if (session._copyOption)
+                    return;
+
+                var delRes = localServerSession.BasicGarnetApi.DELETE(key);
+
+                session.logger?.LogDebug("Deleting RangeIndex {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key), delRes);
             }
         }
     }

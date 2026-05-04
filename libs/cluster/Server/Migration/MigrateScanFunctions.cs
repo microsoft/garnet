@@ -50,7 +50,12 @@ namespace Garnet.cluster
                     // Check if key belongs to slot that is being migrated and if it can be added to our buffer
                     if (migrateOperation.Contains(slot))
                     {
-                        if (srcLogRecord.RecordType == VectorManager.RecordType)
+                        if (srcLogRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
+                        {
+                            // RangeIndex keys need out-of-band migration (snapshot + chunks)
+                            migrateOperation.EncounteredRangeIndex(key.ToArray(), srcLogRecord.ValueSpan.ToArray());
+                        }
+                        else if (srcLogRecord.RecordType == VectorManager.RecordType)
                         {
                             // We can't delete the vector set _yet_ nor can we migrate it, 
                             // we just need to remember it to migrate once the associated namespaces are all moved over

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Garnet.server.ACL;
 using Tsavorite.core;
@@ -10,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// Cluster RESP session
     /// </summary>
-    public interface IClusterSession
+    public interface IClusterSession : IDisposable
     {
         /// <summary>
         /// If the current session is being used by a remote cluster node, the id that was last presented during a GOSSIP message.

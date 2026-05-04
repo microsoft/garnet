@@ -17,6 +17,12 @@ namespace Garnet.server
         readonly ILogger logger = null;
         readonly StoreWrapper storeWrapper;
         readonly StorageSession storageSession;
+
+        /// <summary>
+        /// The underlying storage session. Internal — used by migration paths that need
+        /// direct access to Tsavorite contexts (e.g. RangeIndex snapshot).
+        /// </summary>
+        internal StorageSession StorageSession => storageSession;
         readonly ScratchBufferBuilder scratchBufferBuilder;
         readonly ScratchBufferAllocator scratchBufferAllocator;
 

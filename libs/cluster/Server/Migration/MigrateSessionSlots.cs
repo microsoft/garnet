@@ -113,6 +113,23 @@ namespace Garnet.cluster
                         return false;
                     }
 
+                    // Handle migration of discovered RangeIndex keys (before Vector Sets so buffer uses isVectorSets:false)
+                    var rangeIndexKeys = migrateOperation.SelectMany(static mo => mo.RangeIndexes).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
+
+                    if (rangeIndexKeys.Count > 0)
+                    {
+                        logger?.LogWarning("Migrating {count} RangeIndex key(s)", rangeIndexKeys.Count);
+                        foreach (var (key, stubBytes) in rangeIndexKeys)
+                        {
+                            // Note that currently we do not parallelize the migration of RangeIndex keys
+                            if (!TransmitRangeIndex(migrateOperation[0], key, stubBytes))
+                            {
+                                logger?.LogError("Failed to migrate RangeIndex key");
+                                return false;
+                            }
+                        }
+                    }
+
                     // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
                     var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
 

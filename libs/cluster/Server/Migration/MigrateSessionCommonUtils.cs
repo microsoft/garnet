@@ -87,7 +87,8 @@ namespace Garnet.cluster
 
             fixed (byte* ptr = output.SpanByteAndMemory.Span)
             {
-                var serializedRecordLength = new LogRecord((long)ptr).GetSerializedSize();
+                var logRecord = new LogRecord((long)ptr);
+                var serializedRecordLength = logRecord.GetSerializedSize();
 
                 ReadOnlySpan<byte> toWrite = new(ptr, serializedRecordLength);
 
