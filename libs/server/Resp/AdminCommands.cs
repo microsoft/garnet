@@ -752,6 +752,23 @@ namespace Garnet.server
                 return true;
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXISTS))
+            {
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
+                // Raw store existence check, bypassing cluster routing/EPSM
+                var key = parseState.GetArgSliceByRef(1);
+                var status = basicGarnetApi.EXISTS(key, StoreType.Main);
+
+                while (!RespWriteUtils.TryWriteInt32(status == GarnetStatus.OK ? 1 : 0, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
                 var help = new string[]
@@ -760,6 +777,9 @@ namespace Garnet.server
                     "ERROR <string>",
                     "\tReturn a Redis protocol error with <string> as message. Useful for clients",
                     "\tunit tests to simulate Redis errors.",
+                    "EXISTS <key>",
+                    "\tCheck if <key> exists in the raw store, bypassing cluster routing.",
+                    "\tReturns 1 if key exists, 0 otherwise.",
                     "LOG <message>",
                     "\tWrite <message> to the server log.",
                     "PANIC",

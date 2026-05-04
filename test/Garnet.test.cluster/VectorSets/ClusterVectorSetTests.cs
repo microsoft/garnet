@@ -1001,6 +1001,10 @@ namespace Garnet.test.cluster
                 var migrateKey = toMigrate[migrateSingleIx];
                 context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), [migrateKey], NullLogger.Instance);
 
+                // Verify the key was deleted from the source store using DEBUG EXISTS (bypasses cluster routing/EPSM)
+                var rawExists = (int)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), "DEBUG", ["EXISTS", migrateKey]);
+                ClassicAssert.AreEqual(0, rawExists, $"Key {Encoding.ASCII.GetString(migrateKey)} should not exist in raw store on source after MIGRATE KEYS");
+
                 toMigrate.RemoveAt(migrateSingleIx);
             }
 
@@ -1052,7 +1056,7 @@ namespace Garnet.test.cluster
             // Finish migration
             context.clusterTestUtils.WaitForMigrationCleanup(NullLogger.Instance);
 
-            // Validate vector sets coherent
+            // Validate vector sets coherent on target
             for (var i = 0; i < keys.Count; i++)
             {
                 var _key = keys[i];
@@ -1064,6 +1068,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(res[0].SequenceEqual(elem));
                 ClassicAssert.IsTrue(res[1].SequenceEqual(attrs));
             }
+
         }
 
         [Test]
