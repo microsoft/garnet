@@ -22,7 +22,7 @@ namespace Garnet.cluster
                 try
                 {
                     // This executes synchronously and serves the keys variant of resp command
-                    if (!MigrateKeys())
+                    if (!MigrateKeysAsync().GetAwaiter().GetResult())
                     {
                         errorMessage = "IOERR Migrate keys failed."u8;
                         Status = MigrateState.FAIL;

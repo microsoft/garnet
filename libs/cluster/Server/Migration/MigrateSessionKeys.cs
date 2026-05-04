@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -16,14 +17,14 @@ namespace Garnet.cluster
     /// <summary>
     /// This code implements operations associated with the MIGRATE KEYS transfer option.
     /// </summary>
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Method used to migrate individual keys from store to target node.
         /// Used with MIGRATE KEYS option
         /// </summary>
         /// <returns>True on success, false otherwise</returns>
-        private bool MigrateKeysFromStore()
+        private async Task<bool> MigrateKeysFromStoreAsync()
         {
             var migrateTask = migrateOperation[0];
 
@@ -44,7 +45,7 @@ namespace Garnet.cluster
 
                 // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
                 // we need to reserve destination sets on the other side
-                if ((_namespaces?.Count ?? 0) > 0 && !ReserveDestinationVectorSetsAsync().GetAwaiter().GetResult())
+                if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to reserve destination vector sets, migration failed");
                     return false;
@@ -136,10 +137,7 @@ namespace Garnet.cluster
                     logger?.LogWarning("Migrating {count} RangeIndex key(s) via KEYS path", rangeIndexKeysToMigrate.Count);
                     foreach (var (key, stubBytes) in rangeIndexKeysToMigrate)
                     {
-                        // Sync-over-async: MigrateKeysFromStore is synchronous; TransmitRangeIndexAsync
-                        // uses async file I/O internally but is safe to block here since we're on a
-                        // dedicated migration thread, not a thread pool thread.
-                        if (!TransmitRangeIndexAsync(migrateTask, key, stubBytes).GetAwaiter().GetResult())
+                        if (!await TransmitRangeIndexAsync(migrateTask, key, stubBytes).ConfigureAwait(false))
                         {
                             logger?.LogError("Failed to migrate RangeIndex key via KEYS path");
                             return false;
@@ -179,7 +177,7 @@ namespace Garnet.cluster
         /// This method is used to process the MIGRATE KEYS transfer option.
         /// </summary>
         /// <returns></returns>
-        public bool MigrateKeys()
+        public async Task<bool> MigrateKeysAsync()
         {
             try
             {
@@ -188,7 +186,7 @@ namespace Garnet.cluster
                     return false;
 
                 // Migrate main store keys
-                if (!MigrateKeysFromStore())
+                if (!await MigrateKeysFromStoreAsync().ConfigureAwait(false))
                     return false;
             }
             catch (Exception ex)
