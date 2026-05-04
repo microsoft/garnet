@@ -81,6 +81,11 @@ jobs:
 
       - name: Run tests ${{ matrix.test }}
         shell: pwsh
+        # --blame-hang-timeout: kill any single test running longer than 5m and dump a
+        #   minidump into the results directory. Prevents one hung test from monopolizing
+        #   the 55m job budget and gives us thread stacks for diagnosis.
+        # --blame-crash: also dump on test-host crash. Both dump types are 'mini' to keep
+        #   uploaded artifacts manageable for the multi-node cluster tests.
         run: |
           $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
           if ("${{ matrix.test }}" -eq "Tsavorite.test") {
@@ -89,14 +94,18 @@ jobs:
               --configuration "${{ matrix.configuration }}" `
               --logger "console;verbosity=detailed" `
               --logger "trx" `
-              --results-directory "$resultsDir"
+              --results-directory "$resultsDir" `
+              --blame-hang-timeout 5m --blame-hang-dump-type mini `
+              --blame-crash --blame-crash-dump-type mini
           } else {
             dotnet test "test/${{ matrix.test }}" `
               -f "${{ matrix.framework }}" `
               --configuration "${{ matrix.configuration }}" `
               --logger "console;verbosity=detailed" `
               --logger "trx" `
-              --results-directory "$resultsDir"
+              --results-directory "$resultsDir" `
+              --blame-hang-timeout 5m --blame-hang-dump-type mini `
+              --blame-crash --blame-crash-dump-type mini
           }
         timeout-minutes: 55        
 

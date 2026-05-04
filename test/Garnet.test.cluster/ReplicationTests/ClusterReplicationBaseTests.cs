@@ -191,13 +191,17 @@ namespace Garnet.test.cluster
             context.SimpleValidateDB(disableObjects, replicaIndex);
 
             // Shutdown secondary
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: disposing secondary");
             context.nodes[replicaIndex].Dispose(false);
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: secondary disposed; waiting for primary AOF sync driver to clean up");
             context.clusterTestUtils.WaitForAofSyncDriverDipose(primaryIndex);
 
             // New insert
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: populating primary with new data while secondary is down");
             context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
             // Restart secondary
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: creating restarted secondary instance");
             context.nodes[replicaIndex] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(replicaIndex),
                 disableObjects: disableObjects,
@@ -208,12 +212,16 @@ namespace Garnet.test.cluster
                 cleanClusterConfig: false,
                 sublogCount: sublogCount,
                 threadPoolMinIOCompletionThreads: 512);
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: starting restarted secondary (recover + reconnect to primary)");
             context.nodes[replicaIndex].Start();
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: secondary started; reconnecting test client multiplexer");
             context.CreateConnection(useTLS: useTLS);
 
             // Validate synchronization was success
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: waiting for replica AOF sync");
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
             // Validate database
+            TestContext.Progress.WriteLine("[breadcrumb] ClusterSRNoCheckpointRestartSecondary: validating replica database");
             context.SimpleValidateDB(disableObjects, replicaIndex);
         }
 

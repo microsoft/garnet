@@ -148,7 +148,12 @@ jobs:
           }
             
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
+        # --blame-hang-timeout: kill any single test that runs longer than 5m and dump a minidump
+        #   into the results directory. Prevents one hung test from consuming the entire 45m
+        #   job budget and gives us actual thread stacks for diagnosis.
+        # --blame-crash: also dump on test-host crash. Both dump types are 'mini' to keep
+        #   uploaded artifacts manageable for the multi-node cluster tests.
+        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --blame-hang-timeout 5m --blame-hang-dump-type mini --blame-crash --blame-crash-dump-type mini -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -242,7 +247,8 @@ jobs:
           }
 
       - name: Run Tsavorite tests
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+        # See blame flag rationale on the Garnet test step above.
+        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --blame-hang-timeout 5m --blame-hang-dump-type mini --blame-crash --blame-crash-dump-type mini
         timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
