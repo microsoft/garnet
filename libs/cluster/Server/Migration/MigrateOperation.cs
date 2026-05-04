@@ -50,8 +50,7 @@ namespace Garnet.cluster
             public void EncounteredVectorSet(byte[] key, byte[] value)
             => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
-            public void EncounteredRangeIndex(byte[] key, byte[] value)
-            => rangeIndexKeysToMigrate.TryAdd(key, value);
+            public void EncounteredRangeIndex(byte[] key, byte[] value) => rangeIndexKeysToMigrate.TryAdd(key, value);
 
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {

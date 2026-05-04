@@ -45,7 +45,6 @@ namespace Garnet.client
 
         /// <summary>
         /// Chunked serialization stream for a RangeIndex (BfTree) key during migration.
-        /// First record carries the key; subsequent records carry only data.
         /// The receiver uses a state machine to track the in-progress stream.
         /// </summary>
         SerializedRangeIndexStream = 4,
