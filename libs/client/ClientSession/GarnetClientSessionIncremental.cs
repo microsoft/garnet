@@ -44,7 +44,7 @@ namespace Garnet.client
         VectorSetIndex = 3,
 
         /// <summary>
-        /// Chunked serialization stream for a RangeIndex (BfTree) key during migration.
+        /// Chunked serialization stream for a RangeIndex key during migration.
         /// The receiver uses a state machine to track the in-progress stream.
         /// </summary>
         SerializedRangeIndexStream = 4,
