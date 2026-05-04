@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -13,24 +14,23 @@ namespace Garnet.cluster
     /// <summary>
     /// RangeIndex migration support: source-side transmit driver.
     /// </summary>
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Transmit a single RangeIndex key to the destination node.
-        /// Uses <see cref="RangeIndexManager.CreateSerializer"/> to obtain a chunked
-        /// serializer, wraps each chunk with key framing into a
-        /// <see cref="MigrationRecordSpanType.SerializedRangeIndexStream"/> record.
+        /// Uses <see cref="RangeIndexManager.CreateMigrationReader"/> to obtain an async
+        /// migration reader that snapshots and streams the BfTree data.
         /// Forces a flush and awaits ACK before deleting the source key.
         /// </summary>
-        private bool TransmitRangeIndex(MigrateOperation mo, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, int chunkSize = RangeIndexManager.DefaultMigrationChunkSize)
+        private async Task<bool> TransmitRangeIndexAsync(MigrateOperation mo, byte[] keyBytes, byte[] stubBytes, int chunkSize = RangeIndexManager.DefaultMigrationChunkSize)
         {
             var rangeIndexManager = clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager;
             var gcs = mo.Client;
 
-            RangeIndexChunkedSerializer serializer;
+            RangeIndexMigrationReader reader;
             try
             {
-                serializer = rangeIndexManager.CreateSerializer(mo.LocalSession, keyBytes, stubBytes, chunkSize);
+                reader = rangeIndexManager.CreateMigrationReader(mo.LocalSession, keyBytes, stubBytes, chunkSize);
             }
             catch (Exception ex)
             {
@@ -41,14 +41,14 @@ namespace Garnet.cluster
             var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
             try
             {
-                using (serializer)
+                using (reader)
                 {
-                    while (!serializer.IsComplete)
+                    while (!reader.IsComplete)
                     {
-                        var payloadLen = serializer.MoveNext(buffer);
+                        var payloadLen = await reader.ReadNextChunkAsync(buffer).ConfigureAwait(false);
                         if (payloadLen == 0)
                         {
-                            logger?.LogError("TransmitRangeIndex: serializer returned zero-length payload with a {Size}-byte buffer", chunkSize);
+                            logger?.LogError("TransmitRangeIndex: reader returned zero-length payload with a {Size}-byte buffer", chunkSize);
                             return false;
                         }
 
@@ -67,11 +67,8 @@ namespace Garnet.cluster
                     }
 
                     // Delete the source key now that destination has confirmed receipt
-                    fixed (byte* keyPtr = keyBytes)
-                    {
-                        var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
-                        mo.DeleteRangeIndex(pinnedKey);
-                    }
+                    var pinnedKey = PinnedSpanByte.FromPinnedSpan(keyBytes);
+                    mo.DeleteRangeIndex(pinnedKey);
 
                     return true;
                 }

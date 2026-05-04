@@ -3,13 +3,14 @@
 
 using System;
 using System.Buffers.Binary;
-using System.IO;
 using System.IO.Hashing;
 
 namespace Garnet.server
 {
     /// <summary>
-    /// Serializer that produces a stream of migration records for a single RangeIndex key.
+    /// Pure state-machine serializer that frames a RangeIndex key, file data, and stub into
+    /// a chunked migration stream. Does not perform any I/O — file data is supplied by the
+    /// caller via the <c>fileData</c> parameter of <see cref="MoveNext"/>.
     ///
     /// <para>Stream format (across one or more chunks):</para>
     /// <list type="bullet">
@@ -18,11 +19,10 @@ namespace Garnet.server
     /// <para>Key bytes and file bytes may span multiple chunks.
     /// All other elements (keyLen, fileCount, hash, stubLen, stub) must fit entirely within a single chunk.</para>
     /// <para>The caller provides a destination span on each <see cref="MoveNext"/> call;
-    /// the serializer writes at most <c>chunkSize</c> total bytes into it, enabling zero-copy framing.</para>
+    /// the serializer writes at most <c>destination.Length</c> total bytes into it.</para>
     /// </summary>
-    public sealed class RangeIndexChunkedSerializer : IDisposable
+    public sealed class RangeIndexChunkedSerializer
     {
-        private FileStream fileStream;
         private readonly byte[] keyBytes;
         private readonly byte[] stubBytes;
         private readonly long totalFileBytes;
@@ -30,16 +30,26 @@ namespace Garnet.server
         private int keyBytesEmitted;
         private long fileBytesEmitted;
         private Phase phase;
-        private bool disposed;
 
         private enum Phase : byte { KeyHeader, KeyData, FileHeader, FileData, Trailer, Done }
 
         /// <summary>Whether the serializer has emitted all data.</summary>
         public bool IsComplete => phase == Phase.Done;
 
-        internal RangeIndexChunkedSerializer(FileStream fileStream, byte[] keyBytes, byte[] stubBytes, long totalFileBytes)
+        /// <summary>Whether the serializer is in the FileData phase and needs file bytes from the caller.</summary>
+        public bool NeedsFileData => phase == Phase.FileData && fileBytesEmitted < totalFileBytes;
+
+        /// <summary>Number of file bytes remaining to be emitted.</summary>
+        public long FileDataRemaining => totalFileBytes - fileBytesEmitted;
+
+        /// <summary>
+        /// Create a serializer for a RangeIndex key.
+        /// </summary>
+        /// <param name="keyBytes">The key bytes to include in the stream header.</param>
+        /// <param name="stubBytes">The stub bytes to include in the stream trailer.</param>
+        /// <param name="totalFileBytes">The total number of file data bytes that will be supplied via <see cref="MoveNext"/>.</param>
+        public RangeIndexChunkedSerializer(byte[] keyBytes, byte[] stubBytes, long totalFileBytes)
         {
-            this.fileStream = fileStream;
             this.keyBytes = keyBytes;
             this.stubBytes = stubBytes;
             this.totalFileBytes = totalFileBytes;
@@ -49,10 +59,18 @@ namespace Garnet.server
 
         /// <summary>
         /// Advance to the next chunk. Fills <paramref name="destination"/> with as much payload as fits.
-        /// Returns the number of bytes written, or 0 if the stream is complete.
+        /// When <see cref="NeedsFileData"/> is true, the caller must supply file data via <paramref name="fileData"/>;
+        /// otherwise pass <see cref="ReadOnlySpan{T}.Empty"/>.
+        /// Returns the number of bytes written to <paramref name="destination"/>.
         /// </summary>
-        public int MoveNext(Span<byte> destination)
+        /// <param name="destination">Output buffer to write framed data into.</param>
+        /// <param name="fileData">File data bytes supplied by the caller (only consumed during the FileData phase).</param>
+        /// <param name="fileBytesConsumed">Number of bytes consumed from <paramref name="fileData"/>.</param>
+        /// <returns>Number of bytes written to <paramref name="destination"/>.</returns>
+        public int MoveNext(Span<byte> destination, ReadOnlySpan<byte> fileData, out int fileBytesConsumed)
         {
+            fileBytesConsumed = 0;
+
             if (phase == Phase.Done)
                 throw new InvalidOperationException("Serializer has already completed");
 
@@ -94,23 +112,25 @@ namespace Garnet.server
                 phase = Phase.FileData;
             }
 
-            // File bytes (may span chunks)
+            // File bytes (may span chunks) — data supplied by caller
             if (phase == Phase.FileData)
             {
                 if (fileBytesEmitted < totalFileBytes)
                 {
-                    var maxRead = (int)Math.Min(destination.Length, totalFileBytes - fileBytesEmitted);
-                    if (maxRead == 0)
+                    var maxCopy = (int)Math.Min(destination.Length, totalFileBytes - fileBytesEmitted);
+                    if (maxCopy == 0)
                         return initialLength - destination.Length;
 
-                    var bytesRead = fileStream.Read(destination[..maxRead]);
+                    // Copy as many file bytes as available and fit in destination
+                    var toCopy = Math.Min(maxCopy, fileData.Length);
+                    if (toCopy == 0)
+                        return initialLength - destination.Length;
 
-                    if (bytesRead == 0)
-                        throw new EndOfStreamException($"RangeIndex file truncated: expected {totalFileBytes} bytes, got {fileBytesEmitted}");
-
-                    hasher.Append(destination[..bytesRead]);
-                    destination = destination[bytesRead..];
-                    fileBytesEmitted += bytesRead;
+                    fileData[..toCopy].CopyTo(destination);
+                    hasher.Append(destination[..toCopy]);
+                    destination = destination[toCopy..];
+                    fileBytesEmitted += toCopy;
+                    fileBytesConsumed = toCopy;
                 }
 
                 if (fileBytesEmitted >= totalFileBytes)
@@ -141,16 +161,6 @@ namespace Garnet.server
             BinaryPrimitives.WriteInt32LittleEndian(target, stubBytes.Length);
             target = target[sizeof(int)..];
             stubBytes.CopyTo(target);
-        }
-
-        /// <inheritdoc/>
-        public void Dispose()
-        {
-            if (disposed) return;
-            disposed = true;
-
-            fileStream?.Dispose();
-            fileStream = null;
         }
     }
 }
