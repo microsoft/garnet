@@ -30,7 +30,6 @@ namespace Resp.benchmark
                 AofReplayTaskCount = options.AofReplayTaskCount,
                 ReplicationOffsetMaxLag = 0,
                 CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null,
-                AofReplicationRefreshFrequencyMs = 100,
             };
             return serverOptions;
         }

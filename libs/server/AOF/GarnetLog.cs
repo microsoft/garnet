@@ -309,16 +309,16 @@ namespace Garnet.server
         /// Set log shift tail callbacks
         /// </summary>
         /// <param name="sublogIdx"></param>
-        /// <param name="SafeTailShiftCallback"></param>
-        public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
+        /// <param name="safeTailPageShiftCallback"></param>
+        public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> safeTailPageShiftCallback)
         {
             if (singleLog != null)
             {
-                singleLog.log.SafeTailShiftCallback = SafeTailShiftCallback;
+                singleLog.log.SafeTailPageShiftCallback = safeTailPageShiftCallback;
             }
             else
             {
-                shardedLog.sublog[sublogIdx].SafeTailShiftCallback = SafeTailShiftCallback;
+                shardedLog.sublog[sublogIdx].SafeTailPageShiftCallback = safeTailPageShiftCallback;
             }
         }
 

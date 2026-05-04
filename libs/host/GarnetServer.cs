@@ -244,7 +244,7 @@ namespace Garnet
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, startFresh: true, logger);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), pubSubEpoch, startFresh: true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 

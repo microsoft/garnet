@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -151,6 +152,20 @@ namespace Tsavorite.core
         /// ID of this LightEpoch instance
         /// </summary>
         readonly int instanceId;
+
+        /// <summary>
+        /// Maximum number of general-purpose per-thread <see cref="long"/> user-word slots that subsystems
+        /// can claim via <see cref="AllocateUserWord(long)"/>. Bounded by the free space in <see cref="Entry"/>'s
+        /// cache line (48 bytes = 6 longs).
+        /// </summary>
+        public const int MaxUserWords = 6;
+
+        /// <summary>
+        /// Bitmask of claimed user-word slots. Each set bit means that word index is in use by some
+        /// subsystem. Managed exclusively via CAS in <see cref="AllocateUserWord"/> and
+        /// <see cref="ReleaseUserWord"/>. Not read on the epoch Acquire/Release hot path.
+        /// </summary>
+        int userWordMask;
 
         /// <summary>
         /// This is the LightEpoch-level static buffer (array) of available instance slots.
@@ -711,8 +726,120 @@ namespace Tsavorite.core
             return sb.ToString();
         }
 
+        #region User-word API
+
+        /// <summary>
+        /// Number of entries in the epoch table.
+        /// </summary>
+        public int EntryCount => kTableSize;
+
+        /// <summary>
+        /// Claim a per-thread user-word slot. Returns the word index to pass to
+        /// <see cref="ThisThreadUserWord(int)"/> and <see cref="GetMinUserWord(int)"/>.
+        /// The column across all entries is initialized to <paramref name="initialValue"/>.
+        /// After allocation, the application owns the slot contents — LightEpoch does not
+        /// automatically reset slots on epoch Acquire/Release. Throws if all
+        /// <see cref="MaxUserWords"/> slots are already claimed.
+        /// </summary>
+        /// <param name="initialValue">Value written to every entry's slot at allocation time.</param>
+        /// <returns>Word index in the range <c>[0, <see cref="MaxUserWords"/>)</c>.</returns>
+        public int AllocateUserWord(long initialValue)
+        {
+            while (true)
+            {
+                var mask = Volatile.Read(ref userWordMask);
+                int idx = BitOperations.TrailingZeroCount(~mask);
+                if (idx >= MaxUserWords)
+                    throw new InvalidOperationException($"All {MaxUserWords} LightEpoch user-word slots are claimed.");
+
+                // CAS to claim the slot. Only the winner proceeds to initialize.
+                var newMask = mask | (1 << idx);
+                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) != mask)
+                    continue; // another thread modified the mask; retry
+
+                // We exclusively own this slot — initialize the column across all entries.
+                for (int i = 1; i <= kTableSize; i++)
+                    Volatile.Write(ref UserWordRef(i, idx), initialValue);
+
+                return idx;
+            }
+        }
+
+        /// <summary>
+        /// Release a previously claimed user-word slot. Caller is responsible for ensuring that no
+        /// producer thread still holds or can still issue writes to the slot (e.g., by calling this
+        /// only after subsystem quiescence / Dispose).
+        /// </summary>
+        public void ReleaseUserWord(int wordIndex)
+        {
+            if ((uint)wordIndex >= MaxUserWords)
+                throw new ArgumentOutOfRangeException(nameof(wordIndex));
+            while (true)
+            {
+                var mask = Volatile.Read(ref userWordMask);
+                var newMask = mask & ~(1 << wordIndex);
+                if (Interlocked.CompareExchange(ref userWordMask, newMask, mask) == mask)
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Get a ref to the current thread's user-word slot. Caller MUST be inside epoch protection
+        /// (<see cref="Resume"/> / before <see cref="Suspend"/>). Returns the same cache line that is
+        /// already hot due to epoch Resume, so writes are essentially free.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref long ThisThreadUserWord(int wordIndex)
+        {
+            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+            Debug.Assert(ThisInstanceProtected(), "ThisThreadUserWord must be called while epoch is protected");
+            int entryIndex = Metadata.Entries.GetRef(instanceId);
+            return ref UserWordRef(entryIndex, wordIndex);
+        }
+
+        /// <summary>
+        /// Compute the minimum value of the user-word at <paramref name="wordIndex"/> across all epoch
+        /// table entries, using a direct unsafe pointer walk.
+        /// </summary>
+        /// <param name="wordIndex">User-word slot index (0-based).</param>
+        /// <returns>The minimum value observed across all entries.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetMinUserWord(int wordIndex)
+        {
+            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+
+            // Derive the base address from the actual Entry field layout via UserWordRef,
+            // rather than hardcoding byte offsets. Entries occupy indices 1..kTableSize
+            // (index 0 is kInvalidIndex and unused). Stride between entries is kCacheLineBytes.
+            long min = long.MaxValue;
+            byte* basePtr = (byte*)Unsafe.AsPointer(ref UserWordRef(1, wordIndex));
+            int stride = kCacheLineBytes;
+            int count = kTableSize;
+
+            for (int i = 0; i < count; i++)
+            {
+                long v = Volatile.Read(ref Unsafe.AsRef<long>(basePtr + (long)i * stride));
+                if (v < min) min = v;
+            }
+            return min;
+        }
+
+        /// <summary>
+        /// Get a ref to the user word at <paramref name="wordIndex"/> for entry <paramref name="entryIndex"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        ref long UserWordRef(int entryIndex, int wordIndex)
+            => ref Unsafe.Add(ref (*(tableAligned + entryIndex)).userWord0, wordIndex);
+
+        #endregion
+
         /// <summary>
         /// Epoch table entry (cache line size).
+        /// Existing epoch fields occupy the first 16 bytes (localCurrentEpoch + threadId + 4 bytes padding).
+        /// The remaining 48 bytes host <see cref="MaxUserWords"/> general-purpose per-thread <see cref="long"/> slots that
+        /// subsystems can claim via <see cref="AllocateUserWord(long)"/>. This reuses the cache line that is already
+        /// hot from epoch Resume/Suspend, so user-word access is essentially free compared to touching a separate
+        /// data structure.
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = kCacheLineBytes)]
         struct Entry
@@ -728,6 +855,28 @@ namespace Tsavorite.core
             /// </summary>
             [FieldOffset(8)]
             public int threadId;
+
+            /// <summary>
+            /// First user-word slot. Remaining <see cref="MaxUserWords"/> - 1 slots are contiguous after this
+            /// field at 8-byte stride. Access via <c>Unsafe.Add(ref userWord0, wordIndex)</c>.
+            /// </summary>
+            [FieldOffset(16)]
+            public long userWord0;
+
+            [FieldOffset(24)]
+            public long userWord1;
+
+            [FieldOffset(32)]
+            public long userWord2;
+
+            [FieldOffset(40)]
+            public long userWord3;
+
+            [FieldOffset(48)]
+            public long userWord4;
+
+            [FieldOffset(56)]
+            public long userWord5;
 
             public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}";
         }
